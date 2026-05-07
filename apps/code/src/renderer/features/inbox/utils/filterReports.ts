@@ -70,3 +70,17 @@ export function buildSuggestedReviewerFilterParam(
 
   return Array.from(new Set(normalizedIds)).join(",");
 }
+
+export function buildRepoFilterParam(repos: string[]): string | undefined {
+  // Repos are matched case-insensitively on the backend, so normalize to lowercase
+  // here to maximize de-duplication (e.g. "PostHog/posthog" and "posthog/posthog").
+  const normalized = repos
+    .map((repo) => repo.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (normalized.length === 0) {
+    return undefined;
+  }
+
+  return Array.from(new Set(normalized)).join(",");
+}

@@ -474,6 +474,8 @@ export interface SignalReportsQueryParams {
   source_product?: string;
   /** Comma-separated PostHog user UUIDs — only returns reports with these suggested reviewers. */
   suggested_reviewers?: string;
+  /** Comma-separated `owner/repo` strings — only returns reports whose selected repository matches. */
+  repository?: string;
 }
 
 /** Values match `SignalReportTask.Relationship` on the PostHog API. */

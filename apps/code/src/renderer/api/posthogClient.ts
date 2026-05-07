@@ -1853,6 +1853,9 @@ export class PostHogAPIClient {
     if (params?.suggested_reviewers) {
       url.searchParams.set("suggested_reviewers", params.suggested_reviewers);
     }
+    if (params?.repository) {
+      url.searchParams.set("repository", params.repository);
+    }
 
     const response = await this.api.fetcher.fetch({
       method: "get",

@@ -24,6 +24,7 @@ import { IS_DEV } from "@shared/constants/environment";
 import type { SignalReport } from "@shared/types";
 import { useState } from "react";
 import { FilterSortMenu } from "./FilterSortMenu";
+import { RepoFilterMenu } from "./RepoFilterMenu";
 import { SuggestedReviewerFilterMenu } from "./SuggestedReviewerFilterMenu";
 
 interface SignalsToolbarProps {
@@ -233,6 +234,7 @@ export function SignalsToolbar({
           {!hideFilters && (
             <Flex align="center" gap="1" className="shrink-0">
               <SuggestedReviewerFilterMenu />
+              <RepoFilterMenu />
               <FilterSortMenu />
             </Flex>
           )}

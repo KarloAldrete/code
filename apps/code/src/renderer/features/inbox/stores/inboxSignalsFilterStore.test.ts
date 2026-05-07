@@ -18,6 +18,7 @@ describe("inboxSignalsFilterStore", () => {
       ],
       sourceProductFilter: [],
       suggestedReviewerFilter: [],
+      repoFilter: [],
     });
   });
 
@@ -36,6 +37,7 @@ describe("inboxSignalsFilterStore", () => {
     ]);
     expect(state.sourceProductFilter).toEqual([]);
     expect(state.suggestedReviewerFilter).toEqual([]);
+    expect(state.repoFilter).toEqual([]);
   });
 
   it("setSort updates field and direction", () => {
@@ -106,12 +108,48 @@ describe("inboxSignalsFilterStore", () => {
     ]);
   });
 
+  it("toggleRepo adds and removes repos and lower-cases them", () => {
+    useInboxSignalsFilterStore.getState().toggleRepo("PostHog/posthog");
+    expect(useInboxSignalsFilterStore.getState().repoFilter).toEqual([
+      "posthog/posthog",
+    ]);
+
+    useInboxSignalsFilterStore.getState().toggleRepo("posthog/posthog");
+    expect(useInboxSignalsFilterStore.getState().repoFilter).toEqual([]);
+  });
+
+  it("setRepoFilter de-duplicates and lower-cases repos", () => {
+    useInboxSignalsFilterStore
+      .getState()
+      .setRepoFilter([
+        "PostHog/posthog",
+        "posthog/posthog-js",
+        "posthog/posthog",
+      ]);
+
+    expect(useInboxSignalsFilterStore.getState().repoFilter).toEqual([
+      "posthog/posthog",
+      "posthog/posthog-js",
+    ]);
+  });
+
+  it("persists repoFilter", () => {
+    useInboxSignalsFilterStore.getState().setRepoFilter(["posthog/posthog"]);
+
+    const raw = localStorage.getItem("inbox-signals-filter-storage");
+    expect(raw).toBeTruthy();
+    const persisted = JSON.parse(raw as string);
+
+    expect(persisted.state.repoFilter).toEqual(["posthog/posthog"]);
+  });
+
   it("resetFilters restores defaults across all filter fields", () => {
     const store = useInboxSignalsFilterStore.getState();
     store.setSearchQuery("hello");
     store.setStatusFilter(["ready"]);
     store.toggleSourceProduct("github");
     store.setSuggestedReviewerFilter(["reviewer-1"]);
+    store.setRepoFilter(["posthog/posthog"]);
 
     useInboxSignalsFilterStore.getState().resetFilters();
 
@@ -127,6 +165,7 @@ describe("inboxSignalsFilterStore", () => {
     ]);
     expect(state.sourceProductFilter).toEqual([]);
     expect(state.suggestedReviewerFilter).toEqual([]);
+    expect(state.repoFilter).toEqual([]);
   });
 
   it("resetFilters preserves sort preferences", () => {

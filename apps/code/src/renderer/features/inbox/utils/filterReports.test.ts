@@ -1,6 +1,7 @@
 import type { SignalReport } from "@shared/types";
 import { describe, expect, it } from "vitest";
 import {
+  buildRepoFilterParam,
   buildSignalReportListOrdering,
   buildSuggestedReviewerFilterParam,
   filterReportsBySearch,
@@ -151,5 +152,46 @@ describe("buildSuggestedReviewerFilterParam", () => {
         "",
       ]),
     ).toBe("reviewer-1,reviewer-2");
+  });
+});
+
+describe("buildRepoFilterParam", () => {
+  it("returns undefined for an empty array", () => {
+    expect(buildRepoFilterParam([])).toBeUndefined();
+  });
+
+  it("lower-cases, trims and joins repos with commas", () => {
+    expect(
+      buildRepoFilterParam([
+        " PostHog/posthog ",
+        "PostHog/posthog-js",
+        " PostHog/code",
+      ]),
+    ).toBe("posthog/posthog,posthog/posthog-js,posthog/code");
+  });
+
+  it("deduplicates repos case-insensitively", () => {
+    expect(
+      buildRepoFilterParam([
+        "PostHog/posthog",
+        "posthog/posthog",
+        "POSTHOG/POSTHOG",
+      ]),
+    ).toBe("posthog/posthog");
+  });
+
+  it("drops blank repos", () => {
+    expect(
+      buildRepoFilterParam([
+        "posthog/posthog",
+        "   ",
+        "posthog/posthog-js",
+        "",
+      ]),
+    ).toBe("posthog/posthog,posthog/posthog-js");
+  });
+
+  it("returns undefined when only blank repos are supplied", () => {
+    expect(buildRepoFilterParam(["", "   "])).toBeUndefined();
   });
 });

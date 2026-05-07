@@ -39,6 +39,8 @@ interface InboxSignalsFilterState {
   sourceProductFilter: SourceProduct[];
   /** Empty array means "all suggested reviewers" (no filter). Stored as PostHog user UUID strings. */
   suggestedReviewerFilter: string[];
+  /** Empty array means "all repositories" (no filter). Stored as `owner/repo` strings (lower-case). */
+  repoFilter: string[];
 }
 
 interface InboxSignalsFilterActions {
@@ -49,6 +51,8 @@ interface InboxSignalsFilterActions {
   toggleSourceProduct: (source: SourceProduct) => void;
   toggleSuggestedReviewer: (reviewerUuid: string) => void;
   setSuggestedReviewerFilter: (reviewerUuids: string[]) => void;
+  toggleRepo: (repo: string) => void;
+  setRepoFilter: (repos: string[]) => void;
   /** Reset all filters when a deep link arrives so the linked report isn't hidden. */
   resetFilters: () => void;
 }
@@ -65,6 +69,7 @@ export const useInboxSignalsFilterStore = create<InboxSignalsFilterStore>()(
       statusFilter: DEFAULT_STATUS_FILTER,
       sourceProductFilter: [],
       suggestedReviewerFilter: [],
+      repoFilter: [],
       setSort: (sortField, sortDirection) => set({ sortField, sortDirection }),
       setSearchQuery: (searchQuery) => set({ searchQuery }),
       setStatusFilter: (statusFilter) => set({ statusFilter }),
@@ -96,12 +101,31 @@ export const useInboxSignalsFilterStore = create<InboxSignalsFilterStore>()(
         set({
           suggestedReviewerFilter: Array.from(new Set(reviewerUuids)),
         }),
+      toggleRepo: (repo) =>
+        set((state) => {
+          const normalized = repo.trim().toLowerCase();
+          if (!normalized) return {};
+          const current = state.repoFilter;
+          const next = current.includes(normalized)
+            ? current.filter((r) => r !== normalized)
+            : [...current, normalized];
+          return { repoFilter: next };
+        }),
+      setRepoFilter: (repos) =>
+        set({
+          repoFilter: Array.from(
+            new Set(
+              repos.map((repo) => repo.trim().toLowerCase()).filter(Boolean),
+            ),
+          ),
+        }),
       resetFilters: () =>
         set({
           searchQuery: "",
           statusFilter: DEFAULT_STATUS_FILTER,
           sourceProductFilter: [],
           suggestedReviewerFilter: [],
+          repoFilter: [],
         }),
     }),
     {
@@ -112,6 +136,7 @@ export const useInboxSignalsFilterStore = create<InboxSignalsFilterStore>()(
         statusFilter: state.statusFilter,
         sourceProductFilter: state.sourceProductFilter,
         suggestedReviewerFilter: state.suggestedReviewerFilter,
+        repoFilter: state.repoFilter,
       }),
     },
   ),
