@@ -25,58 +25,70 @@ export function ServerCard({
     (c) => c.id === server.category,
   )?.label;
 
-  return (
-    <div className="group relative rounded-md border border-gray-5 bg-gray-2 transition-colors hover:border-gray-7 hover:bg-gray-3">
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex w-full flex-col gap-3 rounded-md p-4 text-left"
-      >
-        <Flex align="start" gap="3" width="100%">
-          <ServerIcon iconKey={server.icon_key} size={40} />
-          <Flex direction="column" gap="1" className="min-w-0 flex-1">
-            <Flex align="center" gap="2">
-              <Text truncate className="font-medium text-base">
-                {server.name}
-              </Text>
-              {installed && (
-                <CheckCircle
-                  size={14}
-                  weight="fill"
-                  className="shrink-0 text-green-10"
-                />
-              )}
-            </Flex>
-            {server.description && (
-              <Text
-                color="gray"
-                style={{
-                  display: "-webkit-box",
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: "vertical",
-                }}
-                className="overflow-hidden text-[13px]"
-              >
-                {server.description}
-              </Text>
+  const wrapperClassName = `group relative rounded-md border border-gray-5 bg-gray-2 transition-colors${
+    installed ? " hover:border-gray-7 hover:bg-gray-3" : ""
+  }`;
+
+  const innerClassName = "flex w-full flex-col gap-3 rounded-md p-4 text-left";
+
+  const cardBody = (
+    <>
+      <Flex align="start" gap="3" width="100%">
+        <ServerIcon iconKey={server.icon_key} size={40} />
+        <Flex direction="column" gap="1" className="min-w-0 flex-1">
+          <Flex align="center" gap="2">
+            <Text truncate className="font-medium text-base">
+              {server.name}
+            </Text>
+            {installed && (
+              <CheckCircle
+                size={14}
+                weight="fill"
+                className="shrink-0 text-green-10"
+              />
             )}
           </Flex>
-          {/* Spacer to reserve room for the action button overlay */}
-          <div style={{ width: installed ? 100 : 84 }} />
+          {server.description && (
+            <Text
+              color="gray"
+              style={{
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+              }}
+              className="overflow-hidden text-[13px]"
+            >
+              {server.description}
+            </Text>
+          )}
         </Flex>
-        <Flex align="center" gap="2" justify="between" width="100%">
-          <Flex gap="2" align="center">
-            {categoryLabel && (
-              <Badge color="gray" variant="soft" size="1">
-                {categoryLabel}
-              </Badge>
-            )}
-            <Badge color="gray" variant="outline" size="1">
-              {server.auth_type === "oauth" ? "OAuth" : "API key"}
+        {/* Spacer to reserve room for the action button overlay */}
+        <div style={{ width: installed ? 100 : 84 }} />
+      </Flex>
+      <Flex align="center" gap="2" justify="between" width="100%">
+        <Flex gap="2" align="center">
+          {categoryLabel && (
+            <Badge color="gray" variant="soft" size="1">
+              {categoryLabel}
             </Badge>
-          </Flex>
+          )}
+          <Badge color="gray" variant="outline" size="1">
+            {server.auth_type === "oauth" ? "OAuth" : "API key"}
+          </Badge>
         </Flex>
-      </button>
+      </Flex>
+    </>
+  );
+
+  return (
+    <div className={wrapperClassName}>
+      {installed ? (
+        <button type="button" onClick={onOpen} className={innerClassName}>
+          {cardBody}
+        </button>
+      ) : (
+        <div className={innerClassName}>{cardBody}</div>
+      )}
       <div className="absolute top-4 right-4">
         {installed ? (
           <Button variant="soft" color="gray" size="1" onClick={onOpen}>
