@@ -514,9 +514,7 @@ export function TaskInput({
   const currentReasoningLevel =
     thoughtOption?.type === "select" ? thoughtOption.currentValue : undefined;
   const currentServiceTier =
-    adapter === "codex" &&
-    effectiveWorkspaceMode !== "cloud" &&
-    serviceTierOption?.type === "select"
+    adapter === "codex" && serviceTierOption?.type === "select"
       ? serviceTierOption.currentValue
       : undefined;
 
@@ -862,9 +860,7 @@ export function TaskInput({
                 )
               }
               speedSelector={
-                adapter === "codex" &&
-                effectiveWorkspaceMode !== "cloud" &&
-                !isPreviewLoading ? (
+                adapter === "codex" && !isPreviewLoading ? (
                   <ServiceTierSelector
                     serviceTierOption={serviceTierOption}
                     onChange={handleServiceTierChange}

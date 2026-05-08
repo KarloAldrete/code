@@ -118,6 +118,7 @@ describe("TaskCreationSaga", () => {
       adapter: "codex",
       model: "gpt-5.4",
       reasoningLevel: "high",
+      serviceTier: "fast",
     });
 
     expect(result.success).toBe(true);
@@ -132,6 +133,7 @@ describe("TaskCreationSaga", () => {
       adapter: "codex",
       model: "gpt-5.4",
       reasoningLevel: "high",
+      serviceTier: "fast",
       sandboxEnvironmentId: undefined,
       prAuthorshipMode: "user",
       runSource: "manual",

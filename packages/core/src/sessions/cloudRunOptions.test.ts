@@ -53,6 +53,7 @@ describe("getCloudRuntimeOptions", () => {
         configOptions: [
           { category: "model", currentValue: "opus" },
           { category: "thought_level", currentValue: "high" },
+          { category: "service_tier", currentValue: "fast" },
           // biome-ignore lint/suspicious/noExplicitAny: minimal config option shape
         ] as any,
         adapter: undefined,
@@ -65,6 +66,7 @@ describe("getCloudRuntimeOptions", () => {
     );
     expect(result.model).toBe("opus");
     expect(result.reasoningLevel).toBe("high");
+    expect(result.serviceTier).toBe("fast");
     expect(result.adapter).toBe("claude_code");
   });
 
@@ -83,6 +85,7 @@ describe("getCloudRuntimeOptions", () => {
     const result = getCloudRuntimeOptions(session({ configOptions: [] }));
     expect(result.model).toBeUndefined();
     expect(result.reasoningLevel).toBeUndefined();
+    expect(result.serviceTier).toBeUndefined();
     expect(result.adapter).toBeUndefined();
   });
 });

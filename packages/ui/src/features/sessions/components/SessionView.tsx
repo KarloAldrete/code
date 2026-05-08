@@ -204,7 +204,11 @@ export function SessionView({
   const handleServiceTierChange = useCallback(
     (value: string) => {
       if (!taskId || !serviceTierOption) return;
-      sessionService.setSessionConfigOption(taskId, serviceTierOption.id, value);
+      sessionService.setSessionConfigOption(
+        taskId,
+        serviceTierOption.id,
+        value,
+      );
     },
     [taskId, serviceTierOption, sessionService],
   );

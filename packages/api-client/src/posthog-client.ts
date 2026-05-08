@@ -379,11 +379,13 @@ export interface FinalizedTaskArtifactUpload {
 }
 
 type CloudRuntimeAdapter = "claude" | "codex";
+type CloudRunServiceTier = "standard" | "fast" | "flex";
 
 interface CloudRunOptions {
   adapter?: CloudRuntimeAdapter;
   model?: string;
   reasoningLevel?: string;
+  serviceTier?: CloudRunServiceTier;
   sandboxEnvironmentId?: string;
   prAuthorshipMode?: PrAuthorshipMode;
   runSource?: CloudRunSource;
@@ -454,6 +456,9 @@ function buildCloudRunRequestBody(
   }
   if (options?.sandboxEnvironmentId) {
     body.sandbox_environment_id = options.sandboxEnvironmentId;
+  }
+  if (options?.serviceTier) {
+    body.service_tier = options.serviceTier;
   }
   if (options?.prAuthorshipMode) {
     body.pr_authorship_mode = options.prAuthorshipMode;

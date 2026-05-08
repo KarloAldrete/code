@@ -3809,6 +3809,14 @@ describe("SessionService", () => {
               currentValue: "high",
               options: [],
             },
+            {
+              id: "service_tier",
+              name: "Speed",
+              type: "select",
+              category: "service_tier",
+              currentValue: "fast",
+              options: [],
+            },
           ],
         }),
       );
@@ -3873,6 +3881,7 @@ describe("SessionService", () => {
           adapter: "codex",
           model: "gpt-5.4",
           reasoningLevel: "high",
+          serviceTier: "fast",
           resumeFromRunId: "run-123",
         }),
       );

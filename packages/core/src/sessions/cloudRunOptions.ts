@@ -34,6 +34,13 @@ export interface CloudRuntimeOptions {
   adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
+  serviceTier?: "standard" | "fast" | "flex";
+}
+
+function isServiceTier(
+  value: unknown,
+): value is CloudRuntimeOptions["serviceTier"] {
+  return value === "standard" || value === "fast" || value === "flex";
 }
 
 export function getCloudRuntimeOptions(
@@ -45,6 +52,11 @@ export function getCloudRuntimeOptions(
     session.configOptions,
     "thought_level",
   );
+  const serviceTierOption = getConfigOptionByCategory(
+    session.configOptions,
+    "service_tier",
+  );
+  const serviceTier = serviceTierOption?.currentValue;
 
   return {
     adapter: session.adapter ?? previousRun?.runtime_adapter ?? undefined,
@@ -56,5 +68,6 @@ export function getCloudRuntimeOptions(
       typeof thoughtLevelOption?.currentValue === "string"
         ? thoughtLevelOption.currentValue
         : (previousRun?.reasoning_effort ?? undefined),
+    serviceTier: isServiceTier(serviceTier) ? serviceTier : undefined,
   };
 }

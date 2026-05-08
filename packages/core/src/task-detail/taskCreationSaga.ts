@@ -4,8 +4,8 @@ import {
   buildPromptBlocks,
 } from "@posthog/core/editor/prompt-builder";
 import {
-  isCodexServiceTier,
   type ConnectParams,
+  isCodexServiceTier,
   type SessionService,
 } from "@posthog/core/sessions/sessionService";
 import {

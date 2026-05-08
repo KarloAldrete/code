@@ -69,6 +69,7 @@ export function resetSessionState(
     modeId?: string;
     modelId?: string;
     permissionMode?: PermissionMode;
+    serviceTier?: string;
   },
 ): void {
   state.sessionId = sessionId;
@@ -86,6 +87,7 @@ export function resetSessionState(
   state.contextUsed = undefined;
   state.contextBreakdownBaseline = undefined;
   state.permissionMode = opts?.permissionMode ?? "auto";
+  state.serviceTier = opts?.serviceTier;
   state.taskRunId = opts?.taskRunId;
   state.taskId = opts?.taskId;
 }

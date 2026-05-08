@@ -2275,6 +2275,7 @@ export class SessionService {
         adapter: runtimeOptions.adapter,
         model: runtimeOptions.model,
         reasoningLevel: runtimeOptions.reasoningLevel,
+        serviceTier: runtimeOptions.serviceTier,
         resumeFromRunId: session.taskRunId,
         pendingUserMessage: transport.messageText,
         pendingUserArtifactIds:
@@ -2872,7 +2873,10 @@ export class SessionService {
     const previewOptions = await pending;
     const extras = previewOptions
       .filter(
-        (opt) => opt.category === "model" || opt.category === "thought_level",
+        (opt) =>
+          opt.category === "model" ||
+          opt.category === "thought_level" ||
+          opt.category === "service_tier",
       )
       .map((opt) => {
         if (

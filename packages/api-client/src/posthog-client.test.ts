@@ -25,6 +25,7 @@ describe("PostHogAPIClient", () => {
       adapter: "codex",
       model: "gpt-5.4",
       reasoningLevel: "high",
+      serviceTier: "fast",
     });
 
     expect(post).toHaveBeenCalledWith(
@@ -37,6 +38,7 @@ describe("PostHogAPIClient", () => {
           runtime_adapter: "codex",
           model: "gpt-5.4",
           reasoning_effort: "high",
+          service_tier: "fast",
         }),
       }),
     );
@@ -154,6 +156,7 @@ describe("PostHogAPIClient", () => {
         adapter: "codex",
         model: "gpt-5.4",
         reasoningLevel: "high",
+        serviceTier: "fast",
         initialPermissionMode: "auto",
       }),
     ).resolves.toEqual({ id: "run-123", environment: "cloud" });
@@ -169,6 +172,7 @@ describe("PostHogAPIClient", () => {
             runtime_adapter: "codex",
             model: "gpt-5.4",
             reasoning_effort: "high",
+            service_tier: "fast",
             initial_permission_mode: "auto",
             environment: "cloud",
           }),
