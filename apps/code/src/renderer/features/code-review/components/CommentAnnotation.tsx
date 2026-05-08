@@ -23,6 +23,7 @@ interface CommentAnnotationProps {
   onDismiss: () => void;
   initialText?: string;
   editingDraftId?: string;
+  placeholder?: string;
 }
 
 export function CommentAnnotation({
@@ -34,6 +35,7 @@ export function CommentAnnotation({
   onDismiss,
   initialText,
   editingDraftId,
+  placeholder,
 }: CommentAnnotationProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const addDraft = useReviewDraftsStore((s) => s.addDraft);
@@ -131,7 +133,7 @@ export function CommentAnnotation({
       <InputGroup>
         <InputGroupTextarea
           ref={setTextareaRef}
-          placeholder="Describe the changes you'd like..."
+          placeholder={placeholder ?? "Describe the changes you'd like..."}
           onKeyDown={handleKeyDown}
           onChange={(e) => setIsEmpty(!e.currentTarget.value.trim())}
           className="min-h-[48px] resize-none text-[13px]"

@@ -1,8 +1,17 @@
+import {
+  PlanListItemBlock,
+  PlanWrappableBlock,
+  type WrappableTag,
+} from "@features/sessions/components/plan-annotations/PlanBlock";
+import { PlanReviewSidebar } from "@features/sessions/components/plan-annotations/PlanReviewSidebar";
+import { useAppView } from "@hooks/useAppView";
 import { ArrowsIn, ArrowsOut, ListChecks, X } from "@phosphor-icons/react";
 import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
-import { useEffect, useRef, useState } from "react";
+import { usePlanFullscreenStore } from "@stores/planFullscreenStore";
+import type { Element } from "hast";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 const planScrollPosition = new Map<string, number>();
@@ -13,20 +22,25 @@ interface PlanContentProps {
 }
 
 export function PlanContent({ id, plan }: PlanContentProps) {
+  const toolCallId = id;
+  const view = useAppView();
+  const taskId = view.type === "task-detail" ? (view.taskId ?? null) : null;
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const setActiveFullscreen = usePlanFullscreenStore((s) => s.setActive);
+  const clearActiveFullscreen = usePlanFullscreenStore((s) => s.clear);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
 
-    const position = planScrollPosition.get(id);
+    const position = planScrollPosition.get(toolCallId);
     if (position !== undefined) {
       el.scrollTop = position;
     }
 
     const handleScroll = () => {
-      planScrollPosition.set(id, el.scrollTop);
+      planScrollPosition.set(toolCallId, el.scrollTop);
     };
 
     el.addEventListener("scroll", handleScroll, { passive: true });
@@ -34,7 +48,15 @@ export function PlanContent({ id, plan }: PlanContentProps) {
     return () => {
       el.removeEventListener("scroll", handleScroll);
     };
-  }, [id]);
+  }, [toolCallId]);
+
+  useEffect(() => {
+    if (!isFullscreen) return;
+    setActiveFullscreen(toolCallId);
+    return () => {
+      clearActiveFullscreen(toolCallId);
+    };
+  }, [isFullscreen, toolCallId, setActiveFullscreen, clearActiveFullscreen]);
 
   useEffect(() => {
     if (!isFullscreen) return;
@@ -47,8 +69,63 @@ export function PlanContent({ id, plan }: PlanContentProps) {
     return () => window.removeEventListener("keydown", handler);
   }, [isFullscreen]);
 
+  const annotationsEnabled = isFullscreen && !!taskId;
+
+  const components = useMemo<Components | undefined>(() => {
+    if (!annotationsEnabled || !taskId) return undefined;
+
+    const wrappable = (tag: WrappableTag) =>
+      function WrappableRenderer(props: {
+        node?: Element;
+        children?: ReactNode;
+        className?: string;
+      }) {
+        return (
+          <PlanWrappableBlock
+            tag={tag}
+            taskId={taskId}
+            toolCallId={toolCallId}
+            node={props.node}
+            className={props.className}
+          >
+            {props.children}
+          </PlanWrappableBlock>
+        );
+      };
+
+    return {
+      p: wrappable("p"),
+      blockquote: wrappable("blockquote"),
+      pre: wrappable("pre"),
+      h1: wrappable("h1"),
+      h2: wrappable("h2"),
+      h3: wrappable("h3"),
+      h4: wrappable("h4"),
+      h5: wrappable("h5"),
+      h6: wrappable("h6"),
+      li: function LiRenderer(props: {
+        node?: Element;
+        children?: ReactNode;
+        className?: string;
+      }) {
+        return (
+          <PlanListItemBlock
+            taskId={taskId}
+            toolCallId={toolCallId}
+            node={props.node}
+            className={props.className}
+          >
+            {props.children}
+          </PlanListItemBlock>
+        );
+      },
+    } as Components;
+  }, [annotationsEnabled, taskId, toolCallId]);
+
   const markdown = (
-    <ReactMarkdown remarkPlugins={[remarkGfm]}>{plan}</ReactMarkdown>
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      {plan}
+    </ReactMarkdown>
   );
 
   if (isFullscreen) {
@@ -90,12 +167,21 @@ export function PlanContent({ id, plan }: PlanContentProps) {
                 </IconButton>
               </Flex>
 
-              <Box
-                ref={scrollRef}
-                className="plan-markdown flex-1 overflow-y-auto p-6 text-blue-12"
-              >
-                {markdown}
-              </Box>
+              <Flex className="min-h-0 flex-1">
+                <Box
+                  ref={scrollRef}
+                  className="plan-markdown min-w-0 flex-1 overflow-y-auto px-12 py-6"
+                >
+                  {markdown}
+                </Box>
+                {taskId && (
+                  <PlanReviewSidebar
+                    taskId={taskId}
+                    toolCallId={toolCallId}
+                    onSubmitted={() => setIsFullscreen(false)}
+                  />
+                )}
+              </Flex>
             </Box>,
             portalTarget,
           )}
