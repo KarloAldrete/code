@@ -73,6 +73,7 @@ export {
   useOptimisticItemsForTask,
   usePendingPermissionsForTask,
   useQueuedMessagesForTask,
+  useServiceTierConfigOptionForTask,
   useSessionForTask,
   useSessions,
   useThoughtLevelConfigOptionForTask,

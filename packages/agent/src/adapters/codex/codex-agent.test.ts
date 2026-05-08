@@ -5,6 +5,7 @@ import type {
   NewSessionResponse,
 } from "@agentclientprotocol/sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { CodexProcessOptions } from "./spawn";
 
 const mockCodexConnection = {
   initialize: vi.fn(),
@@ -69,6 +70,7 @@ describe("CodexAcpAgent", () => {
     overrides: Partial<AgentSideConnection> = {},
     agentOptions?: {
       onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
+      codexProcessOptions?: Partial<CodexProcessOptions>;
     },
   ): {
     agent: CodexAcpAgent;
@@ -89,6 +91,7 @@ describe("CodexAcpAgent", () => {
     const agent = new CodexAcpAgent(client, {
       codexProcessOptions: {
         cwd: process.cwd(),
+        ...agentOptions?.codexProcessOptions,
       },
       onStructuredOutput: agentOptions?.onStructuredOutput,
     });
@@ -116,6 +119,30 @@ describe("CodexAcpAgent", () => {
       (agent as unknown as { sessionState: { permissionMode: string } })
         .sessionState.permissionMode,
     ).toBe("read-only");
+  });
+
+  it("adds the Codex service tier option to new sessions", async () => {
+    const { agent } = createAgent(
+      {},
+      { codexProcessOptions: { serviceTier: "fast" } },
+    );
+    mockCodexConnection.newSession.mockResolvedValue({
+      sessionId: "session-1",
+      modes: { currentModeId: "auto", availableModes: [] },
+      configOptions: [],
+    } satisfies Partial<NewSessionResponse>);
+
+    const response = await agent.newSession({
+      cwd: process.cwd(),
+    } as never);
+
+    expect(response.configOptions).toContainEqual(
+      expect.objectContaining({
+        id: "service_tier",
+        category: "service_tier",
+        currentValue: "fast",
+      }),
+    );
   });
 
   it("propagates taskRunId and fires SDK_SESSION when loading a cloud session", async () => {

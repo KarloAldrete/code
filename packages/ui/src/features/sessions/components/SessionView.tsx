@@ -21,12 +21,14 @@ import { PendingChatView } from "@posthog/ui/features/sessions/components/Pendin
 import { PlanStatusBar } from "@posthog/ui/features/sessions/components/PlanStatusBar";
 import { ReasoningLevelSelector } from "@posthog/ui/features/sessions/components/ReasoningLevelSelector";
 import { RawLogsView } from "@posthog/ui/features/sessions/components/raw-logs/RawLogsView";
+import { ServiceTierSelector } from "@posthog/ui/features/sessions/components/ServiceTierSelector";
 import { SessionResourcesBar } from "@posthog/ui/features/sessions/components/SessionResourcesBar";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
 import {
   useAdapterForTask,
   useModeConfigOptionForTask,
   usePendingPermissionsForTask,
+  useServiceTierConfigOptionForTask,
   useThoughtLevelConfigOptionForTask,
 } from "@posthog/ui/features/sessions/sessionStore";
 import {
@@ -160,6 +162,7 @@ export function SessionView({
   const pendingPermissions = usePendingPermissionsForTask(taskId);
   const modeOption = useModeConfigOptionForTask(taskId);
   const thoughtOption = useThoughtLevelConfigOptionForTask(taskId);
+  const serviceTierOption = useServiceTierConfigOptionForTask(taskId);
   const adapter = useAdapterForTask(taskId);
   const { allowBypassPermissions } = useSettingsStore();
   const { isOnline } = useConnectivity();
@@ -196,6 +199,14 @@ export function SessionView({
       sessionService.setSessionConfigOption(taskId, thoughtOption.id, value);
     },
     [taskId, thoughtOption, sessionService],
+  );
+
+  const handleServiceTierChange = useCallback(
+    (value: string) => {
+      if (!taskId || !serviceTierOption) return;
+      sessionService.setSessionConfigOption(taskId, serviceTierOption.id, value);
+    },
+    [taskId, serviceTierOption, sessionService],
   );
 
   const sessionId = taskId ?? "default";
@@ -621,6 +632,15 @@ export function SessionView({
                                 thoughtOption={thoughtOption}
                                 adapter={adapter}
                                 onChange={handleThoughtChange}
+                                disabled={!isRunning}
+                              />
+                            ) : null
+                          }
+                          speedSelector={
+                            adapter === "codex" && serviceTierOption ? (
+                              <ServiceTierSelector
+                                serviceTierOption={serviceTierOption}
+                                onChange={handleServiceTierChange}
                                 disabled={!isRunning}
                               />
                             ) : null

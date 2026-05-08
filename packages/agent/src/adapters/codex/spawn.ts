@@ -12,6 +12,7 @@ export interface CodexProcessOptions {
   apiKey?: string;
   model?: string;
   reasoningEffort?: string;
+  serviceTier?: string;
   instructions?: string;
   binaryPath?: string;
   logger?: Logger;
@@ -26,6 +27,14 @@ export interface CodexProcess {
   stdin: Writable;
   stdout: Readable;
   kill: () => void;
+}
+
+function normalizeServiceTier(value: string | undefined): string | undefined {
+  const normalized = value?.toLowerCase();
+  if (!normalized || normalized === "standard") return undefined;
+  if (normalized === "fast" || normalized === "priority") return "fast";
+  if (normalized === "flex") return "flex";
+  return undefined;
 }
 
 function buildConfigArgs(options: CodexProcessOptions): string[] {
@@ -57,6 +66,11 @@ function buildConfigArgs(options: CodexProcessOptions): string[] {
 
   if (options.reasoningEffort) {
     args.push("-c", `model_reasoning_effort="${options.reasoningEffort}"`);
+  }
+
+  const serviceTier = normalizeServiceTier(options.serviceTier);
+  if (serviceTier) {
+    args.push("-c", `service_tier="${serviceTier}"`);
   }
 
   if (options.additionalDirectories?.length) {

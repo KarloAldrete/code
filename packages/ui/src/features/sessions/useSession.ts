@@ -139,6 +139,13 @@ export const useThoughtLevelConfigOptionForTask = (
   return useConfigOptionForTask(taskId, "thought_level");
 };
 
+/** Get the service tier config option for a task */
+export const useServiceTierConfigOptionForTask = (
+  taskId: string | undefined,
+): SessionConfigOption | undefined => {
+  return useConfigOptionForTask(taskId, "service_tier");
+};
+
 /** Get the adapter type for a task */
 export const useAdapterForTask = (
   taskId: string | undefined,

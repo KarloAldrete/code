@@ -274,6 +274,12 @@ interface AuthCredentials {
   client: AuthClient;
 }
 
+export type CodexServiceTier = "standard" | "fast" | "flex";
+
+export function isCodexServiceTier(value: unknown): value is CodexServiceTier {
+  return value === "standard" || value === "fast" || value === "flex";
+}
+
 export interface ConnectParams {
   task: Task;
   repoPath: string;
@@ -282,6 +288,7 @@ export interface ConnectParams {
   adapter?: "claude" | "codex";
   model?: string;
   reasoningLevel?: string;
+  serviceTier?: CodexServiceTier;
 }
 
 export interface CloudConnectionAuth {
@@ -490,6 +497,7 @@ export class SessionService {
       adapter,
       model,
       reasoningLevel,
+      serviceTier,
     } = params;
     const { id: taskId, latest_run: latestRun } = task;
     const taskTitle = task.title || task.description || "Task";
@@ -595,6 +603,7 @@ export class SessionService {
           adapter,
           model,
           reasoningLevel,
+          serviceTier,
         );
       }
     } catch (error) {
@@ -728,6 +737,15 @@ export class SessionService {
       const modeOpt = getConfigOptionByCategory(persistedConfigOptions, "mode");
       const persistedMode =
         modeOpt?.type === "select" ? modeOpt.currentValue : undefined;
+      const serviceTierOpt = getConfigOptionByCategory(
+        persistedConfigOptions,
+        "service_tier",
+      );
+      const persistedServiceTier =
+        serviceTierOpt?.type === "select" &&
+        isCodexServiceTier(serviceTierOpt.currentValue)
+          ? serviceTierOpt.currentValue
+          : undefined;
 
       // Resumed SDK sessions don't remember the model — without this the
       // session silently falls back to the default model on every reconnect.
@@ -770,6 +788,7 @@ export class SessionService {
         adapter: resolvedAdapter,
         permissionMode: persistedMode,
         model: persistedModel,
+        serviceTier: persistedServiceTier,
         customInstructions: customInstructions || undefined,
       });
 
@@ -1059,6 +1078,7 @@ export class SessionService {
     adapter?: "claude" | "codex",
     model?: string,
     reasoningLevel?: string,
+    serviceTier?: CodexServiceTier,
   ): Promise<void> {
     const { client } = auth;
     if (!client) {
@@ -1085,6 +1105,7 @@ export class SessionService {
         ? (reasoningLevel as EffortLevel)
         : undefined,
       model: preferredModel,
+      serviceTier,
     });
 
     const session = createBaseSession(taskRun.id, taskId, taskTitle);

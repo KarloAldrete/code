@@ -19,6 +19,7 @@ interface PreviewConfigResult {
   modeOption: SessionConfigOption | undefined;
   modelOption: SessionConfigOption | undefined;
   thoughtOption: SessionConfigOption | undefined;
+  serviceTierOption: SessionConfigOption | undefined;
   isLoading: boolean;
   setConfigOption: (configId: string, value: string) => void;
 }
@@ -153,12 +154,14 @@ export function usePreviewConfig(
   const modeOption = getOptionByCategory(configOptions, "mode");
   const modelOption = getOptionByCategory(configOptions, "model");
   const thoughtOption = getOptionByCategory(configOptions, "thought_level");
+  const serviceTierOption = getOptionByCategory(configOptions, "service_tier");
 
   return {
     configOptions,
     modeOption,
     modelOption,
     thoughtOption,
+    serviceTierOption,
     isLoading,
     setConfigOption,
   };

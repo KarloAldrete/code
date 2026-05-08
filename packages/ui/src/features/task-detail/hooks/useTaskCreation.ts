@@ -57,6 +57,7 @@ interface UseTaskCreationOptions {
   adapter?: "claude" | "codex";
   model?: string;
   reasoningLevel?: string;
+  serviceTier?: string;
   environmentId?: string | null;
   sandboxEnvironmentId?: string;
   signalReportId?: string;
@@ -136,6 +137,7 @@ export function useTaskCreation({
   adapter,
   model,
   reasoningLevel,
+  serviceTier,
   environmentId,
   sandboxEnvironmentId,
   signalReportId,
@@ -227,6 +229,7 @@ export function useTaskCreation({
           adapter,
           model,
           reasoningLevel,
+          serviceTier,
           environmentId,
           sandboxEnvironmentId,
           signalReportId,
@@ -315,6 +318,7 @@ export function useTaskCreation({
       adapter,
       model,
       reasoningLevel,
+      serviceTier,
       environmentId,
       sandboxEnvironmentId,
       signalReportId,

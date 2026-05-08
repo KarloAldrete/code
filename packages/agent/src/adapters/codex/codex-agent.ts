@@ -33,6 +33,7 @@ import {
   RequestError,
   type ResumeSessionRequest,
   type ResumeSessionResponse,
+  type SessionConfigOption,
   type SetSessionConfigOptionRequest,
   type SetSessionConfigOptionResponse,
   type SetSessionModeRequest,
@@ -123,6 +124,31 @@ interface NewSessionMeta {
   jsonSchema?: Record<string, unknown> | null;
 }
 
+type CodexServiceTier = "standard" | "fast" | "flex";
+
+const CODEX_SERVICE_TIER_CONFIG_ID = "service_tier";
+const CODEX_SERVICE_TIER_OPTIONS: Array<{
+  value: CodexServiceTier;
+  name: string;
+  description: string;
+}> = [
+  {
+    value: "standard",
+    name: "Standard",
+    description: "Default Codex service tier",
+  },
+  {
+    value: "fast",
+    name: "Fast",
+    description: "Request Codex fast mode for lower latency",
+  },
+  {
+    value: "flex",
+    name: "Flex",
+    description: "Request Codex flex mode",
+  },
+];
+
 export interface CodexAcpAgentOptions {
   codexProcessOptions: CodexProcessOptions;
   processCallbacks?: ProcessSpawnedCallback;
@@ -140,6 +166,38 @@ function toCodexPermissionMode(mode?: string): PermissionMode {
     return mode;
   }
   return "auto";
+}
+
+function toCodexServiceTier(serviceTier?: string | null): CodexServiceTier {
+  switch (serviceTier?.toLowerCase()) {
+    case "fast":
+    case "priority":
+      return "fast";
+    case "flex":
+      return "flex";
+    default:
+      return "standard";
+  }
+}
+
+function codexServiceTierConfigValue(
+  serviceTier: CodexServiceTier,
+): string | undefined {
+  return serviceTier === "standard" ? undefined : serviceTier;
+}
+
+function codexServiceTierConfigOption(
+  currentValue: CodexServiceTier,
+): SessionConfigOption {
+  return {
+    id: CODEX_SERVICE_TIER_CONFIG_ID,
+    name: "Speed",
+    type: "select",
+    category: "service_tier",
+    currentValue,
+    options: CODEX_SERVICE_TIER_OPTIONS,
+    description: "Choose the Codex service tier for new turns",
+  } as SessionConfigOption;
 }
 
 /**
@@ -313,6 +371,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
   private readonly onStructuredOutput?: (
     output: Record<string, unknown>,
   ) => Promise<void>;
+  private currentMcpServers: McpServer[] = [];
   // Snapshot of the initialize() request so refreshSession can replay the
   // same handshake against a respawned codex-acp subprocess.
   private lastInitRequest?: InitializeRequest;
@@ -413,9 +472,10 @@ export class CodexAcpAgent extends BaseAcpAgent {
       meta,
     );
     const response = await this.codexConnection.newSession(injectedParams);
-    response.configOptions = normalizeCodexConfigOptions(
+    response.configOptions = this.normalizeConfigOptions(
       response.configOptions,
     );
+    this.currentMcpServers = injectedParams.mcpServers ?? [];
 
     // Initialize session state. Mutate in place — codex-client closure-
     // captured this object in the constructor and writes contextUsed/
@@ -426,6 +486,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
       modeId: response.modes?.currentModeId ?? "auto",
       modelId: modelIdFromConfigOptions(response.configOptions),
       permissionMode: requestedPermissionMode,
+      serviceTier: this.currentServiceTier(),
     });
     this.sessionId = response.sessionId;
     this.sessionState.configOptions = response.configOptions ?? [];
@@ -461,9 +522,10 @@ export class CodexAcpAgent extends BaseAcpAgent {
       meta,
     );
     const response = await this.codexConnection.loadSession(injectedParams);
-    response.configOptions = normalizeCodexConfigOptions(
+    response.configOptions = this.normalizeConfigOptions(
       response.configOptions,
     );
+    this.currentMcpServers = injectedParams.mcpServers ?? [];
     const currentPermissionMode = getCurrentPermissionMode(
       response.modes?.currentModeId,
       meta?.permissionMode,
@@ -478,6 +540,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
       taskId: resolveTaskId(meta),
       modeId: response.modes?.currentModeId ?? "auto",
       permissionMode: currentPermissionMode,
+      serviceTier: this.currentServiceTier(),
     });
     this.sessionId = params.sessionId;
     this.sessionState.configOptions = response.configOptions ?? [];
@@ -513,9 +576,10 @@ export class CodexAcpAgent extends BaseAcpAgent {
 
     // codex-acp doesn't support resume natively, use loadSession instead
     const loadResponse = await this.codexConnection.loadSession(injectedParams);
-    loadResponse.configOptions = normalizeCodexConfigOptions(
+    loadResponse.configOptions = this.normalizeConfigOptions(
       loadResponse.configOptions,
     );
+    this.currentMcpServers = injectedParams.mcpServers ?? [];
     const currentPermissionMode = getCurrentPermissionMode(
       loadResponse.modes?.currentModeId,
       meta?.permissionMode,
@@ -525,6 +589,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
       taskId: resolveTaskId(meta),
       modeId: loadResponse.modes?.currentModeId ?? "auto",
       permissionMode: currentPermissionMode,
+      serviceTier: this.currentServiceTier(),
     });
     this.sessionId = params.sessionId;
     this.sessionState.configOptions = loadResponse.configOptions ?? [];
@@ -562,9 +627,10 @@ export class CodexAcpAgent extends BaseAcpAgent {
 
     // Create a new session via codex-acp (fork isn't natively supported)
     const newResponse = await this.codexConnection.newSession(injectedParams);
-    newResponse.configOptions = normalizeCodexConfigOptions(
+    newResponse.configOptions = this.normalizeConfigOptions(
       newResponse.configOptions,
     );
+    this.currentMcpServers = injectedParams.mcpServers ?? [];
 
     const requestedPermissionMode = toCodexPermissionMode(meta?.permissionMode);
     resetSessionState(this.sessionState, newResponse.sessionId, params.cwd, {
@@ -572,6 +638,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
       taskId: resolveTaskId(meta),
       modeId: newResponse.modes?.currentModeId ?? "auto",
       permissionMode: requestedPermissionMode,
+      serviceTier: this.currentServiceTier(),
     });
     this.sessionId = newResponse.sessionId;
     this.sessionState.configOptions = newResponse.configOptions ?? [];
@@ -584,6 +651,38 @@ export class CodexAcpAgent extends BaseAcpAgent {
     );
 
     return newResponse;
+  }
+
+  private currentServiceTier(): CodexServiceTier {
+    return toCodexServiceTier(this.codexProcessOptions.serviceTier);
+  }
+
+  private withCodexServiceTierOption(
+    configOptions: SessionConfigOption[] | null | undefined,
+  ): SessionConfigOption[] {
+    const serviceTierOption = codexServiceTierConfigOption(
+      this.currentServiceTier(),
+    );
+    const options = configOptions ?? [];
+    const existingIndex = options.findIndex(
+      (option) => option.id === CODEX_SERVICE_TIER_CONFIG_ID,
+    );
+
+    if (existingIndex === -1) {
+      return [...options, serviceTierOption];
+    }
+
+    return options.map((option, index) =>
+      index === existingIndex ? serviceTierOption : option,
+    );
+  }
+
+  private normalizeConfigOptions(
+    configOptions: SessionConfigOption[] | null | undefined,
+  ): SessionConfigOption[] {
+    return this.withCodexServiceTierOption(
+      normalizeCodexConfigOptions(configOptions) ?? [],
+    );
   }
 
   /**
@@ -909,6 +1008,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
       cwd: this.sessionState.cwd,
       mcpServers,
     });
+    this.currentMcpServers = mcpServers;
 
     // Swap everything at once so closeSession/prompt/cancel target the new
     // subprocess going forward. Preserve sessionState (accumulatedUsage,
@@ -936,12 +1036,50 @@ export class CodexAcpAgent extends BaseAcpAgent {
     return response ?? {};
   }
 
+  private async setServiceTier(value: string): Promise<SessionConfigOption[]> {
+    const previousTier = this.currentServiceTier();
+    const nextTier = toCodexServiceTier(value);
+    if (previousTier === nextTier) {
+      this.sessionState.serviceTier = nextTier;
+      this.sessionState.configOptions = this.withCodexServiceTierOption(
+        this.sessionState.configOptions,
+      );
+      return this.sessionState.configOptions;
+    }
+
+    const previousConfigValue = this.codexProcessOptions.serviceTier;
+    this.codexProcessOptions.serviceTier =
+      codexServiceTierConfigValue(nextTier);
+
+    try {
+      await this.refreshSession(this.currentMcpServers);
+    } catch (error) {
+      this.codexProcessOptions.serviceTier = previousConfigValue;
+      this.sessionState.serviceTier = previousTier;
+      this.sessionState.configOptions = this.withCodexServiceTierOption(
+        this.sessionState.configOptions,
+      );
+      throw error;
+    }
+
+    this.sessionState.serviceTier = nextTier;
+    this.sessionState.configOptions = this.withCodexServiceTierOption(
+      this.sessionState.configOptions,
+    );
+    return this.sessionState.configOptions;
+  }
+
   async setSessionConfigOption(
     params: SetSessionConfigOptionRequest,
   ): Promise<SetSessionConfigOptionResponse> {
+    if (params.configId === CODEX_SERVICE_TIER_CONFIG_ID) {
+      const configOptions = await this.setServiceTier(String(params.value));
+      return { configOptions };
+    }
+
     const response = await this.codexConnection.setSessionConfigOption(params);
     if (response.configOptions) {
-      response.configOptions = normalizeCodexConfigOptions(
+      response.configOptions = this.normalizeConfigOptions(
         response.configOptions,
       ) as typeof response.configOptions;
       this.sessionState.configOptions = response.configOptions;

@@ -8,6 +8,7 @@ export interface CreateTaskRunClientOptions {
   adapter?: "claude" | "codex";
   model?: string;
   reasoningLevel?: string;
+  serviceTier?: string;
   sandboxEnvironmentId?: string;
   prAuthorshipMode?: PrAuthorshipMode;
   runSource?: CloudRunSource;

@@ -45,6 +45,7 @@ import { useAutoFocusOnTyping } from "../../message-editor/useAutoFocusOnTyping"
 import { resolveAndAttachDroppedFiles } from "../../message-editor/utils/persistFile";
 import { DropZoneOverlay } from "../../sessions/components/DropZoneOverlay";
 import { ReasoningLevelSelector } from "../../sessions/components/ReasoningLevelSelector";
+import { ServiceTierSelector } from "../../sessions/components/ServiceTierSelector";
 import { UnifiedModelSelector } from "../../sessions/components/UnifiedModelSelector";
 import { getCurrentModeFromConfigOptions } from "../../sessions/sessionStore";
 import {
@@ -398,6 +399,7 @@ export function TaskInput({
     modeOption,
     modelOption,
     thoughtOption,
+    serviceTierOption,
     isLoading: isPreviewLoading,
     setConfigOption,
   } = usePreviewConfig(adapter);
@@ -511,6 +513,12 @@ export function TaskInput({
     modeFallback;
   const currentReasoningLevel =
     thoughtOption?.type === "select" ? thoughtOption.currentValue : undefined;
+  const currentServiceTier =
+    adapter === "codex" &&
+    effectiveWorkspaceMode !== "cloud" &&
+    serviceTierOption?.type === "select"
+      ? serviceTierOption.currentValue
+      : undefined;
 
   const branchForTaskCreation =
     effectiveWorkspaceMode === "worktree" || effectiveWorkspaceMode === "cloud"
@@ -535,6 +543,7 @@ export function TaskInput({
     executionMode: currentExecutionMode,
     model: currentModel,
     reasoningLevel: currentReasoningLevel,
+    serviceTier: currentServiceTier,
     onTaskCreated,
     environmentId: selectedEnvironment,
     sandboxEnvironmentId:
@@ -573,6 +582,15 @@ export function TaskInput({
       }
     },
     [thoughtOption, setConfigOption, setLastUsedReasoningEffort],
+  );
+
+  const handleServiceTierChange = useCallback(
+    (value: string) => {
+      if (serviceTierOption) {
+        setConfigOption(serviceTierOption.id, value);
+      }
+    },
+    [serviceTierOption, setConfigOption],
   );
 
   const { isOnline } = useConnectivity();
@@ -842,6 +860,17 @@ export function TaskInput({
                     disabled={isCreatingTask}
                   />
                 )
+              }
+              speedSelector={
+                adapter === "codex" &&
+                effectiveWorkspaceMode !== "cloud" &&
+                !isPreviewLoading ? (
+                  <ServiceTierSelector
+                    serviceTierOption={serviceTierOption}
+                    onChange={handleServiceTierChange}
+                    disabled={isCreatingTask}
+                  />
+                ) : null
               }
               getPromptHistory={getPromptHistory}
               onEmptyChange={handleEditorEmptyChange}

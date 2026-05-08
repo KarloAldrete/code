@@ -32,6 +32,7 @@ const envSchema = z.object({
   POSTHOG_CODE_REASONING_EFFORT: z
     .enum(["low", "medium", "high", "xhigh", "max"])
     .optional(),
+  POSTHOG_CODE_SERVICE_TIER: z.enum(["standard", "fast", "flex"]).optional(),
   POSTHOG_TASK_RUN_EVENT_INGEST_TOKEN: z.string().min(1).optional(),
   POSTHOG_TASK_RUN_EVENT_INGEST_STREAM_WINDOW_MS: z
     .string()
@@ -175,6 +176,7 @@ program
       runtimeAdapter: env.POSTHOG_CODE_RUNTIME_ADAPTER,
       model: env.POSTHOG_CODE_MODEL,
       reasoningEffort: env.POSTHOG_CODE_REASONING_EFFORT,
+      serviceTier: env.POSTHOG_CODE_SERVICE_TIER,
     });
 
     process.on("SIGINT", async () => {

@@ -35,6 +35,7 @@ export const sessionConfigSchema = z.object({
 export type SessionConfig = z.infer<typeof sessionConfigSchema>;
 
 // Start session input/output
+const codexServiceTierSchema = z.enum(["standard", "fast", "flex"]);
 
 export const startSessionInput = z.object({
   taskId: z.string(),
@@ -62,6 +63,7 @@ export const startSessionInput = z.object({
   disallowedTools: z.array(z.string()).optional(),
   effort: effortLevelSchema.optional(),
   model: z.string().optional(),
+  serviceTier: codexServiceTierSchema.optional(),
   jsonSchema: z.record(z.string(), z.unknown()).nullish(),
 });
 
@@ -187,6 +189,7 @@ export const reconnectSessionInput = z.object({
   model: z.string().optional(),
   customInstructions: z.string().max(2000).optional(),
   effort: effortLevelSchema.optional(),
+  serviceTier: codexServiceTierSchema.optional(),
   jsonSchema: z.record(z.string(), z.unknown()).nullish(),
 });
 

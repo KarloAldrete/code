@@ -110,6 +110,7 @@ type PrivateAgent = {
     promptRunning: boolean;
   };
   sessionId: string;
+  currentMcpServers: McpServer[];
   sessionState: {
     sessionId: string;
     cwd: string;
@@ -120,6 +121,7 @@ type PrivateAgent = {
       cachedWriteTokens: number;
     };
     configOptions: unknown[];
+    serviceTier?: string;
     taskRunId?: string;
   };
   codexProcess: SpawnHandle;
@@ -285,5 +287,35 @@ describe("CodexAcpAgent.extMethod refresh_session", () => {
 
     expect(spawnedProcesses).toHaveLength(2);
     expect(createdConnections[1]?.loadSession).toHaveBeenCalled();
+  });
+
+  it("applies service tier changes by respawning with the current MCP servers", async () => {
+    const agent = makeAgent();
+    const { priv } = primeSession(agent, "s-4");
+    const mcpServers: McpServer[] = [
+      { name: "posthog", type: "http", url: "https://mcp", headers: [] },
+    ];
+    priv.currentMcpServers = mcpServers;
+
+    const response = await agent.setSessionConfigOption({
+      sessionId: "s-4",
+      configId: "service_tier",
+      value: "fast",
+    } as never);
+
+    expect(hoisted.spawnCodexProcessMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ serviceTier: "fast" }),
+    );
+    expect(createdConnections[1]?.loadSession).toHaveBeenCalledWith({
+      sessionId: "s-4",
+      cwd: "/tmp/repo",
+      mcpServers,
+    });
+    expect(response.configOptions).toContainEqual(
+      expect.objectContaining({
+        id: "service_tier",
+        currentValue: "fast",
+      }),
+    );
   });
 });

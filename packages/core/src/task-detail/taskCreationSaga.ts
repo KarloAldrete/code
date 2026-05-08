@@ -3,9 +3,10 @@ import {
   buildChannelContextText,
   buildPromptBlocks,
 } from "@posthog/core/editor/prompt-builder";
-import type {
-  ConnectParams,
-  SessionService,
+import {
+  isCodexServiceTier,
+  type ConnectParams,
+  type SessionService,
 } from "@posthog/core/sessions/sessionService";
 import {
   getTaskRepository,
@@ -260,6 +261,7 @@ export class TaskCreationSaga extends Saga<
             adapter: input.adapter,
             model: input.model,
             reasoningLevel: input.reasoningLevel,
+            serviceTier: input.serviceTier,
             sandboxEnvironmentId: input.sandboxEnvironmentId,
             prAuthorshipMode,
             runSource: input.cloudRunSource ?? "manual",
@@ -359,6 +361,9 @@ export class TaskCreationSaga extends Saga<
           if (input.model) connectParams.model = input.model;
           if (input.reasoningLevel)
             connectParams.reasoningLevel = input.reasoningLevel;
+          if (isCodexServiceTier(input.serviceTier)) {
+            connectParams.serviceTier = input.serviceTier;
+          }
 
           this.deps.sessionService.connectToTask(connectParams);
           return { taskId: task.id };

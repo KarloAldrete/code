@@ -26,6 +26,7 @@ export interface TaskCreationInput {
   adapter?: "claude" | "codex";
   model?: string;
   reasoningLevel?: string;
+  serviceTier?: string;
   environmentId?: string;
   sandboxEnvironmentId?: string;
   cloudPrAuthorshipMode?: PrAuthorshipMode;
