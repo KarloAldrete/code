@@ -62,6 +62,15 @@ const ALL_SOURCE_PRODUCTS: (keyof SignalSourceValues)[] = [
   "conversations",
 ];
 
+// Sources powered by PostHog itself (no external integration required). These
+// are auto-enabled the first time a project reaches the onboarding signals step
+// so the inbox is opt-out, not opt-in.
+const POSTHOG_INTERNAL_SOURCES: (keyof SignalSourceValues)[] = [
+  "error_tracking",
+  "conversations",
+  "session_replay",
+];
+
 function computeValues(
   configs: SignalSourceConfig[] | undefined,
 ): SignalSourceValues {
@@ -378,6 +387,22 @@ export function useSignalSourceManager() {
     ],
   );
 
+  // Create configs (enabled) for any PostHog-internal source that has none.
+  // Sources with an existing config (enabled or disabled) are left alone so we
+  // never override an explicit user choice.
+  const autoEnableInternalSources = useCallback(async () => {
+    if (!client || !projectId || !configs) return;
+
+    const missing = POSTHOG_INTERNAL_SOURCES.filter(
+      (product) => !configs.some((c) => c.source_product === product),
+    );
+    if (missing.length === 0) return;
+
+    for (const product of missing) {
+      void handleToggle(product, true);
+    }
+  }, [client, projectId, configs, handleToggle]);
+
   const handleSetupComplete = useCallback(async () => {
     const completedSource = setupSource;
     setSetupSource(null);
@@ -476,6 +501,7 @@ export function useSignalSourceManager() {
     handleSetup,
     handleSetupComplete,
     handleSetupCancel,
+    autoEnableInternalSources,
     evaluations: displayEvaluations,
     evaluationsUrl,
     handleToggleEvaluation,

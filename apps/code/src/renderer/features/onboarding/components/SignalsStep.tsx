@@ -7,6 +7,7 @@ import { Button, Flex, Text } from "@radix-ui/themes";
 import detectiveHog from "@renderer/assets/images/hedgehogs/detective-hog.png";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
+import { useEffect, useRef } from "react";
 import { OnboardingHogTip } from "./OnboardingHogTip";
 import { StepActions } from "./StepActions";
 
@@ -27,9 +28,20 @@ export function SignalsStep({ onNext, onBack }: SignalsStepProps) {
     handleSetupComplete,
     handleSetupCancel,
     evaluationsUrl,
+    autoEnableInternalSources,
   } = useSignalSourceManager();
   const { data: me } = useMeQuery();
   const isStaff = me?.is_staff ?? false;
+
+  // Auto-enable PostHog-internal sources on first load so the inbox is opt-out
+  // during onboarding. The manager skips any source that already has a config.
+  const autoEnabledRef = useRef(false);
+  useEffect(() => {
+    if (autoEnabledRef.current) return;
+    if (isLoading) return;
+    autoEnabledRef.current = true;
+    void autoEnableInternalSources();
+  }, [isLoading, autoEnableInternalSources]);
 
   const anyEnabled =
     displayValues.session_replay ||
