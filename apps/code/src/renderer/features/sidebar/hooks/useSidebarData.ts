@@ -4,6 +4,7 @@ import { useSessions } from "@features/sessions/stores/sessionStore";
 import { useSuspendedTaskIds } from "@features/suspension/hooks/useSuspendedTaskIds";
 import { useTaskSummaries, useTasks } from "@features/tasks/hooks/useTasks";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
+import { useMeQuery } from "@hooks/useMeQuery";
 import type { Schemas } from "@renderer/api/generated";
 import type { Task, TaskRunStatus } from "@shared/types";
 import { useEffect, useMemo, useRef } from "react";
@@ -86,6 +87,31 @@ function sortTasks(tasks: TaskData[], sortMode: SortMode): TaskData[] {
   );
 }
 
+type SidebarTask = Schemas.TaskSummary & {
+  latest_run:
+    | (Schemas.TaskSummary["latest_run"] & {
+        output?: { pr_url?: unknown } | null;
+      })
+    | null;
+};
+
+function toSidebarTask(t: Task): SidebarTask {
+  return {
+    id: t.id,
+    title: t.title,
+    repository: t.repository ?? null,
+    created_at: t.created_at,
+    updated_at: t.updated_at,
+    latest_run: t.latest_run
+      ? {
+          status: t.latest_run.status,
+          environment: t.latest_run.environment ?? null,
+          output: t.latest_run.output ?? null,
+        }
+      : null,
+  };
+}
+
 export function useSidebarData({
   activeView,
 }: UseSidebarDataProps): SidebarData {
@@ -101,7 +127,21 @@ export function useSidebarData({
     (state) => state.historyVisibleCount,
   );
   const { pinnedTaskIds } = usePinnedTasks();
+  const { data: currentUser } = useMeQuery();
 
+  // Tasks the current user created, fetched regardless of whether they have a
+  // local workspace — so cloud-only runs (Slack, signal-report follow-ups, etc.)
+  // appear in the sidebar without first opening them in the web UI.
+  const { data: myTasks = [], isLoading: isMyTasksLoading } = useTasks(
+    { showAllUsers: false, showInternal },
+    { enabled: !showAllUsers && !!currentUser?.id },
+  );
+
+  const myTaskIds = useMemo(() => new Set(myTasks.map((t) => t.id)), [myTasks]);
+
+  // Summaries cover tasks the user did not create but has a local workspace,
+  // pin, or in-flight provisioning for. Excluding myTaskIds avoids fetching
+  // the same task twice.
   const summaryIds = useMemo(
     () =>
       showAllUsers
@@ -111,13 +151,14 @@ export function useSidebarData({
             pinnedTaskIds,
             provisioningTaskIds,
             archivedTaskIds,
-          }),
+          }).filter((id) => !myTaskIds.has(id)),
     [
       showAllUsers,
       workspaces,
       pinnedTaskIds,
       provisioningTaskIds,
       archivedTaskIds,
+      myTaskIds,
     ],
   );
 
@@ -131,33 +172,22 @@ export function useSidebarData({
     { enabled: showAllUsers },
   );
 
-  type SidebarTask = Schemas.TaskSummary & {
-    latest_run:
-      | (Schemas.TaskSummary["latest_run"] & {
-          output?: { pr_url?: unknown } | null;
-        })
-      | null;
-  };
-
   const rawTasks: SidebarTask[] = useMemo(() => {
-    if (!showAllUsers) return summaryTasks;
-    return fullTasks.map((t) => ({
-      id: t.id,
-      title: t.title,
-      repository: t.repository ?? null,
-      created_at: t.created_at,
-      updated_at: t.updated_at,
-      latest_run: t.latest_run
-        ? {
-            status: t.latest_run.status,
-            environment: t.latest_run.environment ?? null,
-            output: t.latest_run.output ?? null,
-          }
-        : null,
-    }));
-  }, [showAllUsers, summaryTasks, fullTasks]);
+    if (showAllUsers) return fullTasks.map(toSidebarTask);
+    const merged: SidebarTask[] = myTasks.map(toSidebarTask);
+    const seen = new Set(merged.map((t) => t.id));
+    for (const summary of summaryTasks) {
+      if (!seen.has(summary.id)) {
+        merged.push(summary);
+        seen.add(summary.id);
+      }
+    }
+    return merged;
+  }, [showAllUsers, fullTasks, myTasks, summaryTasks]);
 
-  const isPrimaryLoading = showAllUsers ? isTasksLoading : isSummariesLoading;
+  const isPrimaryLoading = showAllUsers
+    ? isTasksLoading
+    : isMyTasksLoading || isSummariesLoading;
   const isLoading = isPrimaryLoading || !isWorkspacesFetched;
 
   const allTasks = useMemo(
@@ -167,6 +197,7 @@ export function useSidebarData({
           !archivedTaskIds.has(task.id) &&
           (showAllUsers ||
             showInternal ||
+            myTaskIds.has(task.id) ||
             !!workspaces?.[task.id] ||
             provisioningTaskIds.has(task.id)),
       ),
@@ -176,6 +207,7 @@ export function useSidebarData({
       workspaces,
       showAllUsers,
       showInternal,
+      myTaskIds,
       provisioningTaskIds,
     ],
   );
