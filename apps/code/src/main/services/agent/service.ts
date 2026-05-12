@@ -1182,8 +1182,10 @@ For git operations while detached:
     const service = this;
 
     const emitToRenderer = (payload: unknown) => {
-      // Emit event via TypedEventEmitter for tRPC subscription
-      this.emit(AgentServiceEvent.SessionEvent, {
+      // Emit event via TypedEventEmitter for tRPC subscription.
+      // Routed on a per-taskRunId sub-channel so each task's subscription only
+      // wakes for its own events (avoids O(N) fan-out across the Command Center).
+      this.emitFor(AgentServiceEvent.SessionEvent, taskRunId, {
         taskRunId,
         payload,
       });
@@ -1269,10 +1271,11 @@ For git operations while detached:
                   toolCallId,
                 });
                 const { sessionId: _agentSessionId, ...rest } = params;
-                service.emit(AgentServiceEvent.PermissionRequest, {
-                  ...rest,
+                service.emitFor(
+                  AgentServiceEvent.PermissionRequest,
                   taskRunId,
-                });
+                  { ...rest, taskRunId },
+                );
               },
             );
 

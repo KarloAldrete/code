@@ -76,15 +76,14 @@ export const agentRouter = router({
     .input(subscribeSessionInput)
     .subscription(async function* (opts) {
       const service = getService();
-      const targetTaskRunId = opts.input.taskRunId;
-      const iterable = service.toIterable(AgentServiceEvent.SessionEvent, {
-        signal: opts.signal,
-      });
+      const iterable = service.toIterableFor(
+        AgentServiceEvent.SessionEvent,
+        opts.input.taskRunId,
+        { signal: opts.signal },
+      );
 
       for await (const event of iterable) {
-        if (event.taskRunId === targetTaskRunId) {
-          yield event.payload;
-        }
+        yield event.payload;
       }
     }),
 
@@ -93,15 +92,14 @@ export const agentRouter = router({
     .input(subscribeSessionInput)
     .subscription(async function* (opts) {
       const service = getService();
-      const targetTaskRunId = opts.input.taskRunId;
-      const iterable = service.toIterable(AgentServiceEvent.PermissionRequest, {
-        signal: opts.signal,
-      });
+      const iterable = service.toIterableFor(
+        AgentServiceEvent.PermissionRequest,
+        opts.input.taskRunId,
+        { signal: opts.signal },
+      );
 
       for await (const event of iterable) {
-        if (event.taskRunId === targetTaskRunId) {
-          yield event;
-        }
+        yield event;
       }
     }),
 
