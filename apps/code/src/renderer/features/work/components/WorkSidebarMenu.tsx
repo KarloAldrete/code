@@ -3,7 +3,6 @@ import {
   Brain,
   ClockClockwise,
   FolderSimple,
-  House,
   type IconProps,
   Lightbulb,
   Notebook,
@@ -38,8 +37,6 @@ const STATIC_ITEMS: WorkSidebarItemSpec[] = [
 ];
 
 export function WorkSidebarMenu() {
-  const setMode = useNavigationStore((s) => s.setMode);
-  const navigateToTaskInput = useNavigationStore((s) => s.navigateToTaskInput);
   const workView = useNavigationStore((s) => s.workView);
   const selectedSkillId = useNavigationStore((s) => s.workSelectedSkillId);
   const navigateToWorkHome = useNavigationStore((s) => s.navigateToWorkHome);
@@ -58,11 +55,6 @@ export function WorkSidebarMenu() {
   );
   const skills = useWorkSkillsStore((s) => s.skills);
 
-  const handleNewTaskClick = () => {
-    setMode("code");
-    navigateToTaskInput();
-  };
-
   const isHomeActive = workView === "home";
   const isGenerateActive = workView === "generate";
   const isLibraryActive = workView === "library";
@@ -76,21 +68,9 @@ export function WorkSidebarMenu() {
         <Flex direction="column" py="2" px="2" gap="1px">
           <Box mb="2">
             <NewTaskItem
-              isActive={false}
-              onClick={handleNewTaskClick}
-              variant="primary"
-            />
-          </Box>
-
-          <Box>
-            <SidebarItem
-              depth={0}
-              icon={
-                <House size={16} weight={isHomeActive ? "fill" : "regular"} />
-              }
-              label="Home"
               isActive={isHomeActive}
               onClick={navigateToWorkHome}
+              variant="primary"
             />
           </Box>
 

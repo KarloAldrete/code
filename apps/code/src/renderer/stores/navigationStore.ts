@@ -134,6 +134,9 @@ const isSameView = (view1: ViewState, view2: ViewState): boolean => {
   if (view1.type === "skills" && view2.type === "skills") {
     return true;
   }
+  if (view1.type === "memory" && view2.type === "memory") {
+    return true;
+  }
   if (view1.type === "mcp-servers" && view2.type === "mcp-servers") {
     return true;
   }
@@ -391,6 +394,10 @@ export const useNavigationStore = create<NavigationStore>()(
 
         navigateToSkills: () => {
           navigate({ type: "skills" });
+        },
+
+        navigateToMemory: () => {
+          navigate({ type: "memory" });
         },
 
         navigateToMcpServers: () => {
