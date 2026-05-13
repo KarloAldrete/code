@@ -1,5 +1,5 @@
 import { Text } from "@components/text";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import {
   ArrowUp,
   BrainIcon,
@@ -76,6 +76,15 @@ function modeIcon(mode: ExecutionMode, color: string, size = 14) {
 }
 
 export default function NewTaskScreen() {
+  const {
+    prompt: initialPrompt,
+    repo: initialRepo,
+    signalReport,
+  } = useLocalSearchParams<{
+    prompt?: string;
+    repo?: string;
+    signalReport?: string;
+  }>();
   const router = useRouter();
   const themeColors = useThemeColors();
   const insets = useSafeAreaInsets();
@@ -113,10 +122,17 @@ export default function NewTaskScreen() {
     [],
   );
 
-  const [prompt, setPrompt] = useState("");
-  const [selection, setSelection] = useState<RepositorySelection>({
-    integrationId: null,
-    repository: null,
+  const [prompt, setPrompt] = useState(initialPrompt ?? "");
+  const [selection, setSelection] = useState<RepositorySelection>(() => {
+    if (initialRepo) {
+      const match = repositoryOptions.find(
+        (o) => o.repository.toLowerCase() === initialRepo.toLowerCase(),
+      );
+      if (match) return toRepositorySelection(match);
+      // Repo known but integration not yet loaded — set repo, integrationId will resolve later
+      return { integrationId: null, repository: initialRepo };
+    }
+    return { integrationId: null, repository: null };
   });
   const [mode, setMode] = useState<ExecutionMode>(DEFAULT_EXECUTION_MODE);
   const [model, setModel] = useState<string>(DEFAULT_MODEL);
@@ -161,6 +177,12 @@ export default function NewTaskScreen() {
         title: trimmedPrompt.slice(0, 100),
         repository: selection.repository ?? undefined,
         github_integration: selection.integrationId ?? undefined,
+        ...(signalReport
+          ? {
+              signal_report: signalReport,
+              signal_report_task_relationship: "implementation",
+            }
+          : {}),
       });
 
       const supportsReasoning = modelSupportsReasoning(model);
@@ -179,7 +201,16 @@ export default function NewTaskScreen() {
     } finally {
       setCreating(false);
     }
-  }, [creating, mode, model, prompt, reasoning, router, selection]);
+  }, [
+    creating,
+    mode,
+    model,
+    prompt,
+    reasoning,
+    router,
+    selection,
+    signalReport,
+  ]);
 
   const canSubmit =
     !!prompt.trim() && isRepositorySelectionComplete(selection) && !creating;
