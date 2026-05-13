@@ -190,6 +190,13 @@
       ],
       "expo-localization",
       [
+        "expo-notifications",
+        {
+          "icon": "./assets/posthog.icon",
+          "color": "#0f0f0f"
+        }
+      ],
+      [
         "expo-speech-recognition",
         {
           "microphonePermission": "Allow PostHog to use your microphone for voice-to-text input",

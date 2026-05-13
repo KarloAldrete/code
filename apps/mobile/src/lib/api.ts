@@ -1,5 +1,9 @@
+import { fetch } from "expo/fetch";
 import Constants from "expo-constants";
 import { useAuthStore } from "@/features/auth";
+import { logger } from "@/lib/logger";
+
+const log = logger.scope("api");
 
 const USER_AGENT = `posthog/mobile.hog.dev; version: ${Constants.expoConfig?.version ?? "unknown"}`;
 
@@ -29,4 +33,52 @@ export function getProjectId(): number {
     throw new Error("No project ID set");
   }
   return projectId;
+}
+
+export async function registerPushToken(args: {
+  token: string;
+  platform: string;
+}): Promise<void> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/projects/${projectId}/users/@me/push_tokens/`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify(args),
+    },
+  );
+
+  if (!response.ok) {
+    // Endpoint may not exist yet (backend rollout in posthog/posthog is a
+    // separate PR). Log at debug so we can verify the call without spamming.
+    log.debug("registerPushToken non-OK response", {
+      status: response.status,
+    });
+    return;
+  }
+}
+
+export async function deletePushToken(args: { token: string }): Promise<void> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/projects/${projectId}/users/@me/push_tokens/`,
+    {
+      method: "DELETE",
+      headers,
+      body: JSON.stringify(args),
+    },
+  );
+
+  if (!response.ok) {
+    log.debug("deletePushToken non-OK response", {
+      status: response.status,
+    });
+  }
 }

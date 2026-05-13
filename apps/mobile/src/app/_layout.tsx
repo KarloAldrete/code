@@ -2,7 +2,7 @@ import "../../global.css";
 import "@/lib/textDefaults";
 
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import { router, Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "nativewind";
 import { PostHogProvider } from "posthog-react-native";
@@ -12,6 +12,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { useAuthStore } from "@/features/auth";
+import { setupNotificationResponseListener } from "@/features/notifications/lib/notifications";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import {
   POSTHOG_API_KEY,
@@ -31,6 +32,12 @@ function RootLayoutNav() {
   useEffect(() => {
     initializeAuth();
   }, [initializeAuth]);
+
+  useEffect(() => {
+    return setupNotificationResponseListener(({ taskId }) => {
+      router.push(`/task/${taskId}`);
+    });
+  }, []);
 
   if (isLoading) {
     return (

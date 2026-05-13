@@ -7,6 +7,8 @@ interface PreferencesState {
   setAiChatEnabled: (enabled: boolean) => void;
   pingsEnabled: boolean;
   setPingsEnabled: (enabled: boolean) => void;
+  pushNotificationsEnabled: boolean;
+  setPushNotificationsEnabled: (enabled: boolean) => void;
 }
 
 export const usePreferencesStore = create<PreferencesState>()(
@@ -16,6 +18,9 @@ export const usePreferencesStore = create<PreferencesState>()(
       setAiChatEnabled: (enabled) => set({ aiChatEnabled: enabled }),
       pingsEnabled: true,
       setPingsEnabled: (enabled) => set({ pingsEnabled: enabled }),
+      pushNotificationsEnabled: true,
+      setPushNotificationsEnabled: (enabled) =>
+        set({ pushNotificationsEnabled: enabled }),
     }),
     {
       name: "posthog-preferences",
@@ -23,6 +28,7 @@ export const usePreferencesStore = create<PreferencesState>()(
       partialize: (state) => ({
         aiChatEnabled: state.aiChatEnabled,
         pingsEnabled: state.pingsEnabled,
+        pushNotificationsEnabled: state.pushNotificationsEnabled,
       }),
     },
   ),

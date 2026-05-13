@@ -10,7 +10,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthStore, useUserQuery } from "@/features/auth";
 import { MenuButton } from "@/features/navigation/components/MenuButton";
+import { usePushTokenStore } from "@/features/notifications/stores/pushTokenStore";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
+import { logger } from "@/lib/logger";
 
 export default function SettingsScreen() {
   const { logout, cloudRegion, getCloudUrlFromRegion } = useAuthStore();
@@ -20,6 +22,31 @@ export default function SettingsScreen() {
   const setAiChatEnabled = usePreferencesStore((s) => s.setAiChatEnabled);
   const pingsEnabled = usePreferencesStore((s) => s.pingsEnabled);
   const setPingsEnabled = usePreferencesStore((s) => s.setPingsEnabled);
+  const pushNotificationsEnabled = usePreferencesStore(
+    (s) => s.pushNotificationsEnabled,
+  );
+  const setPushNotificationsEnabled = usePreferencesStore(
+    (s) => s.setPushNotificationsEnabled,
+  );
+
+  const handleTogglePushNotifications = (enabled: boolean) => {
+    setPushNotificationsEnabled(enabled);
+    if (enabled) {
+      usePushTokenStore
+        .getState()
+        .registerAndUpload()
+        .catch((error) => {
+          logger.warn("Push token registration failed", error);
+        });
+    } else {
+      usePushTokenStore
+        .getState()
+        .clear()
+        .catch((error) => {
+          logger.warn("Push token clear failed", error);
+        });
+    }
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -125,6 +152,20 @@ export default function SettingsScreen() {
               </Text>
             </View>
             <Switch value={pingsEnabled} onValueChange={setPingsEnabled} />
+          </View>
+          <View className="flex-row items-center justify-between py-2">
+            <View className="flex-1 pr-4">
+              <Text className="font-medium text-gray-12 text-sm">
+                Push notifications
+              </Text>
+              <Text className="text-gray-11 text-xs">
+                Get notified when a task finishes or needs your input
+              </Text>
+            </View>
+            <Switch
+              value={pushNotificationsEnabled}
+              onValueChange={handleTogglePushNotifications}
+            />
           </View>
         </View>
 

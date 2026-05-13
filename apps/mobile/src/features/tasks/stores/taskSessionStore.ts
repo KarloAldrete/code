@@ -1,6 +1,7 @@
 import * as Haptics from "expo-haptics";
 import { AppState } from "react-native";
 import { create } from "zustand";
+import { presentLocalNotification } from "@/features/notifications/lib/notifications";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { logger } from "@/lib/logger";
 import {
@@ -64,9 +65,50 @@ function inferAgentIsIdle(
 
 const CLOUD_POLLING_INTERVAL_MS = 500;
 
+type LocalNotificationKind =
+  | "turn_complete"
+  | "awaiting_user_input"
+  | "task_failed";
+
+function maybePresentLocalNotification(args: {
+  taskRunId: string;
+  kind: LocalNotificationKind;
+}): void {
+  if (!usePreferencesStore.getState().pushNotificationsEnabled) return;
+
+  const storeState = useTaskSessionStore.getState();
+  const session = storeState.sessions[args.taskRunId];
+  if (!session) return;
+
+  // Skip when the user is actively viewing this task — the UI already
+  // surfaces what changed; an OS banner would be redundant noise.
+  if (storeState.focusedTaskId === session.taskId) return;
+
+  const title = session.taskTitle ?? "PostHog Code";
+  let body: string;
+  switch (args.kind) {
+    case "awaiting_user_input":
+      body = `"${title}" needs your input`;
+      break;
+    case "task_failed":
+      body = `"${title}" failed`;
+      break;
+    default:
+      body = `"${title}" finished`;
+      break;
+  }
+
+  presentLocalNotification({
+    title: "PostHog Code",
+    body,
+    data: { taskId: session.taskId, taskRunId: session.taskRunId },
+  }).catch(() => {});
+}
+
 export interface TaskSession {
   taskRunId: string;
   taskId: string;
+  taskTitle?: string;
   events: SessionEvent[];
   status: "connecting" | "connected" | "disconnected" | "error";
   isPromptPending: boolean;
@@ -94,6 +136,9 @@ export interface TaskSession {
 
 interface TaskSessionStore {
   sessions: Record<string, TaskSession>;
+  focusedTaskId: string | null;
+
+  setFocusedTaskId: (taskId: string | null) => void;
 
   connectToTask: (task: Task) => Promise<void>;
   disconnectFromTask: (taskId: string) => void;
@@ -136,6 +181,9 @@ const STATUS_CHECK_TICK_INTERVAL = 5;
 
 export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
   sessions: {},
+  focusedTaskId: null,
+
+  setFocusedTaskId: (taskId) => set({ focusedTaskId: taskId }),
 
   connectToTask: async (task: Task) => {
     const taskId = task.id;
@@ -174,6 +222,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
             [newRunId]: {
               taskRunId: newRunId,
               taskId,
+              taskTitle: task.title,
               events: [],
               status: "connected",
               isPromptPending: true,
@@ -232,6 +281,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
           [latestRunId]: {
             taskRunId: latestRunId,
             taskId,
+            taskTitle: task.title,
             events: historicalEvents,
             status: "connected",
             isPromptPending,
@@ -586,6 +636,13 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
                   Haptics.NotificationFeedbackType.Success,
                 );
               }
+              if (shouldPing) {
+                maybePresentLocalNotification({
+                  taskRunId,
+                  kind:
+                    run.status === "failed" ? "task_failed" : "turn_complete",
+                });
+              }
             }
           } catch (statusErr) {
             logger.warn("Failed to fetch task run status", {
@@ -613,6 +670,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
           // update. This prevents N re-renders per poll tick.
           const batchedEvents: SessionEvent[] = [];
           let receivedAgentMessage = false;
+          let receivedAwaitingUserInput = false;
           // Track when a user_message_chunk arrives that wasn't sent from
           // this device — means someone prompted from the desktop app.
           let receivedExternalUserMessage = false;
@@ -679,6 +737,11 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
                   entry.notification?.method === "_posthog/awaiting_user_input")
               ) {
                 receivedAgentMessage = true;
+                if (
+                  entry.notification?.method === "_posthog/awaiting_user_input"
+                ) {
+                  receivedAwaitingUserInput = true;
+                }
               }
 
               if (
@@ -783,6 +846,14 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
           ) {
             playMeepSound().catch(() => {});
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }
+          if (shouldPingAfterBatch) {
+            maybePresentLocalNotification({
+              taskRunId,
+              kind: receivedAwaitingUserInput
+                ? "awaiting_user_input"
+                : "turn_complete",
+            });
           }
         }
       } catch (err) {

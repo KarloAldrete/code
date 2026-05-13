@@ -45,7 +45,14 @@ export default function TaskDetailScreen() {
     cancelPrompt,
     sendPermissionResponse,
     getSessionForTask,
+    setFocusedTaskId,
   } = useTaskSessionStore();
+
+  useEffect(() => {
+    if (!taskId) return;
+    setFocusedTaskId(taskId);
+    return () => setFocusedTaskId(null);
+  }, [taskId, setFocusedTaskId]);
 
   const session = taskId ? getSessionForTask(taskId) : undefined;
 
