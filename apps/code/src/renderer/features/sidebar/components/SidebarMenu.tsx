@@ -16,7 +16,14 @@ import {
 import { useTasks, useUpdateTask } from "@features/tasks/hooks/useTasks";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
 import { useTaskContextMenu } from "@hooks/useTaskContextMenu";
-import { ScrollArea, Separator } from "@posthog/quill";
+import {
+  ScrollArea,
+  Separator,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@posthog/quill";
 import { Box, Flex } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
 import { useNavigationStore } from "@stores/navigationStore";
@@ -28,7 +35,7 @@ import { memo, useCallback, useEffect, useRef } from "react";
 import { usePinnedTasks } from "../hooks/usePinnedTasks";
 import { useSidebarData } from "../hooks/useSidebarData";
 import { useTaskViewed } from "../hooks/useTaskViewed";
-import { useSidebarStore } from "../stores/sidebarStore";
+import { type SidebarTab, useSidebarStore } from "../stores/sidebarStore";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { InboxItem, NewTaskItem } from "./items/HomeItem";
 import { McpServersItem } from "./items/McpServersItem";
@@ -54,6 +61,8 @@ function SidebarMenuComponent() {
   // task — otherwise handleTaskClick silently bails for tasks not in the map.
   const showAllUsers = useSidebarStore((s) => s.showAllUsers);
   const showInternal = useSidebarStore((s) => s.showInternal);
+  const activeTab = useSidebarStore((s) => s.activeTab);
+  const setActiveTab = useSidebarStore((s) => s.setActiveTab);
   const { data: allTasks = [] } = useTasks({ showAllUsers, showInternal });
 
   const { data: workspaces = {} } = useWorkspaces();
@@ -299,93 +308,106 @@ function SidebarMenuComponent() {
   return (
     <Box height="100%" position="relative" id="side-bar-menu">
       <Flex direction="column" className="h-full">
-        <Box className="min-h-0 flex-1">
-          <ScrollArea className="h-full overflow-y-auto overflow-x-hidden">
-            <Flex direction="column" py="2" px="2" gap="1px">
-              <Box mb="2">
-                <NewTaskItem
-                  isActive={sidebarData.isHomeActive}
-                  onClick={handleNewTaskClick}
-                  variant="primary"
+        <Box className="shrink-0">
+          <Flex direction="column" py="2" px="2" gap="1px">
+            <Box mb="2">
+              <NewTaskItem
+                isActive={sidebarData.isHomeActive}
+                onClick={handleNewTaskClick}
+                variant="primary"
+              />
+            </Box>
+
+            {showSetupItem && (
+              <Box mb="1" px="1">
+                <SetupItem
+                  isActive={sidebarData.isSetupActive}
+                  onClick={handleSetupClick}
                 />
               </Box>
+            )}
 
-              {showSetupItem && (
-                <Box mb="1" px="1">
-                  <SetupItem
-                    isActive={sidebarData.isSetupActive}
-                    onClick={handleSetupClick}
-                  />
-                </Box>
-              )}
+            <Box>
+              <InboxItem
+                isActive={sidebarData.isInboxActive}
+                onClick={handleInboxClick}
+                signalCount={inboxSignalCount}
+              />
+            </Box>
 
-              <Box>
-                <InboxItem
-                  isActive={sidebarData.isInboxActive}
-                  onClick={handleInboxClick}
-                  signalCount={inboxSignalCount}
-                />
-              </Box>
+            <Box>
+              <SkillsItem
+                isActive={sidebarData.isSkillsActive}
+                onClick={handleSkillsClick}
+              />
+            </Box>
 
-              <Box>
-                <SkillsItem
-                  isActive={sidebarData.isSkillsActive}
-                  onClick={handleSkillsClick}
-                />
-              </Box>
+            <Box>
+              <McpServersItem
+                isActive={sidebarData.isMcpServersActive}
+                onClick={handleMcpServersClick}
+              />
+            </Box>
 
-              <Box>
-                <McpServersItem
-                  isActive={sidebarData.isMcpServersActive}
-                  onClick={handleMcpServersClick}
-                />
-              </Box>
-
-              <Box mb="2">
-                <CommandCenterItem
-                  isActive={sidebarData.isCommandCenterActive}
-                  onClick={handleCommandCenterClick}
-                  activeCount={commandCenterActiveCount}
-                />
-              </Box>
-
-              <Separator className="mx-2 my-2" />
-
-              {sidebarData.isLoading ? (
-                <SidebarItem
-                  depth={0}
-                  icon={
-                    <DotsCircleSpinner size={12} className="text-gray-10" />
-                  }
-                  label="Loading tasks..."
-                  disabled
-                />
-              ) : (
-                <TaskListView
-                  pinnedTasks={sidebarData.pinnedTasks}
-                  flatTasks={sidebarData.flatTasks}
-                  groupedTasks={sidebarData.groupedTasks}
-                  activeTaskId={sidebarData.activeTaskId}
-                  editingTaskId={editingTaskId}
-                  onTaskClick={handleTaskClick}
-                  onTaskDoubleClick={handleTaskDoubleClick}
-                  onTaskContextMenu={handleTaskContextMenu}
-                  onTaskArchive={handleTaskArchive}
-                  onTaskTogglePin={togglePin}
-                  onTaskEditSubmit={handleTaskEditSubmit}
-                  onTaskEditCancel={handleTaskEditCancel}
-                  hasMore={sidebarData.hasMore}
-                />
-              )}
-            </Flex>
-          </ScrollArea>
+            <Box>
+              <CommandCenterItem
+                isActive={sidebarData.isCommandCenterActive}
+                onClick={handleCommandCenterClick}
+                activeCount={commandCenterActiveCount}
+              />
+            </Box>
+          </Flex>
         </Box>
 
         <Separator />
 
-        <Box className="min-h-0 flex-1">
-          <ProjectTreeView />
-        </Box>
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => setActiveTab(value as SidebarTab)}
+          className="flex min-h-0 flex-1 flex-col"
+        >
+          <TabsList className="mx-2 mt-2 shrink-0">
+            <TabsTrigger value="files">Files</TabsTrigger>
+            <TabsTrigger value="tasks">Tasks</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="files" className="min-h-0 flex-1">
+            <ProjectTreeView />
+          </TabsContent>
+
+          <TabsContent value="tasks" className="min-h-0 flex-1">
+            <ScrollArea className="h-full overflow-y-auto overflow-x-hidden">
+              <Flex direction="column" py="2" px="2" gap="1px">
+                {sidebarData.isLoading ? (
+                  <SidebarItem
+                    depth={0}
+                    icon={
+                      <DotsCircleSpinner size={12} className="text-gray-10" />
+                    }
+                    label="Loading tasks..."
+                    disabled
+                  />
+                ) : (
+                  <TaskListView
+                    pinnedTasks={sidebarData.pinnedTasks}
+                    flatTasks={sidebarData.flatTasks}
+                    groupedTasks={sidebarData.groupedTasks}
+                    activeTaskId={sidebarData.activeTaskId}
+                    editingTaskId={editingTaskId}
+                    onTaskClick={handleTaskClick}
+                    onTaskDoubleClick={handleTaskDoubleClick}
+                    onTaskContextMenu={handleTaskContextMenu}
+                    onTaskArchive={handleTaskArchive}
+                    onTaskTogglePin={togglePin}
+                    onTaskEditSubmit={handleTaskEditSubmit}
+                    onTaskEditCancel={handleTaskEditCancel}
+                    hasMore={sidebarData.hasMore}
+                  />
+                )}
+              </Flex>
+            </ScrollArea>
+          </TabsContent>
+        </Tabs>
       </Flex>
     </Box>
   );
