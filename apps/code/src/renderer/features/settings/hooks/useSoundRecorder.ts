@@ -72,7 +72,12 @@ export function useSoundRecorder(): SoundRecorder {
       const status = await trpcClient.os.getMicrophoneAccessStatus.query();
       log.info("Microphone status", { status });
       if (status === "not-determined") {
-        await trpcClient.os.requestMicrophoneAccess.mutate();
+        const granted = await trpcClient.os.requestMicrophoneAccess.mutate();
+        if (!granted) {
+          throw Object.assign(new Error("Microphone access denied"), {
+            name: "NotAllowedError",
+          });
+        }
       }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = pickMimeType();
