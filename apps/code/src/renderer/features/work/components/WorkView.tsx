@@ -1,6 +1,7 @@
 import { Box, Flex, Text } from "@radix-ui/themes";
 import beachHog from "@renderer/assets/images/hedgehogs/beach-hog.png";
 import { useNavigationStore } from "@stores/navigationStore";
+import { McpServersView } from "../../mcp-servers/components/McpServersView";
 import { ScheduledTaskEditor } from "./ScheduledTaskEditor";
 import { ScheduledTasksList } from "./ScheduledTasksList";
 import { WorkGenerateView } from "./WorkGenerateView";
@@ -31,6 +32,10 @@ export function WorkView() {
 
   if (workView === "scheduled-edit") {
     return <ScheduledTaskEditor editingId={scheduledEditId ?? null} />;
+  }
+
+  if (workView === "data-sources") {
+    return <McpServersView />;
   }
 
   return (

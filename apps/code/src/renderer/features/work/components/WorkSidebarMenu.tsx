@@ -33,7 +33,7 @@ const STATIC_ITEMS: WorkSidebarItemSpec[] = [
     workView: "scheduled-section",
   },
   { icon: Notebook, label: "Artifacts" },
-  { icon: Plugs, label: "MCP" },
+  { icon: Plugs, label: "Data sources" },
   { icon: Brain, label: "Memory" },
 ];
 
@@ -53,6 +53,9 @@ export function WorkSidebarMenu() {
   const navigateToWorkScheduledList = useNavigationStore(
     (s) => s.navigateToWorkScheduledList,
   );
+  const navigateToWorkDataSources = useNavigationStore(
+    (s) => s.navigateToWorkDataSources,
+  );
   const skills = useWorkSkillsStore((s) => s.skills);
 
   const handleNewTaskClick = () => {
@@ -65,6 +68,7 @@ export function WorkSidebarMenu() {
   const isLibraryActive = workView === "library";
   const isScheduledActive =
     workView === "scheduled-list" || workView === "scheduled-edit";
+  const isDataSourcesActive = workView === "data-sources";
 
   return (
     <Box height="100%" position="relative">
@@ -93,10 +97,15 @@ export function WorkSidebarMenu() {
           {STATIC_ITEMS.map((item) => {
             const Icon = item.icon;
             const isScheduled = item.workView === "scheduled-section";
-            const isActive = isScheduled && isScheduledActive;
+            const isDataSources = item.label === "Data sources";
+            const isActive =
+              (isScheduled && isScheduledActive) ||
+              (isDataSources && isDataSourcesActive);
             const onClick = isScheduled
               ? navigateToWorkScheduledList
-              : undefined;
+              : isDataSources
+                ? navigateToWorkDataSources
+                : undefined;
             return (
               <Box key={item.label}>
                 <SidebarItem

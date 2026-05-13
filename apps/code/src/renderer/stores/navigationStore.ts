@@ -21,7 +21,8 @@ type ViewType =
   | "command-center"
   | "skills"
   | "mcp-servers"
-  | "setup";
+  | "setup"
+  | "memory";
 
 export interface TaskInputReportAssociation {
   reportId: string;
@@ -43,7 +44,8 @@ export type WorkView =
   | "skill-detail"
   | "library"
   | "scheduled-list"
-  | "scheduled-edit";
+  | "scheduled-edit"
+  | "data-sources";
 
 export type ChatView = "home" | "conversation";
 
@@ -73,6 +75,7 @@ interface NavigationStore {
   navigateToWorkScheduledList: () => void;
   navigateToWorkScheduledCreate: () => void;
   navigateToWorkScheduledEdit: (scheduledId: string) => void;
+  navigateToWorkDataSources: () => void;
   chatView: ChatView;
   activeChatId: string | null;
   navigateToChatHome: () => void;
@@ -95,6 +98,7 @@ interface NavigationStore {
   navigateToArchived: () => void;
   navigateToCommandCenter: () => void;
   navigateToSkills: () => void;
+  navigateToMemory: () => void;
   navigateToMcpServers: () => void;
   navigateToSetup: () => void;
   goBack: () => void;
@@ -204,6 +208,12 @@ export const useNavigationStore = create<NavigationStore>()(
             workView: "scheduled-edit",
             workSelectedSkillId: undefined,
             workScheduledEditId: scheduledId,
+          }),
+        navigateToWorkDataSources: () =>
+          set({
+            workView: "data-sources",
+            workSelectedSkillId: undefined,
+            workScheduledEditId: undefined,
           }),
         chatView: "home",
         activeChatId: null,
