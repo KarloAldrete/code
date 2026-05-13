@@ -19,7 +19,10 @@
       "Bash(grep -E \"\\\\.\\(ts|tsx\\)$\")",
       "Bash(node -e \"const p = require\\('phosphor-react-native'\\); console.log\\(Object.keys\\(p\\).filter\\(k => /[Cc]ircle/.test\\(k\\)\\).slice\\(0, 30\\).join\\(', '\\)\\)\")",
       "Bash(grep -E \"\\\\.\\(tsx?|jsx?\\)$\")",
-      "Bash(grep -E \"\\\\.\\(tsx?\\)$\")"
+      "Bash(grep -E \"\\\\.\\(tsx?\\)$\")",
+      "Bash(git -C /Users/tomowers/dev/posthog/code status)",
+      "Bash(npx tsc *)",
+      "Bash(git -C /Users/tomowers/dev/posthog/code add apps/mobile/src/app/task/index.tsx)"
     ],
     "additionalDirectories": [
       "/private/tmp"

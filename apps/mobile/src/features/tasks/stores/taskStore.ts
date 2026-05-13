@@ -1,10 +1,15 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { Task } from "../types";
+import type { RepositorySelection, Task } from "../types";
 
 export type OrganizeMode = "by-project" | "chronological";
 export type SortMode = "created" | "updated";
+
+const EMPTY_REPOSITORY_SELECTION: RepositorySelection = {
+  integrationId: null,
+  repository: null,
+};
 
 interface TaskUIState {
   selectedTaskId: string | null;
@@ -12,12 +17,16 @@ interface TaskUIState {
   sortMode: SortMode;
   showInternal: boolean;
   filter: string;
+  /** Most-recently-used repository for the new-task composer. Pre-fills the
+   *  repo pill so users don't have to re-pick the same repo every time. */
+  lastRepository: RepositorySelection;
 
   selectTask: (taskId: string | null) => void;
   setOrganizeMode: (mode: OrganizeMode) => void;
   setSortMode: (mode: SortMode) => void;
   setShowInternal: (showInternal: boolean) => void;
   setFilter: (filter: string) => void;
+  setLastRepository: (selection: RepositorySelection) => void;
 }
 
 export const useTaskStore = create<TaskUIState>()(
@@ -28,12 +37,14 @@ export const useTaskStore = create<TaskUIState>()(
       sortMode: "updated",
       showInternal: false,
       filter: "",
+      lastRepository: EMPTY_REPOSITORY_SELECTION,
 
       selectTask: (selectedTaskId) => set({ selectedTaskId }),
       setOrganizeMode: (organizeMode) => set({ organizeMode }),
       setSortMode: (sortMode) => set({ sortMode }),
       setShowInternal: (showInternal) => set({ showInternal }),
       setFilter: (filter) => set({ filter }),
+      setLastRepository: (lastRepository) => set({ lastRepository }),
     }),
     {
       name: "posthog-task-ui",
@@ -42,6 +53,7 @@ export const useTaskStore = create<TaskUIState>()(
         organizeMode: state.organizeMode,
         sortMode: state.sortMode,
         showInternal: state.showInternal,
+        lastRepository: state.lastRepository,
       }),
     },
   ),

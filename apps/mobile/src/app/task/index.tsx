@@ -47,6 +47,7 @@ import { Pill } from "@/features/tasks/composer/Pill";
 import { RepositoryPickerSheet } from "@/features/tasks/composer/RepositoryPickerSheet";
 import { SelectSheet } from "@/features/tasks/composer/SelectSheet";
 import { useIntegrations } from "@/features/tasks/hooks/useIntegrations";
+import { useTaskStore } from "@/features/tasks/stores/taskStore";
 import type { RepositorySelection } from "@/features/tasks/types";
 import {
   findRepositoryOption,
@@ -122,8 +123,13 @@ export default function NewTaskScreen() {
     [],
   );
 
+  // Default the repo to the URL param (deep-link from a signal report etc.),
+  // falling back to the most recently used repo so the user doesn't have to
+  // re-pick the same one for every new task.
+  const lastRepository = useTaskStore((s) => s.lastRepository);
+  const setLastRepository = useTaskStore((s) => s.setLastRepository);
   const [prompt, setPrompt] = useState(initialPrompt ?? "");
-  const [selection, setSelection] = useState<RepositorySelection>(() => {
+  const [selection, setSelectionState] = useState<RepositorySelection>(() => {
     if (initialRepo) {
       const match = repositoryOptions.find(
         (o) => o.repository.toLowerCase() === initialRepo.toLowerCase(),
@@ -132,8 +138,15 @@ export default function NewTaskScreen() {
       // Repo known but integration not yet loaded — set repo, integrationId will resolve later
       return { integrationId: null, repository: initialRepo };
     }
-    return { integrationId: null, repository: null };
+    return lastRepository;
   });
+  const setSelection = useCallback(
+    (next: RepositorySelection) => {
+      setSelectionState(next);
+      setLastRepository(next);
+    },
+    [setLastRepository],
+  );
   const [mode, setMode] = useState<ExecutionMode>(DEFAULT_EXECUTION_MODE);
   const [model, setModel] = useState<string>(DEFAULT_MODEL);
   const [reasoning, setReasoning] =
