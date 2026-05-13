@@ -1,16 +1,13 @@
-import { WorkSuggestionsHoverCard } from "@features/sessions/components/WorkSuggestionsHoverCard";
 import { Box, Flex, Text } from "@radix-ui/themes";
-import hackerHog from "@renderer/assets/images/hedgehogs/hacker-hog.png";
+import beachHog from "@renderer/assets/images/hedgehogs/beach-hog.png";
 import { useNavigationStore } from "@stores/navigationStore";
 import { WorkGenerateView } from "./WorkGenerateView";
+import { WorkHomePrompt } from "./WorkHomePrompt";
+import { WorkSampleProjects } from "./WorkSampleProjects";
 import { WorkSkillDetailView } from "./WorkSkillDetailView";
 
 export function WorkView() {
   const workView = useNavigationStore((s) => s.workView);
-  const workOnboardingSkipped = useNavigationStore(
-    (s) => s.workOnboardingSkipped,
-  );
-  const skipWorkOnboarding = useNavigationStore((s) => s.skipWorkOnboarding);
 
   if (workView === "generate") {
     return <WorkGenerateView />;
@@ -20,40 +17,51 @@ export function WorkView() {
     return <WorkSkillDetailView />;
   }
 
-  if (workOnboardingSkipped) {
-    return <Box className="h-full w-full" />;
-  }
-
   return (
-    <Flex
-      direction="column"
-      align="center"
-      justify="center"
-      className="h-full w-full"
-      gap="3"
-    >
-      <img
-        src={hackerHog}
-        alt=""
-        className="h-40 w-auto select-none"
-        draggable={false}
-      />
-      <Box className="text-center">
-        <Text as="div" weight="medium" className="text-(--gray-12) text-[18px]">
-          PostHog Work
-        </Text>
-        <Text as="div" className="text-(--gray-11) text-[13px]">
-          Set up recurring projects with the context PostHog already has.
-        </Text>
-      </Box>
-      <WorkSuggestionsHoverCard />
-      <button
-        type="button"
-        onClick={skipWorkOnboarding}
-        className="cursor-pointer bg-transparent text-(--gray-10) text-[13px] underline-offset-2 hover:text-(--gray-12) hover:underline"
+    <Box className="scrollbar-overlay-y h-full w-full overflow-y-auto">
+      <Flex
+        direction="column"
+        align="center"
+        gap="6"
+        className="mx-auto w-full max-w-[680px] px-6 pt-16 pb-12"
       >
-        Skip onboarding
-      </button>
-    </Flex>
+        <Flex
+          direction="column"
+          align="center"
+          gap="3"
+          className="work-enter work-enter-1"
+        >
+          <img
+            src={beachHog}
+            alt=""
+            className="h-28 w-auto select-none"
+            draggable={false}
+          />
+          <Box className="text-center">
+            <Text
+              as="div"
+              weight="medium"
+              className="text-(--gray-12) text-[22px]"
+            >
+              Hello normie, what can I do for you today?
+            </Text>
+          </Box>
+        </Flex>
+
+        <Box className="work-enter work-enter-2 w-full">
+          <WorkHomePrompt />
+        </Box>
+
+        <Box className="work-enter work-enter-3 w-full">
+          <Text
+            as="div"
+            className="mb-2 text-center text-(--gray-10) text-[11px] uppercase tracking-wide"
+          >
+            Or if you're used to outsourcing your brain to Claude...
+          </Text>
+          <WorkSampleProjects />
+        </Box>
+      </Flex>
+    </Box>
   );
 }
