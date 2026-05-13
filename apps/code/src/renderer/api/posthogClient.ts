@@ -628,6 +628,68 @@ export class PostHogAPIClient {
     return data;
   }
 
+  async getFileSystem(opts?: {
+    limit?: number;
+    offset?: number;
+    search?: string;
+  }) {
+    const projectId = String(await this.getTeamId());
+
+    if (opts?.limit !== undefined || opts?.offset !== undefined) {
+      return this.api.get("/api/projects/{project_id}/file_system/", {
+        path: { project_id: projectId },
+        query: opts,
+      });
+    }
+
+    const pageSize = 200;
+    let offset = 0;
+    let count = 0;
+    const results: Schemas.FileSystem[] = [];
+
+    while (true) {
+      const page = await this.api.get(
+        "/api/projects/{project_id}/file_system/",
+        {
+          path: { project_id: projectId },
+          query: { limit: pageSize, offset, ...(opts ?? {}) },
+        },
+      );
+      count = page.count;
+      results.push(...page.results);
+      offset += page.results.length;
+      if (!page.next || page.results.length === 0 || offset >= page.count) {
+        break;
+      }
+    }
+
+    return {
+      count,
+      next: null,
+      previous: null,
+      results,
+    } as Schemas.PaginatedFileSystemList;
+  }
+
+  async createFileSystem(body: {
+    path: string;
+    type: string;
+    meta?: Record<string, unknown>;
+  }) {
+    const projectId = String(await this.getTeamId());
+    return this.api.post("/api/projects/{project_id}/file_system/", {
+      path: { project_id: projectId },
+      body: body as unknown as Schemas.FileSystem,
+    });
+  }
+
+  async deleteFileSystem(id: string) {
+    const projectId = String(await this.getTeamId());
+    await this.api.delete("/api/projects/{project_id}/file_system/{id}/", {
+      path: { project_id: projectId, id },
+    });
+  }
+
   async getGithubLogin(): Promise<string | null> {
     const data = (await this.api.get("/api/users/{uuid}/github_login/", {
       path: { uuid: "@me" },

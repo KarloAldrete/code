@@ -2,6 +2,8 @@ import { SIDEBAR_MIN_WIDTH } from "@features/sidebar/constants";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+export type SidebarTab = "files" | "tasks";
+
 interface SidebarStoreState {
   open: boolean;
   hasUserSetOpen: boolean;
@@ -14,6 +16,7 @@ interface SidebarStoreState {
   sortMode: "updated" | "created";
   showAllUsers: boolean;
   showInternal: boolean;
+  activeTab: SidebarTab;
 }
 
 interface SidebarStoreActions {
@@ -32,6 +35,7 @@ interface SidebarStoreActions {
   setSortMode: (mode: SidebarStoreState["sortMode"]) => void;
   setShowAllUsers: (showAllUsers: boolean) => void;
   setShowInternal: (showInternal: boolean) => void;
+  setActiveTab: (tab: SidebarTab) => void;
 }
 
 type SidebarStore = SidebarStoreState & SidebarStoreActions;
@@ -50,6 +54,7 @@ export const useSidebarStore = create<SidebarStore>()(
       sortMode: "updated",
       showAllUsers: false,
       showInternal: false,
+      activeTab: "files",
       setOpen: (open) => set({ open, hasUserSetOpen: true }),
       setOpenAuto: (open) =>
         set((state) => (state.hasUserSetOpen ? state : { open })),
@@ -100,6 +105,7 @@ export const useSidebarStore = create<SidebarStore>()(
       setSortMode: (sortMode) => set({ sortMode }),
       setShowAllUsers: (showAllUsers) => set({ showAllUsers }),
       setShowInternal: (showInternal) => set({ showInternal }),
+      setActiveTab: (activeTab) => set({ activeTab }),
     }),
     {
       name: "sidebar-storage",
@@ -114,6 +120,7 @@ export const useSidebarStore = create<SidebarStore>()(
         sortMode: state.sortMode,
         showAllUsers: state.showAllUsers,
         showInternal: state.showInternal,
+        activeTab: state.activeTab,
       }),
       merge: (persisted, current) => {
         const persistedState = persisted as {
@@ -127,6 +134,7 @@ export const useSidebarStore = create<SidebarStore>()(
           sortMode?: SidebarStoreState["sortMode"];
           showAllUsers?: boolean;
           showInternal?: boolean;
+          activeTab?: SidebarTab;
         };
         return {
           ...current,
@@ -145,6 +153,7 @@ export const useSidebarStore = create<SidebarStore>()(
           sortMode: persistedState.sortMode ?? current.sortMode,
           showAllUsers: persistedState.showAllUsers ?? current.showAllUsers,
           showInternal: persistedState.showInternal ?? current.showInternal,
+          activeTab: persistedState.activeTab ?? current.activeTab,
         };
       },
     },
