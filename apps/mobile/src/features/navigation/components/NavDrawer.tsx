@@ -12,6 +12,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { TaskStatusIcon } from "@/features/tasks/components/TaskStatusIcon";
 import { useTasks } from "@/features/tasks/hooks/useTasks";
 import { useThemeColors } from "@/lib/theme";
 import { useNavDrawerStore } from "../stores/navDrawerStore";
@@ -177,10 +178,13 @@ export function NavDrawer() {
                   <Pressable
                     key={task.id}
                     onPress={() => handleTaskPress(task.id)}
-                    className={`rounded-md px-2.5 py-2 ${active ? "bg-gray-3" : "active:bg-gray-2"}`}
+                    className={`flex-row items-center gap-2.5 rounded-md px-2.5 py-2 ${active ? "bg-gray-3" : "active:bg-gray-2"}`}
                   >
+                    <View className="h-4 w-4 shrink-0 items-center justify-center">
+                      <TaskStatusIcon task={task} size={14} />
+                    </View>
                     <Text
-                      className="text-[14px] text-gray-12"
+                      className="flex-1 text-[14px] text-gray-12"
                       numberOfLines={1}
                       ellipsizeMode="tail"
                     >
