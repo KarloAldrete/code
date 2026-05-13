@@ -1,7 +1,7 @@
 import { Text } from "@components/text";
 import { usePathname, useRouter } from "expo-router";
 import { GearSix, Plus, Tray } from "phosphor-react-native";
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
   Animated,
   Dimensions,
@@ -63,21 +63,48 @@ export function NavDrawer() {
 
   const translateX = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
+    if (isOpen) {
+      // Mount before the animation kicks off so the drawer is on-screen to
+      // animate. The animation then slides it in from the offscreen position.
+      setIsMounted(true);
+      Animated.parallel([
+        Animated.timing(translateX, {
+          toValue: 0,
+          duration: 280,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(backdropOpacity, {
+          toValue: 1,
+          duration: 280,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start();
+      return;
+    }
+
     Animated.parallel([
       Animated.timing(translateX, {
-        toValue: isOpen ? 0 : -DRAWER_WIDTH,
-        duration: isOpen ? 240 : 200,
-        easing: isOpen ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
+        toValue: -DRAWER_WIDTH,
+        duration: 220,
+        easing: Easing.in(Easing.cubic),
         useNativeDriver: true,
       }),
       Animated.timing(backdropOpacity, {
-        toValue: isOpen ? 1 : 0,
-        duration: isOpen ? 240 : 200,
+        toValue: 0,
+        duration: 220,
+        easing: Easing.in(Easing.cubic),
         useNativeDriver: true,
       }),
-    ]).start();
+    ]).start(({ finished }) => {
+      // Only unmount once the close animation actually settles, so a rapid
+      // re-open mid-close doesn't accidentally tear the drawer down.
+      if (finished) setIsMounted(false);
+    });
   }, [isOpen, translateX, backdropOpacity]);
 
   const handleNewTask = () => {
@@ -101,7 +128,7 @@ export function NavDrawer() {
 
   return (
     <Modal
-      visible={isOpen}
+      visible={isMounted}
       transparent
       animationType="none"
       onRequestClose={close}
