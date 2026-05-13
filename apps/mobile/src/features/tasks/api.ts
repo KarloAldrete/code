@@ -397,6 +397,14 @@ export interface RunTaskInCloudOptions {
   resumeFromRunId?: string;
   pendingUserMessage?: string;
   mode?: "interactive" | "background";
+  /** Adapter to use on the cloud runner. Currently only "claude" on mobile. */
+  runtimeAdapter?: "claude" | "codex";
+  /** Gateway model ID, e.g. "claude-opus-4-7". */
+  model?: string;
+  /** Reasoning effort: "low" | "medium" | "high" (model-dependent). */
+  reasoningEffort?: string;
+  /** Permission mode: "default" | "acceptEdits" | "plan". */
+  initialPermissionMode?: string;
 }
 
 export async function runTaskInCloud(
@@ -415,7 +423,11 @@ export async function runTaskInCloud(
     (options.branch !== undefined ||
       options.resumeFromRunId !== undefined ||
       options.pendingUserMessage !== undefined ||
-      options.mode !== undefined);
+      options.mode !== undefined ||
+      options.runtimeAdapter !== undefined ||
+      options.model !== undefined ||
+      options.reasoningEffort !== undefined ||
+      options.initialPermissionMode !== undefined);
 
   let body: string | undefined;
   if (hasOptions) {
@@ -428,6 +440,16 @@ export async function runTaskInCloud(
     }
     if (options?.pendingUserMessage) {
       payload.pending_user_message = options.pendingUserMessage;
+    }
+    if (options?.runtimeAdapter) {
+      payload.runtime_adapter = options.runtimeAdapter;
+      if (options?.model) payload.model = options.model;
+      if (options?.reasoningEffort) {
+        payload.reasoning_effort = options.reasoningEffort;
+      }
+    }
+    if (options?.initialPermissionMode) {
+      payload.initial_permission_mode = options.initialPermissionMode;
     }
     body = JSON.stringify(payload);
   }
