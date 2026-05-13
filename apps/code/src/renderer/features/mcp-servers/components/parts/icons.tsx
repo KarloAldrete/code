@@ -1,6 +1,7 @@
 import { Plugs } from "@phosphor-icons/react";
 import { Flex } from "@radix-ui/themes";
 import IconAirOps from "@renderer/assets/services/airops.png";
+import IconAsana from "@renderer/assets/services/asana.svg";
 import IconAtlassian from "@renderer/assets/services/atlassian.svg";
 import IconAttio from "@renderer/assets/services/attio.png";
 import IconBox from "@renderer/assets/services/box.svg";
@@ -17,6 +18,13 @@ import IconFigma from "@renderer/assets/services/figma.svg";
 import IconFiretiger from "@renderer/assets/services/firetiger.svg";
 import IconGitHub from "@renderer/assets/services/github.svg";
 import IconGitLab from "@renderer/assets/services/gitlab.svg";
+import IconGmail from "@renderer/assets/services/gmail.svg";
+import IconGoogleCalendar from "@renderer/assets/services/google_calendar.svg";
+import IconGoogleDocs from "@renderer/assets/services/google_docs.svg";
+import IconGoogleDrive from "@renderer/assets/services/google_drive.svg";
+import IconGoogleSheets from "@renderer/assets/services/google_sheets.svg";
+import IconGoogleSlides from "@renderer/assets/services/google_slides.svg";
+import IconGranola from "@renderer/assets/services/granola.svg";
 import IconHex from "@renderer/assets/services/hex.svg";
 import IconHubSpot from "@renderer/assets/services/hubspot.svg";
 import IconLaunchDarkly from "@renderer/assets/services/launchdarkly.png";
@@ -39,6 +47,7 @@ import IconWix from "@renderer/assets/services/wix.png";
 
 const BRAND_ICONS: Record<string, string> = {
   airops: IconAirOps,
+  asana: IconAsana,
   atlassian: IconAtlassian,
   attio: IconAttio,
   box: IconBox,
@@ -55,6 +64,13 @@ const BRAND_ICONS: Record<string, string> = {
   firetiger: IconFiretiger,
   github: IconGitHub,
   gitlab: IconGitLab,
+  gmail: IconGmail,
+  google_calendar: IconGoogleCalendar,
+  google_docs: IconGoogleDocs,
+  google_drive: IconGoogleDrive,
+  google_sheets: IconGoogleSheets,
+  google_slides: IconGoogleSlides,
+  granola: IconGranola,
   hex: IconHex,
   hubspot: IconHubSpot,
   launchdarkly: IconLaunchDarkly,
