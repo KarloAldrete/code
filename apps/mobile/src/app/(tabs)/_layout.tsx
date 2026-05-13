@@ -1,10 +1,32 @@
-import { Stack } from "expo-router";
-import { View } from "react-native";
+import { Stack, usePathname, useRouter } from "expo-router";
+import { useEffect } from "react";
+import { BackHandler, View } from "react-native";
 import { NavDrawer } from "@/features/navigation/components/NavDrawer";
+import { useNavDrawerStore } from "@/features/navigation/stores/navDrawerStore";
 import { useThemeColors } from "@/lib/theme";
+
+const HOME_ROUTE = "/tasks";
 
 export default function TabsLayout() {
   const themeColors = useThemeColors();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  // Android: each drawer destination replaces (no back stack between them), so
+  // hardware back from a non-home destination should go home instead of exiting.
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        // Let the drawer's Modal handle back when it's open.
+        if (useNavDrawerStore.getState().isOpen) return false;
+        if (pathname === HOME_ROUTE) return false;
+        router.replace(HOME_ROUTE);
+        return true;
+      },
+    );
+    return () => subscription.remove();
+  }, [pathname, router]);
 
   return (
     <View className="flex-1 bg-background">

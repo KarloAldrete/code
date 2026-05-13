@@ -2,11 +2,13 @@ import { Text } from "@components/text";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useRef } from "react";
 import { InteractionManager, Pressable, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MenuButton } from "@/features/navigation/components/MenuButton";
 import { TaskList } from "@/features/tasks";
 
 export default function TasksScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const readyRef = useRef(true);
 
   // Block navigation while a modal dismiss animation is in progress.
@@ -43,7 +45,10 @@ export default function TasksScreen() {
   return (
     <View className="flex-1 bg-background">
       {/* Header */}
-      <View className="border-gray-6 border-b px-3 pt-14 pb-4">
+      <View
+        className="border-gray-6 border-b px-3 pb-4"
+        style={{ paddingTop: insets.top + 12 }}
+      >
         <View className="flex-row items-center gap-2">
           <MenuButton />
           <View className="flex-1">

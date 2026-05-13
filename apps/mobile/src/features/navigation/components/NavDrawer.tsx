@@ -1,5 +1,5 @@
 import { Text } from "@components/text";
-import { useRouter } from "expo-router";
+import { usePathname, useRouter } from "expo-router";
 import { GearSix, Plus, Tray } from "phosphor-react-native";
 import { useEffect, useRef } from "react";
 import {
@@ -23,9 +23,16 @@ export function NavDrawer() {
   const isOpen = useNavDrawerStore((s) => s.isOpen);
   const close = useNavDrawerStore((s) => s.close);
   const router = useRouter();
+  const pathname = usePathname();
   const themeColors = useThemeColors();
   const insets = useSafeAreaInsets();
   const { tasks } = useTasks();
+
+  const navigateTo = (target: string) => {
+    close();
+    if (pathname === target) return;
+    router.replace(target);
+  };
 
   const translateX = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
@@ -51,15 +58,11 @@ export function NavDrawer() {
     router.push("/task");
   };
 
-  const handleInbox = () => {
-    close();
-    router.replace("/inbox");
-  };
+  const handleInbox = () => navigateTo("/inbox");
 
-  const handleSettings = () => {
-    close();
-    router.replace("/settings");
-  };
+  const handleSettings = () => navigateTo("/settings");
+
+  const handleHome = () => navigateTo("/tasks");
 
   const handleTaskPress = (taskId: string) => {
     close();
@@ -92,10 +95,7 @@ export function NavDrawer() {
           }}
         >
           <Pressable
-            onPress={() => {
-              close();
-              router.replace("/tasks");
-            }}
+            onPress={handleHome}
             className="px-4 pb-3 active:opacity-60"
           >
             <Text className="font-bold text-2xl text-gray-12">PostHog</Text>

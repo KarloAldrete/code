@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthStore, useUserQuery } from "@/features/auth";
 import { MenuButton } from "@/features/navigation/components/MenuButton";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
@@ -14,6 +15,7 @@ import { usePreferencesStore } from "@/features/preferences/stores/preferencesSt
 export default function SettingsScreen() {
   const { logout, cloudRegion, getCloudUrlFromRegion } = useAuthStore();
   const { data: userData } = useUserQuery();
+  const insets = useSafeAreaInsets();
   const aiChatEnabled = usePreferencesStore((s) => s.aiChatEnabled);
   const setAiChatEnabled = usePreferencesStore((s) => s.setAiChatEnabled);
   const pingsEnabled = usePreferencesStore((s) => s.pingsEnabled);
@@ -32,7 +34,7 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView className="flex-1 bg-background">
-      <View className="px-6 pt-12 pb-12">
+      <View className="px-6 pb-12" style={{ paddingTop: insets.top + 12 }}>
         {/* Header */}
         <View className="mb-8 flex-row items-center gap-2">
           <MenuButton className="-ml-2" />

@@ -1,15 +1,20 @@
 import { Text } from "@components/text";
 import { Tray } from "phosphor-react-native";
 import { View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MenuButton } from "@/features/navigation/components/MenuButton";
 import { useThemeColors } from "@/lib/theme";
 
 export default function InboxScreen() {
   const themeColors = useThemeColors();
+  const insets = useSafeAreaInsets();
 
   return (
     <View className="flex-1 bg-background">
-      <View className="border-gray-6 border-b px-3 pt-14 pb-4">
+      <View
+        className="border-gray-6 border-b px-3 pb-4"
+        style={{ paddingTop: insets.top + 12 }}
+      >
         <View className="flex-row items-center gap-2">
           <MenuButton />
           <View className="flex-1">
