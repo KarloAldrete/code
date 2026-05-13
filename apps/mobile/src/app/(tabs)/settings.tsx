@@ -8,6 +8,7 @@ import {
   View,
 } from "react-native";
 import { useAuthStore, useUserQuery } from "@/features/auth";
+import { MenuButton } from "@/features/navigation/components/MenuButton";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 
 export default function SettingsScreen() {
@@ -33,7 +34,8 @@ export default function SettingsScreen() {
     <ScrollView className="flex-1 bg-background">
       <View className="px-6 pt-12 pb-12">
         {/* Header */}
-        <View className="mb-8">
+        <View className="mb-8 flex-row items-center gap-2">
+          <MenuButton className="-ml-2" />
           <Text className="font-bold text-3xl text-gray-12">Settings</Text>
         </View>
 
