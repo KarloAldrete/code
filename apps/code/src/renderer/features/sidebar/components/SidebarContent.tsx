@@ -1,5 +1,6 @@
 import { useArchivedTaskIds } from "@features/archive/hooks/useArchivedTaskIds";
 import { SidebarUsageBar } from "@features/billing/components/SidebarUsageBar";
+import { ChatSidebarMenu } from "@features/chat/components/ChatSidebarMenu";
 import { ModeSwitcher } from "@features/mode-switcher/components/ModeSwitcher";
 import { WorkSidebarMenu } from "@features/work/components/WorkSidebarMenu";
 import { ArchiveIcon } from "@phosphor-icons/react";
@@ -17,12 +18,19 @@ export const SidebarContent: React.FC = () => {
   );
   const mode = useNavigationStore((state) => state.mode);
   const isCodeMode = mode === "code";
+  const isChatMode = mode === "chat";
 
   return (
     <Flex direction="column" height="100%">
       <ModeSwitcher />
       <Box flexGrow="1" overflow="hidden">
-        {isCodeMode ? <SidebarMenu /> : <WorkSidebarMenu />}
+        {isCodeMode ? (
+          <SidebarMenu />
+        ) : isChatMode ? (
+          <ChatSidebarMenu />
+        ) : (
+          <WorkSidebarMenu />
+        )}
       </Box>
       <UpdateBanner />
       <SidebarUsageBar />

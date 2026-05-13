@@ -279,6 +279,24 @@ export const osRouter = router({
   getHomeDir: publicProcedure.output(z.string()).query(() => os.homedir()),
 
   /**
+   * Get (and create) a stable working directory for a chat session.
+   * Used as the agent cwd for Chat-mode tasks that don't have a real repo.
+   */
+  getChatDir: publicProcedure
+    .input(z.object({ chatId: z.string() }))
+    .output(z.string())
+    .query(async ({ input }) => {
+      const dir = path.join(
+        os.homedir(),
+        ".posthog-code",
+        "chats",
+        input.chatId,
+      );
+      await fsPromises.mkdir(dir, { recursive: true });
+      return dir;
+    }),
+
+  /**
    * Read a file and return it as a base64 data URL
    * Used for image thumbnails in the editor
    */

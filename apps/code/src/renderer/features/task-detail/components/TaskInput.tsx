@@ -214,7 +214,7 @@ export function TaskInput({
   const setWorkspaceMode = (mode: WorkspaceMode) => {
     setWorkspaceModeState(mode);
     setLastUsedWorkspaceMode(mode);
-    if (mode !== "cloud") {
+    if (mode === "local" || mode === "worktree") {
       setLastUsedLocalWorkspaceMode(mode);
     }
   };
@@ -727,7 +727,9 @@ export function TaskInput({
                   (workspaceMode === "cloud" && !selectedCloudRepository)
                 }
                 loading={workspaceMode === "cloud" ? false : branchLoading}
-                workspaceMode={workspaceMode}
+                workspaceMode={
+                  workspaceMode === "chat" ? "local" : workspaceMode
+                }
                 selectedBranch={selectedBranch}
                 onBranchSelect={setSelectedBranch}
                 cloudBranches={cloudBranches}

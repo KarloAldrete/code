@@ -60,6 +60,7 @@ export interface TaskCreationInput {
   cloudPrAuthorshipMode?: PrAuthorshipMode;
   cloudRunSource?: CloudRunSource;
   signalReportId?: string;
+  originProduct?: string;
 }
 
 export interface TaskCreationOutput {
@@ -89,8 +90,9 @@ export class TaskCreationSaga extends Saga<
     // For new tasks, start folder registration in parallel with task creation
     // since folder_registration only needs repoPath (from input), not task.id
     const taskId = input.taskId;
+    const isChatMode = input.workspaceMode === "chat";
     const folderPromise =
-      !taskId && input.repoPath
+      !taskId && input.repoPath && !isChatMode
         ? this.resolveFolder(input.repoPath)
         : undefined;
 
@@ -125,7 +127,7 @@ export class TaskCreationSaga extends Saga<
       }
     }
 
-    if (repoPath) {
+    if (repoPath && !isChatMode) {
       const folder = folderPromise
         ? await this.readOnlyStep("folder_registration", () => folderPromise)
         : await this.readOnlyStep("folder_registration", () =>
@@ -386,7 +388,7 @@ export class TaskCreationSaga extends Saga<
     let repository = input.repository;
 
     const repoPathForDetection = input.repoPath;
-    if (!repository && repoPathForDetection) {
+    if (!repository && repoPathForDetection && input.workspaceMode !== "chat") {
       const detected = await this.readOnlyStep("repo_detection", () =>
         trpcClient.git.detectRepo.query({
           directoryPath: repoPathForDetection,
@@ -416,9 +418,9 @@ export class TaskCreationSaga extends Saga<
             input.cloudRunSource !== "signal_report"
               ? input.githubUserIntegrationId
               : undefined,
-          origin_product: input.signalReportId
-            ? "signal_report"
-            : "user_created",
+          origin_product:
+            input.originProduct ??
+            (input.signalReportId ? "signal_report" : "user_created"),
           signal_report: input.signalReportId ?? undefined,
           signal_report_task_relationship: input.signalReportId
             ? SIGNAL_REPORT_TASK_IMPLEMENTATION_RELATIONSHIP

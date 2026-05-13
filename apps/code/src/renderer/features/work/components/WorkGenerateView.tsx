@@ -11,7 +11,7 @@ import { toast } from "@renderer/utils/toast";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useWorkSkillsStore } from "@stores/workSkillsStore";
 import { logger } from "@utils/logger";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { buildSkillGeneratorPrompt } from "../utils/buildSkillGeneratorPrompt";
 
 const log = logger.scope("work-generate");
@@ -38,6 +38,14 @@ export function WorkGenerateView() {
   const addSkill = useWorkSkillsStore((s) => s.addSkill);
   const updateSkill = useWorkSkillsStore((s) => s.updateSkill);
   const navigateToWorkSkill = useNavigationStore((s) => s.navigateToWorkSkill);
+  const consumeWorkGeneratePendingPrompt = useNavigationStore(
+    (s) => s.consumeWorkGeneratePendingPrompt,
+  );
+
+  useEffect(() => {
+    const pending = consumeWorkGeneratePendingPrompt();
+    if (pending) setPrompt(pending);
+  }, [consumeWorkGeneratePendingPrompt]);
 
   const { folders, isLoaded: foldersLoaded } = useFolders();
 

@@ -3,7 +3,7 @@ import { z } from "zod";
 // Base schemas
 // Note: "root" is deprecated, migrated to "local" on read
 export const workspaceModeSchema = z
-  .enum(["worktree", "local", "cloud", "root"])
+  .enum(["worktree", "local", "cloud", "chat", "root"])
   .transform((val) => (val === "root" ? "local" : val));
 export const worktreeInfoSchema = z.object({
   worktreePath: z.string(),

@@ -4,6 +4,7 @@ import { type AppMode, useNavigationStore } from "@stores/navigationStore";
 const MODES: { value: AppMode; label: string }[] = [
   { value: "code", label: "Code" },
   { value: "work", label: "Work" },
+  { value: "chat", label: "Chat" },
 ];
 
 export function ModeSwitcher() {

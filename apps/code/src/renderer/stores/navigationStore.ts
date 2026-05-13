@@ -35,7 +35,7 @@ interface TaskInputNavigationOptions {
   reportAssociation?: TaskInputReportAssociation;
 }
 
-export type AppMode = "code" | "work";
+export type AppMode = "code" | "work" | "chat";
 
 export type WorkView =
   | "home"
@@ -44,6 +44,8 @@ export type WorkView =
   | "library"
   | "scheduled-list"
   | "scheduled-edit";
+
+export type ChatView = "home" | "conversation";
 
 interface ViewState {
   type: ViewType;
@@ -71,6 +73,13 @@ interface NavigationStore {
   navigateToWorkScheduledList: () => void;
   navigateToWorkScheduledCreate: () => void;
   navigateToWorkScheduledEdit: (scheduledId: string) => void;
+  chatView: ChatView;
+  activeChatId: string | null;
+  navigateToChatHome: () => void;
+  navigateToChatConversation: (chatId: string) => void;
+  workGeneratePendingPrompt?: string;
+  navigateToWorkGenerateWithPrompt: (prompt: string) => void;
+  consumeWorkGeneratePendingPrompt: () => string | undefined;
   view: ViewState;
   history: ViewState[];
   historyIndex: number;
@@ -196,6 +205,26 @@ export const useNavigationStore = create<NavigationStore>()(
             workSelectedSkillId: undefined,
             workScheduledEditId: scheduledId,
           }),
+        chatView: "home",
+        activeChatId: null,
+        navigateToChatHome: () => set({ chatView: "home", activeChatId: null }),
+        navigateToChatConversation: (chatId: string) =>
+          set({ chatView: "conversation", activeChatId: chatId }),
+        workGeneratePendingPrompt: undefined,
+        navigateToWorkGenerateWithPrompt: (prompt: string) =>
+          set({
+            workView: "generate",
+            workSelectedSkillId: undefined,
+            workScheduledEditId: undefined,
+            workGeneratePendingPrompt: prompt,
+          }),
+        consumeWorkGeneratePendingPrompt: () => {
+          const pending = get().workGeneratePendingPrompt;
+          if (pending !== undefined) {
+            set({ workGeneratePendingPrompt: undefined });
+          }
+          return pending;
+        },
         view: { type: "task-input" },
         history: [{ type: "task-input" }],
         historyIndex: 0,
@@ -416,6 +445,8 @@ export const useNavigationStore = create<NavigationStore>()(
         workView: state.workView,
         workSelectedSkillId: state.workSelectedSkillId,
         workScheduledEditId: state.workScheduledEditId,
+        chatView: state.chatView,
+        activeChatId: state.activeChatId,
         view: {
           type: state.view.type,
           taskId: state.view.taskId,

@@ -43,11 +43,18 @@ export async function archiveTaskImperative(
     (old) => (old ? [...old, taskId] : [taskId]),
   );
 
+  const workspaceMode = workspace?.mode;
+  const archivableMode =
+    workspaceMode === "local" ||
+    workspaceMode === "worktree" ||
+    workspaceMode === "cloud"
+      ? workspaceMode
+      : "worktree";
   const optimisticArchived: ArchivedTask = {
     taskId,
     archivedAt: new Date().toISOString(),
     folderId: workspace?.folderId ?? "",
-    mode: workspace?.mode ?? "worktree",
+    mode: archivableMode,
     worktreeName: workspace?.worktreeName ?? null,
     branchName: workspace?.branchName ?? null,
     checkpointId: null,

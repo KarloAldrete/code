@@ -134,7 +134,7 @@ async function trackTaskCreated(
       auto_run: !!input.executionMode,
       created_from: "command-menu",
       repository_provider: input.repository ? "github" : "none",
-      workspace_mode: workspaceMode,
+      workspace_mode: workspaceMode === "chat" ? "local" : workspaceMode,
       has_branch: !!input.branch,
       has_environment_setup:
         workspaceMode === "worktree" ? !!input.environmentId : undefined,

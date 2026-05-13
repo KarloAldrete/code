@@ -34,6 +34,7 @@ const environmentConfig: Record<
   local: { label: "Local", icon: Desktop },
   worktree: { label: "Worktree", icon: GitFork },
   cloud: { label: "Cloud", icon: Cloud },
+  chat: { label: "Chat", icon: Desktop },
 };
 
 function EnvironmentBadge({ mode }: { mode: WorkspaceMode | null }) {

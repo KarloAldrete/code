@@ -6,6 +6,7 @@ import { SpaceSwitcher } from "@components/SpaceSwitcher";
 import { ArchivedTasksView } from "@features/archive/components/ArchivedTasksView";
 import { UsageLimitModal } from "@features/billing/components/UsageLimitModal";
 import { useUsageLimitDetection } from "@features/billing/hooks/useUsageLimitDetection";
+import { ChatView } from "@features/chat/components/ChatView";
 import { CommandMenu } from "@features/command/components/CommandMenu";
 import { CommandCenterView } from "@features/command-center/components/CommandCenterView";
 import { InboxView } from "@features/inbox/components/InboxView";
@@ -48,6 +49,7 @@ export function MainLayout() {
   } = useNavigationStore();
   const mode = useNavigationStore((s) => s.mode);
   const isCodeMode = mode === "code";
+  const isChatMode = mode === "chat";
   const {
     isOpen: commandMenuOpen,
     setOpen: setCommandMenuOpen,
@@ -108,7 +110,9 @@ export function MainLayout() {
         <MainSidebar />
 
         <Box flexGrow="1" overflow="hidden">
-          {isCodeMode ? (
+          {isChatMode ? (
+            <ChatView />
+          ) : isCodeMode ? (
             <>
               {view.type === "task-input" && (
                 <TaskInput
