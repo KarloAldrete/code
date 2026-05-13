@@ -292,6 +292,9 @@ function buildSpawnWrapper(
 }
 
 function ensureLocalSettings(cwd: string): void {
+  // Guard against a stale or slug-derived cwd: mkdirSync with recursive:true
+  // would otherwise materialize the entire path as a phantom directory.
+  if (!fs.existsSync(cwd)) return;
   const claudeDir = path.join(cwd, ".claude");
   const localSettingsPath = path.join(claudeDir, "settings.local.json");
   try {

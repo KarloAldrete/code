@@ -1,6 +1,7 @@
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { Logger } from "../../../utils/logger";
 import { SUBAGENT_REWRITES } from "../hooks";
 import { buildSessionOptions } from "./options";
@@ -68,5 +69,38 @@ describe("buildSessionOptions", () => {
     });
 
     expect(options.agents?.["ph-explore"]).toEqual(override);
+  });
+
+  describe("ensureLocalSettings", () => {
+    const createdDirs: string[] = [];
+
+    afterEach(() => {
+      while (createdDirs.length > 0) {
+        const dir = createdDirs.pop();
+        if (dir) rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("writes .claude/settings.local.json when cwd exists", () => {
+      const cwd = mkdtempSync(path.join(os.tmpdir(), "options-cwd-"));
+      createdDirs.push(cwd);
+
+      buildSessionOptions({ ...makeParams(), cwd });
+
+      expect(existsSync(path.join(cwd, ".claude", "settings.local.json"))).toBe(
+        true,
+      );
+    });
+
+    it("does not materialize a phantom directory when cwd is missing", () => {
+      const cwd = path.join(
+        os.tmpdir(),
+        `options-missing-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      );
+
+      buildSessionOptions({ ...makeParams(), cwd });
+
+      expect(existsSync(cwd)).toBe(false);
+    });
   });
 });
