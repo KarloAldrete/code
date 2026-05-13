@@ -44,6 +44,10 @@ const colors = {
       info: "#2563eb",
     },
     background: "#f2f3ee",
+    // "Card" surface — used for raised UI like buttons, composer card, pills.
+    // Pure white in light mode for max contrast against the cream background;
+    // gray-3 in dark mode so cards lift slightly off the bg.
+    card: "#ffffff",
   },
   dark: {
     gray: {
@@ -82,6 +86,7 @@ const colors = {
       info: "#60a5fa",
     },
     background: "#131316",
+    card: "#1e1e28",
   },
 } as const;
 
@@ -135,6 +140,7 @@ function createThemeVars(theme: (typeof colors)["light" | "dark"]) {
     "--status-warning": hexToRgb(theme.status.warning),
     "--status-info": hexToRgb(theme.status.info),
     "--background": hexToRgb(theme.background),
+    "--card": hexToRgb(theme.card),
   });
 }
 
