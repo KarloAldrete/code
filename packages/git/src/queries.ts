@@ -366,8 +366,25 @@ export async function getAllBranches(
     baseDir,
     async (git) => {
       try {
-        const summary = await git.branchLocal();
-        return summary.all;
+        const summary = await git.branch(["-a"]);
+        const locals: string[] = [];
+        const localSet = new Set<string>();
+        for (const raw of summary.all) {
+          if (raw.startsWith("remotes/")) continue;
+          locals.push(raw);
+          localSet.add(raw);
+        }
+        const remoteOnly: string[] = [];
+        const remoteOnlySet = new Set<string>();
+        for (const raw of summary.all) {
+          if (!raw.startsWith("remotes/")) continue;
+          if (raw.endsWith("/HEAD")) continue;
+          const stripped = raw.replace(/^remotes\/[^/]+\//, "");
+          if (localSet.has(stripped) || remoteOnlySet.has(stripped)) continue;
+          remoteOnlySet.add(stripped);
+          remoteOnly.push(stripped);
+        }
+        return [...locals, ...remoteOnly];
       } catch {
         return [];
       }

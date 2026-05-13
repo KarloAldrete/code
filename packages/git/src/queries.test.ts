@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createGitClient } from "./client";
 import {
   detectDefaultBranch,
+  getAllBranches,
   getBranchDiffPatchesByPath,
   splitUnifiedDiffByFile,
 } from "./queries";
@@ -155,6 +156,69 @@ describe("splitUnifiedDiffByFile", () => {
 
     const result = splitUnifiedDiffByFile(raw);
     expect(result.get("image.png")).toContain("Binary files");
+  });
+});
+
+describe("getAllBranches", () => {
+  let repoDir: string | undefined;
+  let remoteDir: string | undefined;
+
+  afterEach(async () => {
+    if (repoDir) {
+      await rm(repoDir, { recursive: true, force: true });
+      repoDir = undefined;
+    }
+    if (remoteDir) {
+      await rm(remoteDir, { recursive: true, force: true });
+      remoteDir = undefined;
+    }
+  });
+
+  it("includes local branches, remote-only branches, and drops HEAD pointer refs", async () => {
+    const workDir = await mkdtemp(
+      path.join(tmpdir(), "posthog-code-branches-"),
+    );
+    const bareDir = await mkdtemp(path.join(tmpdir(), "posthog-code-bare-"));
+    repoDir = workDir;
+    remoteDir = bareDir;
+
+    const remoteGit = createGitClient(bareDir);
+    await remoteGit.init(["--bare", "--initial-branch", "main"]);
+
+    const git = createGitClient(workDir);
+    await git.init(["--initial-branch", "main"]);
+    await git.addConfig("user.name", "Test");
+    await git.addConfig("user.email", "test@example.com");
+    await git.addConfig("commit.gpgsign", "false");
+    await git.addRemote("origin", bareDir);
+
+    await writeFile(path.join(workDir, "file.txt"), "content\n");
+    await git.add(["file.txt"]);
+    await git.commit("initial");
+    await git.push(["origin", "main"]);
+
+    // Local branch with no remote counterpart
+    await git.checkoutLocalBranch("local-only");
+    await git.checkout("main");
+
+    // Remote-only branch: push then delete locally
+    await git.checkoutLocalBranch("remote-only");
+    await git.push(["origin", "remote-only"]);
+    await git.checkout("main");
+    await git.deleteLocalBranch("remote-only", true);
+
+    // Set remote HEAD so `branch -a` emits the `remotes/origin/HEAD -> ...` entry
+    await remoteGit.raw(["symbolic-ref", "HEAD", "refs/heads/main"]);
+    await git.fetch(["origin"]);
+
+    const result = await getAllBranches(workDir);
+
+    expect(result).toContain("main");
+    expect(result).toContain("local-only");
+    expect(result).toContain("remote-only");
+    expect(result.filter((b) => b === "main")).toHaveLength(1);
+    expect(result.some((b) => b.includes("HEAD"))).toBe(false);
+    expect(result.some((b) => b.startsWith("remotes/"))).toBe(false);
   });
 });
 
