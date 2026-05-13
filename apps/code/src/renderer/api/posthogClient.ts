@@ -605,6 +605,18 @@ export class PostHogAPIClient {
     return data;
   }
 
+  async getFileSystem(opts?: {
+    limit?: number;
+    offset?: number;
+    search?: string;
+  }) {
+    const projectId = String(await this.getTeamId());
+    return this.api.get("/api/projects/{project_id}/file_system/", {
+      path: { project_id: projectId },
+      query: opts ?? {},
+    });
+  }
+
   async getGithubLogin(): Promise<string | null> {
     const data = (await this.api.get("/api/users/{uuid}/github_login/", {
       path: { uuid: "@me" },
