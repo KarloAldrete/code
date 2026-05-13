@@ -10,7 +10,7 @@ Hedgemony is a self-contained feature. Reuse posthog-code primitives, but design
 
 - **Namespaced storage.** All Hedgemony tables prefixed `hedgemony_`. No new columns added to existing tables (`tasks`, `workspaces`, etc.).
 - **Service isolation.** Hedgemony services live under `apps/code/src/main/services/hedgemony/`. They depend on existing services through interfaces, not the other way around.
-- **Feature flag.** Whole feature gated. Disabled → no tables created, no services registered, no UI route.
+- **Feature flag.** Whole feature gated by the renderer's standard `useFeatureFlag` path. Disabled → no UI route/toggle, no Hedgemony subscriptions, no pollers/timers started. Migrations may still create empty tables.
 - **No upstream coupling.** Existing posthog-code code doesn't import from `services/hedgemony/`. The integration points are: Hedgemony reads `SignalReport`s, creates `Task`s, watches PRs, calls `sendPromptToAgent`. All of those already exist.
 
 ---
@@ -21,11 +21,12 @@ New sqlite tables in posthog-code's existing `better-sqlite3` db. All schemas us
 
 | Table | Purpose |
 |---|---|
-| `hedgemony_nest` | Goal record. Fields: `id`, `name`, `goal_prompt` (freeform), `map_x` / `map_y` (placement), `status` (active/dormant/archived/needs_attention), `health` (ok/worktree_missing/db_inconsistent), optional `target_metric_id`, `loadout_json` (skills, MCP servers, doc references, optional target metric). **No `repo` field** — repo membership is derived from a nest's hoglets. |
-| `hedgemony_hoglet` | Sidecar row tying a posthog-code task into the nest world. Fields: `id`, `task_id` (free-text cloud Task ID, **not a FK** — Tasks are server-owned by PostHog Django; posthog-code only holds the ID as a string handle, matching the existing `workspaces.taskId` pattern), `nest_id` (nullable — null = wild hoglet), `signal_report_id` (nullable — null = ad-hoc, UNIQUE constraint with null handling to prevent adoption races), `created_at`. Joining with Task state is renderer-side: query `hedgemony_hoglet` rows from sqlite, then fetch Task state from PostHog API. |
+| `hedgemony_nest` | Goal record. Fields: `id`, `name`, `goal_prompt` (freeform), `definition_of_done` (nullable), `map_x` / `map_y` (placement), `status` (active/dormant/archived/needs_attention), `health` (ok/worktree_missing/db_inconsistent), optional `target_metric_id`, `loadout_json` (skills, MCP servers, doc references, optional target metric). **No required `repo` field** — repo/worktree/product scope is inferred from the goal, grouped signals, and hoglet history. |
+| `hedgemony_hoglet` | Sidecar row tying a posthog-code task into the nest world. Fields: `id`, `task_id` (free-text cloud Task ID, **not a FK** — Tasks are server-owned by PostHog Django; posthog-code only holds the ID as a string handle, matching the existing `workspaces.taskId` pattern), `nest_id` (nullable), `signal_report_id` (nullable — null = ad-hoc, UNIQUE constraint with null handling to prevent ingestion races), `created_at`. `nest_id = null` + `signal_report_id IS NOT NULL` means unnested signal hoglet; both null means ad-hoc wild hoglet. Joining with Task state is renderer-side: query `hedgemony_hoglet` rows from sqlite, then fetch Task state from PostHog API. |
 | `hedgemony_pr_dependency` | Edges in the per-nest PR graph. Fields: `id`, `nest_id`, `parent_task_id`, `child_task_id`, `state` (pending/satisfied/broken/follow_up). `follow_up` indicates a child spawned to address late review comments on a merged parent. |
 | `hedgemony_feedback_event` | Audit log of routed feedback. Fields: `id`, `nest_id`, `hoglet_task_id`, `source` (pr_review/ci/issue), `payload_hash` (sha256 of source content) + `payload_ref` (signal report ID or PR comment URL), `trust_tier` (operator/internal/external), `injected_at`. **No raw payload text stored** — see [External content trust boundary](#external-content-trust-boundary). |
 | `hedgemony_hedgehog_state` | Hedgehog's per-nest scratchpad. Fields: `nest_id` (PK), `scratchpad_json` (ordered list of timestamped entries: in-flight decisions, current goal-judgment confidence, notes for next tick — trimmable from oldest for token-budget enforcement), `last_tick_at`, `state` (idle/ticking/proposing-completion). The hedgehog is not a `Task` — see [Hedgehog orchestrator](#hedgehog-orchestrator). |
+| `hedgemony_nest_message` | Durable nest chat + audit log. Fields: `id`, `nest_id`, `kind` (user_message/hedgehog_message/audit/tool_result/hoglet_summary), `visibility` (summary/detail), `source_task_id` (nullable), `body`, `payload_json`, `created_at`. Operator and hedgehog messages are stored directly; external feedback content should store refs/summaries consistent with the trust boundary. |
 | `hedgemony_operator_decision` | Persistent override memory. Fields: `id`, `nest_id`, `hoglet_task_id` (nullable), `signal_report_id` (nullable), `decision` (suppress/kill/redirect), `reason` (operator-supplied text), `decided_at`. Surfaced as a do-not-redo list in every tick's prompt and as a hard filter on `spawn_hoglet`. See [Operator override memory](#operator-override-memory). |
 | `hedgemony_tick_log` | Rolling tick history for rate limiting. Fields: `id`, `nest_id`, `ticked_at`, `outcome` (success/capped/error). Indexed on `(nest_id, ticked_at)` for fast "ticks in last hour" counts. Pruned after 7 days. |
 
@@ -39,38 +40,39 @@ Migrations follow the existing pattern in `apps/code/src/main/db/`. Repository p
 
 A hoglet is a posthog-code task with a row in `hedgemony_hoglet`. The task itself is unchanged: same `not_started → in_progress → completed/failed` lifecycle, same workspace/branch/harness/MCP/skills.
 
-**Data ownership**: Tasks are server-owned by PostHog Django (`posthog/products/tasks/backend/models.py`); posthog-code fetches Task state via the existing `PosthogAPIClient` (renderer) or via main-side fetchers using `AuthService.authenticatedFetch` (see [Signal ingestion](#signal-ingestion--defer-to-autonomy-adopt-after)). `hedgemony_hoglet.task_id` is a **string handle** to the cloud Task ID, matching the existing `workspaces.taskId` pattern — no FK to a local `tasks` table because no such table exists.
+**Data ownership**: Tasks are server-owned by PostHog Django (`posthog/products/tasks/backend/models.py`); posthog-code fetches Task state via the existing `PosthogAPIClient` (renderer) or via main-side fetchers using `AuthService.authenticatedFetch` (see [Signal ingestion](#signal-ingestion--inbox-source-of-truth)). `hedgemony_hoglet.task_id` is a **string handle** to the cloud Task ID, matching the existing `workspaces.taskId` pattern — no FK to a local `tasks` table because no such table exists.
 
-- **Spawn flow**: Hedgemony creates a Task via the existing task-creation saga (`apps/code/src/renderer/sagas/task/task-creation.ts`) — this hits the cloud Task API. On success, insert a `hedgemony_hoglet` row binding the returned `task_id` to a nest (or null = wild) and optionally to a signal report.
+- **Spawn flow**: Hedgemony creates a Task via the existing task-creation saga (`apps/code/src/renderer/sagas/task/task-creation.ts`) — this hits the cloud Task API. On success, insert a `hedgemony_hoglet` row binding the returned `task_id` to a nest, to an unnested signal (`nest_id = null`, `signal_report_id` set), or to an ad-hoc wild one-off (`nest_id = null`, `signal_report_id = null`).
 - **Read flow**: "Show me a nest's hoglets" runs in renderer:
   1. tRPC query → main returns `hedgemony_hoglet` rows for that nest (sqlite read).
   2. Renderer batch-fetches Task state for each `task_id` via the existing `PosthogAPIClient.getTasks` / batch endpoint, merges client-side.
   3. Orphan rows (cloud Task missing — deleted server-side) get flagged in the consistency sweep (see [Recovery sweep](#recovery--consistency-sweep)).
-- **Wild hoglet**: row exists with `nest_id = null`. Adoption = UPDATE that field.
+- **Unnested signal hoglet**: row exists with `nest_id = null` and `signal_report_id` set. It remains tied to the Signals Inbox until the operator or hedgehog groups it into a nest, creates a new nest around related signals, or suppresses the Inbox item.
+- **Wild hoglet**: row exists with `nest_id = null` and `signal_report_id = null`. It is an ad-hoc one-off, not a signal triage queue. Adoption = UPDATE `nest_id`.
 
 ---
 
-## Signal ingestion — defer to autonomy, adopt after
+## Signal ingestion — Inbox source of truth
 
-PostHog's existing **autonomy** system (`products/signals/`) already auto-starts a `Task` from high-priority `SignalReport`s. Hedgemony does **not** duplicate that ingestion path — it would race with autonomy and create twin tasks for the same report. Instead, Hedgemony watches for autonomy-created tasks and *adopts* them into the nest world.
+The Signals Inbox remains the source of truth for signal lifecycle, dedupe, grouping, suppression, and "is this worth acting on?" metadata. Hedgemony does **not** build a parallel signal inbox. It consumes Inbox reports and gives related implementation work a spatial/orchestrated home.
 
 **Main-side fetching pattern** (matches `CloudTaskService`): a new `apps/code/src/main/services/hedgemony/signal-reports-client.ts` (~30 lines) uses `AuthService.authenticatedFetch(fetch, url, init)` to hit `${apiHost}/api/projects/${teamId}/signals/reports/...`. No port of the renderer's `PosthogAPIClient`; no shared auth state across processes. URL construction mirrors `apps/code/src/renderer/api/posthogClient.ts:1875+`.
 
-Adoption loop:
+Ingestion loop:
 
-1. Poll the signals endpoint for reports whose `SignalReport` payload indicates autonomy spawned a Task. **Specific linkage field needs verification** before scaffolding — likely `SignalReportTask` rows (`posthog/products/signals/backend/models.py`) joining a report to a `task_id`. Confirm with the signals team during PR #2.
-2. Skip reports already adopted (check `hedgemony_hoglet.signal_report_id` UNIQUE constraint).
-3. For each newly autonomy-started task tied to a not-yet-adopted report, insert a `hedgemony_hoglet` row with `task_id` (cloud ID string) + `signal_report_id` set. `nest_id` decided by the [affinity router](#affinity-router--goal-based-not-repo-based).
-4. The hoglet's status (idle / running) is whatever autonomy already set on its cloud `TaskRun`. The hedgehog observes and decides whether to raise it (if still idle), hold, or kill (subject to the [operator override](#operator-override-memory) filter).
-5. **Adoption race**: `hedgemony_hoglet (signal_report_id)` UNIQUE constraint with null handling; insert-or-ignore semantics so two adoption attempts can't both succeed.
+1. Poll the signals endpoint for Inbox reports that represent net-new implementation work and are not already represented in `hedgemony_hoglet`. **Specific linkage fields need verification** before scaffolding — likely `SignalReportTask` rows (`posthog/products/signals/backend/models.py`) joining a report to a `task_id`, plus report status/suppression fields.
+2. If the Inbox/autonomy path has already created a cloud Task for the report, adopt it: insert a `hedgemony_hoglet` row with `task_id` (cloud ID string) + `signal_report_id` set.
+3. If the report has no Task yet, Hedgemony may create one through the existing task-creation saga when the operator or hedgehog decides to act on it. The signal report is still the source of context; Hedgemony only creates the implementation Task.
+4. `nest_id` is decided by the [affinity router](#affinity-router--goal-based-not-repo-based). Match → grouped into a nest. No match → `nest_id = null` with `signal_report_id` set, meaning an unnested signal hoglet in the Inbox-backed staging area.
+5. **Ingestion race**: `hedgemony_hoglet (signal_report_id)` UNIQUE constraint with null handling; insert-or-ignore semantics so two attempts can't both create hoglets for the same signal.
 
-For reports autonomy *didn't* auto-start (lower priority, or autonomy disabled), Hedgemony can optionally spawn a hoglet directly via the existing task-creation saga — flagged off in v1 to avoid overlap surprises.
+This keeps the important invariant simple: a signal-backed hoglet always points back to one Inbox report, and one Inbox report can produce at most one active Hedgemony hoglet unless a follow-up is explicitly spawned and linked.
 
 ---
 
 ## Affinity router — goal-based, not repo-based
 
-A nest has no repo field. Routing is semantic match against the nest's `goal_prompt`, computed entirely server-side via existing PostHog primitives — no new SDK dependency.
+A nest has no required repo field. Routing is semantic match against the nest's goal spec, grouped signals, and recent hoglet history, computed entirely server-side via existing PostHog primitives — no new SDK dependency.
 
 **v1 implementation:**
 
@@ -79,17 +81,17 @@ PostHog already exposes `embedText('text', model?)` as a HogQL function (`postho
 Routing flow:
 
 1. New `SignalReport` arrives. We have its `id` (= an `EmbeddedDocument` in PostHog's table).
-2. For each active nest, issue a HogQL query: `embedText(nest.goal_prompt) <-> SignalReport.embedding` and rank distance.
+2. For each active nest, issue a HogQL query: `embedText(nest.goal_prompt) <-> SignalReport.embedding` and rank distance. The text input can include the current goal spec, definition of done, and compact summaries of grouped signals/hoglet work.
    - In v1 batch all active nests in one query rather than N round-trips.
 3. Highest-scoring nest above threshold wins → that becomes `hedgemony_hoglet.nest_id`.
 4. Tiebreak / weighting bumps for: `source_products` overlap with the nest's recent hoglet sources, recent activity in the same area.
-5. No match above threshold → `nest_id = null` (wild hoglet, lands in the holding area).
+5. No match above threshold → `nest_id = null` with `signal_report_id` set (unnested signal hoglet in the Inbox-backed staging area).
 
-The `goal_prompt` does **not** need to be persisted server-side. `embedText()` embeds on-the-fly per query, so changing a nest's goal just changes future routing — no migration.
+The goal embedding does **not** need to be persisted server-side. `embedText()` embeds on-the-fly per query, so changing a nest's goal spec just changes future routing — no migration.
 
 **v2:** LLM judge for borderline cases; learned routing from operator adoptions; cache goal-prompt embeddings client-side or in the hibernacula to skip the per-query embed call when goals are stable.
 
-Repo affinity emerges naturally — a nest whose goal is "improve checkout conversion" will accumulate hoglets that touch checkout-related repos, which feeds back into the source_products weighting. Repo is derived, never declared.
+Repo/worktree/product affinity emerges naturally — a nest whose goal is "improve checkout conversion" will accumulate signals and hoglets that touch checkout-related areas, which feeds back into weighting. Scope may be shown to the operator as inferred context, but it does not have to be declared up front.
 
 ---
 
@@ -124,8 +126,9 @@ See [Considered alternatives](#considered-alternatives) for the other event-sour
 ### Runtime model
 
 - One row in `hedgemony_hedgehog_state` per active nest. Her scratchpad lives there; nothing else persists across ticks.
-- A tick is: load state + relevant joined context (current hoglets, PR graph, recent events) → make one Claude API call with the goal prompt + structured state + an event payload + a tool list → parse `tool_use` responses → dispatch each one to the corresponding Hedgemony service method → write `scratchpad_json` + `last_tick_at` → done.
+- A tick is: load state + relevant joined context (current hoglets, PR graph, recent events, recent nest chat, compact chat summary) → make one Claude API call with the goal spec + structured state + an event payload + a tool list → parse `tool_use` responses → dispatch each one to the corresponding Hedgemony service method → write `scratchpad_json` + `last_tick_at` + audit/chat entries → done.
 - No claude-agent-sdk session, no agent harness, no sandbox, no worktree. She doesn't touch files. Tools are service method bindings, not agent SDK tools. Lightweight enough that ticks are bounded in both time and token cost.
+- The hedgehog can orchestrate autonomously. Tool execution still runs through the same permission boundaries as the target hoglet: repo/worktree access, harness settings, MCP allowlists, and any user-configured PostHog Code permissions attached to that Task.
 - This is exactly the shape `TaskAutomation` schedules on the cloud side (`automation_service.run_task_automation`) — if she ever moves cloud-side, each tick becomes a Temporal-scheduled `run_task_automation` call. Same code, different scheduler.
 
 ### Scheduling
@@ -135,7 +138,7 @@ See [Considered alternatives](#considered-alternatives) for the other event-sour
 - **Event-driven**: subscribes to a `TypedEventEmitter` on `EventSourceService` (Hedgemony's own internal event bus, matching the per-service pattern used by `InboxLinkService`, `ConnectivityService`, etc. — no shared global bus exists in posthog-code). New event for a nest → enqueue a tick for that nest.
 - **Heartbeat**: a single global `setInterval` (default ~5 min) walks active nests; per-nest tick cadence is gated by `last_tick_at` in `hedgemony_hedgehog_state` and the `min_seconds_between_ticks` cap.
 - **Backpressure**: in-memory map `nestId → "ticking" | null` on the service singleton enforces at-most-one in-flight. Concurrent events coalesce — the next tick reads the latest state, no event queue needed.
-- **Startup recovery**: on app launch (when feature flag enabled), service scans `hedgemony_nest` for active rows and seeds the schedule. Any nest with `last_tick_at` older than the heartbeat interval ticks once immediately.
+- **Startup recovery**: when Hedgemony is activated, service scans `hedgemony_nest` for active rows and seeds the schedule. Any nest with `last_tick_at` older than the heartbeat interval ticks once immediately.
 
 ### Tools (Claude `tool_use` definitions dispatched to service methods)
 
@@ -144,15 +147,27 @@ Before each tick the dispatcher loads `hedgemony_operator_decision` rows for the
 - `spawn_hoglet(prompt, signal_report_id?)` → `NestService.spawnHoglet`. Hits the cloud task-creation saga, then inserts a `hedgemony_hoglet` row. Subject to the per-nest active-hoglet cap.
 - `raise_hoglet(hoglet_id)` → starts the cloud `TaskRun`.
 - `kill_hoglet(hoglet_id, reason)` → cancels.
+- `message_hoglet(hoglet_id, prompt)` → routes an orchestration prompt into the hoglet conversation when connected, or creates a follow-up hoglet if the session is closed and the message requires action.
 - `link_pr_dependency(parent, child)` / `unlink_pr_dependency`.
 - `rebase_child(child_task_id)` → calls the new `GitService.rebaseOntoBase(worktreePath, baseBranch)` (see [PR dependency graph](#pr-dependency-graph)).
 - `route_feedback(hoglet_id, prompt)` → emits a `FeedbackRoutingService.injectPrompt` event consumed by the renderer (see [Feedback routing](#feedback-routing-pr-review--ci)).
 - `propose_completion(summary)` → marks the nest as proposing-completion; operator confirms via the UI.
+- `write_audit_entry(summary, detail?)` → writes an operator-visible `hedgemony_nest_message` row. The dispatcher also writes automatic audit rows for high-impact tools (`spawn_hoglet`, `raise_hoglet`, `kill_hoglet`, `rebase_child`, `propose_completion`) even if the model forgets to call this explicitly.
 - `note(text)` → appends a timestamped entry to `scratchpad_json` for next tick's context.
+
+### Nest chat command log
+
+Nest chat is the user's interface to the hedgehog, but it is not a long-running agent conversation.
+
+- `hedgemony_nest_message` stores user messages, hedgehog replies, compact audit entries, tool results, and optional hoglet summaries.
+- By default the UI shows orchestrator-level summaries: "spawned 3 hoglets because...", "routed CI failure to checkout hoglet", "waiting for PR A before rebasing PR B".
+- Each summary can expand into detail rows: exact tool payloads, linked hoglet messages, PR comments, CI refs, and source signal reports. Detail entries can store refs/summaries instead of raw external text when the trust boundary requires it.
+- On every user message, `HedgehogTickService` enqueues an immediate tick for that nest. The tick sees recent chat and the durable scratchpad, responds in chat, and may take tool actions.
+- Older chat is preserved raw in sqlite, while prompt assembly uses recent messages + a compact rolling summary to avoid context-window degradation.
 
 ### Why not in-memory continuous-conversation context
 
-A persistent in-conversation hedgehog would need a context-compaction loop (truncate old turns / summarize on threshold) to stay sane over a goal that runs for days. The ephemeral model dodges it entirely: every tick assembles fresh structured context, no transcript grows. Token cost per tick is small and predictable; testing is `(state, event) → decisions`; crash recovery is free because state always lives in sqlite. See [Considered alternatives](#considered-alternatives).
+A persistent in-conversation hedgehog would need a context-compaction loop (truncate old turns / summarize on threshold) to stay sane over a goal that runs for days. The ephemeral model dodges it entirely: every tick assembles fresh structured context from durable state and nest chat; no live agent transcript grows. Token cost per tick is small and predictable; testing is `(state, event, recent_chat) → decisions`; crash recovery is free because state always lives in sqlite. See [Considered alternatives](#considered-alternatives).
 
 ---
 
@@ -204,7 +219,7 @@ The hedgehog has visibility into `hedgemony_feedback_event` so she can decide wh
 
 ## Goal judgment
 
-Hedgehog reads `goal_prompt` plus accumulated work (merged PRs in `hedgemony_pr_dependency`, resolved signal reports linked via hoglets) and decides. Implementation: an LLM judge call with the goal + a structured summary of completed work + open hoglets. Returns one of: `not_satisfied`, `likely_satisfied`, `definitely_satisfied`. Always requires operator confirmation in v1 — auto-close is v2.
+Hedgehog reads the nest goal spec plus accumulated work (merged PRs in `hedgemony_pr_dependency`, resolved signal reports linked via hoglets, relevant nest chat/audit entries) and decides. Implementation: an LLM judge call with the goal + definition of done + a structured summary of completed work + open hoglets. Returns one of: `not_satisfied`, `likely_satisfied`, `definitely_satisfied`. Always requires operator confirmation in v1 — auto-close is v2.
 
 Optional `target_metric_id` on the nest: hedgehog watches it via PostHog MCP and includes the trend in her judgment.
 
@@ -218,10 +233,11 @@ All Hedgemony services live under `apps/code/src/main/services/hedgemony/`:
 - `hedgehog-service.ts`
 - `affinity-router.ts`
 - `event-source-service.ts`
+- `nest-chat-service.ts`
 - `pr-graph-service.ts`
 - `feedback-routing-service.ts`
 
-Registered in the existing `apps/code/src/main/di/container.ts` behind a `hedgemonyEnabled` check, so all services share the main container's bindings (logger, db, MCP, `AuthService`). All services follow the existing `@injectable()` + `TypedEventEmitter` pattern (`apps/code/src/main/services/ui/service.ts`, `connectivity/service.ts`, `inbox-link/service.ts`, etc.) — long-lived singletons with per-service event emitters; no shared global bus.
+Registered in the existing `apps/code/src/main/di/container.ts`, so all services share the main container's bindings (logger, db, MCP, `AuthService`). posthog-code's current feature-flag standard is renderer-side (`useFeatureFlag` over `posthog-js`), so main-process Hedgemony services must be inert until activated by the enabled UI path. Constructors must not start pollers, timers, or recovery sweeps; those start from an explicit bootstrap/activation call. All services follow the existing `@injectable()` + `TypedEventEmitter` pattern (`apps/code/src/main/services/ui/service.ts`, `connectivity/service.ts`, `inbox-link/service.ts`, etc.) — long-lived singletons with per-service event emitters; no shared global bus.
 
 **Boundary discipline (mandatory).** Nothing outside `services/hedgemony/` may import from inside it. Hedgemony depends on existing posthog-code services through their public interfaces only. If we ever need to extract this feature into its own package or repo, the move is `mv services/hedgemony/ → packages/hedgemony/` plus import-path updates — the internal shape doesn't change. See [Considered alternatives](#considered-alternatives) for the sub-container and workspace-package options that were evaluated and deferred.
 
@@ -238,7 +254,8 @@ Hedgemony autonomy needs guardrails before shipping. A misbehaving hedgehog coul
 | Min seconds between ticks per nest | 30s | `HedgehogTickService` debounces event-driven ticks |
 | Max ticks per nest per hour | 60 | `COUNT(*) FROM hedgemony_tick_log WHERE nest_id = ? AND ticked_at > now() - 1h`; over-cap ticks no-op and write a row with `outcome = capped` |
 | Max LLM tokens per tick | 8k input + 2k output | Prompt assembly trims oldest entries from the ordered `scratchpad_json` list; output cap via Claude API `max_tokens` param |
-| Max wild hoglets in holding area | 25 | Oldest evicted (with audit row) when exceeded — forces operator to triage |
+| Max unnested signal hoglets in staging area | 25 | Oldest unresolved items stay in Inbox, but Hedgemony stops rendering them until the operator filters/triages |
+| Max ad-hoc wild hoglets | 25 | Oldest completed wild hoglets roll off the map first; active one-offs are preserved |
 
 All caps surfaced in `settingsStore` so power users can raise them per-machine; cloud-side overrides come in v2. When a cap fires, log to telemetry under `hedgemony.cap_*` so we can tell whether defaults are too tight in practice.
 
@@ -246,18 +263,20 @@ All caps surfaced in `settingsStore` so power users can raise them per-machine; 
 
 ## Feature flag
 
-Two layers:
+Current app standard:
 
-1. **Cloud flag** — PostHog feature flag (`hedgemony_enabled`), checked at app startup, gates registration of services + UI route.
-2. **Local override** — user setting in `settingsStore` so power users can opt in before the cloud rollout.
+1. **Cloud flag key** — `hedgemony-enabled`, exported as `HEDGEMONY_FLAG` from `apps/code/src/shared/constants.ts`.
+2. **Renderer evaluation** — `useFeatureFlag(HEDGEMONY_FLAG, import.meta.env.DEV)` gates the Command Center map toggle and map route. The second argument follows the local dev-default pattern supported by `useFeatureFlag`.
+3. **Main activation** — main-process routers/services do not evaluate cloud flags directly today. They can be registered normally, but must remain side-effect-free until the enabled renderer path calls/subscribes/activates them.
+4. **Local override** — optional later user setting in `settingsStore` if power users need opt-in before the cloud rollout. Do not assume it exists in the first slice.
 
-When disabled: services not constructed, tables not created (or empty), renderer route returns null. No new code runs in the hot path.
+When disabled: the renderer route/toggle returns null, Hedgemony subscriptions are not opened, pollers/timers do not start, and tables remain inert even if migrations already created them. No new code runs in the hot path beyond normal router/service registration.
 
 ---
 
 ## Migrations
 
-Standard posthog-code sqlite migration in `apps/code/src/main/db/`. One migration file creates all seven Hedgemony tables (`hedgemony_nest`, `hedgemony_hoglet`, `hedgemony_pr_dependency`, `hedgemony_feedback_event`, `hedgemony_hedgehog_state`, `hedgemony_operator_decision`, `hedgemony_tick_log`); future migrations add columns as needed. Migrations always run (they're idempotent) even when the feature flag is off — keeps schema state consistent and avoids "first-toggle creates tables on hot path" pitfalls. Empty tables cost nothing.
+Standard posthog-code sqlite migration in `apps/code/src/main/db/`. One migration file creates all eight Hedgemony tables (`hedgemony_nest`, `hedgemony_hoglet`, `hedgemony_pr_dependency`, `hedgemony_feedback_event`, `hedgemony_hedgehog_state`, `hedgemony_nest_message`, `hedgemony_operator_decision`, `hedgemony_tick_log`); future migrations add columns as needed. Migrations always run (they're idempotent) even when the feature flag is off — keeps schema state consistent and avoids "first-toggle creates tables on hot path" pitfalls. Empty tables cost nothing.
 
 ---
 
@@ -267,7 +286,7 @@ Without persistent override state, the ephemeral hedgehog will re-make decisions
 
 - Killing a hoglet → `decision = "kill"`, links `hoglet_task_id`.
 - Suppressing a signal report → `decision = "suppress"`, links `signal_report_id`.
-- Redirecting a wild hoglet to a specific nest → `decision = "redirect"`, links `hoglet_task_id` + target `nest_id`.
+- Redirecting an un-nested hoglet to a specific nest → `decision = "redirect"`, links `hoglet_task_id` + target `nest_id`.
 
 Before each tick the dispatcher loads relevant rows for the nest and renders them in the prompt's "do-not-redo" section. Service-level enforcement is the safety net: `spawn_hoglet` cross-checks `signal_report_id` against suppress decisions and returns `error: operator_suppressed` without executing; `kill_hoglet` is a no-op if the operator already revived the hoglet (audit row still written).
 
@@ -302,7 +321,7 @@ Cross-nest collisions are detected but only warned, never auto-edged — the hed
 
 ## Recovery / consistency sweep
 
-On app launch with the feature flag enabled, `HedgemonyService.bootstrap()` runs a consistency check:
+When the enabled renderer path activates Hedgemony, `HedgemonyService.bootstrap()` runs a consistency check:
 
 - **Worktree existence**: every active nest's worktrees and every hoglet's `workspaces.worktreePath` is `fs.exists`-checked. Missing → mark `hedgemony_nest.health = worktree_missing` and `status = needs_attention`. Hedgehog skips needs-attention nests until the operator confirms cleanup.
 - **Orphan hoglet rows**: any `hedgemony_hoglet.task_id` that the cloud Task API returns 404 for → mark as orphaned, exclude from joins, surface in the UI for cleanup.
@@ -317,9 +336,9 @@ Quarantined nests don't tick — the hedgehog can't burn tokens on broken state.
 
 Ship v1 in four PRs to keep each reviewable and dogfoodable:
 
-- **PR #1 — Foundations.** Migration creating all seven tables, `NestService` CRUD, `nests.list/get/create/update/archive` tRPC, sidebar/Command Center toggle, DOM map with placeholder hoglet dots, ad-hoc wild hoglet via existing task-creation saga. No hedgehog, no signals. Dogfoodable as a manual fleet-visualization tool.
-- **PR #2 — Affinity router + adoption.** Main-side `signal-reports-client.ts`, HogQL embedding-based router, autonomy-adoption loop. Verify the SignalReport→Task linkage field with the signals team before scaffolding.
-- **PR #3 — Hedgehog + tools (no rebase, no feedback routing).** `HedgehogTickService` singleton with scheduler, prompt assembly, tool dispatch for `spawn/raise/kill/note/propose_completion`. Goal-judgment LLM call. Operator-override memory wired. Cap enforcement. Hedgehog can run a nest end-to-end except for PR orchestration.
+- **PR #1 — Foundations.** Migration creating all eight tables, `NestService` CRUD, `nestChat` CRUD for goal-writing/audit entries, `nests.list/get/create/update/archive` tRPC, sidebar/Command Center toggle, engine-neutral map surface with placeholder hoglet dots, ad-hoc wild hoglet via existing task-creation saga. No hedgehog, no signals. Dogfoodable as a manual fleet-visualization tool.
+- **PR #2 — Affinity router + Inbox ingestion.** Main-side `signal-reports-client.ts`, HogQL embedding-based router, Inbox-backed signal ingestion/adoption loop. Verify the SignalReport→Task linkage field with the signals team before scaffolding.
+- **PR #3 — Hedgehog + tools (no rebase, no feedback routing).** `HedgehogTickService` singleton with scheduler, prompt assembly, tool dispatch for `spawn/raise/kill/message_hoglet/write_audit_entry/note/propose_completion`. Goal-judgment LLM call. Operator-override memory wired. Cap enforcement. Hedgehog can run a nest end-to-end except for PR orchestration.
 - **PR #4 — PR graph, rebase, feedback routing.** `RebaseSaga` + `GitService.rebaseOntoBase`. `link/unlink_pr_dependency`, `rebase_child` tools. `FeedbackRoutingService` event-bus path + renderer prompt-router hook + follow-up hoglet flow. Implicit collision detection.
 
 v2 features (cloud-side hedgehog, Slack relay, etc.) follow.

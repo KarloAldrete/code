@@ -9,19 +9,22 @@ import { NestSprite } from "./NestSprite";
 const ZOOM_WHEEL_STEP = 0.0015;
 const CLICK_DRAG_THRESHOLD_PX = 4;
 
-interface HedgemonyMapCanvasProps {
+interface HedgemonyMapSurfaceProps {
   nests: Nest[];
-  /** Rendered as a fixed overlay above the canvas (e.g. empty state). */
+  /** Rendered in the panning/zooming layer (nests, hoglets later). */
+  children?: ReactNode;
+  /** Rendered as a fixed overlay above the map surface (e.g. empty state). */
   overlay?: ReactNode;
   /** Called when the user clicks an empty patch of map (world coords). */
   onMapClick?: (worldX: number, worldY: number) => void;
 }
 
-export function HedgemonyMapCanvas({
+export function HedgemonyMapSurface({
   nests,
+  children,
   overlay,
   onMapClick,
-}: HedgemonyMapCanvasProps) {
+}: HedgemonyMapSurfaceProps) {
   const panX = useHedgemonyViewStore((s) => s.panX);
   const panY = useHedgemonyViewStore((s) => s.panY);
   const zoom = useHedgemonyViewStore((s) => s.zoom);
@@ -91,6 +94,7 @@ export function HedgemonyMapCanvas({
         {nests.map((nest) => (
           <NestSprite key={nest.id} nest={nest} />
         ))}
+        {children}
       </motion.div>
 
       {overlay && (

@@ -9,6 +9,7 @@ import {
   Trash,
 } from "@phosphor-icons/react";
 import { Flex, Select, Text } from "@radix-ui/themes";
+import { HEDGEMONY_FLAG } from "@shared/constants";
 import type {
   CommandCenterCellData,
   StatusSummary,
@@ -102,8 +103,7 @@ export function CommandCenterToolbar({
   const viewMode = useCommandCenterStore((s) => s.viewMode);
   const setViewMode = useCommandCenterStore((s) => s.setViewMode);
 
-  const hedgemonyEnabled =
-    useFeatureFlag("hedgemony-enabled") || import.meta.env.DEV;
+  const hedgemonyEnabled = useFeatureFlag(HEDGEMONY_FLAG, import.meta.env.DEV);
   const effectiveViewMode: CommandCenterViewMode = hedgemonyEnabled
     ? viewMode
     : "grid";

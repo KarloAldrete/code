@@ -5,7 +5,7 @@ import {
   useNestStore,
 } from "../stores/nestStore";
 import { HedgemonyEmptyState } from "./HedgemonyEmptyState";
-import { HedgemonyMapCanvas } from "./HedgemonyMapCanvas";
+import { HedgemonyMapSurface } from "./HedgemonyMapSurface";
 import { PlaceNestDialog } from "./PlaceNestDialog";
 
 export function HedgemonyMapView() {
@@ -25,7 +25,7 @@ export function HedgemonyMapView() {
 
   return (
     <>
-      <HedgemonyMapCanvas
+      <HedgemonyMapSurface
         nests={nests}
         overlay={showEmptyState ? <HedgemonyEmptyState /> : null}
         onMapClick={(x, y) => setPendingPlacement({ x, y })}

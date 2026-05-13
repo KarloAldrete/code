@@ -68,7 +68,7 @@ export function PlaceNestDialog({
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Content maxWidth="480px" size="2">
-        <Dialog.Title size="3">Place a nest</Dialog.Title>
+        <Dialog.Title size="3">Create a nest</Dialog.Title>
         <Dialog.Description size="2" color="gray">
           Declare a goal. Hoglets will gather around this nest to work on it.
         </Dialog.Description>
@@ -134,7 +134,7 @@ export function PlaceNestDialog({
             disabled={!canSubmit || submitting}
             loading={submitting}
           >
-            Place nest
+            Create nest
           </Button>
         </Flex>
       </Dialog.Content>

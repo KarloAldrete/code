@@ -21,24 +21,25 @@ Inspired by AgentCraft. Hedgemony is the PostHog-Code-native version, grounded i
 
 | Game term | What it is | PostHog Code primitive |
 |---|---|---|
-| **Nest** | A goal, placed on the map like an AoE city. Goal is a freeform prompt — the operator just writes what they want. Holds a loadout: skills, MCP servers, doc references, optional target metric. No repo field — repo membership is derived from a nest's hoglets. | New — thin record referencing existing primitives. |
-| **Hibernacula** | The data store behind a nest. sqlite tables (alongside posthog-code's existing `better-sqlite3` db at `apps/code/src/main/db/`) for structured state — nest config, hedgehog scratchpad, PR dependency graph, operator-override memory, tick log, hoglet sidecar rows. Long-form context as markdown in the nest's worktree. | New tables in the existing sqlite db; existing worktree filesystem. |
-| **Hedgehog** | The nest's orchestrator. One per nest. Raises hoglets, tracks stacked PRs and their dependencies, routes review feedback + CI failures back to the originating hoglet, judges goal completion against the freeform prompt. Ephemeral per-tick, re-instantiable from the hibernacula. | Not a `Task`. A stateless function over persisted state, dispatched by `HedgehogTickService`. |
+| **Nest** | A goal, placed on the map like an AoE city. The operator creates it through a conversational goal-writing flow that produces a lightweight spec: intent, useful context, likely repos/worktrees/products, and definition of done. Scope is inferred from the natural-language goal, grouped signals, and hoglet history; it does not have to be declared up front. Optionally tagged with a metric, but not required. | New — thin record referencing existing primitives. |
+| **Hibernacula** | The data store behind a nest. sqlite tables (alongside posthog-code's existing `better-sqlite3` db at `apps/code/src/main/db/`) for structured state — nest config, hedgehog scratchpad, nest chat/audit log, PR dependency graph, operator-override memory, tick log, hoglet sidecar rows. Long-form context as markdown in the nest's worktree. | New tables in the existing sqlite db; existing worktree filesystem. |
+| **Hedgehog** | The nest's orchestrator. One per nest. Raises hoglets, tracks stacked PRs and their dependencies, routes review feedback + CI failures back to the originating hoglet, judges goal completion against the goal spec, and talks with the operator through nest chat. Ephemeral per-tick, re-instantiable from the hibernacula. | Not a `Task`. A stateless function over persisted state, dispatched by `HedgehogTickService`. |
 | **Hoglet** | The agent. A posthog-code task with a sidecar row in `hedgemony_hoglet` adding `nest_id` and `signal_report_id`. Tasks themselves are server-owned by PostHog Django and fetched via `PosthogAPIClient`. | Cloud Task + local sidecar row. |
-| **Wild hoglet** | A hoglet with no `nest_id`. Two origins: a signal that found no matching nest, or an operator-spawned ad-hoc agent. Operator can adopt it into a nest, or let it ship and die. | `Task` with null nest binding. |
+| **Unnested signal hoglet** | A signal-backed hoglet that has not been grouped into a nest yet. It comes from the Signals Inbox and keeps `signal_report_id` set. Operator can group it into an existing nest, create a nest around related signals, or dismiss/suppress the underlying Inbox item. | `Task` with null nest binding and non-null `signal_report_id`. |
+| **Wild hoglet** | An operator-spawned ad-hoc one-off that does not fit a larger nest goal. It can ship and die, or be adopted later if it turns out to belong to a bigger objective. | `Task` with null nest binding and null `signal_report_id`. |
 | **Prickle** | Operator-selected group of hoglets. Ephemeral (drag-select / Ctrl+click). | Client-side selection over `Task`s. |
 
 ---
 
 ## The core loop
 
-1. **Signal arrives + autonomy spawns a Task.** PostHog's signals pipeline emits a `SignalReport`; the existing **autonomy** system auto-starts a cloud Task from high-priority reports. Hedgemony does *not* duplicate that ingestion.
-2. **Hedgemony adopts the task.** A polling adoption loop notices autonomy-started tasks tied to not-yet-adopted reports, inserts a `hedgemony_hoglet` sidecar row binding the task to a nest (via the affinity router) or to the wild-hoglet holding area if no nest matches.
-3. **Auto-route by goal affinity.** Semantic similarity between the report and each active nest's `goal_prompt` (HogQL `embedText` + similarity against `document_embeddings`). Highest match above threshold wins. No match → `nest_id = null` (wild hoglet).
-4. **Hedgehog decides.** Raise the hoglet (if still idle: start the cloud `TaskRun`), hold it (wait for siblings), or release it (write an operator-decision-style suppress and skip).
+1. **Signal arrives in Inbox.** PostHog's signals pipeline emits a `SignalReport`; the Signals Inbox remains the source of truth for signal lifecycle, dedupe, suppression, and grouping metadata.
+2. **Net-new signal work becomes a hoglet.** If the Inbox item represents net-new implementation work and is not already represented by a Task/hoglet, Hedgemony creates or adopts a `Task` with the report's title, summary, findings, suggested reviewers, and source context as the initial prompt.
+3. **Auto-group by goal affinity.** Semantic similarity between the report and each active nest's goal spec, grouped signals, and recent hoglet history (HogQL `embedText` + similarity against `document_embeddings`). Highest match above threshold wins. No match → an unnested signal hoglet remains in the Inbox-backed staging area for the operator to group, dismiss, or form into a new nest.
+4. **Hedgehog conducts.** Raise the hoglet (if still idle: start the cloud `TaskRun`), hold it (wait for siblings), message it, reassign it, or release it (write an operator-decision-style suppress and skip) within the permissions available to that hoglet.
 5. **Hoglets work.** Each one is a normal posthog-code task — branch, worktree, harness, MCP, skills, all unchanged. Output: a PR.
 6. **Hedgehog manages the brood.** Holds child PRs in a dependency graph, triggers rebases on parent merges, routes review comments + CI failures to the originating hoglet (or spawns a follow-up hoglet if the session is closed), watches the goal.
-7. **Goal completes.** Hedgehog judges the freeform goal against accumulated work (merged PRs, resolved signal reports, optional metric movement) and proposes closing the nest. Operator confirms; nest goes dormant; hibernacula keeps the record.
+7. **Goal completes.** Hedgehog judges the goal spec and definition of done against accumulated work (merged PRs, resolved signal reports, optional metric movement) and proposes closing the nest. Operator confirms; nest goes dormant; hibernacula keeps the record.
 
 ---
 
@@ -49,18 +50,19 @@ She's the load-bearing new concept:
 - **Brood management** — spawns, raises, kills hoglets within the nest's loadout.
 - **PR dependency graph** — knows which hoglet's PR depends on which; serializes merges; triggers rebases on parents landing.
 - **Feedback routing** — review comments and CI failures land back on the right hoglet's task conversation, automatically.
-- **Goal judgment** — reads the freeform goal prompt and decides when accumulated work satisfies it. If the operator tagged a metric, she watches it; otherwise she's reasoning over PRs + signals.
-- **Persistent brain** — every decision-relevant piece of state (graph, roster, accumulated context) lives in the hibernacula. She crashes and respawns cleanly.
+- **Goal judgment** — reads the goal spec and definition of done, then decides when accumulated work satisfies it. If the operator tagged a metric, she watches it; otherwise she's reasoning over PRs + signals.
+- **Nest chat + audit** — users talk to her in a nest-level chat, and every orchestration action gets a compact audit entry explaining what happened and why. The default surface shows orchestrator-level summaries; users can expand into the underlying hoglet messages/events when they want the full trail.
+- **Persistent brain** — every decision-relevant piece of state (graph, roster, accumulated context, chat/audit log) lives in the hibernacula. She crashes and respawns cleanly.
 
-Operator can override any decision — kill a hoglet, redirect, pause the nest, ship anyway.
+Operator can override any decision — kill a hoglet, redirect, pause the nest, ship anyway. The hedgehog does not need approval for normal orchestration; her authority is bounded by the permissions, repo access, worktree access, and harness settings already attached to the hoglets she controls.
 
 ---
 
 ## Ad-hoc and wild
 
-- **Ad-hoc agent**: operator clicks empty map → wild hoglet spawns with operator-provided prompt. Ships PR, dies. No hedgehog.
-- **No-match signal**: hoglet appears in a wild-hoglet holding area. Operator drags it into a nest (adopt), spawns a new nest around it, or dismisses it.
-- **Adoption**: any wild hoglet can be dragged into a nest; that nest's loadout applies from then on.
+- **Ad-hoc agent**: operator clicks empty map → wild hoglet spawns with operator-provided prompt. Ships PR, dies. No hedgehog unless the operator later adopts it into a nest.
+- **No-match signal**: signal-backed hoglet appears in an Inbox-backed staging area, not the ad-hoc wild area. Operator groups it into a nest, spawns a new nest around related signals, or dismisses/suppresses the Inbox item.
+- **Adoption**: any wild or unnested signal hoglet can be dragged into a nest; that nest's goal spec and inferred loadout apply from then on.
 
 ---
 
@@ -70,6 +72,7 @@ Operator can override any decision — kill a hoglet, redirect, pause the nest, 
 
 - All Hedgemony state lives in the existing posthog-code `better-sqlite3` db (new tables alongside the existing workspace/repository tables) plus markdown in each nest's worktree. Same backup, same lifecycle, no new infra.
 - Schema is shaped for eventual cloud sync from day one: UUID primary keys, `created_at` / `updated_at` columns, soft-delete flags. The future migration to PostHog-cloud-backed storage is mechanical, not a rewrite.
+- **Hedgehog chat is durable, but not her memory.** Nest chat is stored as a command/audit log. Each hedgehog tick assembles the current nest state, recent chat, compact summaries, and relevant hoglet events from storage. No long-running agent transcript is kept alive.
 - **Cloud hoglets are free.** A hoglet wraps a `Task`; whether that Task's TaskRun is `environment: local` or `environment: cloud` is invisible to Hedgemony. Cloud sandboxes keep running while posthog-code is closed; SSE reconnects on reopen.
 - **The local hedgehog is the v1 limitation.** When posthog-code is closed she's asleep, so cloud hoglet PRs landing at 3am aren't orchestrated until you reopen the app. Nothing is lost (SSE catches her up), but orchestration was paused.
 - **Cross-machine visibility is unsolved in v1.** Task records are local; switching machines means losing your nest handles. This is already true of cloud tasks today — Hedgemony inherits it, doesn't worsen it.
@@ -85,11 +88,11 @@ Operator can override any decision — kill a hoglet, redirect, pause the nest, 
 ## v1 vs v2 (feature scope)
 
 **v1**
-- Map view with nests as placed bases, hoglets as units around them, wild hoglets in a holding area.
-- Affinity router by topic / source_products / repo.
-- Hedgehog: brood management, PR dependency graph, feedback routing, freeform goal judgment.
-- Hibernacula: new sqlite tables + markdown in worktrees. Includes accumulated merged PRs.
-- Ad-hoc wild hoglets, wild-hoglet adoption.
+- Map view with nests as placed bases, hoglets as units around them, plus unnested signal staging and ad-hoc wild one-offs.
+- Affinity router by goal spec, grouped signals, and inferred repo/product/worktree context.
+- Hedgehog: brood management, message passing, PR dependency graph, feedback routing, goal-spec judgment.
+- Hibernacula: new sqlite tables + markdown in worktrees. Includes accumulated merged PRs and nest chat/audit log.
+- Ad-hoc wild hoglets, unnested signal hoglets, and adoption into nests.
 - Prickle (ephemeral drag-select).
 
 **v2**
@@ -110,8 +113,8 @@ Persistent hoglet identity / cosmetics, multiplayer, voice lines, cloud-vs-local
 ## Open questions
 
 1. **Nest placement on the map** — operator-placed, or auto-arranged by topic/repo clustering?
-2. **Affinity threshold** — what's "good enough" to route a signal automatically vs send it to the wild zone?
+2. **Affinity threshold** — what's "good enough" to route a signal automatically vs leave it in Inbox-backed signal staging?
 3. **Idle hoglet TTL** — when does the hedgehog give up on an unraised hoglet?
 4. **Goal-completion confidence** — does the hedgehog always require operator confirmation to close a nest, or auto-close above some confidence?
-5. **Render budget** — how many simultaneous hoglets before DOM strains and we need a canvas layer?
-6. **Command Center default view** — when `hedgemonyEnabled`, does Command Center open in grid mode or map mode? (Inbox vs Command Center placement is no longer an open — they're separate top-level views.)
+5. **Renderer direction + budget** — are we shipping a lightweight map shell first, or committing to a game renderer; and how many simultaneous hoglets must it handle?
+6. **Command Center default view** — when `HEDGEMONY_FLAG` / `hedgemony-enabled` is on, does Command Center open in grid mode or map mode? (Inbox vs Command Center placement is no longer an open — they're separate top-level views.)

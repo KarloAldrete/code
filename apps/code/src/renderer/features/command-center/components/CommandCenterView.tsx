@@ -4,6 +4,7 @@ import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useSetHeaderContent } from "@hooks/useSetHeaderContent";
 import { Lightning } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
+import { HEDGEMONY_FLAG } from "@shared/constants";
 import { useEffect, useMemo } from "react";
 import { useCommandCenterData } from "../hooks/useCommandCenterData";
 import { useCommandCenterStore } from "../stores/commandCenterStore";
@@ -13,8 +14,7 @@ import { CommandCenterToolbar } from "./CommandCenterToolbar";
 export function CommandCenterView() {
   const layout = useCommandCenterStore((s) => s.layout);
   const viewMode = useCommandCenterStore((s) => s.viewMode);
-  const hedgemonyEnabled =
-    useFeatureFlag("hedgemony-enabled") || import.meta.env.DEV;
+  const hedgemonyEnabled = useFeatureFlag(HEDGEMONY_FLAG, import.meta.env.DEV);
   const isMap = hedgemonyEnabled && viewMode === "map";
 
   const { cells, summary } = useCommandCenterData();

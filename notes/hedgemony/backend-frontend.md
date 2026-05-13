@@ -12,7 +12,7 @@ Hedgemony is a view mode *inside* Command Center, sibling to its existing 9-grid
 
 Folder: `apps/code/src/renderer/features/hedgemony/` (sibling feature folder, matching `features/inbox`, `features/command-center`, etc.). Command Center imports the map view from here. Kept as a sibling rather than nested under `features/command-center/` because Hedgemony has its own stores, tRPC router, and services — nesting would bloat Command Center and complicate eventual extraction.
 
-**Command Center changes required (~60 lines + new components)**, behind the feature flag so the flag-off behavior is unchanged:
+**Command Center changes required (~60 lines + new components)**, behind `HEDGEMONY_FLAG = "hedgemony-enabled"` from `@shared/constants` so the flag-off behavior is unchanged:
 
 - `commandCenterStore.ts` — add `viewMode: "grid" | "map"` field + setter. Existing cell-indexed actions (`assignTask`, `removeTask`, `setActiveCell`, etc.) stay; they're no-ops in map mode.
 - `CommandCenterView.tsx` — branch on `viewMode`: render the existing grid in `"grid"`, render `<HedgemonyMap />` (imported from `features/hedgemony/`) in `"map"`.
@@ -29,13 +29,15 @@ One new router: `apps/code/src/main/trpc/routers/hedgemony.ts`. Mirrors the shap
 
 **Queries:**
 - `nests.list()` → all active nests + their hoglet counts + status (local sqlite only — no Task fetch).
-- `nests.get(id)` → full nest with loadout, hedgehog state summary, hoglet sidecar rows, PR dep graph, recent feedback events. Task state for hoglets is **not** included — the renderer fetches Task state separately via the existing `PosthogAPIClient.getTasks` (batched) and merges client-side.
+- `nests.get(id)` → full nest with goal spec, loadout, hedgehog state summary, hoglet sidecar rows, PR dep graph, recent feedback events, recent nest chat/audit summaries. Task state for hoglets is **not** included — the renderer fetches Task state separately via the existing `PosthogAPIClient.getTasks` (batched) and merges client-side.
 - `nests.create(input)` → returns the new nest row. **No hedgehog "Task" is spawned** — the hedgehog is not a Task; the `HedgehogTickService` simply starts scheduling ticks for the new nest.
-- `nests.update(id, patch)` → goal prompt, loadout, map position.
+- `nests.update(id, patch)` → goal prompt/spec, definition of done, loadout, map position.
 - `nests.archive(id)` / `nests.unarchive(id)`.
-- `hoglets.list({ nestId?, wildOnly? })` → returns `hedgemony_hoglet` rows. Renderer joins with Task state from `PosthogAPIClient`.
+- `hoglets.list({ nestId?, wildOnly?, unnestedSignalsOnly? })` → returns `hedgemony_hoglet` rows. Renderer joins with Task state from `PosthogAPIClient`. `wildOnly` means ad-hoc one-offs (`signal_report_id = null`); `unnestedSignalsOnly` means Inbox-backed signal hoglets (`signal_report_id IS NOT NULL`).
 - `hoglets.adopt(hogletId, nestId)` / `hoglets.release(hogletId)`.
-- `hoglets.spawnAdhoc({ prompt, repo })` → triggers the existing task-creation saga, then inserts a `hedgemony_hoglet` row with `nest_id = null`.
+- `hoglets.spawnAdhoc({ prompt, repo? })` → triggers the existing task-creation saga, then inserts a `hedgemony_hoglet` row with `nest_id = null` and `signal_report_id = null`.
+- `nestChat.list({ nestId, detail? })` → recent nest chat/audit entries. `detail = false` returns orchestrator-level summaries; `detail = true` includes expandable tool/hoglet detail rows.
+- `nestChat.send({ nestId, message })` → writes a user message and enqueues an immediate hedgehog tick for that nest.
 
 **Mutations**: covered above. All Hedgemony writes go through the router — renderer never touches the sqlite repositories directly.
 
@@ -43,6 +45,7 @@ One new router: `apps/code/src/main/trpc/routers/hedgemony.ts`. Mirrors the shap
 - `nests.watch(id)` → emits on nest status change, hoglet roster change, hedgehog tick completion.
 - `hoglets.watch(nestId)` → emits on `hedgemony_hoglet` row changes. Renderer separately listens to Task state changes via the existing PostHog API session/SSE.
 - `feedback.watch(nestId)` → emits each routed feedback event for the activity feed.
+- `nestChat.watch(nestId)` → emits new chat/audit rows. The active nest panel subscribes in summary mode; expanded detail panels fetch detail rows on demand.
 - `hedgemony.onInjectPrompt` → emitted by `FeedbackRoutingService` when a PR review comment needs to land in a hoglet's session. Consumed by `useHedgemonyPromptRouter()` (mounted once at app level), which calls the existing `sendPromptToAgent` for connected sessions, or `nests.spawnFollowUpHoglet` for closed sessions. Mirrors `useInboxDeepLink` → `InboxLinkService` exactly.
 
 Renderer connects subscriptions for the active view only (except `onInjectPrompt`, which is always-on at app level); closes them on view exit.
@@ -56,7 +59,8 @@ Mirrors the Command Center pattern (`apps/code/src/renderer/features/command-cen
 | Store | Holds |
 |---|---|
 | `nestStore` | List of nests, fetch/refresh state, map placements. Driven by `nests.list` + `nests.watch`. |
-| `hogletStore` | Hoglet roster keyed by `nestId` (plus a special `wild` key). Driven by `hoglets.list` + `hoglets.watch`. |
+| `hogletStore` | Hoglet roster keyed by `nestId` (plus special `wild` and `unnestedSignals` keys). Driven by `hoglets.list` + `hoglets.watch`. |
+| `nestChatStore` | Nest-scoped chat/audit summaries, detail expansion state, pending user message state. Driven by `nestChat.list` + `nestChat.watch`. |
 | `selectionStore` | The current prickle — ephemeral set of selected hoglet IDs, plus hotkey group bindings (`ctrl+1/2/3`). Pure client state. |
 | `hedgemonyViewStore` | UI state: zoom, pan offset, active panel, holding-area open/closed. Pure client state. |
 | `loadoutDraftStore` | Optimistic edits to a nest's loadout before save. |
@@ -65,13 +69,33 @@ All Hedgemony stores live under `features/hedgemony/stores/`. None of them are s
 
 ---
 
+## Nest chat + audit surface
+
+Each nest has a chat panel backed by `hedgemony_nest_message`. The UI can reuse the existing task conversation components where practical, but the runtime is not a Task conversation: user messages write to the nest command log and trigger a hedgehog tick.
+
+Default view is concise:
+
+- User messages.
+- Hedgehog replies.
+- Audit entries for orchestration actions, especially spawning hoglets, raising/killing hoglets, rebases, routed feedback, and proposed completion.
+
+Detail is expandable:
+
+- "Show details" on an audit entry reveals tool payloads, linked hoglet messages, PR/CI refs, and source signal reports.
+- Hoglet conversation excerpts are summarized by default, with links into the existing Task detail view for the full transcript.
+- The panel opens with recent audit context so an operator can quickly answer "what has this hedgehog been doing and why?"
+
+Nest creation starts with this same pattern as a conversational goal-writing flow. The flow asks enough questions to produce a lightweight goal spec and definition of done, but always exposes an "eject to simple form" path for operators who just want name + rough goal.
+
+---
+
 ## Map rendering
 
-DOM-based. Nests, hoglets, and the holding area are absolutely-positioned React components. Animations via Framer Motion or CSS transitions. Hit-testing via the React event tree.
+Rendering engine is intentionally not locked yet. The shared contract is a map surface fed by the same tRPC queries, Zustand stores, and nest/hoglet/chat models whether the final renderer is DOM, Pixi, Godot, or something else.
 
-Render-budget cap: clamp visible hoglets to N (TBD, prob 50ish) with overflow rolled up into a "+12 more" badge per nest. Stores stay rendering-agnostic — if the budget bites later, a canvas layer can drop in behind the same store shape.
+Early slices can use a plain React pan/zoom shell to prove placement, empty state, and store wiring. That shell is scaffolding, not the product rendering decision.
 
-See [Considered alternatives](#considered-alternatives) for the canvas option.
+Renderer-facing stores stay engine-agnostic. If the budget or product direction pushes us toward Pixi/Godot, the map implementation can swap while keeping `nestStore`, `hogletStore`, `nestChatStore`, and `hedgemonyViewStore` intact.
 
 ---
 
@@ -87,22 +111,30 @@ See [Considered alternatives](#considered-alternatives) for the canvas option.
 
 ## Loadout editor
 
-Per-nest panel for editing the loadout — goal prompt, skills enabled, MCP servers, doc references, optional target metric. Mirrors the existing settings UI patterns (`features/settings/components/sections/`).
+Per-nest panel for editing the goal spec/loadout — goal prompt, definition of done, skills enabled, MCP servers, doc references, optional target metric. Mirrors the existing settings UI patterns (`features/settings/components/sections/`).
 
 Edits live in `loadoutDraftStore` optimistically; "Save" flushes via `nests.update`. The loadout drives what gets passed to every hoglet the hedgehog spawns from that nest — there's no per-hoglet customization at spawn time (operator can still send custom prompts to individual hoglets via the existing task UI).
 
 ---
 
-## Wild hoglet holding area
+## Unnested signal staging + wild one-offs
 
-A persistent off-map UI region (left rail or bottom drawer, TBD) showing every hoglet with `nest_id = null`. Each row exposes:
+A persistent off-map UI region (left rail or bottom drawer, TBD) has two sections:
 
-- The signal report it came from (if any).
+**Unnested signals** — Inbox-backed signal hoglets with `nest_id = null` and `signal_report_id` set. Each row exposes:
+
+- The signal report link + summary.
 - "Adopt to nest" picker.
 - "Spawn new nest around this" shortcut.
 - "Dismiss" (marks the originating report `suppressed`).
 
-Driven by `hoglets.list({ wildOnly: true })` + `hoglets.watch`.
+**Wild one-offs** — ad-hoc hoglets with `nest_id = null` and `signal_report_id = null`. Each row exposes:
+
+- Prompt/title and current Task status.
+- "Adopt to nest" picker.
+- "Let it finish as one-off" / "Cancel".
+
+Driven by `hoglets.list({ unnestedSignalsOnly: true })`, `hoglets.list({ wildOnly: true })`, and `hoglets.watch`.
 
 ---
 
@@ -132,7 +164,9 @@ Reuse `apps/code/src/renderer/utils/analytics.ts`. New events under a `hedgemony
 - `hedgemony.nest_created`, `hedgemony.nest_archived`
 - `hedgemony.hoglet_spawned` (with `source: signal | adhoc`)
 - `hedgemony.hoglet_adopted`, `hedgemony.hoglet_dismissed`
+- `hedgemony.nest_chat_message_sent`, `hedgemony.nest_chat_detail_expanded`
 - `hedgemony.hedgehog_raised_hoglet`, `hedgemony.hedgehog_proposed_completion`
+- `hedgemony.hedgehog_audit_entry_written`
 - `hedgemony.feedback_routed` (with `source: pr_review | ci`)
 - `hedgemony.pr_dependency_satisfied`, `hedgemony.pr_dependency_rebased`
 
@@ -144,19 +178,18 @@ Keep telemetry namespaced so it's trivially filterable and can be ripped out cle
 
 These are real product/UX opens that need owners; not implementation choices.
 
-1. **Holding-area placement** — left rail (persistent), bottom drawer (collapsible), or floating panel. Affects perceived priority of wild hoglets.
+1. **Holding-area placement** — left rail (persistent), bottom drawer (collapsible), or floating panel. Affects perceived priority of unnested signals and ad-hoc wild hoglets.
 2. **Hedgehog as a visible unit** — does she render on the map next to her nest, or is she implicit (the nest itself glows when she's active)?
 3. **Map persistence** — is `map_x` / `map_y` operator-placed (drag a nest where you want it) or auto-arranged (force-directed)?
 
-Implementation choices locked in v1:
+Implementation choice locked in v1:
 
-- **Rendering**: DOM (see [Map rendering](#map-rendering)).
 - **Cross-view linking**: clicking a hoglet jumps to the existing posthog-code task detail view; back returns to the map with state preserved (zoom, selection, scroll). Standard router-with-state-preservation pattern.
 
 ---
 
 ## Considered alternatives
 
-### Canvas-based map rendering
+### Map renderer
 
-We considered `react-konva` or `pixi-react` for the map layer. Pros: scales to hundreds of units, smoother animations. Cons: extra dep, custom hit-testing, bespoke accessibility, harder to reuse existing Radix components. Rejected for v1 — DOM with a render-budget cap handles the expected hoglet counts. Path to swap is open since stores are rendering-agnostic.
+Renderer choice is deliberately deferred. The current notes in [ui-tech-options.md](./ui-tech-options.md) keep the live comparison: Pixi for a fast 2D prototype, Godot if Hedgemony becomes a full RTS, and a hybrid path if we want a cheap shell before committing to the engine.

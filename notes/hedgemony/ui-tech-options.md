@@ -225,6 +225,8 @@ Quick survey of technical approaches for adding a game-style ("Godot-esque", Age
 
 ## Synthesis — verdicts after research, then revised for Hedgemony's actual context
 
+**Current product contract:** renderer choice is intentionally undecided. The implementation specs should stay engine-agnostic: tRPC + Zustand + nest/hoglet/chat state feed whatever map renderer wins later. This document is research input, not a locked decision.
+
 ### Verdicts as researched (SaaS-web framing)
 
 | # | Option | Verdict | Confidence |
@@ -261,10 +263,12 @@ The actual Hedgemony framing inverts most of these:
 
 ### Recommendation (revised)
 
+This is a decision framework, not the current product contract.
+
 If the answer to "are you actually going to build a full RTS, or just a top-down map view with icons?" is:
 
 - **Full RTS** (fog of war, unit selection, pathfinding, save/load of world state, RTS-quality animation): **Option 6, Godot HTML5 embedded in Electron.** Build the game in the Godot editor, ship the export inside the installer, bridge to tRPC/Zustand via `JavaScriptBridge` for nest/hoglet state. Confidence: *moderate*. Hard parts: the bridge protocol, Godot project layout in the monorepo, and getting Godot devtools onboarded.
 - **Top-down map view with icons and tween animations** (the dashboard-as-RTS reading): **Option 2, Pixi.js direct, plus Option 8 for HUD/chrome.** Cheap, ships in days, no new language/toolchain. The visual ceiling is "well-styled 2D game" — fine for "nests on a map, hoglets walking between them." Confidence: *high*.
-- **Hybrid you want now**: ship Option 2 as v1, plan Option 6 as v2 if/when the game ambitions outgrow Pixi. The `Hibernacula`/`Nest`/`Hoglet` data model in `spec.md` is engine-agnostic — Zustand selectors + tRPC subscriptions feed either path.
+- **Hybrid you want now**: ship an engine-neutral React map shell for the earliest slices, then pick Option 2 or Option 6 once the interaction model proves what the renderer needs. The `Hibernacula`/`Nest`/`Hoglet` data model in `spec.md` is engine-agnostic — Zustand selectors + tRPC subscriptions feed either path.
 
-**My honest pick for Hedgemony**: Option 6 (Godot). The original "why not Godot?" objections were SaaS-web problems, and Hedgemony isn't on the SaaS web. The editor productivity gap between hand-rolling a tile-map RTS in Pixi versus building it in Godot is enormous, and shipping inside an Electron installer makes Godot's costs disappear.
+**Researcher's bias, not a decision:** if Hedgemony becomes a true RTS, Option 6 (Godot) still looks strongest. If it stays a command map with RTS affordances, Pixi or a lightweight React shell may be plenty.
