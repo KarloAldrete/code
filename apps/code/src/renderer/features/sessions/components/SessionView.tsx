@@ -251,7 +251,6 @@ export function SessionView({
     [onSendPrompt],
   );
 
-  const { isOnline } = useConnectivity();
   const handleBeforeSubmit = useCallback(
     (text: string, clearEditor: () => void): boolean => {
       if (!isOnline) {
