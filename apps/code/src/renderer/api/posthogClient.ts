@@ -629,6 +629,13 @@ export class PostHogAPIClient {
     });
   }
 
+  async deleteFileSystem(id: string) {
+    const projectId = String(await this.getTeamId());
+    await this.api.delete("/api/projects/{project_id}/file_system/{id}/", {
+      path: { project_id: projectId, id },
+    });
+  }
+
   async getGithubLogin(): Promise<string | null> {
     const data = (await this.api.get("/api/users/{uuid}/github_login/", {
       path: { uuid: "@me" },

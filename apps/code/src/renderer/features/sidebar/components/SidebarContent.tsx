@@ -1,15 +1,18 @@
 import { useArchivedTaskIds } from "@features/archive/hooks/useArchivedTaskIds";
 import { SidebarUsageBar } from "@features/billing/components/SidebarUsageBar";
+import { useSidebarStore } from "@features/sidebar/stores/sidebarStore";
 import { ArchiveIcon } from "@phosphor-icons/react";
 import { Box, Flex } from "@radix-ui/themes";
 import { useNavigationStore } from "@stores/navigationStore";
 import type React from "react";
+import { AddFolderButton } from "./AddFolderButton";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { SidebarMenu } from "./SidebarMenu";
 import { UpdateBanner } from "./UpdateBanner";
 
 export const SidebarContent: React.FC = () => {
   const archivedTaskIds = useArchivedTaskIds();
+  const activeTab = useSidebarStore((state) => state.activeTab);
   const navigateToArchived = useNavigationStore(
     (state) => state.navigateToArchived,
   );
@@ -20,6 +23,7 @@ export const SidebarContent: React.FC = () => {
       </Box>
       <UpdateBanner />
       <SidebarUsageBar />
+      {activeTab === "files" && <AddFolderButton />}
       {archivedTaskIds.size > 0 && (
         <Box className="shrink-0 border-gray-6 border-t">
           <button
