@@ -1,5 +1,6 @@
 import { Briefcase, X } from "@phosphor-icons/react";
 import { Box, Button, Flex, IconButton, Text } from "@radix-ui/themes";
+import { useNavigationStore } from "@stores/navigationStore";
 
 interface TryInPostHogWorkBannerProps {
   onDismiss: () => void;
@@ -8,6 +9,8 @@ interface TryInPostHogWorkBannerProps {
 export function TryInPostHogWorkBanner({
   onDismiss,
 }: TryInPostHogWorkBannerProps) {
+  const setMode = useNavigationStore((s) => s.setMode);
+
   return (
     <Box className="mb-3 rounded-(--radius-3) border border-(--gray-5) bg-(--gray-2) px-4 py-3">
       <Flex align="center" gap="4">
@@ -31,7 +34,13 @@ export function TryInPostHogWorkBanner({
             continuing this task in PostHog Work.
           </Text>
         </Box>
-        <Button size="2" variant="solid" color="gray" highContrast>
+        <Button
+          size="2"
+          variant="solid"
+          color="gray"
+          highContrast
+          onClick={() => setMode("work")}
+        >
           <Text className="px-2 text-[12px]">Try in PostHog Work</Text>
         </Button>
         <IconButton
