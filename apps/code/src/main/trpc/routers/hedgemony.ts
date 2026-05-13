@@ -1,9 +1,12 @@
 import { container } from "../../di/container";
 import { MAIN_TOKENS } from "../../di/tokens";
+import type { NestChatService } from "../../services/hedgemony/nest-chat-service";
 import type { NestService } from "../../services/hedgemony/nest-service";
 import {
   createNestInput,
   HedgemonyEvent,
+  listNestChatInput,
+  listNestChatOutput,
   listNestsOutput,
   nest,
   nestIdInput,
@@ -12,6 +15,8 @@ import {
 import { publicProcedure, router } from "../trpc";
 
 const getService = () => container.get<NestService>(MAIN_TOKENS.NestService);
+const getNestChatService = () =>
+  container.get<NestChatService>(MAIN_TOKENS.NestChatService);
 
 export const hedgemonyRouter = router({
   nests: router({
@@ -62,5 +67,11 @@ export const hedgemonyRouter = router({
         }
       }
     }),
+  }),
+  nestChat: router({
+    list: publicProcedure
+      .input(listNestChatInput)
+      .output(listNestChatOutput)
+      .query(({ input }) => getNestChatService().list(input)),
   }),
 });

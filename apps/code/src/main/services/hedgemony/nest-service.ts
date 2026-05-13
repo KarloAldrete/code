@@ -3,6 +3,7 @@ import type { NestRepository } from "../../db/repositories/nest-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
+import type { NestChatService } from "./nest-chat-service";
 import {
   type CreateNestInput,
   HedgemonyEvent,
@@ -20,6 +21,8 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
   constructor(
     @inject(MAIN_TOKENS.NestRepository)
     private readonly nests: NestRepository,
+    @inject(MAIN_TOKENS.NestChatService)
+    private readonly nestChat: NestChatService,
   ) {
     super();
   }
@@ -38,6 +41,7 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
 
   create(input: CreateNestInput): Nest {
     const created = this.nests.create(input);
+    this.nestChat.recordCreationContext(created, input);
     log.info("Nest created", { id: created.id, name: created.name });
     this.emitChange(created, { kind: "status", nest: created });
     return created;

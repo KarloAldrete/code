@@ -19,7 +19,7 @@ export function createTestDb(): TestDatabase {
   const sqlite = new Database(":memory:");
   sqlite.pragma("foreign_keys = ON");
 
-  const db = drizzle(sqlite, { schema });
+  const db = drizzle(sqlite, { schema, casing: "snake_case" });
   migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
 
   return {

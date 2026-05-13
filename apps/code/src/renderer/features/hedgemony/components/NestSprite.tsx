@@ -6,16 +6,24 @@ const SPRITE_SIZE = 96;
 
 interface NestSpriteProps {
   nest: Nest;
+  onClick?: (nest: Nest) => void;
 }
 
-export function NestSprite({ nest }: NestSpriteProps) {
+export function NestSprite({ nest, onClick }: NestSpriteProps) {
   return (
     <Tooltip content={nest.goalPrompt} side="bottom">
-      <div
-        className="-translate-x-1/2 -translate-y-1/2 absolute flex flex-col items-center"
+      <button
+        type="button"
+        data-hedgemony-nest
+        className="-translate-x-1/2 -translate-y-1/2 absolute flex cursor-pointer flex-col items-center border-0 bg-transparent p-0"
+        aria-label={`Open ${nest.name}`}
         style={{
           left: `calc(50% + ${nest.mapX}px)`,
           top: `calc(50% + ${nest.mapY}px)`,
+        }}
+        onClick={(event) => {
+          event.stopPropagation();
+          onClick?.(nest);
         }}
       >
         <div
@@ -33,7 +41,7 @@ export function NestSprite({ nest }: NestSpriteProps) {
         <div className="mt-1 max-w-[160px] truncate rounded-(--radius-2) bg-(--gray-3) px-2 py-0.5 font-medium text-(--gray-12) text-[12px] shadow-sm">
           {nest.name}
         </div>
-      </div>
+      </button>
     </Tooltip>
   );
 }

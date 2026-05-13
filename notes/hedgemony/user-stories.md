@@ -303,3 +303,10 @@ How we ship Hedgemony in vertical, demoable slices. Each slice cuts top-to-botto
 - **After Slice 9** — v1 ship. Slice 10 is polish for v1.1.
 
 The open product questions in `spec.md` (nest placement auto vs manual, idle hoglet TTL, renderer direction/budget, Inbox vs Hedgemony default) map to specific slices — don't try to answer them up front; let them surface where they bite. Manual placement in Slice 1, idle TTL in Slice 6, renderer choice when the map shell starts constraining the product.
+
+---
+
+## TODOs After Core Slices
+
+- Consolidate the early Hedgemony sqlite migrations before this ships broadly.
+- Backfill existing PostHog Code tasks as wild hoglets so the map can represent work that predates Hedgemony.

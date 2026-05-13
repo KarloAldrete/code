@@ -94,6 +94,7 @@ export const hedgemonyNests = sqliteTable(
     id: id(),
     name: text().notNull(),
     goalPrompt: text().notNull(),
+    definitionOfDone: text(),
     mapX: integer().notNull(),
     mapY: integer().notNull(),
     status: text({
@@ -112,6 +113,36 @@ export const hedgemonyNests = sqliteTable(
     updatedAt: updatedAt(),
   },
   (t) => [index("hedgemony_nest_status_idx").on(t.status)],
+);
+
+export const hedgemonyNestMessages = sqliteTable(
+  "hedgemony_nest_message",
+  {
+    id: id(),
+    nestId: text()
+      .notNull()
+      .references(() => hedgemonyNests.id, { onDelete: "cascade" }),
+    kind: text({
+      enum: [
+        "user_message",
+        "hedgehog_message",
+        "audit",
+        "tool_result",
+        "hoglet_summary",
+      ],
+    }).notNull(),
+    visibility: text({ enum: ["summary", "detail"] })
+      .notNull()
+      .default("summary"),
+    sourceTaskId: text(),
+    body: text().notNull(),
+    payloadJson: text(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("hedgemony_nest_message_nest_id_idx").on(t.nestId),
+    index("hedgemony_nest_message_created_at_idx").on(t.createdAt),
+  ],
 );
 
 export const authPreferences = sqliteTable(

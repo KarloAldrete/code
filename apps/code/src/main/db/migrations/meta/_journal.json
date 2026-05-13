@@ -50,6 +50,13 @@
       "when": 1778708767177,
       "tag": "0006_hedgemony_nest",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1778710589937,
+      "tag": "0007_tiresome_night_thrasher",
+      "breakpoints": true
     }
   ]
 }

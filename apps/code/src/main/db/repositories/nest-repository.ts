@@ -12,6 +12,7 @@ export type NestHealth = "ok" | "worktree_missing" | "db_inconsistent";
 export interface CreateNestData {
   name: string;
   goalPrompt: string;
+  definitionOfDone?: string | null;
   mapX: number;
   mapY: number;
 }
@@ -19,6 +20,7 @@ export interface CreateNestData {
 export interface UpdateNestData {
   name?: string;
   goalPrompt?: string;
+  definitionOfDone?: string | null;
   mapX?: number;
   mapY?: number;
   status?: NestStatus;
@@ -59,9 +61,11 @@ export class NestRepository {
       id,
       name: data.name,
       goalPrompt: data.goalPrompt,
+      definitionOfDone: data.definitionOfDone ?? null,
       mapX: data.mapX,
       mapY: data.mapY,
       status: "active",
+      loadoutJson: "{}",
       createdAt: timestamp,
       updatedAt: timestamp,
     };
