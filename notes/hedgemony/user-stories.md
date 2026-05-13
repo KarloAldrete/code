@@ -41,23 +41,27 @@ How we ship Hedgemony in vertical, demoable slices. Each slice cuts top-to-botto
 
 ---
 
-## Slice 1 — Create a nest through goal writing (CRUD only, no hedgehog)
+## Slice 1 — Create a nest through goal writing (CRUD + bounded draft agent, no hedgehog)
 
 **As an operator,** I want to create a nest through a lightweight spec-writing conversation, so the goal has enough definition of done for a hedgehog to manage later.
 
 **In scope**
 - `hedgemony_nest` CRUD for `name`, `goal_prompt`, nullable `definition_of_done`, `map_x` / `map_y`, `status`, and empty/default `loadout_json`.
-- `hedgemony_nest_message` writes the goal-writing transcript plus the initial "nest created" audit entry as durable creation context.
+- `GoalSpecDraftService` drives a bounded back-and-forth goal-writing flow before the nest exists. It takes the current transcript + optional map context and returns either the next clarifying question or a draft `{ name, goalPrompt, definitionOfDone }`.
+- The draft agent is a lightweight LLM call through the existing main-process LLM gateway/auth path, not a `Task`, not a hedgehog tick, and not an agent harness session. No tools, worktree access, hoglet creation, or autonomous actions are available during this flow.
+- The renderer owns the in-progress draft transcript until the operator clicks "Create nest". `nests.create` accepts the accepted draft plus `creationTranscript`; `hedgemony_nest_message` writes that transcript plus the initial "nest created" audit entry as durable creation context.
 - `NestService.create / get / list / update / archive` plus the matching sqlite repository. Archive is a soft status change; no row deletion.
 - `NestChatService.list` can read creation transcript/audit rows for a nest, but does not yet accept live operator commands.
-- tRPC: `nests.create`, `nests.get`, `nests.list`, `nests.update`, `nests.archive`, optional lightweight `nests.watch` for CRUD refreshes, and `nestChat.list`.
-- `nestStore` driven by `nests.list` plus `nests.watch` if present; `nestChatStore` is read-only and only shows creation-time transcript/audit context.
-- Nest sprite component, nest detail panel, and "create nest" flow capturing name, goal prompt/spec, definition of done, and click/manual map coords.
-- "Eject to simple form" path for operators who want name + rough goal without the full goal-writing conversation. The simple form still creates a valid nest with a saved goal prompt and nullable definition of done.
+- tRPC: `goalDraft.respond`, `nests.create`, `nests.get`, `nests.list`, `nests.update`, `nests.archive`, optional lightweight `nests.watch` for CRUD refreshes, and `nestChat.list`.
+- `nestStore` driven by `nests.list` plus `nests.watch` if present; `nestChatStore` is read-only and only shows accepted creation-time transcript/audit context.
+- Nest sprite component, nest detail panel, and "create nest" flow with a conversational draft panel, editable generated fields, and click/manual map coords.
+- "Eject to simple form" path for operators who want name + rough goal without the full goal-writing conversation. The simple form still creates a valid nest with a saved goal prompt, nullable definition of done, and a short synthetic creation transcript.
 
 **Out of scope**
 - No hedgehog orchestrator spawn (deferred to Slice 6).
 - No live nest chat commands, hedgehog replies, or `nestChat.send` behavior (deferred to Slice 6).
+- No persisted draft sessions before nest creation; abandoned drafts disappear like an unsaved form.
+- No draft-agent tools or side effects. It can ask, summarize, and produce a proposed spec only.
 - No hoglet roster, adoption, signal staging, affinity routing, or Task state joins.
 - No loadout editor beyond saving an empty/default `loadout_json` placeholder (deferred to Slice 10).
 
@@ -66,7 +70,9 @@ How we ship Hedgemony in vertical, demoable slices. Each slice cuts top-to-botto
 - Opening a nest detail panel shows the saved goal prompt/spec, definition of done when present, and the creation transcript/audit context.
 - `nests.update` can move/rename/edit an active nest without recreating it.
 - Archive flips status without dropping the row; archived nests disappear from the default active map list but remain queryable for history/debugging.
-- Goal-writing flow produces a saved definition of done, while simple-form eject still creates a valid nest with nullable definition of done.
+- Goal-writing flow asks at least one clarifying question when the initial prompt is under-specified, then produces editable `name`, `goalPrompt`, and `definitionOfDone` fields.
+- The accepted draft transcript is persisted only after `nests.create`; refreshing mid-draft loses the unsaved conversation, while refreshing after create shows the saved creation transcript.
+- Simple-form eject still creates a valid nest with nullable definition of done.
 
 **Demo moment**
 - Create a nest through the goal-writing flow, restart app, confirm it reappears with its saved goal spec and initial chat/audit context.

@@ -30,7 +30,8 @@ One new router: `apps/code/src/main/trpc/routers/hedgemony.ts`. Mirrors the shap
 **Queries:**
 - `nests.list()` → all active nests + their hoglet counts + status (local sqlite only — no Task fetch).
 - `nests.get(id)` → full nest with goal spec, loadout, hedgehog state summary, hoglet sidecar rows, PR dep graph, recent feedback events, recent nest chat/audit summaries. Task state for hoglets is **not** included — the renderer fetches Task state separately via the existing `PosthogAPIClient.getTasks` (batched) and merges client-side.
-- `nests.create(input)` → returns the new nest row. **No hedgehog "Task" is spawned** — the hedgehog is not a Task; the `HedgehogTickService` simply starts scheduling ticks for the new nest.
+- `goalDraft.respond({ messages, currentDraft? })` → bounded goal-writing draft agent. Returns either a clarifying assistant question or an editable draft `{ name, goalPrompt, definitionOfDone }`. Stateless over the provided transcript; no persisted draft row.
+- `nests.create(input)` → returns the new nest row. Input includes the accepted draft fields plus optional `creationTranscript`. **No hedgehog "Task" is spawned** — the hedgehog is not a Task; later slices let `HedgehogTickService` schedule ticks for active nests.
 - `nests.update(id, patch)` → goal prompt/spec, definition of done, loadout, map position.
 - `nests.archive(id)` / `nests.unarchive(id)`.
 - `hoglets.list({ nestId?, wildOnly?, unnestedSignalsOnly? })` → returns `hedgemony_hoglet` rows. Renderer joins with Task state from `PosthogAPIClient`. `wildOnly` means ad-hoc one-offs (`signal_report_id = null`); `unnestedSignalsOnly` means Inbox-backed signal hoglets (`signal_report_id IS NOT NULL`).
@@ -85,7 +86,9 @@ Detail is expandable:
 - Hoglet conversation excerpts are summarized by default, with links into the existing Task detail view for the full transcript.
 - The panel opens with recent audit context so an operator can quickly answer "what has this hedgehog been doing and why?"
 
-Nest creation starts with this same pattern as a conversational goal-writing flow. The flow asks enough questions to produce a lightweight goal spec and definition of done, but always exposes an "eject to simple form" path for operators who just want name + rough goal.
+Nest creation starts with a separate, bounded conversational goal-writing flow. The renderer keeps the unsaved transcript locally and calls `goalDraft.respond` for the next question or draft. When the operator accepts the draft, `nests.create` persists the nest row and writes the accepted transcript into `hedgemony_nest_message` as creation context. This is deliberately not `nestChat.send`: no hedgehog tick, tools, hoglets, or autonomous side effects happen during goal drafting.
+
+The flow asks enough questions to produce a lightweight goal spec and definition of done, but always exposes an "eject to simple form" path for operators who just want name + rough goal.
 
 ---
 

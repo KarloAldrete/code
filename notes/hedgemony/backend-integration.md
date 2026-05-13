@@ -119,6 +119,21 @@ See [Considered alternatives](#considered-alternatives) for the other event-sour
 
 ---
 
+## Goal spec draft agent
+
+Nest creation uses a bounded draft agent before the nest exists. The point is to turn a rough operator prompt into an editable lightweight spec without bringing the hedgehog runtime online early.
+
+- `GoalSpecDraftService.respond(transcript, current_draft?)` makes one LLM call through the existing main-process LLM gateway/auth path.
+- The response is one of: `ask_question` with a short clarifying question, or `propose_spec` with `{ name, goalPrompt, definitionOfDone }`.
+- The renderer owns the in-progress transcript. No sqlite row is written until the operator accepts and calls `nests.create`.
+- `nests.create` persists the accepted spec and passes the accepted transcript to `NestChatService.recordCreationContext`, which writes `hedgemony_nest_message` rows for durable creation context.
+- This is not a `Task`, not `HedgehogTickService`, and not the agent harness. It has no tools, no worktree, no hoglet actions, no event scheduling, and no autonomy beyond asking/summarizing during nest creation.
+- The simple-form path bypasses `GoalSpecDraftService` and writes a short synthetic creation transcript.
+
+This keeps Slice 1 conversational where it matters while preserving the later boundary: live nest chat commands only start once the hedgehog exists.
+
+---
+
 ## Hedgehog orchestrator
 
 **She is not a Task.** She's a stateless function over persisted state — each tick is an ephemeral LLM call dispatched by `HedgehogTickService`.
@@ -336,7 +351,7 @@ Quarantined nests don't tick — the hedgehog can't burn tokens on broken state.
 
 Ship v1 in four PRs to keep each reviewable and dogfoodable:
 
-- **PR #1 — Foundations.** Migration creating all eight tables, `NestService` CRUD, `nestChat` CRUD for goal-writing/audit entries, `nests.list/get/create/update/archive` tRPC, sidebar/Command Center toggle, engine-neutral map surface with placeholder hoglet dots, ad-hoc wild hoglet via existing task-creation saga. No hedgehog, no signals. Dogfoodable as a manual fleet-visualization tool.
+- **PR #1 — Foundations.** Migration creating all eight tables, bounded `GoalSpecDraftService`, `NestService` CRUD, `nestChat` CRUD for accepted goal-writing/audit entries, `goalDraft.respond`, `nests.list/get/create/update/archive` tRPC, sidebar/Command Center toggle, engine-neutral map surface with placeholder hoglet dots, ad-hoc wild hoglet via existing task-creation saga. No hedgehog, no signals. Dogfoodable as a manual fleet-visualization tool.
 - **PR #2 — Affinity router + Inbox ingestion.** Main-side `signal-reports-client.ts`, HogQL embedding-based router, Inbox-backed signal ingestion/adoption loop. Verify the SignalReport→Task linkage field with the signals team before scaffolding.
 - **PR #3 — Hedgehog + tools (no rebase, no feedback routing).** `HedgehogTickService` singleton with scheduler, prompt assembly, tool dispatch for `spawn/raise/kill/message_hoglet/write_audit_entry/note/propose_completion`. Goal-judgment LLM call. Operator-override memory wired. Cap enforcement. Hedgehog can run a nest end-to-end except for PR orchestration.
 - **PR #4 — PR graph, rebase, feedback routing.** `RebaseSaga` + `GitService.rebaseOntoBase`. `link/unlink_pr_dependency`, `rebase_child` tools. `FeedbackRoutingService` event-bus path + renderer prompt-router hook + follow-up hoglet flow. Implicit collision detection.
