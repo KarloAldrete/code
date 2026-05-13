@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/features/auth";
 import { getGithubRepositories, getIntegrations } from "../api";
+import { buildRepositoryOptions } from "../utils/repositorySelection";
 
 export const integrationKeys = {
   all: ["integrations"] as const,
@@ -9,6 +10,11 @@ export const integrationKeys = {
   repos: (integrationId: number) =>
     [...integrationKeys.all, "repos", integrationId] as const,
 };
+
+interface RepositoryLoadResult {
+  repositoriesByIntegration: Record<number, string[]>;
+  partialError: string | null;
+}
 
 export function useIntegrations() {
   const { projectId, oauthAccessToken } = useAuthStore();
@@ -30,16 +36,48 @@ export function useIntegrations() {
       "repos",
       githubIntegrations.map((i) => i.id),
     ],
-    queryFn: async () => {
-      const allRepos: string[] = [];
-      for (const integration of githubIntegrations) {
-        const repos = await getGithubRepositories(integration.id);
-        allRepos.push(...repos);
+    queryFn: async (): Promise<RepositoryLoadResult> => {
+      const repositoriesByIntegration: Record<number, string[]> = {};
+      const results = await Promise.allSettled(
+        githubIntegrations.map(async (integration) => ({
+          integrationId: integration.id,
+          repositories: await getGithubRepositories(integration.id),
+        })),
+      );
+
+      let failedCount = 0;
+
+      for (const result of results) {
+        if (result.status === "fulfilled") {
+          repositoriesByIntegration[result.value.integrationId] =
+            result.value.repositories;
+          continue;
+        }
+
+        failedCount += 1;
       }
-      return allRepos.sort();
+
+      return {
+        repositoriesByIntegration,
+        partialError:
+          failedCount === 0
+            ? null
+            : failedCount === githubIntegrations.length
+              ? "Could not load GitHub repositories. Pull to retry."
+              : "Some GitHub repositories could not be loaded. Pull to retry.",
+      };
     },
     enabled: githubIntegrations.length > 0,
   });
+
+  const repositoriesByIntegration =
+    repositoriesQuery.data?.repositoriesByIntegration ?? {};
+  const repositories = Object.values(repositoriesByIntegration).flat().sort();
+  const repositoryOptions = buildRepositoryOptions(
+    githubIntegrations,
+    repositoriesByIntegration,
+  );
+  const repositoryWarning = repositoriesQuery.data?.partialError ?? null;
 
   const refetch = async () => {
     await integrationsQuery.refetch();
@@ -51,12 +89,12 @@ export function useIntegrations() {
       ? githubIntegrations.length > 0
       : null,
     githubIntegrations,
-    repositories: repositoriesQuery.data ?? [],
+    repositories,
+    repositoriesByIntegration,
+    repositoryOptions,
     isLoading: integrationsQuery.isLoading || repositoriesQuery.isLoading,
-    error:
-      integrationsQuery.error?.message ??
-      repositoriesQuery.error?.message ??
-      null,
+    error: integrationsQuery.error?.message ?? null,
+    repositoryWarning,
     refetch,
   };
 }

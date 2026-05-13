@@ -1,5 +1,4 @@
 import { Text } from "@components/text";
-import * as WebBrowser from "expo-web-browser";
 import { CaretRight, GitBranch } from "phosphor-react-native";
 import { useMemo, useState } from "react";
 import {
@@ -9,74 +8,19 @@ import {
   RefreshControl,
   View,
 } from "react-native";
-import { useAuthStore } from "@/features/auth";
 import { useThemeColors } from "@/lib/theme";
 import { useIntegrations } from "../hooks/useIntegrations";
 import { useTasks } from "../hooks/useTasks";
 import { useArchivedTasksStore } from "../stores/archivedTasksStore";
 import { taskActivityTimestamp, useTaskStore } from "../stores/taskStore";
 import type { Task } from "../types";
+import { GitHubConnectionPrompt } from "./GitHubConnectionPrompt";
+import { GitHubLoadNotice } from "./GitHubLoadNotice";
 import { SwipeableTaskItem } from "./SwipeableTaskItem";
 
 interface TaskListProps {
   onTaskPress?: (taskId: string) => void;
   onCreateTask?: () => void;
-}
-
-interface ConnectGitHubEmptyStateProps {
-  onConnected?: () => void;
-}
-
-function ConnectGitHubEmptyState({
-  onConnected,
-}: ConnectGitHubEmptyStateProps) {
-  const { cloudRegion, projectId, getCloudUrlFromRegion } = useAuthStore();
-  const themeColors = useThemeColors();
-
-  const handleConnectGitHub = async () => {
-    if (!cloudRegion || !projectId) return;
-    const baseUrl = getCloudUrlFromRegion(cloudRegion);
-    // Use the authorize endpoint which redirects to GitHub App installation
-    const authorizeUrl = `${baseUrl}/api/environments/${projectId}/integrations/authorize/?kind=github`;
-
-    // Open in-app browser - will auto-detect when user returns
-    const result = await WebBrowser.openAuthSessionAsync(
-      authorizeUrl,
-      "posthog://github/callback",
-    );
-
-    // When browser session ends (dismiss, cancel, or redirect), refresh integrations
-    if (
-      result.type === "dismiss" ||
-      result.type === "cancel" ||
-      result.type === "success"
-    ) {
-      onConnected?.();
-    }
-  };
-
-  return (
-    <View className="flex-1 items-center justify-center p-6">
-      <View className="mb-6 h-16 w-16 items-center justify-center rounded-full bg-gray-3">
-        <Text className="text-3xl">🔗</Text>
-      </View>
-      <Text className="mb-2 text-center font-semibold text-gray-12 text-lg">
-        Connect GitHub
-      </Text>
-      <Text className="mb-6 text-center text-gray-11 text-sm">
-        Let PostHog work on your repositories.
-      </Text>
-      <Pressable
-        onPress={handleConnectGitHub}
-        className="rounded-lg px-6 py-3"
-        style={{ backgroundColor: themeColors.accent[9] }}
-      >
-        <Text className="font-semibold text-accent-contrast">
-          Connect GitHub
-        </Text>
-      </Pressable>
-    </View>
-  );
 }
 
 interface CreateTaskEmptyStateProps {
@@ -144,9 +88,14 @@ const DATE_GROUP_ORDER = [
 ];
 
 export function TaskList({ onTaskPress, onCreateTask }: TaskListProps) {
-  const { tasks, isLoading, error, refetch } = useTasks();
-  const { hasGithubIntegration, refetch: refetchIntegrations } =
-    useIntegrations();
+  const { tasks, isLoading, error, refetch } = useTasks({
+    originProduct: "user_created",
+  });
+  const {
+    error: integrationsError,
+    hasGithubIntegration,
+    refetch: refetchIntegrations,
+  } = useIntegrations();
   const themeColors = useThemeColors();
   const { archivedTasks, archive, unarchive } = useArchivedTasksStore();
   const organizeMode = useTaskStore((s) => s.organizeMode);
@@ -174,7 +123,6 @@ export function TaskList({ onTaskPress, onCreateTask }: TaskListProps) {
       }
     }
 
-    // Sort archived by FIFO (earliest archived first)
     archived.sort(
       (a, b) => (archivedTasks[a.id] ?? 0) - (archivedTasks[b.id] ?? 0),
     );
@@ -182,7 +130,6 @@ export function TaskList({ onTaskPress, onCreateTask }: TaskListProps) {
     const items: ListItem[] = [];
 
     if (organizeMode === "by-project") {
-      // Group active tasks by repository.
       const groups = new Map<string, Task[]>();
       for (const task of active) {
         const key = task.repository?.trim() || NO_REPO_LABEL;
@@ -194,7 +141,6 @@ export function TaskList({ onTaskPress, onCreateTask }: TaskListProps) {
         }
       }
 
-      // Sort each group's tasks by the configured sortMode (newest first).
       for (const tasksInRepo of groups.values()) {
         tasksInRepo.sort(
           (a, b) =>
@@ -203,7 +149,6 @@ export function TaskList({ onTaskPress, onCreateTask }: TaskListProps) {
         );
       }
 
-      // Order groups: most-recently-active repo first; "No repository" last.
       const groupEntries = Array.from(groups.entries()).sort((a, b) => {
         if (a[0] === NO_REPO_LABEL) return 1;
         if (b[0] === NO_REPO_LABEL) return -1;
@@ -224,7 +169,6 @@ export function TaskList({ onTaskPress, onCreateTask }: TaskListProps) {
         }
       }
     } else {
-      // Chronological — flat list grouped by relative-date buckets.
       const sorted = [...active].sort(
         (a, b) =>
           taskActivityTimestamp(b, sortMode) -
@@ -283,7 +227,22 @@ export function TaskList({ onTaskPress, onCreateTask }: TaskListProps) {
     );
   }
 
-  // Show loading while tasks are loading OR while we haven't checked integrations yet (when no tasks)
+  if (integrationsError && tasks.length === 0) {
+    return (
+      <View className="flex-1 items-center justify-center p-6">
+        <Text className="mb-4 text-center text-status-error">
+          {integrationsError}
+        </Text>
+        <Pressable
+          onPress={handleRefresh}
+          className="rounded-lg bg-gray-3 px-4 py-2"
+        >
+          <Text className="text-gray-12">Retry</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
   const isInitialLoading =
     (isLoading && tasks.length === 0) ||
     (tasks.length === 0 && hasGithubIntegration === null);
@@ -297,12 +256,10 @@ export function TaskList({ onTaskPress, onCreateTask }: TaskListProps) {
     );
   }
 
-  // No GitHub connection and no tasks - prompt to connect GitHub
   if (hasGithubIntegration === false && tasks.length === 0) {
-    return <ConnectGitHubEmptyState onConnected={handleRefresh} />;
+    return <GitHubConnectionPrompt mode="empty" onConnected={handleRefresh} />;
   }
 
-  // Has GitHub connection but no tasks - prompt to create first task
   if (tasks.length === 0) {
     return <CreateTaskEmptyState onCreateTask={onCreateTask} />;
   }
@@ -323,6 +280,14 @@ export function TaskList({ onTaskPress, onCreateTask }: TaskListProps) {
             return `${item.task.id}-${item.isArchived ? "a" : "v"}`;
         }
       }}
+      ListHeaderComponent={
+        integrationsError ? (
+          <GitHubLoadNotice
+            message={integrationsError}
+            onRetry={handleRefresh}
+          />
+        ) : null
+      }
       renderItem={({ item }) => {
         if (item.type === "repo-header") {
           return (

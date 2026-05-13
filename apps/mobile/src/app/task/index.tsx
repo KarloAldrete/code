@@ -1,161 +1,258 @@
 import { Text } from "@components/text";
 import { Stack, useRouter } from "expo-router";
-import * as WebBrowser from "expo-web-browser";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ArrowUp,
+  BrainIcon,
+  CaretDown,
+  GithubLogo,
+  PaperclipIcon,
+  PauseIcon,
+  PencilIcon,
+  Robot,
+  ShieldCheck,
+} from "phosphor-react-native";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  Keyboard,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   TextInput,
   View,
 } from "react-native";
-import { useAuthStore } from "@/features/auth";
 import {
-  createTask,
-  getGithubRepositories,
-  getIntegrations,
-  type Integration,
-  runTaskInCloud,
-} from "@/features/tasks";
+  useKeyboardHandler,
+  useReanimatedKeyboardAnimation,
+} from "react-native-keyboard-controller";
+import Animated, { runOnJS, useAnimatedStyle } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { createTask, runTaskInCloud } from "@/features/tasks/api";
+import { GitHubConnectionPrompt } from "@/features/tasks/components/GitHubConnectionPrompt";
+import { GitHubLoadNotice } from "@/features/tasks/components/GitHubLoadNotice";
+import { DotBackground } from "@/features/tasks/composer/DotBackground";
+import {
+  DEFAULT_EXECUTION_MODE,
+  DEFAULT_MODEL,
+  DEFAULT_REASONING,
+  EXECUTION_MODES,
+  type ExecutionMode,
+  MODELS,
+  modeLabel,
+  modelLabel,
+  modelSupportsReasoning,
+  REASONING_LEVELS,
+  type ReasoningEffort,
+  reasoningLabel,
+} from "@/features/tasks/composer/options";
+import { Pill } from "@/features/tasks/composer/Pill";
+import { RepositoryPickerSheet } from "@/features/tasks/composer/RepositoryPickerSheet";
+import { SelectSheet } from "@/features/tasks/composer/SelectSheet";
+import { useIntegrations } from "@/features/tasks/hooks/useIntegrations";
+import type { RepositorySelection } from "@/features/tasks/types";
+import {
+  findRepositoryOption,
+  isRepositorySelectionComplete,
+  toRepositorySelection,
+} from "@/features/tasks/utils/repositorySelection";
 import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
 
 const log = logger.scope("task-create");
 
-interface ConnectGitHubPromptProps {
-  onConnected?: () => void;
-}
+const SUGGESTIONS = [
+  "Create or update my CLAUDE.md file",
+  "Search for a TODO comment and fix it",
+  "Recommend areas to improve our tests",
+] as const;
 
-function ConnectGitHubPrompt({ onConnected }: ConnectGitHubPromptProps) {
-  const { cloudRegion, projectId, getCloudUrlFromRegion } = useAuthStore();
-  const themeColors = useThemeColors();
-
-  const handleConnectGitHub = async () => {
-    if (!cloudRegion || !projectId) return;
-    const baseUrl = getCloudUrlFromRegion(cloudRegion);
-    const authorizeUrl = `${baseUrl}/api/environments/${projectId}/integrations/authorize/?kind=github`;
-
-    // Open in-app browser - will auto-detect when user returns
-    const result = await WebBrowser.openAuthSessionAsync(
-      authorizeUrl,
-      "posthog://github/callback",
-    );
-
-    // When browser session ends, refresh integrations
-    if (
-      result.type === "dismiss" ||
-      result.type === "cancel" ||
-      result.type === "success"
-    ) {
-      onConnected?.();
-    }
-  };
-
-  return (
-    <View className="mb-4 rounded-lg border border-gray-6 p-4">
-      <View className="mb-3 flex-row items-center">
-        <Text className="mr-2 text-xl">🔗</Text>
-        <Text className="font-semibold text-gray-12">
-          Connect GitHub to continue
-        </Text>
-      </View>
-      <Text className="mb-4 text-gray-11 text-sm">
-        You need to connect your GitHub account before creating tasks. This
-        allows PostHog to work on your repositories.
-      </Text>
-      <Pressable
-        onPress={handleConnectGitHub}
-        className="items-center rounded-lg py-3"
-        style={{ backgroundColor: themeColors.accent[9] }}
-      >
-        <Text className="font-semibold text-accent-contrast">
-          Connect GitHub
-        </Text>
-      </Pressable>
-    </View>
-  );
+function modeIcon(mode: ExecutionMode, color: string, size = 14) {
+  switch (mode) {
+    case "plan":
+      return <PauseIcon size={size} color={color} weight="bold" />;
+    case "default":
+      return <PencilIcon size={size} color={color} />;
+    case "acceptEdits":
+      return <ShieldCheck size={size} color={color} />;
+  }
 }
 
 export default function NewTaskScreen() {
   const router = useRouter();
   const themeColors = useThemeColors();
-  const [integrations, setIntegrations] = useState<Integration[]>([]);
-  const [repositories, setRepositories] = useState<string[]>([]);
-  const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
-  const [repoSearch, setRepoSearch] = useState("");
+  const insets = useSafeAreaInsets();
+  const keyboard = useReanimatedKeyboardAnimation();
+  const restingBottom = insets.bottom + 12;
+  const {
+    error,
+    hasGithubIntegration,
+    repositoryOptions,
+    repositoryWarning,
+    isLoading,
+    refetch,
+  } = useIntegrations();
+
+  const containerStyle = useAnimatedStyle(() => {
+    const kbHeight = -keyboard.height.value;
+    const progress = keyboard.progress.value;
+    return {
+      paddingBottom: kbHeight + restingBottom * (1 - progress),
+    };
+  });
+
+  const suggestionsStyle = useAnimatedStyle(() => ({
+    opacity: 1 - keyboard.progress.value,
+  }));
+
+  const [keyboardActive, setKeyboardActive] = useState(false);
+  useKeyboardHandler(
+    {
+      onStart: (event) => {
+        "worklet";
+        runOnJS(setKeyboardActive)(event.height > 0);
+      },
+    },
+    [],
+  );
+
   const [prompt, setPrompt] = useState("");
+  const [selection, setSelection] = useState<RepositorySelection>({
+    integrationId: null,
+    repository: null,
+  });
+  const [mode, setMode] = useState<ExecutionMode>(DEFAULT_EXECUTION_MODE);
+  const [model, setModel] = useState<string>(DEFAULT_MODEL);
+  const [reasoning, setReasoning] =
+    useState<ReasoningEffort>(DEFAULT_REASONING);
   const [creating, setCreating] = useState(false);
-  const [loadingRepos, setLoadingRepos] = useState(true);
+  const [repoSheetOpen, setRepoSheetOpen] = useState(false);
+  const [modeSheetOpen, setModeSheetOpen] = useState(false);
+  const [modelSheetOpen, setModelSheetOpen] = useState(false);
+  const [reasoningSheetOpen, setReasoningSheetOpen] = useState(false);
 
-  const filteredRepositories = useMemo(() => {
-    const query = repoSearch.trim().toLowerCase();
-    if (!query) return repositories;
-    return repositories.filter((repo) => repo.toLowerCase().includes(query));
-  }, [repositories, repoSearch]);
-
-  const loadIntegrations = useCallback(async () => {
-    try {
-      setLoadingRepos(true);
-      const data = await getIntegrations();
-      const githubIntegrations = data.filter((i) => i.kind === "github");
-      setIntegrations(githubIntegrations);
-
-      if (githubIntegrations.length > 0) {
-        const allRepos: string[] = [];
-        for (const integration of githubIntegrations) {
-          const repos = await getGithubRepositories(integration.id);
-          allRepos.push(...repos);
-        }
-        setRepositories(allRepos.sort());
-      }
-    } catch (error) {
-      log.error("Failed to fetch integrations", error);
-    } finally {
-      setLoadingRepos(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadIntegrations();
-  }, [loadIntegrations]);
+  const selectedRepositoryOption = findRepositoryOption(
+    repositoryOptions,
+    selection,
+  );
+  const repositoryLabel = selectedRepositoryOption
+    ? repositoryOptions.filter(
+        (option) => option.repository === selectedRepositoryOption.repository,
+      ).length > 1
+      ? `${selectedRepositoryOption.repository} · ${selectedRepositoryOption.integrationLabel}`
+      : selectedRepositoryOption.repository
+    : "Select repository…";
+  const repositoryLoadBlocked =
+    !!repositoryWarning && repositoryOptions.length === 0;
 
   const handleCreateTask = useCallback(async () => {
-    if (!prompt.trim() || !selectedRepo) return;
+    if (
+      !prompt.trim() ||
+      !isRepositorySelectionComplete(selection) ||
+      creating
+    ) {
+      return;
+    }
 
     setCreating(true);
-    try {
-      const githubIntegration = integrations.find((i) => i.kind === "github");
 
+    try {
       const trimmedPrompt = prompt.trim();
+
       const task = await createTask({
         description: trimmedPrompt,
         title: trimmedPrompt.slice(0, 100),
-        repository: selectedRepo,
-        github_integration: githubIntegration?.id,
+        repository: selection.repository ?? undefined,
+        github_integration: selection.integrationId ?? undefined,
       });
 
-      // Pass the prompt as pending_user_message so the cloud agent has
-      // something to process on start — matches how the desktop launches
-      // new cloud runs. Without this the sandbox starts idle and the UI
-      // stays stuck on "Thinking...".
+      const supportsReasoning = modelSupportsReasoning(model);
+
       await runTaskInCloud(task.id, {
         pendingUserMessage: trimmedPrompt,
+        runtimeAdapter: "claude",
+        model,
+        reasoningEffort: supportsReasoning ? reasoning : undefined,
+        initialPermissionMode: mode,
       });
 
-      // Navigate to task detail (replaces current modal)
       router.replace(`/task/${task.id}`);
-    } catch (error) {
-      log.error("Failed to create task", error);
+    } catch (creationError) {
+      log.error("Failed to create task", creationError);
     } finally {
       setCreating(false);
     }
-  }, [prompt, selectedRepo, integrations, router]);
+  }, [creating, mode, model, prompt, reasoning, router, selection]);
 
-  const hasGithubIntegration = integrations.length > 0;
-  const canSubmit = prompt.trim() && selectedRepo && !creating;
+  const canSubmit =
+    !!prompt.trim() && isRepositorySelectionComplete(selection) && !creating;
+  const showReasoningPill = modelSupportsReasoning(model);
+
+  if (isLoading && hasGithubIntegration === null) {
+    return (
+      <>
+        <Stack.Screen
+          options={{
+            headerShown: true,
+            headerTitle: "New task",
+            headerStyle: { backgroundColor: themeColors.background },
+            headerTintColor: themeColors.gray[12],
+            presentation: "modal",
+          }}
+        />
+        <View className="flex-1 items-center justify-center bg-background">
+          <ActivityIndicator size="large" color={themeColors.accent[9]} />
+          <Text className="mt-4 text-gray-11">Loading repositories...</Text>
+        </View>
+      </>
+    );
+  }
+
+  if (error || repositoryLoadBlocked) {
+    return (
+      <>
+        <Stack.Screen
+          options={{
+            headerShown: true,
+            headerTitle: "New task",
+            headerStyle: { backgroundColor: themeColors.background },
+            headerTintColor: themeColors.gray[12],
+            presentation: "modal",
+          }}
+        />
+        <View className="flex-1 justify-center bg-background px-4">
+          <GitHubLoadNotice
+            message={
+              error ??
+              repositoryWarning ??
+              "Could not load GitHub repositories."
+            }
+            onRetry={refetch}
+          />
+        </View>
+      </>
+    );
+  }
+
+  if (hasGithubIntegration === false) {
+    return (
+      <>
+        <Stack.Screen
+          options={{
+            headerShown: true,
+            headerTitle: "New task",
+            headerStyle: { backgroundColor: themeColors.background },
+            headerTintColor: themeColors.gray[12],
+            presentation: "modal",
+          }}
+        />
+        <View className="flex-1 bg-background">
+          <GitHubConnectionPrompt
+            onConnected={refetch}
+            title="Connect GitHub to continue"
+            description="You need to connect your GitHub account before creating tasks. This allows PostHog to work on your repositories."
+          />
+        </View>
+      </>
+    );
+  }
 
   return (
     <>
@@ -168,113 +265,222 @@ export default function NewTaskScreen() {
           presentation: "modal",
         }}
       />
-      <KeyboardAvoidingView
-        className="flex-1 bg-background"
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={90}
-      >
-        <ScrollView
-          className="flex-1 px-3 pt-4"
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingBottom: 40 }}
-        >
-          <Pressable onPress={Keyboard.dismiss} accessible={false}>
-            {loadingRepos ? (
-              <View className="mb-4 items-center rounded-lg border border-gray-6 p-4">
-                <ActivityIndicator size="small" color={themeColors.accent[9]} />
-                <Text className="mt-2 text-gray-11 text-sm">
-                  Loading repositories...
-                </Text>
-              </View>
-            ) : !hasGithubIntegration ? (
-              <ConnectGitHubPrompt onConnected={loadIntegrations} />
-            ) : (
-              <>
-                <Text className="mb-2 text-gray-9 text-xs">Repository</Text>
-                <TextInput
-                  className="mb-2 rounded-lg border border-gray-6 px-3 py-2 text-gray-12 text-sm"
-                  placeholder="Search repositories"
-                  placeholderTextColor={themeColors.gray[9]}
-                  value={repoSearch}
-                  onChangeText={setRepoSearch}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  clearButtonMode="while-editing"
-                />
-                <ScrollView
-                  className="mb-4 max-h-48 rounded-lg border border-gray-6"
-                  keyboardShouldPersistTaps="handled"
-                  nestedScrollEnabled
-                >
-                  {filteredRepositories.length === 0 ? (
-                    <View className="px-3 py-4">
-                      <Text className="text-center text-gray-9 text-sm">
-                        {repoSearch
-                          ? `No repositories match "${repoSearch}"`
-                          : "No repositories available"}
-                      </Text>
-                    </View>
-                  ) : (
-                    filteredRepositories.map((item) => (
-                      <Pressable
-                        key={item}
-                        onPress={() => setSelectedRepo(item)}
-                        className={`border-gray-6 border-b px-3 py-3 ${
-                          selectedRepo === item ? "bg-accent-3" : ""
-                        }`}
-                      >
-                        <Text
-                          className={`text-sm ${
-                            selectedRepo === item
-                              ? "text-accent-11"
-                              : "text-gray-11"
-                          }`}
-                        >
-                          {item}
-                        </Text>
-                      </Pressable>
-                    ))
-                  )}
-                </ScrollView>
+      <View className="flex-1 bg-background">
+        <DotBackground />
 
-                <Text className="mb-2 text-gray-9 text-xs">
-                  Task description
+        <Animated.View style={[{ flex: 1 }, containerStyle]}>
+          <View className="flex-1 items-stretch justify-center px-3">
+            {prompt.trim().length === 0 ? (
+              <Animated.View
+                style={suggestionsStyle}
+                pointerEvents={keyboardActive ? "none" : "auto"}
+              >
+                <Text className="mb-3 px-1 text-[13px] text-gray-10">
+                  Suggestions
                 </Text>
-                <TextInput
-                  className="mb-4 min-h-[100px] rounded-lg border border-gray-6 px-3 py-3 font-mono text-gray-12 text-sm"
-                  placeholder="What would you like the agent to do?"
-                  placeholderTextColor={themeColors.gray[9]}
-                  value={prompt}
-                  onChangeText={setPrompt}
-                  multiline
-                  textAlignVertical="top"
+                <View className="gap-2">
+                  {SUGGESTIONS.map((suggestion) => (
+                    <Pressable
+                      key={suggestion}
+                      onPress={() => setPrompt(suggestion)}
+                      className="rounded-2xl border border-gray-6 bg-card px-4 py-3 active:bg-gray-2"
+                    >
+                      <Text className="text-[14px] text-gray-12">
+                        {suggestion}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </Animated.View>
+            ) : null}
+          </View>
+
+          <View className="px-3">
+            {repositoryWarning ? (
+              <GitHubLoadNotice
+                message={repositoryWarning}
+                onRetry={refetch}
+                tone="warning"
+              />
+            ) : null}
+
+            <View className="mb-2 flex-row">
+              <Pressable
+                onPress={() => setRepoSheetOpen(true)}
+                className="flex-row items-center gap-2 rounded-full border border-gray-6 bg-card py-1.5 pr-2.5 pl-2 active:bg-gray-2"
+              >
+                <GithubLogo
+                  size={16}
+                  color={
+                    selectedRepositoryOption
+                      ? themeColors.gray[12]
+                      : themeColors.gray[10]
+                  }
+                  weight={selectedRepositoryOption ? "fill" : "regular"}
                 />
+                <Text
+                  className={`text-[13px] ${
+                    selectedRepositoryOption ? "text-gray-12" : "text-gray-10"
+                  }`}
+                  numberOfLines={1}
+                >
+                  {repositoryLabel}
+                </Text>
+                <CaretDown size={12} color={themeColors.gray[10]} />
+              </Pressable>
+            </View>
+
+            <View className="overflow-hidden rounded-2xl border border-gray-6 bg-card">
+              <TextInput
+                className="px-4 pt-3.5 pb-3 text-[15px] text-gray-12"
+                style={{ minHeight: 56, maxHeight: 200 }}
+                placeholder="Describe what you want to build…"
+                placeholderTextColor={themeColors.gray[9]}
+                value={prompt}
+                onChangeText={setPrompt}
+                multiline
+                textAlignVertical="top"
+              />
+
+              <View className="flex-row items-center gap-2 px-2 pb-2">
+                <Pressable
+                  hitSlop={8}
+                  onPress={() => {
+                    // Attachments are not wired up yet in the mobile composer.
+                  }}
+                  className="h-9 w-9 items-center justify-center"
+                >
+                  <PaperclipIcon size={18} color={themeColors.gray[10]} />
+                </Pressable>
+
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                  className="flex-1"
+                  contentContainerStyle={{
+                    alignItems: "center",
+                    gap: 6,
+                    paddingRight: 4,
+                  }}
+                >
+                  <Pill
+                    icon={modeIcon(
+                      mode,
+                      mode === "plan"
+                        ? themeColors.accent[11]
+                        : themeColors.gray[11],
+                    )}
+                    label={modeLabel(mode)}
+                    accent={mode === "plan"}
+                    onPress={() => setModeSheetOpen(true)}
+                  />
+
+                  <Pill
+                    icon={<Robot size={14} color={themeColors.gray[11]} />}
+                    label={modelLabel(model)}
+                    onPress={() => setModelSheetOpen(true)}
+                  />
+
+                  {showReasoningPill ? (
+                    <Pill
+                      icon={
+                        <BrainIcon size={14} color={themeColors.gray[11]} />
+                      }
+                      label={reasoningLabel(reasoning)}
+                      onPress={() => setReasoningSheetOpen(true)}
+                    />
+                  ) : null}
+                </ScrollView>
 
                 <Pressable
                   onPress={handleCreateTask}
                   disabled={!canSubmit}
-                  className={`rounded-lg py-3 ${canSubmit ? "bg-accent-9" : "bg-gray-3"}`}
+                  className={`h-9 w-9 items-center justify-center rounded-lg ${
+                    canSubmit ? "bg-gray-12" : "bg-gray-5"
+                  }`}
                 >
                   {creating ? (
                     <ActivityIndicator
                       size="small"
-                      color={themeColors.accent.contrast}
+                      color={themeColors.background}
                     />
                   ) : (
-                    <Text
-                      className={`text-center font-medium ${
-                        canSubmit ? "text-accent-contrast" : "text-gray-9"
-                      }`}
-                    >
-                      Create task
-                    </Text>
+                    <ArrowUp
+                      size={18}
+                      color={
+                        canSubmit ? themeColors.background : themeColors.gray[9]
+                      }
+                      weight="bold"
+                    />
                   )}
                 </Pressable>
-              </>
-            )}
-          </Pressable>
-        </ScrollView>
-      </KeyboardAvoidingView>
+              </View>
+            </View>
+          </View>
+        </Animated.View>
+      </View>
+
+      <RepositoryPickerSheet
+        open={repoSheetOpen}
+        repositoryOptions={repositoryOptions}
+        selected={selectedRepositoryOption}
+        loading={isLoading}
+        onChange={(option) => setSelection(toRepositorySelection(option))}
+        onClose={() => setRepoSheetOpen(false)}
+      />
+
+      <SelectSheet
+        open={modeSheetOpen}
+        title="Execution mode"
+        value={mode}
+        onChange={(value) => setMode(value as ExecutionMode)}
+        onClose={() => setModeSheetOpen(false)}
+        options={EXECUTION_MODES.map((executionMode) => ({
+          value: executionMode.value,
+          label: executionMode.label,
+          description: executionMode.description,
+          icon: modeIcon(
+            executionMode.value,
+            executionMode.value === "plan"
+              ? themeColors.accent[11]
+              : themeColors.gray[11],
+            16,
+          ),
+        }))}
+      />
+
+      <SelectSheet
+        open={modelSheetOpen}
+        title="Model"
+        value={model}
+        onChange={(value) => {
+          setModel(value);
+          if (!modelSupportsReasoning(value)) {
+            setReasoning(DEFAULT_REASONING);
+          }
+        }}
+        onClose={() => setModelSheetOpen(false)}
+        options={MODELS.map((modelOption) => ({
+          value: modelOption.value,
+          label: modelOption.label,
+          description: modelOption.description,
+          icon: <Robot size={16} color={themeColors.gray[11]} />,
+        }))}
+      />
+
+      <SelectSheet
+        open={reasoningSheetOpen}
+        title="Reasoning"
+        value={reasoning}
+        onChange={(value) => setReasoning(value as ReasoningEffort)}
+        onClose={() => setReasoningSheetOpen(false)}
+        options={REASONING_LEVELS.map((reasoningLevel) => ({
+          value: reasoningLevel.value,
+          label: reasoningLevel.label,
+          icon: <BrainIcon size={16} color={themeColors.gray[11]} />,
+        }))}
+      />
     </>
   );
 }

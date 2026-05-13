@@ -10,10 +10,14 @@ import { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { OfflineBanner } from "@/components/OfflineBanner";
+import {
+  OFFLINE_BANNER_HEIGHT,
+  OfflineBanner,
+} from "@/components/OfflineBanner";
 import { useAuthStore } from "@/features/auth";
 import { setupNotificationResponseListener } from "@/features/notifications/lib/notifications";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
+import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import {
   POSTHOG_API_KEY,
   POSTHOG_OPTIONS,
@@ -22,7 +26,11 @@ import {
 import { queryClient } from "@/lib/queryClient";
 import { darkTheme, lightTheme, useThemeColors } from "@/lib/theme";
 
-function RootLayoutNav() {
+interface RootLayoutNavProps {
+  isConnected: boolean;
+}
+
+function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
   const { isLoading, initializeAuth } = useAuthStore();
   const aiChatEnabled = usePreferencesStore((s) => s.aiChatEnabled);
   const themeColors = useThemeColors();
@@ -51,7 +59,10 @@ function RootLayoutNav() {
     <Stack
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: themeColors.background },
+        contentStyle: {
+          backgroundColor: themeColors.background,
+          paddingTop: isConnected ? 0 : OFFLINE_BANNER_HEIGHT,
+        },
       }}
     >
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -102,6 +113,25 @@ function RootLayoutNav() {
           headerTintColor: themeColors.gray[12],
         }}
       />
+      <Stack.Screen
+        name="automation/index"
+        options={{
+          presentation: "modal",
+          headerShown: true,
+          title: "New automation",
+          headerStyle: { backgroundColor: themeColors.background },
+          headerTintColor: themeColors.gray[12],
+        }}
+      />
+      <Stack.Screen
+        name="automation/[id]"
+        options={{
+          presentation: "modal",
+          headerShown: true,
+          headerStyle: { backgroundColor: themeColors.background },
+          headerTintColor: themeColors.gray[12],
+        }}
+      />
     </Stack>
   );
 }
@@ -109,6 +139,7 @@ function RootLayoutNav() {
 export default function RootLayout() {
   const { colorScheme } = useColorScheme();
   const themeVars = colorScheme === "dark" ? darkTheme : lightTheme;
+  const { isConnected } = useNetworkStatus();
 
   return (
     <SafeAreaProvider>
@@ -123,8 +154,8 @@ export default function RootLayout() {
         >
           <QueryClientProvider client={queryClient}>
             <View style={themeVars} className="flex-1">
-              <RootLayoutNav />
-              <OfflineBanner />
+              <RootLayoutNav isConnected={isConnected} />
+              <OfflineBanner isConnected={isConnected} />
             </View>
             <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
           </QueryClientProvider>

@@ -17,13 +17,19 @@ const log = logger.scope("tasks-mutations");
 export const taskKeys = {
   all: ["tasks"] as const,
   lists: () => [...taskKeys.all, "list"] as const,
-  list: (filters?: { repository?: string; createdBy?: number }) =>
-    [...taskKeys.lists(), filters] as const,
+  list: (filters?: {
+    repository?: string;
+    createdBy?: number;
+    originProduct?: string;
+  }) => [...taskKeys.lists(), filters] as const,
   details: () => [...taskKeys.all, "detail"] as const,
   detail: (id: string) => [...taskKeys.details(), id] as const,
 };
 
-export function useTasks(filters?: { repository?: string }) {
+export function useTasks(filters?: {
+  repository?: string;
+  originProduct?: string;
+}) {
   const { projectId, oauthAccessToken } = useAuthStore();
   const { data: currentUser } = useUserQuery();
   const { sortMode, showInternal, filter } = useTaskStore();

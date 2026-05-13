@@ -13,6 +13,25 @@ export interface Task {
   latest_run?: TaskRun;
 }
 
+export interface TaskAutomation {
+  id: string;
+  name: string;
+  prompt: string;
+  repository: string;
+  github_integration?: number | null;
+  cron_expression: string;
+  timezone?: string | null;
+  template_id?: string | null;
+  enabled: boolean;
+  last_run_at: string | null;
+  last_run_status: string | null;
+  last_task_id: string | null;
+  last_task_run_id: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface TaskRun {
   id: string;
   task: string;
@@ -94,9 +113,42 @@ export interface Integration {
   };
 }
 
+export interface RepositoryOption {
+  integrationId: number;
+  integrationLabel: string;
+  repository: string;
+}
+
+export interface RepositorySelection {
+  integrationId: number | null;
+  repository: string | null;
+}
+
 export interface CreateTaskOptions {
   description: string;
   title?: string;
   repository?: string;
   github_integration?: number;
+}
+
+export interface CreateTaskAutomationOptions {
+  name: string;
+  prompt: string;
+  repository: string;
+  github_integration?: number | null;
+  cron_expression: string;
+  timezone: string;
+  enabled?: boolean;
+  template_id?: string | null;
+}
+
+export interface UpdateTaskAutomationOptions {
+  name?: string;
+  prompt?: string;
+  repository?: string;
+  github_integration?: number | null;
+  cron_expression?: string;
+  timezone?: string;
+  enabled?: boolean;
+  template_id?: string | null;
 }

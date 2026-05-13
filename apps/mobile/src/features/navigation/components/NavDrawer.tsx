@@ -1,6 +1,6 @@
 import { Text } from "@components/text";
 import { usePathname, useRouter } from "expo-router";
-import { GearSix, Plus, Tray } from "phosphor-react-native";
+import { Clock, GearSix, Plus, Tray } from "phosphor-react-native";
 import { type ReactNode, useEffect, useRef } from "react";
 import {
   Animated,
@@ -90,6 +90,7 @@ export function NavDrawer() {
   };
 
   const handleInbox = () => navigateTo("/inbox");
+  const handleAutomations = () => navigateTo("/automations");
   const handleSettings = () => navigateTo("/settings");
   const handleHome = () => navigateTo("/tasks");
 
@@ -101,6 +102,7 @@ export function NavDrawer() {
   const iconColor = themeColors.gray[11];
   const iconColorActive = themeColors.gray[12];
   const isOnInbox = pathname === "/inbox";
+  const isOnAutomations = pathname === "/automations";
   const isOnSettings = pathname === "/settings";
 
   return (
@@ -149,6 +151,18 @@ export function NavDrawer() {
             label="Inbox"
             active={isOnInbox}
             onPress={handleInbox}
+          />
+          <DrawerItem
+            icon={
+              <Clock
+                size={18}
+                color={isOnAutomations ? iconColorActive : iconColor}
+                weight={isOnAutomations ? "fill" : "regular"}
+              />
+            }
+            label="Automations"
+            active={isOnAutomations}
+            onPress={handleAutomations}
           />
         </View>
 
