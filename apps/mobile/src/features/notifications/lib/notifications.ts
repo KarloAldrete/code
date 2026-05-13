@@ -46,11 +46,6 @@ export async function registerForPushNotificationsAsync(): Promise<
     });
   }
 
-  if (!Device.isDevice) {
-    log.debug("Skipping push token retrieval: not a physical device");
-    return null;
-  }
-
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
   if (existingStatus !== "granted") {
@@ -59,6 +54,11 @@ export async function registerForPushNotificationsAsync(): Promise<
   }
   if (finalStatus !== "granted") {
     log.debug("Push notification permission not granted", { finalStatus });
+    return null;
+  }
+
+  if (!Device.isDevice) {
+    log.debug("Skipping push token retrieval: not a physical device");
     return null;
   }
 
