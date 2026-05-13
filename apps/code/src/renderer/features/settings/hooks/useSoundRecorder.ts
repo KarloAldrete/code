@@ -142,9 +142,11 @@ export function useSoundRecorder(): SoundRecorder {
           action: {
             label: "Open Settings",
             onClick: () =>
-              trpcClient.os.openExternal.mutate({
-                url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
-              }),
+              void trpcClient.os.openExternal
+                .mutate({
+                  url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
+                })
+                .catch((err) => log.error("Failed to open settings", err)),
           },
         });
       } else {
