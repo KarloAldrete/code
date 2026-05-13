@@ -274,6 +274,11 @@ export const osRouter = router({
   getWorktreeLocation: publicProcedure.query(() => getWorktreeLocation()),
 
   /**
+   * Get the user's home directory.
+   */
+  getHomeDir: publicProcedure.output(z.string()).query(() => os.homedir()),
+
+  /**
    * Read a file and return it as a base64 data URL
    * Used for image thumbnails in the editor
    */

@@ -37,6 +37,8 @@ interface TaskInputNavigationOptions {
 
 export type AppMode = "code" | "work";
 
+export type WorkView = "home" | "generate" | "skill-detail";
+
 interface ViewState {
   type: ViewType;
   data?: Task;
@@ -51,6 +53,13 @@ interface ViewState {
 interface NavigationStore {
   mode: AppMode;
   setMode: (mode: AppMode) => void;
+  workOnboardingSkipped: boolean;
+  skipWorkOnboarding: () => void;
+  workView: WorkView;
+  workSelectedSkillId?: string;
+  navigateToWorkHome: () => void;
+  navigateToWorkGenerate: () => void;
+  navigateToWorkSkill: (skillId: string) => void;
   view: ViewState;
   history: ViewState[];
   historyIndex: number;
@@ -129,6 +138,16 @@ export const useNavigationStore = create<NavigationStore>()(
       return {
         mode: "code",
         setMode: (mode: AppMode) => set({ mode }),
+        workOnboardingSkipped: false,
+        skipWorkOnboarding: () => set({ workOnboardingSkipped: true }),
+        workView: "home",
+        workSelectedSkillId: undefined,
+        navigateToWorkHome: () =>
+          set({ workView: "home", workSelectedSkillId: undefined }),
+        navigateToWorkGenerate: () =>
+          set({ workView: "generate", workSelectedSkillId: undefined }),
+        navigateToWorkSkill: (skillId: string) =>
+          set({ workView: "skill-detail", workSelectedSkillId: skillId }),
         view: { type: "task-input" },
         history: [{ type: "task-input" }],
         historyIndex: 0,
@@ -345,6 +364,9 @@ export const useNavigationStore = create<NavigationStore>()(
       storage: electronStorage,
       partialize: (state) => ({
         mode: state.mode,
+        workOnboardingSkipped: state.workOnboardingSkipped,
+        workView: state.workView,
+        workSelectedSkillId: state.workSelectedSkillId,
         view: {
           type: state.view.type,
           taskId: state.view.taskId,
