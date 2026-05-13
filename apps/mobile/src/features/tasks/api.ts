@@ -2,11 +2,14 @@ import { fetch } from "expo/fetch";
 import { getBaseUrl, getHeaders, getProjectId } from "@/lib/api";
 import { logger } from "@/lib/logger";
 import type {
+  CreateTaskAutomationOptions,
   CreateTaskOptions,
   Integration,
   StoredLogEntry,
   Task,
+  TaskAutomation,
   TaskRun,
+  UpdateTaskAutomationOptions,
 } from "./types";
 
 const log = logger.scope("tasks-api");
@@ -19,6 +22,50 @@ export class HttpError extends Error {
     this.name = "HttpError";
     this.status = status;
   }
+}
+
+export class TaskAutomationValidationError extends Error {
+  readonly code: string;
+  readonly attr: string | null;
+
+  constructor(message: string, code: string, attr: string | null) {
+    super(message);
+    this.name = "TaskAutomationValidationError";
+    this.code = code;
+    this.attr = attr;
+  }
+}
+
+async function parseJsonResponse<T>(response: Response): Promise<T> {
+  return (await response.json()) as T;
+}
+
+async function parseTaskAutomationError(response: Response): Promise<never> {
+  let payload: {
+    code?: string;
+    detail?: string;
+    attr?: string;
+  } | null = null;
+
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+
+  if (response.status === 400 && payload?.detail) {
+    throw new TaskAutomationValidationError(
+      payload.detail,
+      payload.code ?? "invalid_input",
+      payload.attr ?? null,
+    );
+  }
+
+  throw new HttpError(
+    response.status,
+    response.statusText,
+    "Task automation request failed",
+  );
 }
 
 async function withRetry<T>(
@@ -69,6 +116,7 @@ function isRetryableError(error: unknown): boolean {
 export async function getTasks(filters?: {
   repository?: string;
   createdBy?: number;
+  originProduct?: string;
 }): Promise<Task[]> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
@@ -80,6 +128,9 @@ export async function getTasks(filters?: {
   }
   if (filters?.createdBy) {
     params.set("created_by", String(filters.createdBy));
+  }
+  if (filters?.originProduct) {
+    params.set("origin_product", filters.originProduct);
   }
 
   const response = await fetch(
@@ -95,7 +146,7 @@ export async function getTasks(filters?: {
     );
   }
 
-  const data = await response.json();
+  const data = await parseJsonResponse<{ results?: Task[] }>(response);
   return data.results ?? [];
 }
 
@@ -117,7 +168,151 @@ export async function getTask(taskId: string): Promise<Task> {
     );
   }
 
-  return await response.json();
+  return await parseJsonResponse<Task>(response);
+}
+
+export async function getTaskAutomations(): Promise<TaskAutomation[]> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/projects/${projectId}/task_automations/?limit=500`,
+    { headers },
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to fetch task automations",
+    );
+  }
+
+  const data = await parseJsonResponse<{ results?: TaskAutomation[] }>(
+    response,
+  );
+  return data.results ?? [];
+}
+
+export async function getTaskAutomation(
+  automationId: string,
+): Promise<TaskAutomation> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/projects/${projectId}/task_automations/${automationId}/`,
+    { headers },
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to fetch task automation",
+    );
+  }
+
+  return await parseJsonResponse<TaskAutomation>(response);
+}
+
+export async function createTaskAutomation(
+  options: CreateTaskAutomationOptions,
+): Promise<TaskAutomation> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/projects/${projectId}/task_automations/`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify(options),
+    },
+  );
+
+  if (!response.ok) {
+    await parseTaskAutomationError(response);
+  }
+
+  return await parseJsonResponse<TaskAutomation>(response);
+}
+
+export async function updateTaskAutomation(
+  automationId: string,
+  updates: UpdateTaskAutomationOptions,
+): Promise<TaskAutomation> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/projects/${projectId}/task_automations/${automationId}/`,
+    {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify(updates),
+    },
+  );
+
+  if (!response.ok) {
+    await parseTaskAutomationError(response);
+  }
+
+  return await parseJsonResponse<TaskAutomation>(response);
+}
+
+export async function deleteTaskAutomation(
+  automationId: string,
+): Promise<void> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/projects/${projectId}/task_automations/${automationId}/`,
+    {
+      method: "DELETE",
+      headers,
+    },
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to delete task automation",
+    );
+  }
+}
+
+export async function runTaskAutomation(
+  automationId: string,
+): Promise<TaskAutomation> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/projects/${projectId}/task_automations/${automationId}/run/`,
+    {
+      method: "POST",
+      headers,
+    },
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to run task automation",
+    );
+  }
+
+  return await parseJsonResponse<TaskAutomation>(response);
 }
 
 export async function createTask(options: CreateTaskOptions): Promise<Task> {
@@ -144,7 +339,7 @@ export async function createTask(options: CreateTaskOptions): Promise<Task> {
     );
   }
 
-  return await response.json();
+  return await parseJsonResponse<Task>(response);
 }
 
 export async function updateTask(
@@ -172,7 +367,7 @@ export async function updateTask(
     );
   }
 
-  return await response.json();
+  return await parseJsonResponse<Task>(response);
 }
 
 export async function deleteTask(taskId: string): Promise<void> {
@@ -456,8 +651,13 @@ export async function getIntegrations(): Promise<Integration[]> {
     );
   }
 
-  const data = await response.json();
-  return data.results ?? data ?? [];
+  const data = await parseJsonResponse<
+    | {
+        results?: Integration[];
+      }
+    | Integration[]
+  >(response);
+  return Array.isArray(data) ? data : (data.results ?? []);
 }
 
 const GITHUB_REPOS_PAGE_SIZE = 500;

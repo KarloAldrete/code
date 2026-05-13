@@ -14,21 +14,26 @@ import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Composer } from "@/features/chat";
-import {
-  getTask,
-  runTaskInCloud,
-  type Task,
-  TaskSessionView,
-  taskKeys,
-  useTaskSessionStore,
-} from "@/features/tasks";
+import { getTask, runTaskInCloud } from "@/features/tasks/api";
+import { TaskSessionView } from "@/features/tasks/components/TaskSessionView";
+import { taskKeys } from "@/features/tasks/hooks/useTasks";
+import { useTaskSessionStore } from "@/features/tasks/stores/taskSessionStore";
+import type { Task } from "@/features/tasks/types";
 import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
 
 const log = logger.scope("task-detail");
 
 export default function TaskDetailScreen() {
-  const { id: taskId } = useLocalSearchParams<{ id: string }>();
+  const {
+    id: taskId,
+    fromAutomation,
+    automationName,
+  } = useLocalSearchParams<{
+    id: string;
+    fromAutomation?: string;
+    automationName?: string;
+  }>();
   const router = useRouter();
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
@@ -266,6 +271,13 @@ export default function TaskDetailScreen() {
   const isConnecting =
     retrying || (!!session?.awaitingAgentOutput && !hasAnyAgentOutput);
   const isThinking = !!session?.awaitingAgentOutput && hasAnyAgentOutput;
+  const showAutomationContext =
+    fromAutomation === "1" || task?.origin_product === "automation";
+  const automationContextLabel =
+    automationName ??
+    (task?.origin_product === "automation"
+      ? "This run was started from a task automation."
+      : null);
 
   // Haptic pulse when connecting/thinking indicators dismiss
   const prevWaiting = useRef(false);
@@ -357,6 +369,16 @@ export default function TaskDetailScreen() {
         }}
       />
       <Animated.View className="flex-1 bg-background" style={contentPosition}>
+        {showAutomationContext && automationContextLabel && (
+          <View className="absolute inset-x-3 top-3 z-10 rounded-lg border border-accent-6 bg-accent-2 px-3 py-2">
+            <Text className="text-accent-11 text-xs">
+              {automationName
+                ? `Started from automation: ${automationName}`
+                : automationContextLabel}
+            </Text>
+          </View>
+        )}
+
         {/* Always render TaskSessionView so the FlatList can layout behind
             the loading overlay. This prevents the "flash of messages" when
             switching from loading spinner to rendered content. */}
@@ -373,7 +395,9 @@ export default function TaskDetailScreen() {
           onSendPermissionResponse={handleSendPermissionResponse}
           contentContainerStyle={{
             paddingTop:
-              session?.terminalStatus && !retrying ? 16 : 80 + insets.bottom,
+              session?.terminalStatus && !retrying
+                ? 16 + (showAutomationContext ? 44 : 0)
+                : 80 + insets.bottom + (showAutomationContext ? 44 : 0),
             paddingBottom: 16,
           }}
         />

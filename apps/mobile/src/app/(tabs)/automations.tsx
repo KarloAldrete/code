@@ -4,23 +4,13 @@ import { useCallback, useRef } from "react";
 import { InteractionManager, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MenuButton } from "@/features/navigation/components/MenuButton";
-import {
-  TaskFilterButton,
-  TaskFilterMenu,
-  useTaskFilterMenu,
-} from "@/features/tasks/components/TaskFilterMenu";
-import { TaskList } from "@/features/tasks/components/TaskList";
+import { AutomationList } from "@/features/tasks/components/AutomationList";
 
-export default function TasksScreen() {
+export default function AutomationsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const readyRef = useRef(true);
-  const filterMenu = useTaskFilterMenu();
 
-  // Block navigation while a modal dismiss animation is in progress.
-  // When the screen loses focus (modal opens), readyRef is false.
-  // When focus returns (modal dismissed), we wait for all native
-  // animations to finish before allowing the next push.
   useFocusEffect(
     useCallback(() => {
       const handle = InteractionManager.runAfterInteractions(() => {
@@ -33,17 +23,17 @@ export default function TasksScreen() {
     }, []),
   );
 
-  const handleCreateTask = useCallback(() => {
+  const handleCreateAutomation = useCallback(() => {
     if (!readyRef.current) return;
     readyRef.current = false;
-    router.push("/task");
+    router.push("/automation");
   }, [router]);
 
-  const handleTaskPress = useCallback(
-    (taskId: string) => {
+  const handleAutomationPress = useCallback(
+    (automationId: string) => {
       if (!readyRef.current) return;
       readyRef.current = false;
-      router.push(`/task/${taskId}`);
+      router.push(`/automation/${automationId}`);
     },
     [router],
   );
@@ -56,27 +46,24 @@ export default function TasksScreen() {
       >
         <View className="flex-row items-center gap-2">
           <MenuButton />
-          <View className="flex-1">
-            <Text className="font-semibold text-[22px] text-gray-12">Code</Text>
-            <Text className="text-[13px] text-gray-11">
-              Your PostHog Code sessions
-            </Text>
-          </View>
-          <TaskFilterButton onPress={filterMenu.show} />
+          <Text className="flex-1 font-semibold text-[16px] text-gray-12">
+            Automations
+          </Text>
           <Pressable
-            onPress={handleCreateTask}
+            onPress={handleCreateAutomation}
             className="rounded-md bg-accent-9 px-3.5 py-2 active:opacity-80"
           >
             <Text className="font-semibold text-[13px] text-accent-contrast">
-              New task
+              New automation
             </Text>
           </Pressable>
         </View>
       </View>
 
-      <TaskList onTaskPress={handleTaskPress} onCreateTask={handleCreateTask} />
-
-      <TaskFilterMenu open={filterMenu.open} onClose={filterMenu.hide} />
+      <AutomationList
+        onAutomationPress={handleAutomationPress}
+        onCreateAutomation={handleCreateAutomation}
+      />
     </View>
   );
 }
