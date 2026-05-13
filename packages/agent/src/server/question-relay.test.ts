@@ -2,6 +2,7 @@ import { type SetupServerApi, setupServer } from "msw/node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { classifyAgentError } from "../adapters/claude/conversion/sdk-to-acp";
 import type { PostHogAPIClient } from "../posthog-api";
+import type { ResumeState } from "../resume";
 import { createTestRepo, type TestRepo } from "../test/fixtures/api";
 import { createPostHogHandlers } from "../test/mocks/msw-handlers";
 import type { Task, TaskRun } from "../types";
@@ -22,9 +23,11 @@ interface TestableAgentServer {
     }>;
   };
   questionRelayedToSlack: boolean;
+  resumeState: ResumeState | null;
   session: unknown;
   relayAgentResponse: (payload: Record<string, unknown>) => Promise<void>;
   sendInitialTaskMessage: (payload: Record<string, unknown>) => Promise<void>;
+  syncCloudBranchMetadata: (payload: Record<string, unknown>) => Promise<void>;
 }
 
 const TEST_PAYLOAD = {
@@ -457,6 +460,7 @@ describe("Question relay", () => {
         acpSessionId: "acp-session",
         clientConnection: { prompt: promptSpy },
         logWriter: {
+          appendRawLine: vi.fn(),
           flushAll: vi.fn().mockResolvedValue(undefined),
           getFullAgentResponse: vi.fn().mockReturnValue(null),
           resetTurnMessages: vi.fn(),
@@ -501,6 +505,7 @@ describe("Question relay", () => {
         acpSessionId: "acp-session",
         clientConnection: { prompt: promptSpy },
         logWriter: {
+          appendRawLine: vi.fn(),
           flushAll: vi.fn().mockResolvedValue(undefined),
           getFullAgentResponse: vi.fn().mockReturnValue(null),
           resetTurnMessages: vi.fn(),
@@ -535,6 +540,7 @@ describe("Question relay", () => {
         acpSessionId: "acp-session",
         clientConnection: { prompt: promptSpy },
         logWriter: {
+          appendRawLine: vi.fn(),
           flushAll: vi.fn().mockResolvedValue(undefined),
           getFullAgentResponse: vi.fn().mockReturnValue(null),
           resetTurnMessages: vi.fn(),
@@ -551,7 +557,20 @@ describe("Question relay", () => {
       });
     });
 
-    it("marks automation-triggered runs completed after a successful first turn", async () => {
+    it.each([
+      {
+        name: "marks automation-triggered runs completed after a successful first turn",
+        state: { automation_id: "automation-1" },
+        agentResponse: "At 2026-05-13 17:45, the waitlist count is 2827.",
+        expectCompleted: true,
+      },
+      {
+        name: "keeps non-automation runs open after a successful first turn",
+        state: {},
+        agentResponse: "done",
+        expectCompleted: false,
+      },
+    ])("$name", async ({ state, agentResponse, expectCompleted }) => {
       vi.spyOn(server.posthogAPI, "getTask").mockResolvedValue({
         id: "test-task-id",
         title: "t",
@@ -560,16 +579,9 @@ describe("Question relay", () => {
       vi.spyOn(server.posthogAPI, "getTaskRun").mockResolvedValue({
         id: "test-run-id",
         task: "test-task-id",
-        state: { automation_id: "automation-1" },
+        state,
       } as unknown as TaskRun);
-      vi.spyOn(
-        server as unknown as {
-          syncCloudBranchMetadata: (
-            payload: Record<string, unknown>,
-          ) => Promise<void>;
-        },
-        "syncCloudBranchMetadata",
-      ).mockResolvedValue(undefined);
+      vi.spyOn(server, "syncCloudBranchMetadata").mockResolvedValue(undefined);
 
       const promptSpy = vi.fn().mockResolvedValue({ stopReason: "end_turn" });
       const updateTaskRunSpy = vi
@@ -585,11 +597,7 @@ describe("Question relay", () => {
         logWriter: {
           appendRawLine: vi.fn(),
           flushAll: vi.fn().mockResolvedValue(undefined),
-          getFullAgentResponse: vi
-            .fn()
-            .mockReturnValue(
-              "At 2026-05-13 17:45, the waitlist count is 2827.",
-            ),
+          getFullAgentResponse: vi.fn().mockReturnValue(agentResponse),
           resetTurnMessages: vi.fn(),
           flush: vi.fn().mockResolvedValue(undefined),
           isRegistered: vi.fn().mockReturnValue(true),
@@ -601,42 +609,54 @@ describe("Question relay", () => {
       expect(relaySpy).toHaveBeenCalledWith(
         "test-task-id",
         "test-run-id",
-        "At 2026-05-13 17:45, the waitlist count is 2827.",
+        agentResponse,
       );
-      expect(updateTaskRunSpy).toHaveBeenCalledWith(
-        "test-task-id",
-        "test-run-id",
-        {
-          status: "completed",
-        },
-      );
+
+      if (expectCompleted) {
+        expect(updateTaskRunSpy).toHaveBeenCalledWith(
+          "test-task-id",
+          "test-run-id",
+          {
+            status: "completed",
+          },
+        );
+      } else {
+        expect(updateTaskRunSpy).not.toHaveBeenCalledWith(
+          "test-task-id",
+          "test-run-id",
+          {
+            status: "completed",
+          },
+        );
+      }
     });
 
-    it("keeps non-automation runs open after a successful first turn", async () => {
-      vi.spyOn(server.posthogAPI, "getTask").mockResolvedValue({
-        id: "test-task-id",
-        title: "t",
-        description: "original task description",
-      } as unknown as Task);
+    it("marks automation-triggered runs completed after a successful resume turn", async () => {
       vi.spyOn(server.posthogAPI, "getTaskRun").mockResolvedValue({
         id: "test-run-id",
         task: "test-task-id",
-        state: {},
+        state: { automation_id: "automation-1" },
       } as unknown as TaskRun);
-      vi.spyOn(
-        server as unknown as {
-          syncCloudBranchMetadata: (
-            payload: Record<string, unknown>,
-          ) => Promise<void>;
-        },
-        "syncCloudBranchMetadata",
-      ).mockResolvedValue(undefined);
+      vi.spyOn(server, "syncCloudBranchMetadata").mockResolvedValue(undefined);
 
       const promptSpy = vi.fn().mockResolvedValue({ stopReason: "end_turn" });
       const updateTaskRunSpy = vi
         .spyOn(server.posthogAPI, "updateTaskRun")
         .mockResolvedValue({} as TaskRun);
-      vi.spyOn(server.posthogAPI, "relayMessage").mockResolvedValue(undefined);
+      const relaySpy = vi
+        .spyOn(server.posthogAPI, "relayMessage")
+        .mockResolvedValue(undefined);
+      server.resumeState = {
+        conversation: [
+          {
+            role: "user",
+            content: [{ type: "text", text: "Please continue from here." }],
+          },
+        ],
+        latestGitCheckpoint: null,
+        interrupted: false,
+        logEntryCount: 1,
+      };
       server.session = {
         payload: TEST_PAYLOAD,
         acpSessionId: "acp-session",
@@ -644,7 +664,7 @@ describe("Question relay", () => {
         logWriter: {
           appendRawLine: vi.fn(),
           flushAll: vi.fn().mockResolvedValue(undefined),
-          getFullAgentResponse: vi.fn().mockReturnValue("done"),
+          getFullAgentResponse: vi.fn().mockReturnValue("resume reply"),
           resetTurnMessages: vi.fn(),
           flush: vi.fn().mockResolvedValue(undefined),
           isRegistered: vi.fn().mockReturnValue(true),
@@ -653,7 +673,23 @@ describe("Question relay", () => {
 
       await server.sendInitialTaskMessage(TEST_PAYLOAD);
 
-      expect(updateTaskRunSpy).not.toHaveBeenCalledWith(
+      expect(promptSpy).toHaveBeenCalledWith({
+        sessionId: "acp-session",
+        prompt: [
+          expect.objectContaining({
+            type: "text",
+            text: expect.stringContaining(
+              "You are resuming a previous conversation.",
+            ),
+          }),
+        ],
+      });
+      expect(relaySpy).toHaveBeenCalledWith(
+        "test-task-id",
+        "test-run-id",
+        "resume reply",
+      );
+      expect(updateTaskRunSpy).toHaveBeenCalledWith(
         "test-task-id",
         "test-run-id",
         {
