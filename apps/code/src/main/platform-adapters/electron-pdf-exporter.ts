@@ -11,45 +11,37 @@ import { logger } from "../utils/logger";
 
 const log = logger.scope("electron-pdf-exporter");
 
-const POLL_INTERVAL_MS = 200;
-
-interface CanvasState {
-  ready: boolean;
-  error: string | null;
-  lastStatus: string | null;
-}
+const WRAPPER_WIDTH_PX = 720;
+const WRAPPER_HEIGHT_PX = 960;
+const WRAPPER_SETTLE_MS = 150;
+// Brief delay after repositioning the iframe so the new layout paints
+// before we capture it.
+const EXPAND_SETTLE_MS = 300;
 
 function sanitizeFilename(name: string): string {
   const trimmed = name.trim().replace(/[\\/:*?"<>|]/g, "-");
   return trimmed.length > 0 ? trimmed : "export";
 }
 
-function buildInstallScript(req: PdfExportRequest): string {
-  // Pre-installs a postMessage listener so we don't miss the ready signal
-  // even if the document posts it before we get a chance to attach.
-  return `
-(function() {
-  window.__pdfExportState = { ready: false, error: null, lastStatus: null };
-  const STATUS_RE = new RegExp(${JSON.stringify(req.statusPattern)});
-  window.addEventListener('message', (e) => {
-    const d = e.data;
-    if (!d || typeof d !== 'object') return;
-    if (d.kind === ${JSON.stringify(req.readyKind)}) {
-      window.__pdfExportState.ready = true;
-      return;
-    }
-    if (d.kind === ${JSON.stringify(req.errorKind)}) {
-      const msg = typeof d.message === 'string' ? d.message : '';
-      if (STATUS_RE.test(msg)) {
-        window.__pdfExportState.lastStatus = msg;
-      } else {
-        window.__pdfExportState.error = msg;
-      }
-    }
-  });
-  true;
-})();
-`;
+function buildWrapperHtml(pngDataUrl: string): string {
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  html, body { margin: 0; padding: 0; background: white; }
+  img { display: block; max-width: 100%; height: auto; }
+</style>
+</head>
+<body><img src="${pngDataUrl}" alt="" /></body>
+</html>`;
+}
+
+interface ExpandedIframe {
+  width: number;
+  height: number;
+  originalBounds: Electron.Rectangle;
+  resized: boolean;
 }
 
 @injectable()
@@ -74,10 +66,29 @@ export class ElectronPdfExporter implements IPdfExporter {
       return { path: null, cancelled: true };
     }
 
+    const expanded = await this.expandIframe(parent, req.iframeSelector);
+    let pngBuffer: Buffer;
+    try {
+      // The iframe is now position:fixed at (0,0) with its full content
+      // size — capture exactly that rect.
+      const image = await parent.webContents.capturePage({
+        x: 0,
+        y: 0,
+        width: expanded.width,
+        height: expanded.height,
+      });
+      pngBuffer = image.toPNG();
+    } finally {
+      await this.restoreIframe(parent, req.iframeSelector);
+      if (expanded.resized) {
+        parent.setBounds(expanded.originalBounds);
+      }
+    }
+
     const offscreen = new BrowserWindow({
       show: false,
-      width: req.windowSize.width,
-      height: req.windowSize.height,
+      width: WRAPPER_WIDTH_PX,
+      height: WRAPPER_HEIGHT_PX,
       backgroundColor: "#ffffff",
       webPreferences: {
         contextIsolation: true,
@@ -87,18 +98,14 @@ export class ElectronPdfExporter implements IPdfExporter {
     });
 
     try {
-      const dataUrl = `data:text/html;charset=utf-8;base64,${Buffer.from(
-        req.srcDoc,
+      const pngDataUrl = `data:image/png;base64,${pngBuffer.toString("base64")}`;
+      const wrapperHtml = buildWrapperHtml(pngDataUrl);
+      const wrapperDataUrl = `data:text/html;charset=utf-8;base64,${Buffer.from(
+        wrapperHtml,
         "utf8",
       ).toString("base64")}`;
-      await offscreen.loadURL(dataUrl);
-
-      await offscreen.webContents.executeJavaScript(buildInstallScript(req));
-
-      await this.waitForReady(offscreen, req);
-
-      // Let async libraries (Chart.js, etc.) settle at the window size.
-      await new Promise((r) => setTimeout(r, req.settleMs));
+      await offscreen.loadURL(wrapperDataUrl);
+      await new Promise((r) => setTimeout(r, WRAPPER_SETTLE_MS));
 
       const buffer = await offscreen.webContents.printToPDF({
         printBackground: true,
@@ -117,31 +124,77 @@ export class ElectronPdfExporter implements IPdfExporter {
     }
   }
 
-  private async waitForReady(
-    win: BrowserWindow,
-    req: PdfExportRequest,
-  ): Promise<void> {
-    const deadline = Date.now() + req.readyTimeoutMs;
-    let lastStatus: string | null = null;
-    while (Date.now() < deadline) {
-      const state = (await win.webContents.executeJavaScript(
-        "window.__pdfExportState",
-      )) as CanvasState | undefined;
-      if (state?.error) {
-        throw new Error(`PDF export error: ${state.error}`);
-      }
-      if (state?.ready) {
-        return;
-      }
-      if (state?.lastStatus && state.lastStatus !== lastStatus) {
-        lastStatus = state.lastStatus;
-        log.info("loading", { status: lastStatus });
-      }
-      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+  private async expandIframe(
+    parent: BrowserWindow,
+    selector: string,
+  ): Promise<ExpandedIframe> {
+    // Reach into the iframe's sandboxed frame to read its document
+    // content height. Sandboxed iframes block parent-page access, but the
+    // main process can executeJavaScript on any frame in the subtree.
+    const iframeFrame = parent.webContents.mainFrame.framesInSubtree.find(
+      (f) => f !== parent.webContents.mainFrame,
+    );
+    if (!iframeFrame) {
+      throw new Error("Canvas iframe frame not found in parent webContents");
     }
-    throw new Error(
-      `Document did not become ready within ${req.readyTimeoutMs / 1000}s` +
-        (lastStatus ? ` (last status: ${lastStatus})` : ""),
+    const contentHeight = (await iframeFrame.executeJavaScript(
+      "Math.max(document.documentElement.scrollHeight, document.body.scrollHeight, 100)",
+    )) as number;
+
+    // Pull the iframe out of layout flow with position:fixed at (0,0)
+    // sized to its full content. This bypasses every ancestor overflow
+    // / max-height / fixed-height constraint without touching them.
+    // Same-document repositioning preserves the iframe's contentWindow,
+    // so the canvas's React state and pending API responses survive.
+    const measure = (await parent.webContents.executeJavaScript(
+      `(() => {
+        const iframe = document.querySelector(${JSON.stringify(selector)});
+        if (!iframe) throw new Error("Canvas iframe not found in DOM");
+        const w = iframe.getBoundingClientRect().width;
+        window.__pdfExportSavedStyle = iframe.getAttribute("style") || "";
+        iframe.style.cssText =
+          "position: fixed; top: 0; left: 0; width: " + w + "px; " +
+          "height: ${contentHeight}px; z-index: 999999; background: white; " +
+          "margin: 0; padding: 0; border: 0; max-width: none; max-height: none;";
+        return { width: w };
+      })()`,
+    )) as { width: number };
+
+    const originalBounds = parent.getBounds();
+    const requiredHeight = Math.ceil(contentHeight) + 60;
+    const resized = originalBounds.height < requiredHeight;
+    if (resized) {
+      parent.setBounds({ ...originalBounds, height: requiredHeight });
+    }
+
+    await new Promise((r) => setTimeout(r, EXPAND_SETTLE_MS));
+
+    return {
+      width: Math.max(1, Math.ceil(measure.width)),
+      height: Math.max(1, Math.ceil(contentHeight)),
+      originalBounds,
+      resized,
+    };
+  }
+
+  private async restoreIframe(
+    parent: BrowserWindow,
+    selector: string,
+  ): Promise<void> {
+    await parent.webContents.executeJavaScript(
+      `(() => {
+        const iframe = document.querySelector(${JSON.stringify(selector)});
+        if (!iframe) return;
+        const saved = window.__pdfExportSavedStyle;
+        if (saved !== undefined) {
+          if (saved === "") {
+            iframe.removeAttribute("style");
+          } else {
+            iframe.setAttribute("style", saved);
+          }
+          delete window.__pdfExportSavedStyle;
+        }
+      })()`,
     );
   }
 }

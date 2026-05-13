@@ -1,4 +1,3 @@
-import { buildCanvasSrcDoc } from "@features/rendering-canvas/runtime";
 import { useTRPC } from "@renderer/trpc/client";
 import { useMutation } from "@tanstack/react-query";
 import { logger } from "@utils/logger";
@@ -7,6 +6,8 @@ import { useCallback } from "react";
 
 const log = logger.scope("export-canvas-pdf");
 
+const CANVAS_IFRAME_SELECTOR = 'iframe[title="rendering-canvas"]';
+
 export function useExportCanvasPdf() {
   const trpcReact = useTRPC();
   const mutation = useMutation(
@@ -14,14 +15,20 @@ export function useExportCanvasPdf() {
   );
 
   const exportPdf = useCallback(
-    async ({ name, content }: { name: string; content: string }) => {
+    async ({ name }: { name: string }) => {
       log.info("exporting canvas to PDF", { name });
+      if (!document.querySelector(CANVAS_IFRAME_SELECTOR)) {
+        toast.error("Could not export canvas", {
+          description: "Canvas iframe not found on the page",
+        });
+        return;
+      }
       try {
-        const srcDoc = buildCanvasSrcDoc(content);
-        const result = await mutation.mutateAsync({ name, srcDoc });
-        if (result.cancelled) {
-          return;
-        }
+        const result = await mutation.mutateAsync({
+          name,
+          iframeSelector: CANVAS_IFRAME_SELECTOR,
+        });
+        if (result.cancelled) return;
         toast.success("Canvas exported", { description: result.path });
       } catch (err) {
         log.error("failed to export canvas", err);

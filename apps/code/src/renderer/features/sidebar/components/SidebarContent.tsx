@@ -1,5 +1,6 @@
 import { useArchivedTaskIds } from "@features/archive/hooks/useArchivedTaskIds";
 import { SidebarUsageBar } from "@features/billing/components/SidebarUsageBar";
+import { SdkUsageCanvasButton } from "@features/rendering-canvas/SdkUsageCanvasButton";
 import { TestCanvasButton } from "@features/rendering-canvas/TestCanvasButton";
 import { useSidebarStore } from "@features/sidebar/stores/sidebarStore";
 import { ArchiveIcon } from "@phosphor-icons/react";
@@ -27,6 +28,9 @@ export const SidebarContent: React.FC = () => {
       {activeTab === "files" && <AddCanvasButton />}
       <Box className="shrink-0 border-gray-6 border-t">
         <TestCanvasButton />
+      </Box>
+      <Box className="shrink-0 border-gray-6 border-t">
+        <SdkUsageCanvasButton />
       </Box>
       {archivedTaskIds.size > 0 && (
         <Box className="shrink-0 border-gray-6 border-t">

@@ -9,7 +9,7 @@ const getService = () =>
 
 const exportPdfInput = z.object({
   name: z.string(),
-  srcDoc: z.string(),
+  iframeSelector: z.string(),
 });
 
 const exportPdfOutput = z.union([
