@@ -66,7 +66,7 @@ export default function TabsLayout() {
 
       {/* New task — opens the new-task modal via a trampoline route */}
       <NativeTabs.Trigger name="new-task">
-        <Label hidden />
+        <Label>New task</Label>
         <Icon
           sf={{ default: "plus", selected: "plus" }}
           drawable="ic_menu_add"

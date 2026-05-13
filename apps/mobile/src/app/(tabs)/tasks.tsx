@@ -44,9 +44,7 @@ export default function TasksScreen() {
       {/* Header */}
       <View className="border-gray-6 border-b px-4 pt-16 pb-4">
         <Text className="font-bold text-2xl text-gray-12">Code</Text>
-        <Text className="text-gray-11 text-sm">
-          Your PostHog Code sessions
-        </Text>
+        <Text className="text-gray-11 text-sm">Your PostHog Code sessions</Text>
       </View>
 
       {/* Task List */}
