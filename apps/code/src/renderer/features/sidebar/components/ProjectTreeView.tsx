@@ -152,7 +152,7 @@ export function ProjectTreeView() {
 
   const { data, isLoading } = useAuthenticatedQuery(
     ["file-system", "folders"] as const,
-    (client) => client.getFileSystem({ limit: 200 }),
+    (client) => client.getFileSystem(),
   );
 
   const { folders } = useFolders();

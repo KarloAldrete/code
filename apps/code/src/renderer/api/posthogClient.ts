@@ -611,10 +611,41 @@ export class PostHogAPIClient {
     search?: string;
   }) {
     const projectId = String(await this.getTeamId());
-    return this.api.get("/api/projects/{project_id}/file_system/", {
-      path: { project_id: projectId },
-      query: opts ?? {},
-    });
+
+    if (opts?.limit !== undefined || opts?.offset !== undefined) {
+      return this.api.get("/api/projects/{project_id}/file_system/", {
+        path: { project_id: projectId },
+        query: opts,
+      });
+    }
+
+    const pageSize = 200;
+    let offset = 0;
+    let count = 0;
+    const results: Schemas.FileSystem[] = [];
+
+    while (true) {
+      const page = await this.api.get(
+        "/api/projects/{project_id}/file_system/",
+        {
+          path: { project_id: projectId },
+          query: { limit: pageSize, offset, ...(opts ?? {}) },
+        },
+      );
+      count = page.count;
+      results.push(...page.results);
+      offset += page.results.length;
+      if (!page.next || page.results.length === 0 || offset >= page.count) {
+        break;
+      }
+    }
+
+    return {
+      count,
+      next: null,
+      previous: null,
+      results,
+    } as Schemas.PaginatedFileSystemList;
   }
 
   async createFileSystem(body: {
