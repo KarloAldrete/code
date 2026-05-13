@@ -1,4 +1,5 @@
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
+import { trpcClient } from "@renderer/trpc";
 import { logger } from "@utils/logger";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -65,6 +66,14 @@ export function useSoundRecorder(): SoundRecorder {
   const start = useCallback(async () => {
     if (recorderRef.current) return;
     try {
+      // Trigger macOS prompt up front when status is unknown. In dev mode this
+      // can be flaky (adhoc-signed Electron); the getUserMedia call below will
+      // re-trigger the prompt if needed and the catch handles denial cleanly.
+      const status = await trpcClient.os.getMicrophoneAccessStatus.query();
+      log.info("Microphone status", { status });
+      if (status === "not-determined") {
+        await trpcClient.os.requestMicrophoneAccess.mutate();
+      }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = pickMimeType();
       const recorder = new MediaRecorder(
@@ -109,15 +118,33 @@ export function useSoundRecorder(): SoundRecorder {
       timeoutRef.current = setTimeout(() => {
         if (recorderRef.current?.state === "recording") {
           recorderRef.current.stop();
+          toast.error(`Recording capped at ${MAX_RECORDING_MS / 1000} seconds`);
         }
       }, MAX_RECORDING_MS);
     } catch (error) {
       log.error("Failed to start recording", error);
       cleanup();
       setIsRecording(false);
-      toast.error(
-        "Microphone access denied. Allow microphone access to record a custom sound.",
-      );
+      const isPermissionError =
+        error instanceof Error &&
+        (error.name === "NotAllowedError" ||
+          error.name === "SecurityError" ||
+          error.message.toLowerCase().includes("permission"));
+      if (isPermissionError) {
+        toast.error("Microphone access denied", {
+          description:
+            "Enable microphone access for PostHog Code in System Settings.",
+          action: {
+            label: "Open Settings",
+            onClick: () =>
+              trpcClient.os.openExternal.mutate({
+                url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
+              }),
+          },
+        });
+      } else {
+        toast.error("Could not start recording");
+      }
     }
   }, [cleanup, setCustomCompletionSound]);
 
