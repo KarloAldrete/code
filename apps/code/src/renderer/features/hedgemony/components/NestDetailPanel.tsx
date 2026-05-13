@@ -11,7 +11,7 @@ import {
 import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { selectNestMessages, useNestChatStore } from "../stores/nestChatStore";
 import { useNestStore } from "../stores/nestStore";
 
@@ -28,8 +28,6 @@ export function NestDetailPanel({ nest, onClose }: NestDetailPanelProps) {
   const [definitionOfDone, setDefinitionOfDone] = useState(
     nest.definitionOfDone ?? "",
   );
-  const [mapX, setMapX] = useState(String(nest.mapX));
-  const [mapY, setMapY] = useState(String(nest.mapY));
   const [saving, setSaving] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,26 +42,11 @@ export function NestDetailPanel({ nest, onClose }: NestDetailPanelProps) {
     setName(nest.name);
     setGoalPrompt(nest.goalPrompt);
     setDefinitionOfDone(nest.definitionOfDone ?? "");
-    setMapX(String(nest.mapX));
-    setMapY(String(nest.mapY));
     setError(null);
     void loadMessages(nest.id);
   }, [nest, loadMessages]);
 
-  const parsedCoords = useMemo(() => {
-    const nextMapX = Number.parseInt(mapX, 10);
-    const nextMapY = Number.parseInt(mapY, 10);
-    return {
-      mapX: Number.isFinite(nextMapX) ? nextMapX : null,
-      mapY: Number.isFinite(nextMapY) ? nextMapY : null,
-    };
-  }, [mapX, mapY]);
-
-  const canSave =
-    name.trim().length > 0 &&
-    goalPrompt.trim().length > 0 &&
-    parsedCoords.mapX !== null &&
-    parsedCoords.mapY !== null;
+  const canSave = name.trim().length > 0 && goalPrompt.trim().length > 0;
 
   const handleSave = async () => {
     if (!canSave || saving) return;
@@ -75,8 +58,6 @@ export function NestDetailPanel({ nest, onClose }: NestDetailPanelProps) {
         name: name.trim(),
         goalPrompt: goalPrompt.trim(),
         definitionOfDone: definitionOfDone.trim() || null,
-        mapX: parsedCoords.mapX ?? nest.mapX,
-        mapY: parsedCoords.mapY ?? nest.mapY,
       });
       useNestStore.getState().upsert(updated);
     } catch (e) {
@@ -159,25 +140,6 @@ export function NestDetailPanel({ nest, onClose }: NestDetailPanelProps) {
                 disabled={saving || archiving}
               />
             </LabeledField>
-
-            <div className="grid grid-cols-2 gap-2">
-              <LabeledField label="Map X" htmlFor="nest-detail-map-x">
-                <TextField.Root
-                  id="nest-detail-map-x"
-                  value={mapX}
-                  onChange={(e) => setMapX(e.target.value)}
-                  disabled={saving || archiving}
-                />
-              </LabeledField>
-              <LabeledField label="Map Y" htmlFor="nest-detail-map-y">
-                <TextField.Root
-                  id="nest-detail-map-y"
-                  value={mapY}
-                  onChange={(e) => setMapY(e.target.value)}
-                  disabled={saving || archiving}
-                />
-              </LabeledField>
-            </div>
           </Flex>
 
           {error && (

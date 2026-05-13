@@ -1,3 +1,6 @@
+import type { Nest } from "@main/services/hedgemony/schemas";
+import { trpcClient } from "@renderer/trpc/client";
+import { logger } from "@utils/logger";
 import { useEffect, useState } from "react";
 import {
   initializeNestStore,
@@ -8,6 +11,8 @@ import { HedgemonyEmptyState } from "./HedgemonyEmptyState";
 import { HedgemonyMapSurface } from "./HedgemonyMapSurface";
 import { NestDetailPanel } from "./NestDetailPanel";
 import { PlaceNestDialog } from "./PlaceNestDialog";
+
+const log = logger.scope("hedgemony-map-view");
 
 export function HedgemonyMapView() {
   const nests = useNestStore(selectNests);
@@ -28,6 +33,22 @@ export function HedgemonyMapView() {
     ? (nests.find((nest) => nest.id === activeNestId) ?? null)
     : null;
 
+  const handleNestMove = async (nest: Nest, mapX: number, mapY: number) => {
+    const previous = nest;
+    useNestStore.getState().upsert({ ...nest, mapX, mapY });
+    try {
+      const updated = await trpcClient.hedgemony.nests.update.mutate({
+        id: nest.id,
+        mapX,
+        mapY,
+      });
+      useNestStore.getState().upsert(updated);
+    } catch (error) {
+      log.error("Failed to move nest", { id: nest.id, error });
+      useNestStore.getState().upsert(previous);
+    }
+  };
+
   return (
     <>
       <HedgemonyMapSurface
@@ -38,6 +59,7 @@ export function HedgemonyMapView() {
           setPendingPlacement({ x, y });
         }}
         onNestClick={(nest) => setActiveNestId(nest.id)}
+        onNestMove={handleNestMove}
       />
       {activeNest && (
         <NestDetailPanel

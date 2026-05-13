@@ -18,6 +18,7 @@ interface HedgemonyMapSurfaceProps {
   /** Called when the user clicks an empty patch of map (world coords). */
   onMapClick?: (worldX: number, worldY: number) => void;
   onNestClick?: (nest: Nest) => void;
+  onNestMove?: (nest: Nest, mapX: number, mapY: number) => void;
 }
 
 export function HedgemonyMapSurface({
@@ -26,6 +27,7 @@ export function HedgemonyMapSurface({
   overlay,
   onMapClick,
   onNestClick,
+  onNestMove,
 }: HedgemonyMapSurfaceProps) {
   const panX = useHedgemonyViewStore((s) => s.panX);
   const panY = useHedgemonyViewStore((s) => s.panY);
@@ -95,7 +97,12 @@ export function HedgemonyMapSurface({
           }}
         />
         {nests.map((nest) => (
-          <NestSprite key={nest.id} nest={nest} onClick={onNestClick} />
+          <NestSprite
+            key={nest.id}
+            nest={nest}
+            onClick={onNestClick}
+            onMove={onNestMove}
+          />
         ))}
         {children}
       </motion.div>
