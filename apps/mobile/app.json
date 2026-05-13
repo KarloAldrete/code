@@ -189,13 +189,7 @@
         }
       ],
       "expo-localization",
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/posthog.icon",
-          "color": "#0f0f0f"
-        }
-      ],
+      "expo-notifications",
       [
         "expo-speech-recognition",
         {
