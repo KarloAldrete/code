@@ -129,6 +129,8 @@ export interface CreateTaskOptions {
   title?: string;
   repository?: string;
   github_integration?: number;
+  signal_report?: string;
+  signal_report_task_relationship?: string;
 }
 
 export interface CreateTaskAutomationOptions {

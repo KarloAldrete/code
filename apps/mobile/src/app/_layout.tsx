@@ -93,6 +93,17 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
         </>
       )}
 
+      {/* Report detail - modal presentation */}
+      <Stack.Screen
+        name="report/[id]"
+        options={{
+          presentation: "modal",
+          headerShown: true,
+          headerStyle: { backgroundColor: themeColors.background },
+          headerTintColor: themeColors.gray[12],
+        }}
+      />
+
       {/* Task routes - modal presentation */}
       <Stack.Screen
         name="task/index"
