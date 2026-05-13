@@ -223,8 +223,9 @@ export default function NewTaskScreen() {
     if (isLoadingRepos) return;
     if (!repositories.includes(selectedRepo)) {
       setSelectedRepo(null);
+      setLastUsedCloudRepository(null);
     }
-  }, [selectedRepo, repositories, isLoadingRepos]);
+  }, [selectedRepo, repositories, isLoadingRepos, setLastUsedCloudRepository]);
 
   // Auto-select when there's exactly one repo (matches desktop GitHubRepoPicker).
   useEffect(() => {

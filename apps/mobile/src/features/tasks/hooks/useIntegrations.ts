@@ -168,21 +168,23 @@ export function useUserRepositoryIntegration() {
     setIsRefreshingRepos(true);
 
     try {
-      await Promise.all(
+      const refreshResults = await Promise.allSettled(
         githubIntegrations.map((integration) =>
           refreshGithubUserRepositories(integration.installation_id),
         ),
       );
 
-      await Promise.all(
-        githubIntegrations.map((integration) =>
-          queryClient.refetchQueries({
-            queryKey: userGithubIntegrationKeys.repositories(
-              integration.installation_id,
-            ),
-            exact: true,
-          }),
-        ),
+      await Promise.allSettled(
+        githubIntegrations
+          .filter((_, i) => refreshResults[i]?.status === "fulfilled")
+          .map((integration) =>
+            queryClient.refetchQueries({
+              queryKey: userGithubIntegrationKeys.repositories(
+                integration.installation_id,
+              ),
+              exact: true,
+            }),
+          ),
       );
 
       await queryClient.refetchQueries({
@@ -218,9 +220,10 @@ export function useUserGithubRepositories(
   const queryEnabled =
     enabled && !!oauthAccessToken && githubIntegrations.length > 0;
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset pagination when search changes
   useEffect(() => {
     setRequestedLimit(REPOSITORIES_PAGE_SIZE);
-  }, []);
+  }, [deferredSearch]);
 
   const { repositoryMap, isPending, isRefreshing, hasMore } = useQueries({
     queries: githubIntegrations.map((integration) => ({
