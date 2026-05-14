@@ -34,6 +34,7 @@ import { sleepRouter } from "./routers/sleep";
 import { suspensionRouter } from "./routers/suspension.js";
 import { uiRouter } from "./routers/ui";
 import { updatesRouter } from "./routers/updates";
+import { workProjectsRouter } from "./routers/work-projects";
 import { workspaceRouter } from "./routers/workspace";
 import { router } from "./trpc";
 
@@ -76,6 +77,7 @@ export const trpcRouter = router({
   updates: updatesRouter,
   deepLink: deepLinkRouter,
   workspace: workspaceRouter,
+  workProjects: workProjectsRouter,
 });
 
 export type TrpcRouter = typeof trpcRouter;

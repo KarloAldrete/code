@@ -1,44 +1,39 @@
-import {
-  type IconProps,
-  MagnifyingGlass,
-  Megaphone,
-  Microphone,
-  Plus,
-  Rocket,
-  SortAscending,
-} from "@phosphor-icons/react";
+import { MagnifyingGlass, Plus, SortAscending } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
+import type { WorkProject } from "@shared/types/work-projects";
 import { useNavigationStore } from "@stores/navigationStore";
-import type { ComponentType } from "react";
-import { PROJECTS, type Project } from "../data/projects";
+import { toast } from "@utils/toast";
+import { useCallback } from "react";
+import { PROJECT_ICON_MAP } from "../canvas/icons";
+import { createProject, useWorkProjects } from "../canvas/useProjectCanvas";
 
-const ICON_MAP: Record<Project["iconId"], ComponentType<IconProps>> = {
-  rocket: Rocket,
-  microphone: Microphone,
-  megaphone: Megaphone,
-};
+function formatUpdated(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "Updated recently";
+  const diffMs = Date.now() - then;
+  if (diffMs < 60_000) return "Updated just now";
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 60) return `Updated ${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `Updated ${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `Updated ${days}d ago`;
+  const weeks = Math.floor(days / 7);
+  return `Updated ${weeks}w ago`;
+}
 
-function ProjectCard({ project }: { project: Project }) {
+function ProjectCard({ project }: { project: WorkProject }) {
   const navigateToWorkProjectDetail = useNavigationStore(
     (s) => s.navigateToWorkProjectDetail,
   );
 
-  const Icon = ICON_MAP[project.iconId];
-  const clickable = !project.isPlaceholder;
-  const handleClick = clickable
-    ? () => navigateToWorkProjectDetail(project.id)
-    : undefined;
+  const Icon = PROJECT_ICON_MAP[project.iconId] ?? PROJECT_ICON_MAP.lightbulb;
 
   return (
     <button
       type="button"
-      onClick={handleClick}
-      disabled={!clickable}
-      className={`group flex h-full flex-col gap-3 rounded-(--radius-3) border border-(--gray-4) bg-(--gray-1) p-4 text-left transition-colors ${
-        clickable
-          ? "cursor-pointer hover:border-(--gray-6) hover:bg-(--gray-2)"
-          : "cursor-default opacity-60"
-      }`}
+      onClick={() => navigateToWorkProjectDetail(project.id)}
+      className="group flex h-full cursor-pointer flex-col gap-3 rounded-(--radius-3) border border-(--gray-4) bg-(--gray-1) p-4 text-left transition-colors hover:border-(--gray-6) hover:bg-(--gray-2)"
     >
       <Flex
         align="center"
@@ -62,13 +57,29 @@ function ProjectCard({ project }: { project: Project }) {
       </Box>
 
       <Text as="div" className="mt-auto text-(--gray-9) text-[11px]">
-        {project.updatedLabel}
+        {formatUpdated(project.updatedAt)}
       </Text>
     </button>
   );
 }
 
 export function WorkProjectsView() {
+  const { data: projects, isLoading } = useWorkProjects();
+  const navigateToWorkProjectDetail = useNavigationStore(
+    (s) => s.navigateToWorkProjectDetail,
+  );
+
+  const handleNewProject = useCallback(async () => {
+    try {
+      const project = await createProject({});
+      navigateToWorkProjectDetail(project.id);
+    } catch (error) {
+      const description =
+        error instanceof Error ? error.message : "Unknown error";
+      toast.error("Could not create project", { description });
+    }
+  }, [navigateToWorkProjectDetail]);
+
   return (
     <Box className="scrollbar-overlay-y h-full w-full overflow-y-auto">
       <Flex
@@ -86,7 +97,8 @@ export function WorkProjectsView() {
               Projects
             </Text>
             <Text as="div" className="text-(--gray-11) text-[13px]">
-              A home for related dashboards, automations, files, and skills.
+              A canvas of tiles — dashboards, files, notes, and skill outputs —
+              with a chat that can shape it.
             </Text>
           </Flex>
 
@@ -107,6 +119,7 @@ export function WorkProjectsView() {
             </button>
             <button
               type="button"
+              onClick={handleNewProject}
               className="flex h-8 items-center gap-1.5 rounded-(--radius-2) bg-(--gray-12) px-3 text-(--gray-1) text-[13px] transition-colors hover:bg-(--gray-11)"
             >
               <Plus size={13} weight="bold" />
@@ -116,9 +129,13 @@ export function WorkProjectsView() {
         </Flex>
 
         <Box className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {PROJECTS.map((p) => (
-            <ProjectCard key={p.id} project={p} />
-          ))}
+          {isLoading && !projects ? (
+            <Text as="div" className="text-(--gray-11) text-[13px]">
+              Loading projects…
+            </Text>
+          ) : (
+            (projects ?? []).map((p) => <ProjectCard key={p.id} project={p} />)
+          )}
         </Box>
       </Flex>
     </Box>

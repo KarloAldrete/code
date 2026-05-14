@@ -64,6 +64,7 @@ import { TaskLinkService } from "../services/task-link/service";
 import { UIService } from "../services/ui/service";
 import { UpdatesService } from "../services/updates/service";
 import { WatcherRegistryService } from "../services/watcher-registry/service";
+import { WorkProjectsService } from "../services/work-projects/service";
 import { WorkspaceService } from "../services/workspace/service";
 import { MAIN_TOKENS } from "./tokens";
 
@@ -142,5 +143,6 @@ container.bind(MAIN_TOKENS.TaskLinkService).to(TaskLinkService);
 container.bind(MAIN_TOKENS.InboxLinkService).to(InboxLinkService);
 container.bind(MAIN_TOKENS.WatcherRegistryService).to(WatcherRegistryService);
 container.bind(MAIN_TOKENS.WorkspaceService).to(WorkspaceService);
+container.bind(MAIN_TOKENS.WorkProjectsService).to(WorkProjectsService);
 
 container.bind(MAIN_TOKENS.SettingsStore).toConstantValue(settingsStore);

@@ -4,7 +4,6 @@ import {
   ClockClockwise,
   FolderSimple,
   type IconProps,
-  Notebook,
   Plugs,
   Plus,
 } from "@phosphor-icons/react";
@@ -29,7 +28,6 @@ const STATIC_ITEMS: WorkSidebarItemSpec[] = [
     label: "Scheduled",
     workView: "scheduled-section",
   },
-  { icon: Notebook, label: "Artifacts" },
   { icon: Plugs, label: "Data sources" },
   { icon: Brain, label: "Memory" },
 ];
