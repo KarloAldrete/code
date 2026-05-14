@@ -53,6 +53,16 @@ export type WorkView =
 
 export type ChatView = "home" | "conversation";
 
+interface WorkSnapshot {
+  workView: WorkView;
+  workSelectedSkillId?: string;
+  workScheduledEditId?: string;
+  workSelectedProjectId?: string;
+  workActiveTaskId?: string;
+}
+
+const MAX_WORK_HISTORY = 50;
+
 interface ViewState {
   type: ViewType;
   data?: Task;
@@ -74,6 +84,8 @@ interface NavigationStore {
   workScheduledEditId?: string;
   workSelectedProjectId?: string;
   workActiveTaskId?: string;
+  workHistory: WorkSnapshot[];
+  workGoBack: () => void;
   navigateToWorkHome: () => void;
   navigateToWorkGenerate: () => void;
   navigateToWorkSkill: (skillId: string) => void;
@@ -156,6 +168,26 @@ const isSameView = (view1: ViewState, view2: ViewState): boolean => {
 export const useNavigationStore = create<NavigationStore>()(
   persist(
     (set, get) => {
+      const navigateWork = (
+        next: Partial<WorkSnapshot> & { workView: WorkView },
+      ) => {
+        const current = get();
+        const keys = Object.keys(next) as Array<keyof WorkSnapshot>;
+        const wouldChange = keys.some((k) => current[k] !== next[k]);
+        if (!wouldChange) return;
+        const snapshot: WorkSnapshot = {
+          workView: current.workView,
+          workSelectedSkillId: current.workSelectedSkillId,
+          workScheduledEditId: current.workScheduledEditId,
+          workSelectedProjectId: current.workSelectedProjectId,
+          workActiveTaskId: current.workActiveTaskId,
+        };
+        const workHistory = [...current.workHistory, snapshot].slice(
+          -MAX_WORK_HISTORY,
+        );
+        set({ ...next, workHistory });
+      };
+
       const navigate = (newView: ViewState) => {
         const { view, history, historyIndex } = get();
         if (isSameView(view, newView)) {
@@ -178,76 +210,90 @@ export const useNavigationStore = create<NavigationStore>()(
         workSelectedSkillId: undefined,
         workScheduledEditId: undefined,
         workActiveTaskId: undefined,
-        navigateToWorkHome: () =>
+        workHistory: [],
+        workGoBack: () => {
+          const { workHistory } = get();
+          if (workHistory.length === 0) return;
+          const prev = workHistory[workHistory.length - 1];
           set({
+            workView: prev.workView,
+            workSelectedSkillId: prev.workSelectedSkillId,
+            workScheduledEditId: prev.workScheduledEditId,
+            workSelectedProjectId: prev.workSelectedProjectId,
+            workActiveTaskId: prev.workActiveTaskId,
+            workHistory: workHistory.slice(0, -1),
+          });
+        },
+        navigateToWorkHome: () =>
+          navigateWork({
             workView: "home",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
             workActiveTaskId: undefined,
           }),
         navigateToWorkGenerate: () =>
-          set({
+          navigateWork({
             workView: "generate",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
             workActiveTaskId: undefined,
           }),
         navigateToWorkSkill: (skillId: string) =>
-          set({
+          navigateWork({
             workView: "skill-detail",
             workSelectedSkillId: skillId,
             workScheduledEditId: undefined,
             workActiveTaskId: undefined,
           }),
         navigateToWorkLibrary: () =>
-          set({
+          navigateWork({
             workView: "library",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
             workActiveTaskId: undefined,
           }),
         navigateToWorkScheduledList: () =>
-          set({
+          navigateWork({
             workView: "scheduled-list",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
             workActiveTaskId: undefined,
           }),
         navigateToWorkScheduledCreatePrompt: () =>
-          set({
+          navigateWork({
             workView: "scheduled-create-prompt",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
           }),
         navigateToWorkScheduledCreate: () =>
-          set({
+          navigateWork({
             workView: "scheduled-edit",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
             workActiveTaskId: undefined,
           }),
         navigateToWorkScheduledEdit: (scheduledId: string) =>
-          set({
+          navigateWork({
             workView: "scheduled-edit",
             workSelectedSkillId: undefined,
             workScheduledEditId: scheduledId,
             workActiveTaskId: undefined,
           }),
         navigateToWorkDataSources: () =>
-          set({
+          navigateWork({
             workView: "data-sources",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
             workActiveTaskId: undefined,
           }),
         navigateToWorkMemory: () =>
-          set({
+          navigateWork({
             workView: "memory",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
           }),
         navigateToWorkProjects: () =>
-          set({
+          navigateWork({
             workView: "projects",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
@@ -255,7 +301,7 @@ export const useNavigationStore = create<NavigationStore>()(
             workActiveTaskId: undefined,
           }),
         navigateToWorkProjectDetail: (projectId: string) =>
-          set({
+          navigateWork({
             workView: "project-detail",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
@@ -263,7 +309,7 @@ export const useNavigationStore = create<NavigationStore>()(
             workActiveTaskId: undefined,
           }),
         navigateToWorkTask: (taskId: string) =>
-          set({
+          navigateWork({
             workView: "task-detail",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
@@ -290,14 +336,15 @@ export const useNavigationStore = create<NavigationStore>()(
                 : state.view,
           })),
         workGeneratePendingPrompt: undefined,
-        navigateToWorkGenerateWithPrompt: (prompt: string) =>
-          set({
+        navigateToWorkGenerateWithPrompt: (prompt: string) => {
+          set({ workGeneratePendingPrompt: prompt });
+          navigateWork({
             workView: "generate",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
             workActiveTaskId: undefined,
-            workGeneratePendingPrompt: prompt,
-          }),
+          });
+        },
         consumeWorkGeneratePendingPrompt: () => {
           const pending = get().workGeneratePendingPrompt;
           if (pending !== undefined) {
