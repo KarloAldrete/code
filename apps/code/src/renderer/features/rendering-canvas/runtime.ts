@@ -11,6 +11,9 @@ export function buildCanvasSrcDoc(content: string): string {
   html, body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: inherit; background: transparent; }
   #root { padding: 12px; }
   .canvas-error { color: #b91c1c; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 12px; white-space: pre-wrap; padding: 12px; }
+  .canvas-status { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 200px; padding: 12px; color: #62635f; font-size: 13px; }
+  .canvas-status__spinner { width: 16px; height: 16px; border: 2px solid #d9d9d6; border-top-color: #62635f; border-radius: 50%; animation: canvas-spin 0.7s linear infinite; }
+  @keyframes canvas-spin { to { transform: rotate(360deg); } }
 </style>
 <script type="importmap">
 {
@@ -47,8 +50,11 @@ export function buildCanvasSrcDoc(content: string): string {
 <script type="module">
 function showStatus(msg) {
   const el = document.getElementById("root");
-  if (el) { el.innerHTML = '<div class="canvas-error"></div>'; el.firstChild.textContent = msg; }
-  try { parent.postMessage({ kind: "canvas:error", message: msg }, "*"); } catch (_) {}
+  if (el) {
+    el.innerHTML = '<div class="canvas-status"><div class="canvas-status__spinner"></div><span class="canvas-status__text"></span></div>';
+    el.querySelector(".canvas-status__text").textContent = msg;
+  }
+  try { parent.postMessage({ kind: "canvas:status", message: msg }, "*"); } catch (_) {}
 }
 
 showStatus("Loading dependencies…");
@@ -67,7 +73,7 @@ try {
   ReactChartJS = await import("react-chartjs-2");
   showStatus("Dependencies loaded, compiling…");
 } catch (err) {
-  showStatus("Dependency load failed: " + (err && (err.stack || err.message) || err));
+  renderError("Dependency load failed: " + (err && (err.stack || err.message) || err));
   throw err;
 }
 
