@@ -31,6 +31,25 @@ export const ANIMATION_BY_TASK_STATUS: Record<
   cancelled: "idle",
 };
 
+/**
+ * Signal-backed hoglets render with the robohog skin so the operator can read
+ * their provenance at a glance (auto-generated from an Inbox signal vs.
+ * operator-summoned). Upstream hedgehog-mode has no robohog "action" frames,
+ * so `in_progress` falls back to `walkRobo` — distinct from `completed`
+ * (`waveRobo`) so the two states don't conflate.
+ */
+export const ANIMATION_BY_TASK_STATUS_ROBO: Record<
+  NonNullable<TaskStatus>,
+  HedgehogAnimation
+> = {
+  not_started: "idleRobo",
+  queued: "idleRobo",
+  in_progress: "walkRobo",
+  completed: "waveRobo",
+  failed: "fallRobo",
+  cancelled: "idleRobo",
+};
+
 export const FPS_BY_TASK_STATUS: Record<NonNullable<TaskStatus>, number> = {
   not_started: 8,
   queued: 8,

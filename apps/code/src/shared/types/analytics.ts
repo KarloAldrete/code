@@ -451,20 +451,31 @@ export const ANALYTICS_EVENTS = {
   HEDGEMONY_HOGLET_SPAWNED: "hedgemony.hoglet_spawned",
   HEDGEMONY_HOGLET_ADOPTED: "hedgemony.hoglet_adopted",
   HEDGEMONY_HOGLET_RELEASED: "hedgemony.hoglet_released",
+  HEDGEMONY_HOGLET_INGESTED: "hedgemony.hoglet_ingested",
+  HEDGEMONY_HOGLET_DISMISSED: "hedgemony.hoglet_dismissed",
 } as const;
 
 export interface HedgemonyHogletSpawnedProperties {
-  source: "adhoc";
+  source: "adhoc" | "signal";
 }
 
 export interface HedgemonyHogletAdoptedProperties {
-  // Slice 3: only wild → nest. "nest" added in a future slice when nest →
-  // nest transfer ships alongside PR dep graph migration.
-  source: "wild";
+  // Slice 3: wild → nest. Slice 4 adds signal-staging → nest.
+  // "nest" added in a future slice when nest → nest transfer ships
+  // alongside PR dep graph migration.
+  source: "wild" | "signal";
 }
 
 export interface HedgemonyHogletReleasedProperties {
   source: "nest";
+}
+
+export interface HedgemonyHogletIngestedProperties {
+  source: "signal";
+}
+
+export interface HedgemonyHogletDismissedProperties {
+  source: "signal";
 }
 
 // Event property mapping
@@ -557,4 +568,6 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_SPAWNED]: HedgemonyHogletSpawnedProperties;
   [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_ADOPTED]: HedgemonyHogletAdoptedProperties;
   [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_RELEASED]: HedgemonyHogletReleasedProperties;
+  [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_INGESTED]: HedgemonyHogletIngestedProperties;
+  [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_DISMISSED]: HedgemonyHogletDismissedProperties;
 };

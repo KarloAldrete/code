@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { hedgemonyHoglets } from "../schema";
@@ -23,6 +23,11 @@ const notDeleted = isNull(hedgemonyHoglets.deletedAt);
 const isWild = and(
   isNull(hedgemonyHoglets.nestId),
   isNull(hedgemonyHoglets.signalReportId),
+  notDeleted,
+);
+const isSignalStaging = and(
+  isNull(hedgemonyHoglets.nestId),
+  isNotNull(hedgemonyHoglets.signalReportId),
   notDeleted,
 );
 const now = () => new Date().toISOString();
@@ -54,8 +59,22 @@ export class HogletRepository {
     );
   }
 
+  findBySignalReportId(signalReportId: string): Hoglet | null {
+    return (
+      this.db
+        .select()
+        .from(hedgemonyHoglets)
+        .where(eq(hedgemonyHoglets.signalReportId, signalReportId))
+        .get() ?? null
+    );
+  }
+
   findAllWild(): Hoglet[] {
     return this.db.select().from(hedgemonyHoglets).where(isWild).all();
+  }
+
+  findAllSignalStaging(): Hoglet[] {
+    return this.db.select().from(hedgemonyHoglets).where(isSignalStaging).all();
   }
 
   findAllForNest(nestId: string): Hoglet[] {
@@ -71,6 +90,15 @@ export class HogletRepository {
       .select({ count: sql<number>`count(*)` })
       .from(hedgemonyHoglets)
       .where(isWild)
+      .get();
+    return row?.count ?? 0;
+  }
+
+  countSignalStaging(): number {
+    const row = this.db
+      .select({ count: sql<number>`count(*)` })
+      .from(hedgemonyHoglets)
+      .where(isSignalStaging)
       .get();
     return row?.count ?? 0;
   }

@@ -12,8 +12,13 @@ import { toast } from "sonner";
 import { playSfx } from "../audio/sfx";
 import { playVoice } from "../audio/voice";
 import { useBuilderCoordinator } from "../hooks/useBuilderCoordinator";
+import { useSignalIngestion } from "../hooks/useSignalIngestion";
 import { useHedgemonyViewStore } from "../stores/hedgemonyViewStore";
-import { useHogletStore, WILD_BUCKET } from "../stores/hogletStore";
+import {
+  SIGNAL_STAGING_BUCKET,
+  useHogletStore,
+  WILD_BUCKET,
+} from "../stores/hogletStore";
 import {
   initializeNestStore,
   selectNests,
@@ -62,6 +67,10 @@ export function HedgemonyMapView() {
     nests,
     onPendingBuildCommit: (nest) => useNestStore.getState().upsert(nest),
   });
+
+  // Mirrors Signals Inbox reports into Hedgemony as signal-backed hoglets
+  // while the map view is mounted. Tears down with the view.
+  useSignalIngestion();
 
   useEffect(() => {
     return initializeNestStore();
@@ -202,6 +211,7 @@ export function HedgemonyMapView() {
           type?: string;
           hogletId?: string;
           sourceNestId?: string | null;
+          sourceBucket?: "wild" | "signal_staging";
         }
       | undefined;
     const target = event.operation.target?.data as
@@ -214,16 +224,37 @@ export function HedgemonyMapView() {
     ) {
       return;
     }
-    const { hogletId, sourceNestId = null } = source;
+    const { hogletId, sourceNestId = null, sourceBucket } = source;
 
     if (target?.type === "nest" && target.nestId) {
       if (sourceNestId !== null) {
         toast.error("Release this hoglet to wild before adopting it elsewhere");
         return;
       }
-      void adoptHoglet(hogletId, target.nestId);
+      const adoptedFrom: "wild" | "signal" =
+        sourceBucket === "signal_staging" ? "signal" : "wild";
+      void adoptHoglet(hogletId, target.nestId, sourceBucket, adoptedFrom);
     } else if (target?.type === "wild") {
-      if (sourceNestId === null) return;
+      if (sourceNestId === null) {
+        // Signal-staging → wild and wild → wild are no-ops; the bucket is
+        // determined by the hoglet's signalReportId, not by operator choice.
+        if (sourceBucket === "signal_staging") {
+          toast.error(
+            "Signal hoglets can't move to wild — drop on a nest or use Dismiss",
+          );
+        }
+        return;
+      }
+      void releaseHoglet(hogletId, sourceNestId);
+    } else if (target?.type === "signal_staging") {
+      if (sourceNestId === null) {
+        // Already in staging (or wild). Wild → staging is rejected: the bucket
+        // belongs to the signal-report linkage.
+        if (sourceBucket === "wild") {
+          toast.error("Wild hoglets can't become signal-staged");
+        }
+        return;
+      }
       void releaseHoglet(hogletId, sourceNestId);
     }
   }, []);
@@ -314,21 +345,31 @@ export function HedgemonyMapView() {
   );
 }
 
-async function adoptHoglet(hogletId: string, nestId: string): Promise<void> {
+async function adoptHoglet(
+  hogletId: string,
+  nestId: string,
+  sourceBucket: "wild" | "signal_staging" | undefined,
+  trackSource: "wild" | "signal",
+): Promise<void> {
+  const bucketKey =
+    sourceBucket === "signal_staging" ? SIGNAL_STAGING_BUCKET : WILD_BUCKET;
   const store = useHogletStore.getState();
-  const original = store.byBucket[WILD_BUCKET]?.find((h) => h.id === hogletId);
+  const original = store.byBucket[bucketKey]?.find((h) => h.id === hogletId);
   if (!original) {
-    log.warn("Adopt: source hoglet not found in wild bucket", { hogletId });
+    log.warn("Adopt: source hoglet not found in source bucket", {
+      hogletId,
+      bucketKey,
+    });
     return;
   }
 
-  // Optimistic move: wild → nest bucket.
+  // Optimistic move: source bucket → nest bucket.
   const optimistic: Hoglet = {
     ...original,
     nestId,
     updatedAt: new Date().toISOString(),
   };
-  store.remove(WILD_BUCKET, hogletId);
+  store.remove(bucketKey, hogletId);
   store.upsert(nestId, optimistic);
 
   try {
@@ -337,12 +378,12 @@ async function adoptHoglet(hogletId: string, nestId: string): Promise<void> {
       nestId,
     });
     useHogletStore.getState().upsert(nestId, updated);
-    track(ANALYTICS_EVENTS.HEDGEMONY_HOGLET_ADOPTED, { source: "wild" });
+    track(ANALYTICS_EVENTS.HEDGEMONY_HOGLET_ADOPTED, { source: trackSource });
   } catch (error) {
     log.error("Failed to adopt hoglet", { hogletId, nestId, error });
     const current = useHogletStore.getState();
     current.remove(nestId, hogletId);
-    current.upsert(WILD_BUCKET, original);
+    current.upsert(bucketKey, original);
     toast.error("Could not adopt hoglet");
   }
 }
@@ -361,19 +402,24 @@ async function releaseHoglet(
     return;
   }
 
+  // Destination bucket is determined by signalReportId — signal-backed
+  // hoglets return to staging, ad-hoc ones return to wild. This matches the
+  // server-side routing in HogletService.release.
+  const destinationBucket =
+    original.signalReportId !== null ? SIGNAL_STAGING_BUCKET : WILD_BUCKET;
   const optimistic: Hoglet = {
     ...original,
     nestId: null,
     updatedAt: new Date().toISOString(),
   };
   store.remove(sourceNestId, hogletId);
-  store.upsert(WILD_BUCKET, optimistic);
+  store.upsert(destinationBucket, optimistic);
 
   try {
     const updated = await trpcClient.hedgemony.hoglets.release.mutate({
       hogletId,
     });
-    useHogletStore.getState().upsert(WILD_BUCKET, updated);
+    useHogletStore.getState().upsert(destinationBucket, updated);
     track(ANALYTICS_EVENTS.HEDGEMONY_HOGLET_RELEASED, { source: "nest" });
   } catch (error) {
     log.error("Failed to release hoglet", {
@@ -382,7 +428,7 @@ async function releaseHoglet(
       error,
     });
     const current = useHogletStore.getState();
-    current.remove(WILD_BUCKET, hogletId);
+    current.remove(destinationBucket, hogletId);
     current.upsert(sourceNestId, original);
     toast.error("Could not release hoglet");
   }

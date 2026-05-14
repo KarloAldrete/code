@@ -5,19 +5,29 @@ import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
 import {
   type AdoptHogletInput,
+  type DismissSignalHogletInput,
   HedgemonyEvent,
   type HedgemonyEvents,
   type Hoglet,
+  type HogletBucket,
   type HogletWatchEvent,
   type ListHogletsInput,
   type RecordAdhocHogletInput,
+  type RecordSignalBackedHogletInput,
   type ReleaseHogletInput,
 } from "./schemas";
 
 const log = logger.scope("hoglet-service");
 
-/** Safety cap from notes/hedgemony/backend-integration.md. */
+/** Safety caps from notes/hedgemony/backend-integration.md. */
 export const MAX_WILD_HOGLETS = 25;
+export const MAX_SIGNAL_STAGING_HOGLETS = 25;
+
+function bucketForHoglet(h: Hoglet): HogletBucket {
+  if (h.nestId !== null) return { kind: "nest", nestId: h.nestId };
+  if (h.signalReportId !== null) return { kind: "signal_staging" };
+  return { kind: "wild" };
+}
 
 /**
  * Owns the `hedgemony_hoglet` sidecar invariant. Hoglet creation is anchored
@@ -36,8 +46,11 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
 
   list(input: ListHogletsInput): Hoglet[] {
     if (input.wildOnly) return this.hoglets.findAllWild();
+    if (input.signalStagingOnly) return this.hoglets.findAllSignalStaging();
     if (input.nestId) return this.hoglets.findAllForNest(input.nestId);
-    throw new Error("hoglets.list requires wildOnly or nestId");
+    throw new Error(
+      "hoglets.list requires wildOnly, signalStagingOnly, or nestId",
+    );
   }
 
   recordAdhoc(input: RecordAdhocHogletInput): Hoglet {
@@ -64,7 +77,54 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
       id: created.id,
       taskId: created.taskId,
     });
-    this.emitChange(null, { kind: "upsert", hoglet: created });
+    this.emitChange({ kind: "wild" }, { kind: "upsert", hoglet: created });
+    return created;
+  }
+
+  recordSignalBacked(input: RecordSignalBackedHogletInput): Hoglet {
+    // Idempotent on signal_report_id (UNIQUE index in sqlite). A duplicate
+    // ingestion attempt for the same signal returns the existing row.
+    const existingBySignal = this.hoglets.findBySignalReportId(
+      input.signalReportId,
+    );
+    if (existingBySignal) {
+      log.warn("Signal-backed hoglet already exists for signalReportId", {
+        signalReportId: input.signalReportId,
+        hogletId: existingBySignal.id,
+      });
+      return existingBySignal;
+    }
+    // Guard against a race where the same task_id was already recorded by a
+    // different pathway (shouldn't happen, but the UNIQUE constraint would
+    // throw at insert and we'd rather return a clear error).
+    const existingByTask = this.hoglets.findByTaskId(input.taskId);
+    if (existingByTask) {
+      log.warn("Hoglet already exists for taskId (signal ingestion)", {
+        taskId: input.taskId,
+        hogletId: existingByTask.id,
+      });
+      return existingByTask;
+    }
+
+    const stagingCount = this.hoglets.countSignalStaging();
+    if (stagingCount >= MAX_SIGNAL_STAGING_HOGLETS) {
+      throw new Error("signal_staging_cap_reached");
+    }
+
+    const created = this.hoglets.create({
+      taskId: input.taskId,
+      nestId: null,
+      signalReportId: input.signalReportId,
+    });
+    log.info("Signal-backed hoglet recorded", {
+      id: created.id,
+      taskId: created.taskId,
+      signalReportId: created.signalReportId,
+    });
+    this.emitChange(
+      { kind: "signal_staging" },
+      { kind: "upsert", hoglet: created },
+    );
     return created;
   }
 
@@ -80,16 +140,25 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
       throw new Error("hoglet_already_adopted");
     }
 
+    const previousBucket = bucketForHoglet(existing);
     const updated = this.hoglets.update(input.hogletId, {
       nestId: input.nestId,
     });
     if (!updated) throw new Error("hoglet_update_failed");
 
-    // Old bucket is wild (signal-backed hoglets get their own bucket kind in
-    // Slice 4, but Slice 3 hoglets always have signal_report_id = null).
-    this.emitChange(null, { kind: "removed", hogletId: updated.id });
-    this.emitChange(updated.nestId, { kind: "upsert", hoglet: updated });
-    log.info("Hoglet adopted", { id: updated.id, nestId: updated.nestId });
+    this.emitChange(previousBucket, {
+      kind: "removed",
+      hogletId: updated.id,
+    });
+    this.emitChange(
+      { kind: "nest", nestId: input.nestId },
+      { kind: "upsert", hoglet: updated },
+    );
+    log.info("Hoglet adopted", {
+      id: updated.id,
+      nestId: updated.nestId,
+      from: previousBucket.kind,
+    });
     return updated;
   }
 
@@ -103,18 +172,58 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
     const updated = this.hoglets.update(input.hogletId, { nestId: null });
     if (!updated) throw new Error("hoglet_update_failed");
 
-    this.emitChange(previousNestId, {
-      kind: "removed",
-      hogletId: updated.id,
+    // Released signal-backed hoglets return to the signal-staging bucket;
+    // ad-hoc hoglets return to wild. The destination bucket is determined by
+    // whether signal_report_id is set, not by user choice.
+    const destinationBucket = bucketForHoglet(updated);
+    this.emitChange(
+      { kind: "nest", nestId: previousNestId },
+      { kind: "removed", hogletId: updated.id },
+    );
+    this.emitChange(destinationBucket, {
+      kind: "upsert",
+      hoglet: updated,
     });
-    // TODO(slice-4): signal-backed hoglets re-enter their own staging bucket,
-    // not the wild bucket. Slice 3 only handles wild ↔ nest.
-    this.emitChange(null, { kind: "upsert", hoglet: updated });
-    log.info("Hoglet released", { id: updated.id, fromNest: previousNestId });
+    log.info("Hoglet released", {
+      id: updated.id,
+      fromNest: previousNestId,
+      to: destinationBucket.kind,
+    });
     return updated;
   }
 
-  private emitChange(nestId: string | null, event: HogletWatchEvent): void {
-    this.emit(HedgemonyEvent.HogletChanged, { nestId, event });
+  /**
+   * Soft-deletes a signal-backed hoglet from the staging area. The caller
+   * (renderer) is responsible for the upstream "suppress" call to the Inbox
+   * signals API; this service intentionally doesn't reach across that
+   * boundary. Audit log capture for the underlying signal happens via the
+   * Inbox lifecycle, not Hedgemony.
+   */
+  dismissSignal(input: DismissSignalHogletInput): void {
+    const existing = this.hoglets.findById(input.hogletId);
+    if (!existing) throw new Error("hoglet_not_found");
+    if (existing.signalReportId === null) {
+      throw new Error("hoglet_not_signal_backed");
+    }
+    if (existing.deletedAt) {
+      log.warn("dismissSignal called on already-deleted hoglet", {
+        hogletId: existing.id,
+      });
+      return;
+    }
+
+    const bucket = bucketForHoglet(existing);
+    const deleted = this.hoglets.softDelete(input.hogletId);
+    if (!deleted) throw new Error("hoglet_update_failed");
+
+    this.emitChange(bucket, { kind: "removed", hogletId: deleted.id });
+    log.info("Signal-backed hoglet dismissed", {
+      id: deleted.id,
+      signalReportId: existing.signalReportId,
+    });
+  }
+
+  private emitChange(bucket: HogletBucket, event: HogletWatchEvent): void {
+    this.emit(HedgemonyEvent.HogletChanged, { bucket, event });
   }
 }

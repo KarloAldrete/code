@@ -179,6 +179,14 @@ export const recordAdhocHogletInput = z.object({
 });
 export type RecordAdhocHogletInput = z.infer<typeof recordAdhocHogletInput>;
 
+export const recordSignalBackedHogletInput = z.object({
+  taskId: z.string().min(1),
+  signalReportId: z.string().min(1),
+});
+export type RecordSignalBackedHogletInput = z.infer<
+  typeof recordSignalBackedHogletInput
+>;
+
 export const adoptHogletInput = z.object({
   hogletId: z.string(),
   nestId: z.string(),
@@ -190,8 +198,14 @@ export const releaseHogletInput = z.object({
 });
 export type ReleaseHogletInput = z.infer<typeof releaseHogletInput>;
 
+export const dismissSignalHogletInput = z.object({
+  hogletId: z.string(),
+});
+export type DismissSignalHogletInput = z.infer<typeof dismissSignalHogletInput>;
+
 export const listHogletsInput = z.object({
   wildOnly: z.boolean().optional(),
+  signalStagingOnly: z.boolean().optional(),
   nestId: z.string().optional(),
 });
 export type ListHogletsInput = z.infer<typeof listHogletsInput>;
@@ -200,6 +214,7 @@ export const listHogletsOutput = z.array(hoglet);
 
 export const hogletWatchScope = z.union([
   z.object({ kind: z.literal("wild") }),
+  z.object({ kind: z.literal("signal_staging") }),
   z.object({ kind: z.literal("nest"), nestId: z.string() }),
 ]);
 export type HogletWatchScope = z.infer<typeof hogletWatchScope>;
@@ -229,11 +244,23 @@ export interface NestChangedEvent {
 }
 
 /**
- * Internal service-bus event for hoglet roster changes. `nestId = null`
- * means the hoglet is wild (no nest, no signal report).
+ * Bucket partition for hoglet watch events. Wild = `nest_id IS NULL AND
+ * signal_report_id IS NULL`; signal_staging = `nest_id IS NULL AND
+ * signal_report_id IS NOT NULL`; nest = adopted into a specific nest. The
+ * router filters subscriptions by matching the bucket against the watch scope.
+ */
+export type HogletBucket =
+  | { kind: "wild" }
+  | { kind: "signal_staging" }
+  | { kind: "nest"; nestId: string };
+
+/**
+ * Internal service-bus event for hoglet roster changes. `bucket` identifies
+ * the destination/origin partition so the tRPC router can route to the
+ * matching watcher (`wild` / `signal_staging` / `nest:<id>`).
  */
 export interface HogletChangedEvent {
-  nestId: string | null;
+  bucket: HogletBucket;
   event: HogletWatchEvent;
 }
 

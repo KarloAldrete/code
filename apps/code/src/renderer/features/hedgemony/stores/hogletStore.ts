@@ -11,6 +11,7 @@ import { create } from "zustand";
 const log = logger.scope("hoglet-store");
 
 export const WILD_BUCKET = "wild";
+export const SIGNAL_STAGING_BUCKET = "signal_staging";
 
 const TASK_SUMMARY_REFRESH_MS = 10_000;
 
@@ -81,6 +82,12 @@ export const selectWildHoglets = (state: HogletStore): Hoglet[] =>
 
 export const selectWildLoaded = (state: HogletStore): boolean =>
   state.loaded[WILD_BUCKET] ?? false;
+
+export const selectSignalStagingHoglets = (state: HogletStore): Hoglet[] =>
+  state.byBucket[SIGNAL_STAGING_BUCKET] ?? [];
+
+export const selectSignalStagingLoaded = (state: HogletStore): boolean =>
+  state.loaded[SIGNAL_STAGING_BUCKET] ?? false;
 
 export const selectNestHoglets =
   (nestId: string) =>
@@ -177,6 +184,44 @@ export function initializeWildHogletStore(): () => void {
       pollAllSummaries();
     })
     .catch((error) => log.error("Failed to load wild hoglets", { error }));
+
+  return () => {
+    if (disposed) return;
+    disposed = true;
+    watch.unsubscribe();
+    releaseTaskSummaryPolling();
+  };
+}
+
+/**
+ * Bootstraps the signal-staging hoglet bucket: Inbox-backed signal hoglets
+ * with `nest_id = null` and `signal_report_id` set. Mirrors
+ * initializeWildHogletStore but scoped to the signal-staging bucket so the
+ * holding panel can render them as a separate section.
+ */
+export function initializeSignalStagingHogletStore(): () => void {
+  let disposed = false;
+  acquireTaskSummaryPolling();
+
+  const watch: WatchHandle = trpcClient.hedgemony.hoglets.watch.subscribe(
+    { kind: "signal_staging" },
+    {
+      onData: (event) => applyWatchEvent(SIGNAL_STAGING_BUCKET, event),
+      onError: (error) =>
+        log.error("signal_staging hoglet watch subscription error", { error }),
+    },
+  );
+
+  trpcClient.hedgemony.hoglets.list
+    .query({ signalStagingOnly: true })
+    .then((hoglets) => {
+      if (disposed) return;
+      useHogletStore.getState().setBucket(SIGNAL_STAGING_BUCKET, hoglets);
+      pollAllSummaries();
+    })
+    .catch((error) =>
+      log.error("Failed to load signal-staging hoglets", { error }),
+    );
 
   return () => {
     if (disposed) return;

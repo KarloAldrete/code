@@ -7,6 +7,7 @@ import type { NestService } from "../../services/hedgemony/nest-service";
 import {
   adoptHogletInput,
   createNestInput,
+  dismissSignalHogletInput,
   goalDraftRespondInput,
   goalDraftResponse,
   HedgemonyEvent,
@@ -20,6 +21,7 @@ import {
   nest,
   nestIdInput,
   recordAdhocHogletInput,
+  recordSignalBackedHogletInput,
   releaseHogletInput,
   updateNestInput,
 } from "../../services/hedgemony/schemas";
@@ -101,6 +103,11 @@ export const hedgemonyRouter = router({
       .output(hoglet)
       .mutation(({ input }) => getHogletService().recordAdhoc(input)),
 
+    recordSignalBacked: publicProcedure
+      .input(recordSignalBackedHogletInput)
+      .output(hoglet)
+      .mutation(({ input }) => getHogletService().recordSignalBacked(input)),
+
     adopt: publicProcedure
       .input(adoptHogletInput)
       .output(hoglet)
@@ -111,15 +118,23 @@ export const hedgemonyRouter = router({
       .output(hoglet)
       .mutation(({ input }) => getHogletService().release(input)),
 
+    dismissSignal: publicProcedure
+      .input(dismissSignalHogletInput)
+      .mutation(({ input }) => {
+        getHogletService().dismissSignal(input);
+      }),
+
     list: publicProcedure
       .input(listHogletsInput)
       .output(listHogletsOutput)
       .query(({ input }) => getHogletService().list(input)),
 
     /**
-     * Per-scope watch. The floating Wild holding panel subscribes with
-     * `kind: "wild"`; each nest's brood cluster subscribes with
-     * `kind: "nest", nestId`.
+     * Per-scope watch. The floating holding panel subscribes with
+     * `kind: "wild"` for ad-hoc hoglets, `kind: "signal_staging"` for
+     * Inbox-backed signal hoglets, and each nest's brood cluster subscribes
+     * with `kind: "nest", nestId`. The service emits with a `bucket`
+     * discriminator that the router matches against the watch scope.
      */
     watch: publicProcedure
       .input(hogletWatchScope)
@@ -129,9 +144,19 @@ export const hedgemonyRouter = router({
           signal,
         });
         for await (const data of iterable) {
-          if (input.kind === "wild" && data.nestId === null) {
+          const { bucket } = data;
+          if (input.kind === "wild" && bucket.kind === "wild") {
             yield data.event;
-          } else if (input.kind === "nest" && data.nestId === input.nestId) {
+          } else if (
+            input.kind === "signal_staging" &&
+            bucket.kind === "signal_staging"
+          ) {
+            yield data.event;
+          } else if (
+            input.kind === "nest" &&
+            bucket.kind === "nest" &&
+            bucket.nestId === input.nestId
+          ) {
             yield data.event;
           }
         }

@@ -12,7 +12,11 @@ vi.mock("../../utils/logger.js", () => ({
 }));
 
 import type { HogletRepository } from "../../db/repositories/hoglet-repository";
-import { HogletService, MAX_WILD_HOGLETS } from "./hoglet-service";
+import {
+  HogletService,
+  MAX_SIGNAL_STAGING_HOGLETS,
+  MAX_WILD_HOGLETS,
+} from "./hoglet-service";
 import { HedgemonyEvent, type Hoglet } from "./schemas";
 
 type CreateHogletData = Parameters<HogletRepository["create"]>[0];
@@ -42,9 +46,20 @@ function createMockRepo() {
       }
       return null;
     }),
+    findBySignalReportId: vi.fn((signalReportId: string) => {
+      for (const h of hoglets.values()) {
+        if (h.signalReportId === signalReportId && !h.deletedAt) return h;
+      }
+      return null;
+    }),
     findAllWild: vi.fn(() =>
       [...hoglets.values()].filter(
         (h) => h.nestId === null && h.signalReportId === null && !h.deletedAt,
+      ),
+    ),
+    findAllSignalStaging: vi.fn(() =>
+      [...hoglets.values()].filter(
+        (h) => h.nestId === null && h.signalReportId !== null && !h.deletedAt,
       ),
     ),
     findAllForNest: vi.fn((nestId: string) =>
@@ -54,6 +69,12 @@ function createMockRepo() {
       () =>
         [...hoglets.values()].filter(
           (h) => h.nestId === null && h.signalReportId === null && !h.deletedAt,
+        ).length,
+    ),
+    countSignalStaging: vi.fn(
+      () =>
+        [...hoglets.values()].filter(
+          (h) => h.nestId === null && h.signalReportId !== null && !h.deletedAt,
         ).length,
     ),
     create: vi.fn((data: CreateHogletData) => {
@@ -76,7 +97,17 @@ function createMockRepo() {
       hoglets.set(id, updated);
       return updated;
     }),
-    softDelete: vi.fn(),
+    softDelete: vi.fn((id: string) => {
+      const existing = hoglets.get(id);
+      if (!existing) return null;
+      const updated = {
+        ...existing,
+        deletedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      hoglets.set(id, updated);
+      return updated;
+    }),
   };
   return repo as typeof repo & HogletRepository;
 }
@@ -107,7 +138,7 @@ describe("HogletService", () => {
       signalReportId: null,
     });
     expect(listener).toHaveBeenCalledWith({
-      nestId: null,
+      bucket: { kind: "wild" },
       event: { kind: "upsert", hoglet },
     });
   });
@@ -133,8 +164,13 @@ describe("HogletService", () => {
   it("filters list output by scope", () => {
     service.recordAdhoc({ taskId: "task-1" });
     service.recordAdhoc({ taskId: "task-2" });
+    service.recordSignalBacked({
+      taskId: "task-signal-1",
+      signalReportId: "sr-1",
+    });
 
     expect(service.list({ wildOnly: true })).toHaveLength(2);
+    expect(service.list({ signalStagingOnly: true })).toHaveLength(1);
 
     repo._hoglets.set(
       "nested",
@@ -142,11 +178,12 @@ describe("HogletService", () => {
     );
     expect(service.list({ nestId: "nest-A" })).toHaveLength(1);
     expect(service.list({ wildOnly: true })).toHaveLength(2);
+    expect(service.list({ signalStagingOnly: true })).toHaveLength(1);
   });
 
   it("rejects list calls without scope", () => {
     expect(() => service.list({})).toThrowError(
-      "hoglets.list requires wildOnly or nestId",
+      "hoglets.list requires wildOnly, signalStagingOnly, or nestId",
     );
   });
 
@@ -163,11 +200,11 @@ describe("HogletService", () => {
 
       expect(adopted.nestId).toBe("nest-A");
       expect(listener).toHaveBeenNthCalledWith(1, {
-        nestId: null,
+        bucket: { kind: "wild" },
         event: { kind: "removed", hogletId: wild.id },
       });
       expect(listener).toHaveBeenNthCalledWith(2, {
-        nestId: "nest-A",
+        bucket: { kind: "nest", nestId: "nest-A" },
         event: { kind: "upsert", hoglet: adopted },
       });
     });
@@ -225,11 +262,34 @@ describe("HogletService", () => {
 
       expect(released.nestId).toBeNull();
       expect(listener).toHaveBeenNthCalledWith(1, {
-        nestId: "nest-A",
+        bucket: { kind: "nest", nestId: "nest-A" },
         event: { kind: "removed", hogletId: adopted.id },
       });
       expect(listener).toHaveBeenNthCalledWith(2, {
-        nestId: null,
+        bucket: { kind: "wild" },
+        event: { kind: "upsert", hoglet: released },
+      });
+    });
+
+    it("routes signal-backed hoglets back to signal-staging on release", () => {
+      const signal = service.recordSignalBacked({
+        taskId: "task-1",
+        signalReportId: "sr-1",
+      });
+      const adopted = service.adopt({ hogletId: signal.id, nestId: "nest-A" });
+
+      const listener = vi.fn();
+      service.on(HedgemonyEvent.HogletChanged, listener);
+      const released = service.release({ hogletId: adopted.id });
+
+      expect(released.signalReportId).toBe("sr-1");
+      expect(released.nestId).toBeNull();
+      expect(listener).toHaveBeenNthCalledWith(1, {
+        bucket: { kind: "nest", nestId: "nest-A" },
+        event: { kind: "removed", hogletId: adopted.id },
+      });
+      expect(listener).toHaveBeenNthCalledWith(2, {
+        bucket: { kind: "signal_staging" },
         event: { kind: "upsert", hoglet: released },
       });
     });
@@ -248,6 +308,128 @@ describe("HogletService", () => {
 
     it("throws on unknown hoglets", () => {
       expect(() => service.release({ hogletId: "missing" })).toThrowError(
+        "hoglet_not_found",
+      );
+    });
+  });
+
+  describe("recordSignalBacked", () => {
+    it("records a signal-backed hoglet and emits a signal_staging event", () => {
+      const listener = vi.fn();
+      service.on(HedgemonyEvent.HogletChanged, listener);
+
+      const hoglet = service.recordSignalBacked({
+        taskId: "task-1",
+        signalReportId: "sr-1",
+      });
+
+      expect(repo.create).toHaveBeenCalledWith({
+        taskId: "task-1",
+        nestId: null,
+        signalReportId: "sr-1",
+      });
+      expect(hoglet).toMatchObject({
+        taskId: "task-1",
+        nestId: null,
+        signalReportId: "sr-1",
+      });
+      expect(listener).toHaveBeenCalledWith({
+        bucket: { kind: "signal_staging" },
+        event: { kind: "upsert", hoglet },
+      });
+    });
+
+    it("is idempotent for the same signalReportId", () => {
+      const first = service.recordSignalBacked({
+        taskId: "task-1",
+        signalReportId: "sr-1",
+      });
+      const second = service.recordSignalBacked({
+        taskId: "task-2-different",
+        signalReportId: "sr-1",
+      });
+
+      expect(second.id).toBe(first.id);
+      expect(repo.create).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns the existing hoglet when taskId is already recorded", () => {
+      const adhoc = service.recordAdhoc({ taskId: "task-1" });
+      const signal = service.recordSignalBacked({
+        taskId: "task-1",
+        signalReportId: "sr-1",
+      });
+
+      expect(signal.id).toBe(adhoc.id);
+      expect(repo.create).toHaveBeenCalledTimes(1);
+    });
+
+    it("enforces the signal staging cap", () => {
+      for (let i = 0; i < MAX_SIGNAL_STAGING_HOGLETS; i++) {
+        service.recordSignalBacked({
+          taskId: `task-${i}`,
+          signalReportId: `sr-${i}`,
+        });
+      }
+
+      expect(() =>
+        service.recordSignalBacked({
+          taskId: "task-overflow",
+          signalReportId: "sr-overflow",
+        }),
+      ).toThrowError("signal_staging_cap_reached");
+    });
+
+    it("emits removed from signal_staging when adopting a signal-backed hoglet", () => {
+      const signal = service.recordSignalBacked({
+        taskId: "task-1",
+        signalReportId: "sr-1",
+      });
+
+      const listener = vi.fn();
+      service.on(HedgemonyEvent.HogletChanged, listener);
+      const adopted = service.adopt({ hogletId: signal.id, nestId: "nest-A" });
+
+      expect(adopted.nestId).toBe("nest-A");
+      expect(listener).toHaveBeenNthCalledWith(1, {
+        bucket: { kind: "signal_staging" },
+        event: { kind: "removed", hogletId: signal.id },
+      });
+      expect(listener).toHaveBeenNthCalledWith(2, {
+        bucket: { kind: "nest", nestId: "nest-A" },
+        event: { kind: "upsert", hoglet: adopted },
+      });
+    });
+  });
+
+  describe("dismissSignal", () => {
+    it("soft-deletes a signal-backed hoglet and emits removal", () => {
+      const signal = service.recordSignalBacked({
+        taskId: "task-1",
+        signalReportId: "sr-1",
+      });
+
+      const listener = vi.fn();
+      service.on(HedgemonyEvent.HogletChanged, listener);
+      service.dismissSignal({ hogletId: signal.id });
+
+      expect(repo.softDelete).toHaveBeenCalledWith(signal.id);
+      expect(listener).toHaveBeenCalledWith({
+        bucket: { kind: "signal_staging" },
+        event: { kind: "removed", hogletId: signal.id },
+      });
+    });
+
+    it("rejects non-signal-backed hoglets", () => {
+      const wild = service.recordAdhoc({ taskId: "task-1" });
+
+      expect(() => service.dismissSignal({ hogletId: wild.id })).toThrowError(
+        "hoglet_not_signal_backed",
+      );
+    });
+
+    it("throws on unknown hoglets", () => {
+      expect(() => service.dismissSignal({ hogletId: "missing" })).toThrowError(
         "hoglet_not_found",
       );
     });

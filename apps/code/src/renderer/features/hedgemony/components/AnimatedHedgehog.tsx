@@ -28,6 +28,10 @@ export const HEDGEHOG_ANIMATIONS = {
   sign: "skins/default/sign/tile",
   jump: "skins/default/jump/tile",
   fall: "skins/default/fall/tile",
+  idleRobo: "skins/robohog/idle/tile",
+  walkRobo: "skins/robohog/walk/tile",
+  waveRobo: "skins/robohog/wave/tile",
+  fallRobo: "skins/robohog/fall/tile",
 } as const;
 
 export type HedgehogAnimation = keyof typeof HEDGEHOG_ANIMATIONS;

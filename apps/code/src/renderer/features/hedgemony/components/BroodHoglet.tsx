@@ -13,6 +13,7 @@ import { AnimatedHedgehog } from "./AnimatedHedgehog";
 import { HogletHammer } from "./HogletHammer";
 import {
   ANIMATION_BY_TASK_STATUS,
+  ANIMATION_BY_TASK_STATUS_ROBO,
   FPS_BY_TASK_STATUS,
   PR_DOT_COLOR,
   type TaskStatus,
@@ -54,7 +55,11 @@ export function BroodHoglet({ hoglet, nestId, index, x, y }: BroodHogletProps) {
     "not_started") as TaskStatus;
   const title = summary?.title ?? hoglet.taskId.slice(0, 8);
   const prState = prStatusQuery.data?.prState ?? null;
-  const animationKey = ANIMATION_BY_TASK_STATUS[status ?? "not_started"];
+  const animationMap =
+    hoglet.signalReportId !== null
+      ? ANIMATION_BY_TASK_STATUS_ROBO
+      : ANIMATION_BY_TASK_STATUS;
+  const animationKey = animationMap[status ?? "not_started"];
   const fps = FPS_BY_TASK_STATUS[status ?? "not_started"];
   const dimmed = status === "cancelled";
 
