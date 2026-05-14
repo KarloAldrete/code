@@ -23,11 +23,20 @@ function applyWatchEvent(nestId: string, event: PrGraphWatchEvent): void {
  */
 export function initializePrGraphForNest(nestId: string): () => void {
   let disposed = false;
+  let initialLoaded = false;
+  const buffered: PrGraphWatchEvent[] = [];
 
   const watch: WatchHandle = trpcClient.hedgemony.prGraph.watch.subscribe(
     { id: nestId },
     {
-      onData: (event) => applyWatchEvent(nestId, event),
+      onData: (event) => {
+        if (disposed) return;
+        if (!initialLoaded) {
+          buffered.push(event);
+          return;
+        }
+        applyWatchEvent(nestId, event);
+      },
       onError: (error) =>
         log.error("pr-graph watch subscription error", { nestId, error }),
     },
@@ -38,6 +47,11 @@ export function initializePrGraphForNest(nestId: string): () => void {
     .then((edges) => {
       if (disposed) return;
       usePrGraphStore.getState().setForNest(nestId, edges);
+      // Replay any events that arrived between subscribe and list-resolve so
+      // upserts/removes don't get clobbered by the initial seed.
+      for (const event of buffered) applyWatchEvent(nestId, event);
+      buffered.length = 0;
+      initialLoaded = true;
     })
     .catch((error) =>
       log.error("Failed to load nest pr-graph edges", { nestId, error }),

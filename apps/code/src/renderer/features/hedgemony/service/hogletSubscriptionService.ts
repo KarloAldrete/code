@@ -1,5 +1,8 @@
 import { getAuthenticatedClient } from "@features/auth/hooks/authClient";
-import type { HogletWatchEvent } from "@main/services/hedgemony/schemas";
+import type {
+  Hoglet,
+  HogletWatchEvent,
+} from "@main/services/hedgemony/schemas";
 import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
 import { HEDGEMONY_CONFIG } from "../config";
@@ -89,33 +92,13 @@ function releaseTaskSummaryPolling(): void {
  * disposer that tears everything down.
  */
 export function initializeWildHogletStore(): () => void {
-  let disposed = false;
-  acquireTaskSummaryPolling();
-
-  const watch: WatchHandle = trpcClient.hedgemony.hoglets.watch.subscribe(
-    { kind: "wild" },
-    {
-      onData: (event) => applyWatchEvent(WILD_BUCKET, event),
-      onError: (error) =>
-        log.error("wild hoglet watch subscription error", { error }),
-    },
-  );
-
-  trpcClient.hedgemony.hoglets.list
-    .query({ wildOnly: true })
-    .then((hoglets) => {
-      if (disposed) return;
-      useHogletStore.getState().setBucket(WILD_BUCKET, hoglets);
-      pollAllSummaries();
-    })
-    .catch((error) => log.error("Failed to load wild hoglets", { error }));
-
-  return () => {
-    if (disposed) return;
-    disposed = true;
-    watch.unsubscribe();
-    releaseTaskSummaryPolling();
-  };
+  return initializeHogletBucket({
+    bucket: WILD_BUCKET,
+    subscribe: (handlers) =>
+      trpcClient.hedgemony.hoglets.watch.subscribe({ kind: "wild" }, handlers),
+    list: () => trpcClient.hedgemony.hoglets.list.query({ wildOnly: true }),
+    logContext: { kind: "wild" },
+  });
 }
 
 /**
@@ -124,27 +107,71 @@ export function initializeWildHogletStore(): () => void {
  * the bucket from `hoglets.list({ nestId })`.
  */
 export function initializeNestHogletStore(nestId: string): () => void {
+  return initializeHogletBucket({
+    bucket: nestId,
+    subscribe: (handlers) =>
+      trpcClient.hedgemony.hoglets.watch.subscribe(
+        { kind: "nest", nestId },
+        handlers,
+      ),
+    list: () => trpcClient.hedgemony.hoglets.list.query({ nestId }),
+    logContext: { kind: "nest", nestId },
+  });
+}
+
+interface InitializeHogletBucketOptions {
+  bucket: string;
+  subscribe: (handlers: {
+    onData: (event: HogletWatchEvent) => void;
+    onError: (error: unknown) => void;
+  }) => WatchHandle;
+  list: () => Promise<Hoglet[]>;
+  logContext: Record<string, unknown>;
+}
+
+/**
+ * Shared bootstrap that closes the watch-before-load race: incoming watch
+ * events are buffered until the initial list resolves, then replayed against
+ * the freshly-seeded bucket. Any subsequent event applies directly.
+ */
+function initializeHogletBucket(
+  opts: InitializeHogletBucketOptions,
+): () => void {
   let disposed = false;
+  let initialLoaded = false;
+  const buffered: HogletWatchEvent[] = [];
   acquireTaskSummaryPolling();
 
-  const watch: WatchHandle = trpcClient.hedgemony.hoglets.watch.subscribe(
-    { kind: "nest", nestId },
-    {
-      onData: (event) => applyWatchEvent(nestId, event),
-      onError: (error) =>
-        log.error("nest hoglet watch subscription error", { nestId, error }),
+  const watch = opts.subscribe({
+    onData: (event) => {
+      if (disposed) return;
+      if (!initialLoaded) {
+        buffered.push(event);
+        return;
+      }
+      applyWatchEvent(opts.bucket, event);
     },
-  );
+    onError: (error) =>
+      log.error("hoglet watch subscription error", {
+        ...opts.logContext,
+        error,
+      }),
+  });
 
-  trpcClient.hedgemony.hoglets.list
-    .query({ nestId })
+  opts
+    .list()
     .then((hoglets) => {
       if (disposed) return;
-      useHogletStore.getState().setBucket(nestId, hoglets);
+      useHogletStore.getState().setBucket(opts.bucket, hoglets);
+      // Replay any events that arrived between subscribe and list-resolve so
+      // upserts/deletions don't get clobbered by the initial seed.
+      for (const event of buffered) applyWatchEvent(opts.bucket, event);
+      buffered.length = 0;
+      initialLoaded = true;
       pollAllSummaries();
     })
     .catch((error) =>
-      log.error("Failed to load nest hoglets", { nestId, error }),
+      log.error("Failed to load hoglets", { ...opts.logContext, error }),
     );
 
   return () => {

@@ -172,7 +172,7 @@ lost without cleanup.
 The renderer hook becomes a thin start/stop toggle that activates/deactivates
 the service via tRPC.
 
-### 13. Watch-before-load race in hogletSubscriptionService
+### 13. Watch-before-load race in hogletSubscriptionService — DONE
 
 **File:** `hogletSubscriptionService.ts` (~line 88-104)
 

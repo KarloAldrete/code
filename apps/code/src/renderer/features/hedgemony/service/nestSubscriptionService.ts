@@ -74,6 +74,12 @@ export function initializeNestStore(): () => void {
     for (const id of previous) if (!current.has(id)) closeWatch(id);
   });
 
+  // No watch is open yet (watches are per-nest, opened from the store
+  // subscriber once setAll seeds the store). Race window is therefore between
+  // `nests.list` resolving and the store subscriber reacting. The store
+  // subscriber runs synchronously on setAll, so openWatch fires immediately
+  // for each new id and watch events for those nests can only arrive after
+  // the bucket exists.
   trpcClient.hedgemony.nests.list
     .query()
     .then((nests) => {
