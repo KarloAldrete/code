@@ -1,3 +1,8 @@
+import {
+  ACCESSORIES_BY_FUN_MODE,
+  FILTER_BY_FUN_MODE,
+} from "@features/fun-mode/accessories";
+import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import spritesData from "@renderer/assets/hedgehog-mode/sprites.json";
 import spritesImage from "@renderer/assets/hedgehog-mode/sprites.png";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -44,9 +49,22 @@ for (const [name, key] of Object.entries(HEDGEHOG_ANIMATIONS)) {
   }
 }
 
+const FUN_MODE_ACCESSORIES = ["chef", "eyepatch", "cowboy", "parrot"] as const;
+for (const name of FUN_MODE_ACCESSORIES) {
+  if (!atlas.frames[`accessories/${name}.png`]) {
+    throw new Error(
+      `Hedgehog atlas missing accessory "${name}". Re-vendor sprites.{png,json} from @posthog/hedgehog-mode.`,
+    );
+  }
+}
+
 function getFrames(animation: HedgehogAnimation): Frame[] {
   const names = atlas.animations[HEDGEHOG_ANIMATIONS[animation]];
   return names.map((name) => atlas.frames[name].frame);
+}
+
+function getAccessoryFrame(name: string): Frame {
+  return atlas.frames[`accessories/${name}.png`].frame;
 }
 
 interface AnimatedHedgehogProps {
@@ -69,6 +87,9 @@ export function AnimatedHedgehog({
   const frames = useMemo(() => getFrames(animation), [animation]);
   const [frameIndex, setFrameIndex] = useState(0);
   const completedRef = useRef(false);
+  const funMode = useSettingsStore((s) => s.funMode);
+  const accessories = ACCESSORIES_BY_FUN_MODE[funMode];
+  const filter = FILTER_BY_FUN_MODE[funMode];
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset on animation change
   useEffect(() => {
@@ -112,18 +133,43 @@ export function AnimatedHedgehog({
 
   const frame = frames[Math.min(frameIndex, frames.length - 1)];
   const scale = size / NATIVE_FRAME_SIZE;
+  const atlasBgSize = `${ATLAS_W * scale}px ${ATLAS_H * scale}px`;
 
   return (
     <div
       aria-hidden
       style={{
+        position: "relative",
         width: size,
         height: size,
-        backgroundImage: `url(${spritesImage})`,
-        backgroundPosition: `-${frame.x * scale}px -${frame.y * scale}px`,
-        backgroundSize: `${ATLAS_W * scale}px ${ATLAS_H * scale}px`,
         transform: facing === "left" ? "scaleX(-1)" : undefined,
+        filter,
       }}
-    />
+    >
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          backgroundImage: `url(${spritesImage})`,
+          backgroundPosition: `-${frame.x * scale}px -${frame.y * scale}px`,
+          backgroundSize: atlasBgSize,
+        }}
+      />
+      {accessories.map((name) => {
+        const af = getAccessoryFrame(name);
+        return (
+          <div
+            key={name}
+            style={{
+              position: "absolute",
+              inset: 0,
+              backgroundImage: `url(${spritesImage})`,
+              backgroundPosition: `-${af.x * scale}px -${af.y * scale}px`,
+              backgroundSize: atlasBgSize,
+            }}
+          />
+        );
+      })}
+    </div>
   );
 }

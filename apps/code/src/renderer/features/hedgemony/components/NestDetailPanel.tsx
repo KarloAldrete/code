@@ -1,3 +1,4 @@
+import { useFunSpeak } from "@features/fun-mode/hooks/useFunSpeak";
 import type {
   Nest,
   NestMessage,
@@ -39,6 +40,7 @@ export function NestDetailPanel({
   onClose,
   onRelocate,
 }: NestDetailPanelProps) {
+  const t = useFunSpeak();
   const [name, setName] = useState(nest.name);
   const [goalPrompt, setGoalPrompt] = useState(nest.goalPrompt);
   const [definitionOfDone, setDefinitionOfDone] = useState(
@@ -139,7 +141,7 @@ export function NestDetailPanel({
       <div className="flex items-start justify-between gap-3 border-(--gray-5) border-b px-4 py-3">
         <div className="min-w-0">
           <Text size="1" color="gray" className="block">
-            Nest
+            {t("Nest")}
           </Text>
           <Text size="3" weight="bold" className="block truncate">
             {nest.name}
@@ -204,7 +206,7 @@ export function NestDetailPanel({
               loading={saving}
             >
               <FloppyDisk size={14} />
-              Save
+              {t("Save")}
             </Button>
             {onRelocate && (
               <Button
@@ -213,7 +215,7 @@ export function NestDetailPanel({
                 onClick={onRelocate}
                 disabled={saving || archiving}
               >
-                Relocate
+                {t("Relocate")}
               </Button>
             )}
             <Button
@@ -224,7 +226,7 @@ export function NestDetailPanel({
               loading={archiving}
             >
               <Archive size={14} />
-              Archive
+              {t("Archive")}
             </Button>
           </Flex>
 
@@ -232,7 +234,7 @@ export function NestDetailPanel({
             <Flex direction="column" gap="2">
               <div className="flex items-center justify-between">
                 <Text size="2" weight="medium">
-                  Nest chat
+                  {t("Nest chat")}
                 </Text>
                 {hedgehogState?.state === "ticking" && (
                   <span className="flex items-center gap-1 rounded-full bg-(--amber-3) px-2 py-0.5 text-(--amber-11) text-[11px]">
@@ -247,7 +249,7 @@ export function NestDetailPanel({
                 </Text>
               ) : messages.length === 0 ? (
                 <Text size="2" color="gray">
-                  No messages yet — talk to the hedgehog below.
+                  {t("No messages yet — talk to the hedgehog below.")}
                 </Text>
               ) : (
                 messages.map((message) => (
@@ -262,7 +264,7 @@ export function NestDetailPanel({
       <div className="border-(--gray-5) border-t bg-(--gray-1) p-3">
         <Flex direction="column" gap="2">
           <TextField.Root
-            placeholder="Message the hedgehog…"
+            placeholder={t("Message the hedgehog…")}
             value={chatDraft}
             onChange={(e) => setChatDraft(e.target.value)}
             onKeyDown={handleChatKeyDown}
@@ -281,7 +283,7 @@ export function NestDetailPanel({
               size="2"
             >
               <PaperPlaneRight size={14} />
-              Send
+              {t("Send")}
             </Button>
           </Flex>
         </Flex>

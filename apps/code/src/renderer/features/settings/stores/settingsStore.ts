@@ -24,6 +24,7 @@ export type CompletionSound =
 export type AgentAdapter = "claude" | "codex";
 export type AutoConvertLongText = "off" | "1000" | "2500" | "5000" | "10000";
 export type DefaultInitialTaskMode = "plan" | "last_used";
+export type FunMode = "none" | "pirate" | "lolcat";
 
 export interface HintState {
   count: number;
@@ -57,6 +58,7 @@ interface SettingsStore {
   lastUsedInitialTaskMode: ExecutionMode;
   diffOpenMode: DiffOpenMode;
   hedgehogMode: boolean;
+  funMode: FunMode;
   mcpAppsDisabledServers: string[];
   hints: Record<string, HintState>;
 
@@ -93,6 +95,7 @@ interface SettingsStore {
   setLastUsedInitialTaskMode: (mode: ExecutionMode) => void;
   setDiffOpenMode: (mode: DiffOpenMode) => void;
   setHedgehogMode: (enabled: boolean) => void;
+  setFunMode: (mode: FunMode) => void;
   setMcpAppsDisabledServers: (servers: string[]) => void;
 }
 
@@ -124,6 +127,7 @@ export const useSettingsStore = create<SettingsStore>()(
       lastUsedInitialTaskMode: "plan",
       diffOpenMode: "auto",
       hedgehogMode: false,
+      funMode: "none",
       mcpAppsDisabledServers: [],
       hints: {},
 
@@ -200,6 +204,7 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ lastUsedInitialTaskMode: mode }),
       setDiffOpenMode: (mode) => set({ diffOpenMode: mode }),
       setHedgehogMode: (enabled) => set({ hedgehogMode: enabled }),
+      setFunMode: (mode) => set({ funMode: mode }),
       setMcpAppsDisabledServers: (servers) =>
         set({ mcpAppsDisabledServers: servers }),
     }),
@@ -232,6 +237,7 @@ export const useSettingsStore = create<SettingsStore>()(
         lastUsedInitialTaskMode: state.lastUsedInitialTaskMode,
         diffOpenMode: state.diffOpenMode,
         hedgehogMode: state.hedgehogMode,
+        funMode: state.funMode,
         hints: state.hints,
         mcpAppsDisabledServers: state.mcpAppsDisabledServers,
       }),

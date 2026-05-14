@@ -1,4 +1,5 @@
 import { useDroppable } from "@dnd-kit/react";
+import { useFunSpeak } from "@features/fun-mode/hooks/useFunSpeak";
 import { CaretDown, CaretRight, X } from "@phosphor-icons/react";
 import { Flex, ScrollArea, Text } from "@radix-ui/themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -23,6 +24,7 @@ const PANEL_HEADER_HEIGHT = 36;
 const PANEL_MAX_BODY_HEIGHT = 480;
 
 export function HedgemonyHoldingPanel() {
+  const t = useFunSpeak();
   const wildHoglets = useHogletStore(selectWildHoglets);
   const wildLoaded = useHogletStore(selectWildLoaded);
   const signalHoglets = useHogletStore(selectSignalStagingHoglets);
@@ -172,7 +174,7 @@ export function HedgemonyHoldingPanel() {
             )}
           </button>
           <Text size="2" weight="medium" className="text-(--gray-12)">
-            Holding area
+            {t("Holding area")}
           </Text>
         </Flex>
         <button
@@ -193,11 +195,13 @@ export function HedgemonyHoldingPanel() {
         >
           <HoldingSection
             kind="signal_staging"
-            title="Unnested signals"
+            title={t("Unnested signals")}
             open={signalSectionOpen}
             onToggle={() => setSignalSectionOpen((v) => !v)}
             loaded={signalLoaded}
-            emptyMessage="No unnested signals. Signal reports from Inbox will appear here for grouping."
+            emptyMessage={t(
+              "No unnested signals. Signal reports from Inbox will appear here for grouping.",
+            )}
             hogletCount={signalHoglets.length}
           >
             {sortedSignal.map((hoglet, index) => (
@@ -207,11 +211,13 @@ export function HedgemonyHoldingPanel() {
 
           <HoldingSection
             kind="wild"
-            title="Wild hoglets"
+            title={t("Wild hoglets")}
             open={wildSectionOpen}
             onToggle={() => setWildSectionOpen((v) => !v)}
             loaded={wildLoaded}
-            emptyMessage='No wild hoglets. Use "Spawn hoglet" to dispatch a one-off agent, or drop an adopted hoglet here to release it.'
+            emptyMessage={t(
+              'No wild hoglets. Use "Spawn hoglet" to dispatch a one-off agent, or drop an adopted hoglet here to release it.',
+            )}
             hogletCount={wildHoglets.length}
           >
             {sortedWild.map((hoglet, index) => (

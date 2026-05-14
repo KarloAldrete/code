@@ -1,3 +1,4 @@
+import { useFunSpeak } from "@features/fun-mode/hooks/useFunSpeak";
 import { Info, Plus } from "@phosphor-icons/react";
 import { Tooltip } from "@radix-ui/themes";
 import { motion } from "framer-motion";
@@ -11,6 +12,7 @@ export function HedgehouseCommandPanel({
   onSpawnWildHog,
   onClose,
 }: HedgehouseCommandPanelProps) {
+  const t = useFunSpeak();
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -22,7 +24,7 @@ export function HedgehouseCommandPanel({
       <div className="flex min-w-[140px] flex-col justify-center pr-3 text-[11px]">
         <div className="flex items-center gap-1.5">
           <span className="font-medium text-(--gray-12) text-[13px]">
-            Hedgehouse
+            {t("Hedgehouse")}
           </span>
           <Tooltip
             content={
@@ -48,7 +50,7 @@ export function HedgehouseCommandPanel({
           </Tooltip>
         </div>
         <span className="text-(--gray-10)">
-          One-off hoglets · no orchestration
+          {t("One-off hoglets · no orchestration")}
         </span>
       </div>
       <div className="flex items-center gap-2 border-(--gray-5) border-l pl-3">
@@ -59,7 +61,7 @@ export function HedgehouseCommandPanel({
           title="Dispatch a one-off agent from the Hedgehouse"
         >
           <Plus size={14} />
-          Spawn wild hog
+          {t("Spawn wild hog")}
         </button>
       </div>
       <button

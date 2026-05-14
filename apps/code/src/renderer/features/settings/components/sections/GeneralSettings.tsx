@@ -5,6 +5,7 @@ import {
   type CompletionSound,
   type DefaultInitialTaskMode,
   type DiffOpenMode,
+  type FunMode,
   type SendMessagesWith,
   useSettingsStore,
 } from "@features/settings/stores/settingsStore";
@@ -80,6 +81,7 @@ export function GeneralSettings() {
     diffOpenMode,
     sendMessagesWith,
     hedgehogMode,
+    funMode,
     setDesktopNotifications,
     setDockBadgeNotifications,
     setDockBounceNotifications,
@@ -90,6 +92,7 @@ export function GeneralSettings() {
     setDiffOpenMode,
     setSendMessagesWith,
     setHedgehogMode,
+    setFunMode,
   } = useSettingsStore();
 
   // Sync toggle off if the user denied notification permission at the OS level
@@ -212,6 +215,18 @@ export function GeneralSettings() {
       setHedgehogMode(checked);
     },
     [hedgehogMode, setHedgehogMode],
+  );
+
+  const handleFunModeChange = useCallback(
+    (value: FunMode) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "fun_mode",
+        new_value: value,
+        old_value: funMode,
+      });
+      setFunMode(value);
+    },
+    [funMode, setFunMode],
   );
 
   const accountUrl = getPostHogUrl("/settings/user", cloudRegion);
@@ -476,16 +491,31 @@ export function GeneralSettings() {
         Fun
       </Text>
 
-      <SettingRow
-        label="Hedgehog mode"
-        description={<HedgehogDescription />}
-        noBorder
-      >
+      <SettingRow label="Hedgehog mode" description={<HedgehogDescription />}>
         <Switch
           checked={hedgehogMode}
           onCheckedChange={handleHedgehogModeChange}
           size="1"
         />
+      </SettingRow>
+
+      <SettingRow
+        label="Talk mode"
+        description="Reskin the hedgehog and rewrite chrome text in a fun voice."
+        noBorder
+      >
+        <Select.Root
+          value={funMode}
+          onValueChange={(v) => handleFunModeChange(v as FunMode)}
+          size="1"
+        >
+          <Select.Trigger className="min-w-[180px]" />
+          <Select.Content>
+            <Select.Item value="none">Off</Select.Item>
+            <Select.Item value="pirate">Pirate</Select.Item>
+            <Select.Item value="lolcat">I can has cheezburger</Select.Item>
+          </Select.Content>
+        </Select.Root>
       </SettingRow>
     </Flex>
   );

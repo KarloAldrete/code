@@ -1,3 +1,4 @@
+import { useFunSpeak } from "@features/fun-mode/hooks/useFunSpeak";
 import { Info, Lightning, Plus } from "@phosphor-icons/react";
 import { Tooltip } from "@radix-ui/themes";
 import { motion } from "framer-motion";
@@ -15,6 +16,7 @@ export function BuilderCommandPanel({
   onQuickNest,
   onClose,
 }: BuilderCommandPanelProps) {
+  const t = useFunSpeak();
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -26,7 +28,7 @@ export function BuilderCommandPanel({
       <div className="flex min-w-[120px] flex-col justify-center pr-3 text-[11px]">
         <div className="flex items-center gap-1.5">
           <span className="font-medium text-(--gray-12) text-[13px]">
-            Builder
+            {t("Builder")}
           </span>
           <Tooltip
             content={
@@ -50,7 +52,9 @@ export function BuilderCommandPanel({
             />
           </Tooltip>
         </div>
-        <span className="text-(--gray-10)">Nests for orchestrated work</span>
+        <span className="text-(--gray-10)">
+          {t("Nests for orchestrated work")}
+        </span>
       </div>
       <div className="flex items-center gap-2 border-(--gray-5) border-l pl-3">
         <button
@@ -60,7 +64,7 @@ export function BuilderCommandPanel({
           title="Guided goal-writing flow with a clarifying question and full spec"
         >
           <Plus size={14} />
-          Build nest
+          {t("Build nest")}
         </button>
         <button
           type="button"
@@ -69,7 +73,7 @@ export function BuilderCommandPanel({
           title="Simple form + auto-spawn one hoglet"
         >
           <Lightning size={14} />
-          Quick nest
+          {t("Quick nest")}
         </button>
       </div>
       <button

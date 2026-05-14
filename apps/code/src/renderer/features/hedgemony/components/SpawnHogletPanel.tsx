@@ -1,4 +1,5 @@
 import { GitHubRepoPicker } from "@features/folder-picker/components/GitHubRepoPicker";
+import { useFunSpeak } from "@features/fun-mode/hooks/useFunSpeak";
 import type { TaskService } from "@features/task-detail/service/service";
 import {
   useUserGithubRepositories,
@@ -24,6 +25,7 @@ export interface SpawnHogletPanelProps {
 }
 
 export function SpawnHogletPanel({ onClose }: SpawnHogletPanelProps) {
+  const t = useFunSpeak();
   const [prompt, setPrompt] = useState("");
   const [selectedRepository, setSelectedRepository] = useState<string | null>(
     null,
@@ -126,10 +128,10 @@ export function SpawnHogletPanel({ onClose }: SpawnHogletPanelProps) {
       <div className="flex items-start justify-between gap-3 border-(--gray-5) border-b px-4 py-3">
         <div className="min-w-0">
           <Text size="1" color="gray" className="block">
-            Hedgehouse
+            {t("Hedgehouse")}
           </Text>
           <Text size="3" weight="bold" className="block truncate">
-            Send out a wild hog
+            {t("Send out a wild hog")}
           </Text>
           <Text size="1" color="gray" className="mt-0.5 block">
             Dispatched from the town hall of the wilds — lands in the holding
@@ -162,7 +164,7 @@ export function SpawnHogletPanel({ onClose }: SpawnHogletPanelProps) {
             weight="medium"
             className="block"
           >
-            Prompt
+            {t("Prompt")}
           </Text>
           <TextArea
             id="hoglet-prompt"
@@ -177,7 +179,7 @@ export function SpawnHogletPanel({ onClose }: SpawnHogletPanelProps) {
 
         <div>
           <Text as="div" size="2" mb="1" weight="medium" className="block">
-            Repository
+            {t("Repository")}
           </Text>
           <GitHubRepoPicker
             value={selectedRepository}
@@ -223,14 +225,14 @@ export function SpawnHogletPanel({ onClose }: SpawnHogletPanelProps) {
           disabled={submitting}
           onClick={handleClose}
         >
-          Cancel
+          {t("Cancel")}
         </Button>
         <Button
           onClick={handleSubmit}
           disabled={!canSubmit || submitting}
           loading={submitting}
         >
-          Send wild hog
+          {t("Send wild hog")}
         </Button>
       </Flex>
     </motion.aside>

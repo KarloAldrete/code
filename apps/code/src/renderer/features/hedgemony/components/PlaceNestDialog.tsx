@@ -1,3 +1,4 @@
+import { useFunSpeak } from "@features/fun-mode/hooks/useFunSpeak";
 import type {
   GoalDraftTranscriptMessage,
   GoalSpecBootstrapContext,
@@ -64,6 +65,7 @@ export function PlaceNestDialog({
   onClose,
   onCreated,
 }: PlaceNestDialogProps) {
+  const t = useFunSpeak();
   const [state, dispatch] = useReducer(placeNestDialogReducer, null, () =>
     initialPlaceNestDialogState(initialMode),
   );
@@ -204,7 +206,7 @@ export function PlaceNestDialog({
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Content maxWidth="640px" size="2" className="max-h-[85vh]">
-        <Dialog.Title size="3">Create a nest</Dialog.Title>
+        <Dialog.Title size="3">{t("Create a nest")}</Dialog.Title>
         <Dialog.Description size="2" color="gray">
           Turn a rough goal into a spec-driven nest before creating it.
         </Dialog.Description>
@@ -312,7 +314,7 @@ export function PlaceNestDialog({
               color="gray"
               disabled={submitting || drafting}
             >
-              Cancel
+              {t("Cancel")}
             </Button>
           </Dialog.Close>
           <Button
@@ -320,7 +322,7 @@ export function PlaceNestDialog({
             disabled={!canSubmit || submitting || drafting}
             loading={submitting}
           >
-            Create nest
+            {t("Create nest")}
           </Button>
         </Flex>
       </Dialog.Content>
@@ -363,6 +365,7 @@ function GoalDraftFlow({
   onGoalPromptChange: (value: string) => void;
   onDefinitionOfDoneChange: (value: string) => void;
 }) {
+  const t = useFunSpeak();
   const disabled = drafting || submitting;
 
   return (
@@ -413,7 +416,7 @@ function GoalDraftFlow({
               disabled={!initialGoal.trim() || disabled}
               loading={drafting}
             >
-              Start spec draft
+              {t("Start spec draft")}
             </Button>
           </Flex>
         </div>
@@ -475,6 +478,7 @@ function ConversationPanel({
   onAnswerChange: (value: string) => void;
   onAnswer: () => void;
 }) {
+  const t = useFunSpeak();
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on every transcript or drafting change
@@ -536,7 +540,7 @@ function ConversationPanel({
             disabled={!answer.trim() || disabled}
             loading={drafting}
           >
-            Send
+            {t("Send")}
           </Button>
         </Flex>
       </div>
