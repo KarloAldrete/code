@@ -2,6 +2,7 @@ import { Box, Flex, Text } from "@radix-ui/themes";
 import beachHog from "@renderer/assets/images/hedgehogs/beach-hog.png";
 import { useMemo } from "react";
 import { WorkHomePrompt } from "./WorkHomePrompt";
+import { WorkRecentProjects } from "./WorkRecentProjects";
 import { WorkSampleProjects } from "./WorkSampleProjects";
 
 const GREETINGS = [
@@ -44,7 +45,7 @@ export function WorkHome() {
         direction="column"
         align="center"
         gap="6"
-        className="mx-auto w-full max-w-[680px] px-6 pt-16 pb-12"
+        className="mx-auto w-full max-w-[860px] px-6 pt-16 pb-12"
       >
         <Flex
           direction="column"
@@ -74,11 +75,15 @@ export function WorkHome() {
         </Box>
 
         <Box className="work-enter work-enter-3 w-full">
+          <WorkRecentProjects />
+        </Box>
+
+        <Box className="work-enter work-enter-4 w-full">
           <Text
             as="div"
             className="mb-2 text-center text-(--gray-10) text-[11px] uppercase tracking-wide"
           >
-            Or if you're used to outsourcing your brain to Claude...
+            Or start with a stretch goal
           </Text>
           <WorkSampleProjects />
         </Box>
