@@ -28,9 +28,31 @@ export interface ProjectFile {
 
 export interface ProjectActivityEntry {
   id: string;
-  kind: "automation" | "dashboard" | "task" | "file";
+  kind:
+    | "commit"
+    | "pr_opened"
+    | "pr_merged"
+    | "issue_opened"
+    | "issue_closed"
+    | "release";
   text: string;
   when: string;
+  actor?: string;
+  url?: string;
+}
+
+export interface ProjectGitHubRepo {
+  owner: string;
+  name: string;
+  url: string;
+  /** Aggregated counts across the activity window (last 24h). */
+  summary?: {
+    prsMerged?: number;
+    prsOpened?: number;
+    commits?: number;
+    issuesOpened?: number;
+    releases?: number;
+  };
 }
 
 export interface ProjectHeadlineStat {
@@ -39,6 +61,17 @@ export interface ProjectHeadlineStat {
   delta: string;
   sparkline: number[];
   posthogUrl: string;
+  /**
+   * Optional live PostHog query that overrides the static value/delta/sparkline
+   * when authenticated. Shape matches the body PostHog's `/query/` endpoint
+   * accepts (e.g. a TrendsQuery node).
+   */
+  query?: {
+    posthogProjectId: number;
+    body: Record<string, unknown>;
+    /** Render label, e.g. "Daily signups · last 14 days". */
+    displayLabel?: string;
+  };
 }
 
 export interface ProjectMember {
@@ -60,6 +93,7 @@ export interface Project {
   automations?: ProjectAutomation[];
   files?: ProjectFile[];
   activity?: ProjectActivityEntry[];
+  githubRepo?: ProjectGitHubRepo;
   pinnedSkills?: string[];
 }
 
@@ -79,15 +113,46 @@ export const PROJECTS: Project[] = [
       { name: "Pawel Cebula", initials: "PC" },
     ],
     headline: {
-      label: "Waitlist signups · last 7 days",
+      label: "Waitlist signups · last 14 days",
       value: "1,548",
       delta: "+19× vs. prior 7 days",
+      // Static fallback used pre-auth or while the live query is loading.
       // Real daily counts pulled from PostHog (event subscribe_to_product_updates,
       // $pathname=/code, last 14 days, ending 2026-05-13).
       sparkline: [
         13, 19, 9, 4, 5, 11, 1136, 469, 163, 77, 49, 34, 51, 303, 402,
       ],
-      posthogUrl: "https://us.posthog.com/project/2/dashboard/1550313",
+      posthogUrl: "https://us.posthog.com/project/2/insights/8N93qeGt",
+      query: {
+        posthogProjectId: 2,
+        displayLabel: "Daily signups · last 14 days",
+        // Mirrors the saved insight "Waitlist signups over time" (8N93qeGt)
+        // on dashboard 1550313, but resampled daily over 14 days so the
+        // headline reflects launch-week momentum.
+        body: {
+          kind: "TrendsQuery",
+          series: [
+            {
+              kind: "EventsNode",
+              math: "total",
+              event: "subscribe_to_product_updates",
+              properties: [
+                {
+                  key: "$pathname",
+                  type: "event",
+                  value: "/code",
+                  operator: "exact",
+                },
+              ],
+              custom_name: "Signups",
+            },
+          ],
+          interval: "day",
+          dateRange: { date_from: "-14d", explicitDate: false },
+          trendsFilter: { display: "ActionsBar" },
+          filterTestAccounts: true,
+        },
+      },
     },
     dashboards: [
       {
@@ -174,30 +239,58 @@ export const PROJECTS: Project[] = [
         updatedLabel: "Today",
       },
     ],
+    githubRepo: {
+      owner: "PostHog",
+      name: "code",
+      url: "https://github.com/PostHog/code",
+      summary: {
+        prsMerged: 5,
+        prsOpened: 7,
+        commits: 23,
+        issuesOpened: 4,
+        releases: 1,
+      },
+    },
     activity: [
       {
-        id: "act-1",
-        kind: "automation",
-        text: "Daily waitlist digest posted — 402 signups yesterday, ProductHunt is the top referrer.",
+        id: "gh-1",
+        kind: "pr_merged",
+        text: "fix(work): point New task at Work home, remove redundant Home item",
         when: "2h ago",
+        actor: "charlescook",
+        url: "https://github.com/PostHog/code/pull/2148",
       },
       {
-        id: "act-2",
-        kind: "dashboard",
-        text: "Pawel refreshed PostHog Code launch monitoring.",
+        id: "gh-2",
+        kind: "release",
+        text: "v0.42.0 — Work mode projects, Chat mode for quick model conversations",
         when: "5h ago",
+        actor: "github-actions",
+        url: "https://github.com/PostHog/code/releases/tag/v0.42.0",
       },
       {
-        id: "act-3",
-        kind: "task",
-        text: 'PostHog Code asked: "draft a tweet thread summarizing today\'s signup spike."',
-        when: "Yesterday",
+        id: "gh-3",
+        kind: "pr_opened",
+        text: "feat(work): project chat panel with live PostHog insight",
+        when: "7h ago",
+        actor: "cleo-pleurodon",
+        url: "https://github.com/PostHog/code/pull/2150",
       },
       {
-        id: "act-4",
-        kind: "file",
-        text: "Hackathon README.md edited.",
-        when: "Yesterday",
+        id: "gh-4",
+        kind: "pr_merged",
+        text: "feat(work): scheduled tasks under Work mode",
+        when: "11h ago",
+        actor: "andyvandervell",
+        url: "https://github.com/PostHog/code/pull/2134",
+      },
+      {
+        id: "gh-5",
+        kind: "issue_opened",
+        text: "Waitlist landing copy needs ICP segment refresh before tomorrow's send",
+        when: "16h ago",
+        actor: "andymaguire",
+        url: "https://github.com/PostHog/code/issues/2156",
       },
     ],
     pinnedSkills: ["Marketing campaign digest", "Slack standup recap"],

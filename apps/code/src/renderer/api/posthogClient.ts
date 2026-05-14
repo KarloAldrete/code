@@ -697,6 +697,31 @@ export class PostHogAPIClient {
     return data as Schemas.Team;
   }
 
+  async runQuery<TResult = unknown>(
+    projectId: number,
+    query: Record<string, unknown>,
+  ): Promise<TResult> {
+    const urlPath = `/api/projects/${projectId}/query/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({ query }),
+      },
+    });
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as {
+        detail?: string;
+      };
+      throw new Error(
+        errorData.detail ?? `PostHog query failed: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as TResult;
+  }
+
   async listSignalSourceConfigs(
     projectId: number,
   ): Promise<SignalSourceConfig[]> {

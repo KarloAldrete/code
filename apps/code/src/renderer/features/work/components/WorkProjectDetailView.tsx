@@ -1,12 +1,16 @@
+import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import {
   ArrowLeft,
   ArrowSquareOut,
   ChartLineUp,
-  ChatCircleText,
-  ClockClockwise,
+  Check,
   DotsThree,
   FileText,
   GaugeIcon,
+  GitBranch,
+  GitCommit,
+  GitMerge,
+  GitPullRequest,
   type IconProps,
   Lightbulb,
   Lightning,
@@ -14,16 +18,90 @@ import {
   Microphone,
   Plus,
   Rocket,
+  Tag,
+  WarningCircle,
 } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { useNavigationStore } from "@stores/navigationStore";
+import { useProjectEditsStore } from "@stores/projectEditsStore";
 import { openUrlInBrowser } from "@utils/browser";
-import { type ComponentType, type ReactNode, useMemo } from "react";
+import {
+  type ComponentType,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   getProject,
   type Project,
   type ProjectActivityEntry,
+  type ProjectGitHubRepo,
+  type ProjectHeadlineStat,
 } from "../data/projects";
+import { ProjectChatPanel } from "./ProjectChatPanel";
+
+interface TrendsResult {
+  data: number[];
+  labels: string[];
+  days: string[];
+  count?: number;
+  aggregated_value?: number;
+  label?: string;
+}
+
+interface TrendsResponse {
+  results: TrendsResult[];
+}
+
+function formatCompactNumber(n: number): string {
+  return new Intl.NumberFormat("en-US").format(Math.round(n));
+}
+
+function describeDelta(values: number[]): string | null {
+  if (values.length < 4) return null;
+  const half = Math.floor(values.length / 2);
+  const recent = values.slice(values.length - half);
+  const prior = values.slice(values.length - half * 2, values.length - half);
+  const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
+  const recentSum = sum(recent);
+  const priorSum = sum(prior);
+  if (priorSum === 0) {
+    return recentSum > 0 ? `+${formatCompactNumber(recentSum)} vs. 0` : null;
+  }
+  const ratio = recentSum / priorSum;
+  if (ratio >= 2) {
+    return `+${ratio.toFixed(1)}× vs. prior ${half} days`;
+  }
+  const pct = ((recentSum - priorSum) / priorSum) * 100;
+  const sign = pct >= 0 ? "+" : "";
+  return `${sign}${pct.toFixed(0)}% vs. prior ${half} days`;
+}
+
+function useLiveHeadline(headline: ProjectHeadlineStat | undefined) {
+  const query = headline?.query;
+  return useAuthenticatedQuery<TrendsResponse>(
+    [
+      "project-headline-trends",
+      query?.posthogProjectId,
+      JSON.stringify(query?.body ?? null),
+    ],
+    (client) =>
+      client.runQuery<TrendsResponse>(
+        // biome-ignore lint/style/noNonNullAssertion: gated by enabled flag below
+        query!.posthogProjectId,
+        // biome-ignore lint/style/noNonNullAssertion: gated by enabled flag below
+        query!.body,
+      ),
+    {
+      enabled: !!query,
+      staleTime: 60_000,
+      refetchOnWindowFocus: false,
+    },
+  );
+}
 
 const ICON_MAP: Record<Project["iconId"], ComponentType<IconProps>> = {
   rocket: Rocket,
@@ -31,15 +109,20 @@ const ICON_MAP: Record<Project["iconId"], ComponentType<IconProps>> = {
   megaphone: Megaphone,
 };
 
-function Sparkline({ values }: { values: number[] }) {
+function SparklineBars({
+  values,
+  labels,
+}: {
+  values: number[];
+  labels?: string[];
+}) {
   const width = 220;
-  const height = 36;
+  const height = 40;
+  const gap = 2;
+  const n = values.length;
+  if (n === 0) return null;
   const max = Math.max(...values, 1);
-  const stepX = values.length > 1 ? width / (values.length - 1) : width;
-  const points = values
-    .map((v, i) => `${i * stepX},${height - (v / max) * (height - 4) - 2}`)
-    .join(" ");
-  const areaPoints = `0,${height} ${points} ${width},${height}`;
+  const barWidth = Math.max(1, (width - gap * (n - 1)) / n);
   return (
     <svg
       viewBox={`0 0 ${width} ${height}`}
@@ -47,19 +130,106 @@ function Sparkline({ values }: { values: number[] }) {
       height={height}
       preserveAspectRatio="none"
       role="img"
-      aria-label="14-day sparkline"
+      aria-label="Trend sparkline"
     >
-      <title>14-day sparkline</title>
-      <polygon points={areaPoints} fill="var(--green-3)" />
-      <polyline
-        points={points}
-        fill="none"
-        stroke="var(--green-11)"
-        strokeWidth={1.5}
-        strokeLinejoin="round"
-        strokeLinecap="round"
-      />
+      <title>Trend sparkline</title>
+      {values.map((v, i) => {
+        const h = Math.max(1, (v / max) * (height - 2));
+        const x = i * (barWidth + gap);
+        const y = height - h;
+        return (
+          <rect
+            // biome-ignore lint/suspicious/noArrayIndexKey: stable positional bars
+            key={i}
+            x={x}
+            y={y}
+            width={barWidth}
+            height={h}
+            fill="var(--green-11)"
+            rx={1}
+          >
+            <title>{labels?.[i] ? `${labels[i]}: ${v}` : String(v)}</title>
+          </rect>
+        );
+      })}
     </svg>
+  );
+}
+
+function HeadlineCard({ headline }: { headline: ProjectHeadlineStat }) {
+  const { data, isLoading, isError } = useLiveHeadline(headline);
+
+  const series = data?.results?.[0];
+  const liveValues = series?.data;
+  const liveLabels = series?.labels;
+  const liveTotal = series?.aggregated_value ?? series?.count;
+
+  const usingLive = !!liveValues && liveValues.length > 0;
+  const values = usingLive ? liveValues : headline.sparkline;
+  const labels = usingLive ? liveLabels : undefined;
+  const valueText = usingLive
+    ? formatCompactNumber(liveTotal ?? liveValues.reduce((a, b) => a + b, 0))
+    : headline.value;
+  const deltaText = usingLive
+    ? (describeDelta(liveValues) ?? headline.delta)
+    : headline.delta;
+  const headlineLabel = usingLive
+    ? (headline.query?.displayLabel ?? headline.label)
+    : headline.label;
+
+  const statusLabel = isError
+    ? "Last refresh failed"
+    : isLoading && !usingLive
+      ? "Loading…"
+      : usingLive
+        ? "Live"
+        : "Cached";
+
+  return (
+    <Box className="rounded-(--radius-3) border border-(--gray-5) bg-(--gray-1) p-4">
+      <Flex align="center" justify="between" gap="2">
+        <Flex align="center" gap="2">
+          <Box
+            className={`h-1.5 w-1.5 rounded-full ${
+              isError
+                ? "bg-(--red-9)"
+                : usingLive
+                  ? "animate-pulse bg-(--green-9)"
+                  : "bg-(--gray-8)"
+            }`}
+          />
+          <Text
+            as="span"
+            className="text-(--gray-10) text-[11px] uppercase tracking-wide"
+          >
+            {statusLabel} · {headlineLabel}
+          </Text>
+        </Flex>
+        <button
+          type="button"
+          onClick={() => openUrlInBrowser(headline.posthogUrl)}
+          className="flex items-center gap-1 text-(--gray-10) text-[11px] hover:text-(--gray-12)"
+        >
+          View in PostHog
+          <ArrowSquareOut size={10} weight="bold" />
+        </button>
+      </Flex>
+      <Flex align="baseline" gap="3" className="mt-1">
+        <Text
+          as="span"
+          weight="medium"
+          className="text-(--gray-12) text-[32px] leading-tight"
+        >
+          {valueText}
+        </Text>
+        <Text as="span" className="text-(--green-11) text-[12px]">
+          {deltaText}
+        </Text>
+      </Flex>
+      <Box className="mt-2">
+        <SparklineBars values={values} labels={labels} />
+      </Box>
+    </Box>
   );
 }
 
@@ -268,31 +438,120 @@ function FilesCard({ project }: { project: Project }) {
 }
 
 const ACTIVITY_ICON: Record<ProjectActivityEntry["kind"], ReactNode> = {
-  automation: <Lightning size={13} weight="regular" />,
-  dashboard: <ChartLineUp size={13} weight="regular" />,
-  task: <ChatCircleText size={13} weight="regular" />,
-  file: <FileText size={13} weight="regular" />,
+  commit: <GitCommit size={13} weight="regular" />,
+  pr_opened: <GitPullRequest size={13} weight="regular" />,
+  pr_merged: <GitMerge size={13} weight="regular" />,
+  issue_opened: <WarningCircle size={13} weight="regular" />,
+  issue_closed: <WarningCircle size={13} weight="regular" />,
+  release: <Tag size={13} weight="regular" />,
 };
 
+const ACTIVITY_ICON_TONE: Record<ProjectActivityEntry["kind"], string> = {
+  commit: "text-(--gray-10)",
+  pr_opened: "text-(--green-11)",
+  pr_merged: "text-(--purple-11)",
+  issue_opened: "text-(--amber-11)",
+  issue_closed: "text-(--gray-10)",
+  release: "text-(--blue-11)",
+};
+
+function GitHubSummaryChips({
+  summary,
+}: {
+  summary: ProjectGitHubRepo["summary"];
+}) {
+  if (!summary) return null;
+  const chips: { label: string; count: number; tone: string }[] = [];
+  if (summary.prsMerged)
+    chips.push({
+      label: summary.prsMerged === 1 ? "PR merged" : "PRs merged",
+      count: summary.prsMerged,
+      tone: "text-(--purple-11)",
+    });
+  if (summary.prsOpened)
+    chips.push({
+      label: summary.prsOpened === 1 ? "PR opened" : "PRs opened",
+      count: summary.prsOpened,
+      tone: "text-(--green-11)",
+    });
+  if (summary.commits)
+    chips.push({
+      label: summary.commits === 1 ? "commit" : "commits",
+      count: summary.commits,
+      tone: "text-(--gray-11)",
+    });
+  if (summary.issuesOpened)
+    chips.push({
+      label: summary.issuesOpened === 1 ? "issue" : "issues",
+      count: summary.issuesOpened,
+      tone: "text-(--amber-11)",
+    });
+  if (summary.releases)
+    chips.push({
+      label: summary.releases === 1 ? "release" : "releases",
+      count: summary.releases,
+      tone: "text-(--blue-11)",
+    });
+  if (chips.length === 0) return null;
+  return (
+    <Flex gap="3" wrap="wrap" className="px-3 py-2">
+      {chips.map((c) => (
+        <Flex key={c.label} align="baseline" gap="1.5">
+          <Text
+            as="span"
+            weight="medium"
+            className={`${c.tone} text-[13px] tabular-nums`}
+          >
+            {c.count}
+          </Text>
+          <Text as="span" className="text-(--gray-10) text-[11px]">
+            {c.label}
+          </Text>
+        </Flex>
+      ))}
+    </Flex>
+  );
+}
+
 function ActivityCard({ project }: { project: Project }) {
-  if (!project.activity?.length) return null;
+  const repo = project.githubRepo;
+  if (!project.activity?.length && !repo) return null;
+  const repoLabel = repo ? `${repo.owner}/${repo.name}` : null;
   return (
     <Box>
       <SectionHeader
-        icon={<ClockClockwise size={14} weight="duotone" />}
-        title="Recent activity"
+        icon={<GitBranch size={14} weight="duotone" />}
+        title="GitHub activity · last 24h"
+        action={
+          repoLabel && repo ? (
+            <button
+              type="button"
+              onClick={() => openUrlInBrowser(repo.url)}
+              className="flex items-center gap-1 text-(--gray-10) text-[11px] hover:text-(--gray-12)"
+            >
+              {repoLabel}
+              <ArrowSquareOut size={10} weight="bold" />
+            </button>
+          ) : undefined
+        }
       />
       <Box className="overflow-hidden rounded-(--radius-3) border border-(--gray-5) bg-(--gray-1)">
-        {project.activity.map((e, i) => (
-          <Flex
+        {repo?.summary && (
+          <Box className="border-(--gray-4) border-b">
+            <GitHubSummaryChips summary={repo.summary} />
+          </Box>
+        )}
+        {project.activity?.map((e, i) => (
+          <button
+            type="button"
             key={e.id}
-            align="start"
-            gap="2.5"
-            className={`px-3 py-2.5 ${
-              i > 0 ? "border-(--gray-4) border-t" : ""
-            }`}
+            onClick={() => e.url && openUrlInBrowser(e.url)}
+            disabled={!e.url}
+            className={`flex w-full items-start gap-2.5 px-3 py-2.5 text-left transition-colors ${
+              e.url ? "hover:bg-(--gray-2)" : "cursor-default"
+            } ${i > 0 || repo?.summary ? "border-(--gray-4) border-t" : ""}`}
           >
-            <Box className="mt-0.5 text-(--gray-10)">
+            <Box className={`mt-0.5 ${ACTIVITY_ICON_TONE[e.kind]}`}>
               {ACTIVITY_ICON[e.kind]}
             </Box>
             <Box className="min-w-0 flex-1">
@@ -302,11 +561,16 @@ function ActivityCard({ project }: { project: Project }) {
               >
                 {e.text}
               </Text>
+              {e.actor && (
+                <Text as="div" className="text-(--gray-10) text-[11px]">
+                  {e.actor}
+                </Text>
+              )}
             </Box>
             <Text as="span" className="shrink-0 text-(--gray-10) text-[11px]">
               {e.when}
             </Text>
-          </Flex>
+          </button>
         ))}
       </Box>
     </Box>
@@ -319,7 +583,7 @@ function PinnedSkillsCard({ project }: { project: Project }) {
     <Box>
       <SectionHeader
         icon={<Lightbulb size={14} weight="duotone" />}
-        title="Pinned skills"
+        title="Frequently used skills"
         count={project.pinnedSkills.length}
       />
       <Flex direction="column" gap="1.5">
@@ -345,27 +609,9 @@ function PinnedSkillsCard({ project }: { project: Project }) {
   );
 }
 
-function ProjectChatInput({ projectName }: { projectName: string }) {
-  return (
-    <Box className="rounded-(--radius-3) border border-(--gray-5) bg-(--gray-1) p-3">
-      <Text as="div" className="mb-2 text-(--gray-10) text-[12px]">
-        Ask anything about {projectName} — I have its dashboards, automations,
-        and files in context.
-      </Text>
-      <Flex
-        align="center"
-        gap="2"
-        className="rounded-(--radius-2) border border-(--gray-4) bg-(--gray-2) px-3 py-2.5"
-      >
-        <Plus size={14} weight="bold" className="text-(--gray-10)" />
-        <Text as="span" className="flex-1 text-(--gray-10) text-[13px] italic">
-          e.g. "summarize today's waitlist signups for the launch standup"
-        </Text>
-        <Microphone size={14} weight="regular" className="text-(--gray-10)" />
-      </Flex>
-    </Box>
-  );
-}
+const MIN_CONTENT_WIDTH = 360;
+const MIN_PANEL_WIDTH = 360;
+const DEFAULT_PANEL_WIDTH = 440;
 
 export function WorkProjectDetailView() {
   const projectId = useNavigationStore((s) => s.workSelectedProjectId);
@@ -373,9 +619,93 @@ export function WorkProjectDetailView() {
     (s) => s.navigateToWorkProjects,
   );
 
-  const project = useMemo(
+  const baseProject = useMemo(
     () => (projectId ? getProject(projectId) : undefined),
     [projectId],
+  );
+
+  const edit = useProjectEditsStore((s) =>
+    projectId ? s.editsByProjectId[projectId] : undefined,
+  );
+  const patchEdit = useProjectEditsStore((s) => s.patchEdit);
+
+  const project = useMemo(
+    () => (baseProject ? { ...baseProject, ...(edit ?? {}) } : undefined),
+    [baseProject, edit],
+  );
+
+  const [isEditingMeta, setIsEditingMeta] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [descDraft, setDescDraft] = useState("");
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
+  const startEditing = useCallback(() => {
+    setNameDraft(project?.name ?? "");
+    setDescDraft(project?.description ?? "");
+    setIsEditingMeta(true);
+  }, [project]);
+
+  const commitAndExit = useCallback(() => {
+    if (!projectId || !project) return;
+    const trimmedName = nameDraft.trim();
+    const trimmedDesc = descDraft.trim();
+    const patch: { name?: string; description?: string } = {};
+    if (trimmedName && trimmedName !== project.name) patch.name = trimmedName;
+    if (trimmedDesc && trimmedDesc !== project.description)
+      patch.description = trimmedDesc;
+    if (Object.keys(patch).length > 0) patchEdit(projectId, patch);
+    setIsEditingMeta(false);
+  }, [projectId, project, nameDraft, descDraft, patchEdit]);
+
+  const cancelEditing = useCallback(() => {
+    setIsEditingMeta(false);
+  }, []);
+
+  useEffect(() => {
+    if (isEditingMeta) {
+      nameInputRef.current?.focus();
+      nameInputRef.current?.select();
+    }
+  }, [isEditingMeta]);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [panelWidth, setPanelWidth] = useState<number>(DEFAULT_PANEL_WIDTH);
+
+  const handleResizeStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const container = containerRef.current;
+      if (!container) return;
+      const containerRect = container.getBoundingClientRect();
+      const startX = e.clientX;
+      const startWidth = panelWidth;
+
+      const onMouseMove = (moveEvent: MouseEvent) => {
+        const delta = startX - moveEvent.clientX;
+        const maxWidth = Math.max(
+          MIN_PANEL_WIDTH,
+          containerRect.width - MIN_CONTENT_WIDTH,
+        );
+        const newWidth = Math.min(
+          maxWidth,
+          Math.max(MIN_PANEL_WIDTH, startWidth + delta),
+        );
+        setPanelWidth(newWidth);
+      };
+
+      const onMouseUp = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    },
+    [panelWidth],
   );
 
   if (!project) {
@@ -398,142 +728,177 @@ export function WorkProjectDetailView() {
   const Icon = ICON_MAP[project.iconId];
 
   return (
-    <Box className="scrollbar-overlay-y h-full w-full overflow-y-auto">
-      <Flex
-        direction="column"
-        gap="5"
-        className="mx-auto w-full max-w-[920px] px-6 pt-8 pb-12"
-      >
-        <Flex direction="column" gap="3">
-          <button
-            type="button"
-            onClick={navigateToWorkProjects}
-            className="-ml-1 flex w-fit items-center gap-1 text-(--gray-10) text-[12px] transition-colors hover:text-(--gray-12)"
+    <Box height="100%" ref={containerRef}>
+      <Flex height="100%">
+        <Box className="scrollbar-overlay-y min-w-0 flex-1 overflow-y-auto">
+          <Flex
+            direction="column"
+            gap="5"
+            className="mx-auto w-full max-w-[920px] px-6 pt-8 pb-12"
           >
-            <ArrowLeft size={12} weight="bold" />
-            Projects
-          </button>
-
-          <Flex align="start" justify="between" gap="3">
-            <Flex align="center" gap="3" className="min-w-0">
-              <Flex
-                align="center"
-                justify="center"
-                className="h-11 w-11 shrink-0 rounded-(--radius-2) bg-(--gray-3) text-(--gray-11)"
+            <Flex direction="column" gap="3">
+              <button
+                type="button"
+                onClick={navigateToWorkProjects}
+                className="-ml-1 flex w-fit items-center gap-1 text-(--gray-10) text-[12px] transition-colors hover:text-(--gray-12)"
               >
-                <Icon size={22} weight="regular" />
+                <ArrowLeft size={12} weight="bold" />
+                Projects
+              </button>
+
+              <Flex align="start" justify="between" gap="3">
+                <Flex align="center" gap="3" className="min-w-0">
+                  <Flex
+                    align="center"
+                    justify="center"
+                    className="h-11 w-11 shrink-0 rounded-(--radius-2) bg-(--gray-3) text-(--gray-11)"
+                  >
+                    <Icon size={22} weight="regular" />
+                  </Flex>
+                  <Box className="min-w-0 flex-1">
+                    {isEditingMeta ? (
+                      <input
+                        ref={nameInputRef}
+                        value={nameDraft}
+                        onChange={(e) => setNameDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            commitAndExit();
+                          } else if (e.key === "Escape") {
+                            e.preventDefault();
+                            cancelEditing();
+                          }
+                        }}
+                        className="-mx-2 block w-full rounded-(--radius-2) bg-(--gray-2) px-2 py-1 font-medium text-(--gray-12) text-[22px] outline-none ring-(--accent-7) ring-1 focus:ring-(--accent-8) focus:ring-2"
+                      />
+                    ) : (
+                      <Text
+                        as="div"
+                        weight="medium"
+                        className="text-(--gray-12) text-[22px] leading-tight"
+                      >
+                        {project.name}
+                      </Text>
+                    )}
+                    <Text as="div" className="text-(--gray-11) text-[12px]">
+                      {project.tagline}
+                    </Text>
+                  </Box>
+                </Flex>
+                <Flex align="center" gap="2">
+                  {project.headline?.posthogUrl && !isEditingMeta && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        project.headline &&
+                        openUrlInBrowser(project.headline.posthogUrl)
+                      }
+                      className="flex h-8 items-center gap-1.5 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-1) px-3 text-(--gray-11) text-[12px] transition-colors hover:border-(--gray-7) hover:bg-(--gray-2) hover:text-(--gray-12)"
+                    >
+                      Open in PostHog
+                      <ArrowSquareOut size={11} weight="bold" />
+                    </button>
+                  )}
+                  {isEditingMeta && (
+                    <button
+                      type="button"
+                      onClick={cancelEditing}
+                      className="flex h-8 items-center gap-1.5 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-1) px-3 text-(--gray-11) text-[12px] transition-colors hover:border-(--gray-7) hover:bg-(--gray-2) hover:text-(--gray-12)"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={isEditingMeta ? commitAndExit : startEditing}
+                    title={isEditingMeta ? "Done" : "Edit details"}
+                    aria-label={isEditingMeta ? "Done editing" : "Edit details"}
+                    className={`flex h-8 w-8 items-center justify-center rounded-(--radius-2) border transition-colors ${
+                      isEditingMeta
+                        ? "border-(--accent-7) bg-(--accent-3) text-(--accent-11) hover:bg-(--accent-4)"
+                        : "border-(--gray-5) bg-(--gray-1) text-(--gray-11) hover:border-(--gray-7) hover:bg-(--gray-2) hover:text-(--gray-12)"
+                    }`}
+                  >
+                    {isEditingMeta ? (
+                      <Check size={16} weight="bold" />
+                    ) : (
+                      <DotsThree size={16} weight="bold" />
+                    )}
+                  </button>
+                </Flex>
               </Flex>
-              <Box className="min-w-0">
+
+              {isEditingMeta ? (
+                <textarea
+                  value={descDraft}
+                  onChange={(e) => setDescDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      commitAndExit();
+                    } else if (e.key === "Escape") {
+                      e.preventDefault();
+                      cancelEditing();
+                    }
+                  }}
+                  rows={6}
+                  className="block w-full resize-y rounded-(--radius-2) bg-(--gray-2) p-3 text-(--gray-12) text-[13px] leading-relaxed outline-none ring-(--accent-7) ring-1 focus:ring-(--accent-8) focus:ring-2"
+                />
+              ) : (
                 <Text
                   as="div"
-                  weight="medium"
-                  className="truncate text-(--gray-12) text-[22px]"
+                  className="max-w-[640px] whitespace-pre-wrap text-(--gray-11) text-[13px]"
                 >
-                  {project.name}
+                  {project.description}
                 </Text>
-                <Text as="div" className="text-(--gray-11) text-[12px]">
-                  {project.tagline}
-                </Text>
-              </Box>
-            </Flex>
-            <Flex align="center" gap="2">
-              {project.headline?.posthogUrl && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    project.headline &&
-                    openUrlInBrowser(project.headline.posthogUrl)
-                  }
-                  className="flex h-8 items-center gap-1.5 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-1) px-3 text-(--gray-11) text-[12px] transition-colors hover:border-(--gray-7) hover:bg-(--gray-2) hover:text-(--gray-12)"
-                >
-                  Open in PostHog
-                  <ArrowSquareOut size={11} weight="bold" />
-                </button>
               )}
-              <button
-                type="button"
-                className="flex h-8 w-8 items-center justify-center rounded-(--radius-2) border border-(--gray-5) bg-(--gray-1) text-(--gray-11) transition-colors hover:border-(--gray-7) hover:bg-(--gray-2) hover:text-(--gray-12)"
-              >
-                <DotsThree size={16} weight="bold" />
-              </button>
-            </Flex>
-          </Flex>
 
-          <Text as="div" className="max-w-[640px] text-(--gray-11) text-[13px]">
-            {project.description}
-          </Text>
-
-          <Flex align="center" gap="3" wrap="wrap">
-            <Flex align="center" gap="-1">
-              {project.members.map((m, i) => (
-                <Box
-                  key={m.name}
-                  title={m.name}
-                  className="-ml-1.5 flex h-6 w-6 items-center justify-center rounded-full border border-(--gray-1) bg-(--gray-4) text-(--gray-12) text-[10px] first:ml-0"
-                  style={{ zIndex: project.members.length - i }}
-                >
-                  {m.initials}
-                </Box>
-              ))}
-            </Flex>
-            <Text as="span" className="text-(--gray-10) text-[11px]">
-              {project.members.length} collaborators · {project.updatedLabel}
-            </Text>
-          </Flex>
-        </Flex>
-
-        {project.headline && (
-          <Box className="rounded-(--radius-3) border border-(--gray-5) bg-(--gray-1) p-4">
-            <Flex align="center" justify="between" gap="2">
-              <Flex align="center" gap="2">
-                <Box className="h-1.5 w-1.5 animate-pulse rounded-full bg-(--green-9)" />
-                <Text
-                  as="span"
-                  className="text-(--gray-10) text-[11px] uppercase tracking-wide"
-                >
-                  Live · {project.headline.label}
+              <Flex align="center" gap="3" wrap="wrap">
+                <Flex align="center" gap="-1">
+                  {project.members.map((m, i) => (
+                    <Box
+                      key={m.name}
+                      title={m.name}
+                      className="-ml-1.5 flex h-6 w-6 items-center justify-center rounded-full border border-(--gray-1) bg-(--gray-4) text-(--gray-12) text-[10px] first:ml-0"
+                      style={{ zIndex: project.members.length - i }}
+                    >
+                      {m.initials}
+                    </Box>
+                  ))}
+                </Flex>
+                <Text as="span" className="text-(--gray-10) text-[11px]">
+                  {project.members.length} collaborators ·{" "}
+                  {project.updatedLabel}
                 </Text>
               </Flex>
-              <button
-                type="button"
-                onClick={() =>
-                  project.headline &&
-                  openUrlInBrowser(project.headline.posthogUrl)
-                }
-                className="flex items-center gap-1 text-(--gray-10) text-[11px] hover:text-(--gray-12)"
-              >
-                View dashboard
-                <ArrowSquareOut size={10} weight="bold" />
-              </button>
             </Flex>
-            <Flex align="baseline" gap="3" className="mt-1">
-              <Text
-                as="span"
-                weight="medium"
-                className="text-(--gray-12) text-[32px] leading-tight"
-              >
-                {project.headline.value}
-              </Text>
-              <Text as="span" className="text-(--green-11) text-[12px]">
-                {project.headline.delta}
-              </Text>
-            </Flex>
-            <Box className="mt-2">
-              <Sparkline values={project.headline.sparkline} />
+
+            {project.headline && <HeadlineCard headline={project.headline} />}
+
+            <ActivityCard project={project} />
+
+            <Box className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <DashboardsCard project={project} />
+              <AutomationsCard project={project} />
+              <FilesCard project={project} />
             </Box>
-          </Box>
-        )}
 
-        <ProjectChatInput projectName={project.name} />
-
-        <Box className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <DashboardsCard project={project} />
-          <AutomationsCard project={project} />
-          <FilesCard project={project} />
-          <ActivityCard project={project} />
+            <PinnedSkillsCard project={project} />
+          </Flex>
         </Box>
 
-        <PinnedSkillsCard project={project} />
+        <Box
+          onMouseDown={handleResizeStart}
+          className="z-[1] w-[4px] shrink-0 cursor-col-resize border-l border-l-(--gray-6) bg-transparent transition-colors hover:bg-accent-6 active:bg-accent-8"
+        />
+
+        <Box
+          style={{ width: `${panelWidth}px` }}
+          className="h-full shrink-0 bg-(--gray-1)"
+        >
+          <ProjectChatPanel project={project} />
+        </Box>
       </Flex>
     </Box>
   );
