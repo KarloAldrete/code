@@ -1,5 +1,6 @@
 import { useNavigationStore } from "@stores/navigationStore";
 import { MemoryView } from "../../memory/components/MemoryView";
+import { useProjectChatPrewarmer } from "../hooks/useProjectChatPrewarmer";
 import { ScheduledTaskEditor } from "./ScheduledTaskEditor";
 import { ScheduledTasksList } from "./ScheduledTasksList";
 import { WorkDataSourcesView } from "./WorkDataSourcesView";
@@ -15,6 +16,10 @@ import { WorkTaskDetailView } from "./WorkTaskDetailView";
 export function WorkView() {
   const workView = useNavigationStore((s) => s.workView);
   const scheduledEditId = useNavigationStore((s) => s.workScheduledEditId);
+
+  // Speculatively connect the top recent/pinned project chats so the
+  // first interaction inside a project chat is instant.
+  useProjectChatPrewarmer();
 
   if (workView === "generate") {
     return <WorkGenerateView />;

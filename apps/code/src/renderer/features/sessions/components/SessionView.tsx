@@ -79,6 +79,11 @@ interface SessionViewProps {
   isActiveSession?: boolean;
   /** Hide the message input and permission UI — log-only view. */
   hideInput?: boolean;
+  /** When true, render the conversation area and PromptInput immediately
+   * — no full-screen spinner, no fade-in wall, no "Connecting to agent…"
+   * overlay. Submissions made before the session connects are routed to
+   * the queue (via `onSendPrompt`). Used by Business/project chats. */
+  instantInteractive?: boolean;
 }
 
 const DEFAULT_ERROR_MESSAGE =
@@ -133,6 +138,7 @@ export function SessionView({
   compact = false,
   isActiveSession = true,
   hideInput = false,
+  instantInteractive = false,
 }: SessionViewProps) {
   const showRawLogs = useShowRawLogs();
   const { setShowRawLogs } = useSessionViewActions();
@@ -573,7 +579,7 @@ export function SessionView({
                   </Box>
                 </Box>
               </>
-            ) : isInitializing ? (
+            ) : isInitializing && !instantInteractive ? (
               isCloud ? (
                 <CloudInitializingView cloudStatus={cloudStatus} />
               ) : (
@@ -664,24 +670,33 @@ export function SessionView({
                   </Box>
                 ) : (
                   <Box className="relative border-gray-4 border-t">
+                    {!instantInteractive && (
+                      <Box
+                        className={`absolute inset-0 flex min-h-[66px] items-center justify-center gap-2 transition-opacity duration-200 ${
+                          isRunning
+                            ? "pointer-events-none opacity-0"
+                            : "opacity-100"
+                        }`}
+                      >
+                        <Spinner
+                          size={28}
+                          className="animate-spin text-gray-9"
+                        />
+                        <Text color="gray" className="text-base">
+                          Connecting to agent...
+                        </Text>
+                      </Box>
+                    )}
                     <Box
-                      className={`absolute inset-0 flex min-h-[66px] items-center justify-center gap-2 transition-opacity duration-200 ${
-                        isRunning
-                          ? "pointer-events-none opacity-0"
-                          : "opacity-100"
-                      }`}
-                    >
-                      <Spinner size={28} className="animate-spin text-gray-9" />
-                      <Text color="gray" className="text-base">
-                        Connecting to agent...
-                      </Text>
-                    </Box>
-                    <Box
-                      className={`transition-all duration-300 ease-out ${
-                        isRunning
+                      className={
+                        instantInteractive
                           ? "translate-y-0 opacity-100"
-                          : "pointer-events-none translate-y-4 opacity-0"
-                      }`}
+                          : `transition-all duration-300 ease-out ${
+                              isRunning
+                                ? "translate-y-0 opacity-100"
+                                : "pointer-events-none translate-y-4 opacity-0"
+                            }`
+                      }
                     >
                       <Box
                         className={compact ? "p-1" : "mx-auto p-2"}
@@ -696,6 +711,19 @@ export function SessionView({
                             onDismiss={handleDismissPostHogWorkBanner}
                           />
                         )}
+                        {instantInteractive && !isRunning && (
+                          <Flex
+                            align="center"
+                            gap="1.5"
+                            className="px-2 pt-1 pb-0.5 text-(--gray-10) text-[11px]"
+                          >
+                            <Box
+                              className="h-1.5 w-1.5 animate-pulse rounded-full bg-(--accent-9)"
+                              aria-hidden
+                            />
+                            <Text as="span">Agent warming up — type away</Text>
+                          </Flex>
+                        )}
                         <PromptInput
                           ref={editorRef}
                           onTextChange={handlePromptTextChange}
@@ -706,7 +734,11 @@ export function SessionView({
                               : "Type a message... @ to mention files, ! for bash mode, / for skills"
                           }
                           enableTeamMentions={isWorkThread}
-                          disabled={!isRunning && !handoffInProgress}
+                          disabled={
+                            instantInteractive
+                              ? false
+                              : !isRunning && !handoffInProgress
+                          }
                           submitDisabledExternal={
                             handoffInProgress || !isOnline
                           }

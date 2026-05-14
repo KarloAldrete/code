@@ -33,6 +33,11 @@ export type OptimisticItem =
       content: string;
       timestamp: number;
       pinToTop?: boolean;
+      /** When true, the message was submitted before the session was
+       * connected. It is being held in a pre-connection queue and will be
+       * flushed once `status === "connected"`. The renderer dims the bubble
+       * and shows a spinner icon. */
+      pending?: boolean;
     }
   | {
       type: "skill_button_action";
@@ -460,6 +465,20 @@ export const sessionStoreSetters = {
       if (session) {
         session.optimisticItems = session.optimisticItems.filter(
           (item) => item.type !== "user_message" || item.pinToTop !== false,
+        );
+      }
+    });
+  },
+
+  /** Remove only `user_message` optimistic items flagged with `pending: true`.
+   * Used by the pre-connection queue flush in project chats once the session
+   * connects and the real submission is dispatched. */
+  clearPendingOptimisticItems: (taskRunId: string): void => {
+    useSessionStore.setState((state) => {
+      const session = state.sessions[taskRunId];
+      if (session) {
+        session.optimisticItems = session.optimisticItems.filter(
+          (item) => !(item.type === "user_message" && item.pending === true),
         );
       }
     });

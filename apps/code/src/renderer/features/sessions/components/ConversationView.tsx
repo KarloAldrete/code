@@ -191,6 +191,7 @@ export function ConversationView({
               attachments={item.attachments}
               timestamp={item.timestamp}
               animate={!initialItemIds.has(item.id)}
+              pending={item.pending}
               sourceUrl={
                 slackThreadUrl && item.id === firstUserMessageId
                   ? slackThreadUrl

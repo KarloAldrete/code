@@ -4,11 +4,12 @@ import {
   CaretDown,
   CaretUp,
   Check,
+  CircleNotch,
   Copy,
   File,
   SlackLogo,
 } from "@phosphor-icons/react";
-import { Box, Flex, IconButton } from "@radix-ui/themes";
+import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
 import { motion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -30,6 +31,8 @@ interface UserMessageProps {
   sourceUrl?: string;
   attachments?: UserMessageAttachment[];
   animate?: boolean;
+  /** When true, the message is queued waiting for the agent to connect. */
+  pending?: boolean;
 }
 
 function formatTimestamp(ts: number): string {
@@ -49,6 +52,7 @@ export function UserMessage({
   sourceUrl,
   attachments = [],
   animate = true,
+  pending = false,
 }: UserMessageProps) {
   const containsFileMentions = hasFileMentions(content);
   const showAttachmentChips = attachments.length > 0 && !containsFileMentions;
@@ -84,7 +88,7 @@ export function UserMessage({
       transition={animate ? { duration: 0.25, ease: "easeOut" } : undefined}
     >
       <Box
-        className="group/msg relative border-l-2 bg-gray-2 py-2 pl-3"
+        className={`group/msg relative border-l-2 bg-gray-2 py-2 pl-3 transition-opacity duration-300 ${pending ? "opacity-60" : "opacity-100"}`}
         style={{ borderColor: "var(--accent-9)" }}
       >
         <Box
@@ -154,6 +158,16 @@ export function UserMessage({
             <SlackLogo size={12} />
             <span>View Slack thread</span>
           </a>
+        )}
+        {pending && (
+          <Flex
+            align="center"
+            gap="1.5"
+            className="mt-1.5 text-(--gray-10) text-[11px]"
+          >
+            <CircleNotch size={11} weight="bold" className="animate-spin" />
+            <Text as="span">Sending when ready…</Text>
+          </Flex>
         )}
         <Box className="absolute top-1 right-1 flex select-none items-center gap-1.5 rounded-md bg-gray-2 py-0.5 pr-1 pl-2 opacity-0 shadow-sm transition-opacity group-hover/msg:opacity-100">
           {timestamp != null && (
