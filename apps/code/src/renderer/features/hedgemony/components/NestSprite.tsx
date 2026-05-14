@@ -6,7 +6,8 @@ import { useEffect, useState } from "react";
 import { AnimatedHedgehog } from "./AnimatedHedgehog";
 
 const NEST_SIZE = 140;
-const HOG_SIZE = 44;
+const HOG_SIZE_IDLE = 44;
+const HOG_SIZE_MOVING = 88;
 const SELECTION_RING_SIZE = NEST_SIZE + 24;
 const TERRITORY_SIZE = 220;
 const TERRITORY_SIZE_SELECTED = 260;
@@ -121,25 +122,34 @@ export function NestSprite({
                 transition={{ duration: 0.18, ease: "easeOut" }}
               />
             )}
-            <img
+            <motion.img
               src={nestImage}
               alt=""
               className="pointer-events-none absolute inset-0 select-none drop-shadow-md"
               style={{ width: NEST_SIZE, height: NEST_SIZE }}
               draggable={false}
+              animate={{
+                opacity: isMoving ? 0 : 1,
+                scale: isMoving ? 0.85 : 1,
+              }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
             />
             {showResident && (
-              <div
+              <motion.div
                 className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute"
-                style={{ left: "50%", top: "72%" }}
+                animate={{
+                  left: "50%",
+                  top: isMoving ? "50%" : "72%",
+                }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
               >
                 <AnimatedHedgehog
                   animation={isMoving ? WALK_ANIMATION : IDLE_ANIMATION}
                   fps={isMoving ? 14 : 8}
                   facing={facing}
-                  size={HOG_SIZE}
+                  size={isMoving ? HOG_SIZE_MOVING : HOG_SIZE_IDLE}
                 />
-              </div>
+              </motion.div>
             )}
           </div>
           <div className="mt-1 max-w-[160px] truncate rounded-(--radius-2) bg-(--gray-3) px-2 py-0.5 font-medium text-(--gray-12) text-[12px] shadow-sm">
