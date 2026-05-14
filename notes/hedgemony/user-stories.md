@@ -310,7 +310,7 @@ The only remaining product work to call v1 done is the `propose_completion` tool
 
 **As an operator,** I want stacked hoglet PRs to rebase automatically when their parent merges, so I'm not manually unblocking a chain every time something lands.
 
-**Status: Done.** `hedgemony_pr_dependency` edges (`pending` / `satisfied` / `broken`), `PrGraphService` with ~60s rebase polling, hedgehog tools `link_pr_dependency` / `unlink_pr_dependency` / `rebase_child` wired through `worktree-manager`, and `NestPrGraphOverlay` draws the arrows.
+**Status: Done.** `hedgemony_pr_dependency` edges (`pending` / `satisfied` / `broken`), `PrGraphService` with ~60s rebase polling, and hedgehog tools `link_pr_dependency` / `unlink_pr_dependency` / `rebase_child` wired through `worktree-manager`. Dependencies are surfaced through the detail panels — not by drawing arrows on the map (see the visual rule in `spec.md`).
 
 **In scope**
 
@@ -318,7 +318,7 @@ The only remaining product work to call v1 done is the `propose_completion` tool
 - `PrGraphService`; new hedgehog tools `link_pr_dependency`, `unlink_pr_dependency`, `rebase_child`.
 - Rebases run through the existing `worktree-manager`.
 - Conflict path: failed rebase routes a "resolve and continue" prompt back to the child hoglet.
-- Map UI: arrows between hoglet sprites; edge color tracks state.
+- Dependency state is surfaced in the hoglet/nest detail panels. **No connecting lines (dashed, dotted, or solid) between hoglet sprites on the map** — those looked terrible cutting across the scenery; route the signal through the panels or sprite badges instead.
 
 **Out of scope**
 

@@ -18,8 +18,8 @@ function applyWatchEvent(nestId: string, event: PrGraphWatchEvent): void {
  * opens a watch subscription, and returns a disposer.
  *
  * Mounted from `HedgemonyMapView` (or `NestBroodCluster`) per active nest so
- * `NestPrGraphOverlay` can read edges out of `usePrGraphStore` without
- * orchestrating its own fetch lifecycle.
+ * detail panels and sprite badges can read edges out of `usePrGraphStore`
+ * without orchestrating their own fetch lifecycle.
  */
 export function initializePrGraphForNest(nestId: string): () => void {
   let disposed = false;

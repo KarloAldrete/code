@@ -89,6 +89,10 @@ Unit motion should read as an RTS unit traversing terrain, not as a UI widget an
 
 While moving, the unit plays its **walk** sprite animation and the **facing direction flips from the sign of `dx`**; on arrival it returns to **idle**. Static sprites mid-flight kill the RTS read.
 
+### Visual rules
+
+- **Never draw connecting lines between hoglets (or between hoglets and nests).** That includes dashed, dotted, and solid SVG/CSS lines layered over the map for PR dependencies, parent/child relationships, prickle membership, or any other relational signal. They cut across the scenery, fight the hoglet sprites for attention, and look like total shit. Surface those relationships through the detail panels, sprite badges, or selection rings instead. We tried it once with `NestPrGraphOverlay` for PR dependency arrows and ripped it back out — don't reintroduce it.
+
 ---
 
 ## Persistence and runtime

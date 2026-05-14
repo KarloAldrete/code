@@ -71,7 +71,6 @@ import { HogletDetailPanel } from "./HogletDetailPanel";
 import { MultiHogletDetailPanel } from "./MultiHogletDetailPanel";
 import { NestBroodCluster } from "./NestBroodCluster";
 import { NestDetailPanel } from "./NestDetailPanel";
-import { NestPrGraphOverlay } from "./NestPrGraphOverlay";
 import { type NestCreationMode, PlaceNestDialog } from "./PlaceNestDialog";
 import { SpawnHogletPanel } from "./SpawnHogletPanel";
 import { WildHogletFlock } from "./WildHogletFlock";
@@ -969,9 +968,6 @@ export function HedgemonyMapView() {
           setSelection({ type: "hedgehouse" });
         }}
       >
-        {nests.map((nest) => (
-          <NestPrGraphOverlay key={`pr-graph-${nest.id}`} nest={nest} />
-        ))}
         {nests.map((nest) => (
           <NestBroodCluster
             key={nest.id}
