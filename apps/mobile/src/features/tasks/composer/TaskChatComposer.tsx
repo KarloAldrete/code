@@ -10,7 +10,13 @@ import {
   ShieldCheck,
   Stop,
 } from "phosphor-react-native";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -148,8 +154,13 @@ export function TaskChatComposer({
   const [message, setMessage] = useState("");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
+
+  const appendTranscript = useCallback((transcript: string) => {
+    setMessage((prev) => (prev ? `${prev} ${transcript}` : transcript));
+  }, []);
+
   const { status, startRecording, stopRecording, cancelRecording } =
-    useVoiceRecording();
+    useVoiceRecording({ onTranscript: appendTranscript });
 
   const isRecording = status === "recording";
   const isTranscribing = status === "transcribing";
@@ -191,10 +202,7 @@ export function TaskChatComposer({
 
   const handleMicPress = async () => {
     if (isRecording) {
-      const transcript = await stopRecording();
-      if (transcript) {
-        setMessage((prev) => (prev ? `${prev} ${transcript}` : transcript));
-      }
+      await stopRecording();
     } else if (!isTranscribing) {
       await startRecording();
     }

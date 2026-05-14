@@ -5,11 +5,13 @@ import {
   BrainIcon,
   CaretDown,
   GithubLogo,
+  MicrophoneIcon,
   PaperclipIcon,
   PauseIcon,
   PencilIcon,
   Robot,
   ShieldCheck,
+  StopIcon,
 } from "phosphor-react-native";
 import { useCallback, useState } from "react";
 import {
@@ -26,6 +28,7 @@ import {
 import Animated, { runOnJS, useAnimatedStyle } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useVoiceRecording } from "@/features/chat";
 import { createTask, runTaskInCloud } from "@/features/tasks/api";
 import { GitHubConnectionPrompt } from "@/features/tasks/components/GitHubConnectionPrompt";
 import { GitHubLoadNotice } from "@/features/tasks/components/GitHubLoadNotice";
@@ -170,6 +173,33 @@ export default function NewTaskScreen() {
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
 
+  const appendTranscript = useCallback((transcript: string) => {
+    setPrompt((prev) => (prev ? `${prev} ${transcript}` : transcript));
+  }, []);
+
+  const {
+    status: voiceStatus,
+    startRecording,
+    stopRecording,
+    cancelRecording,
+  } = useVoiceRecording({ onTranscript: appendTranscript });
+  const isRecording = voiceStatus === "recording";
+  const isTranscribing = voiceStatus === "transcribing";
+
+  const handleMicPress = useCallback(async () => {
+    if (isRecording) {
+      await stopRecording();
+    } else if (!isTranscribing) {
+      await startRecording();
+    }
+  }, [isRecording, isTranscribing, startRecording, stopRecording]);
+
+  const handleMicLongPress = useCallback(async () => {
+    if (isRecording) {
+      await cancelRecording();
+    }
+  }, [isRecording, cancelRecording]);
+
   const addAttachment = useCallback(
     async (picker: () => Promise<PendingAttachment | null>) => {
       try {
@@ -267,10 +297,9 @@ export default function NewTaskScreen() {
     signalReport,
   ]);
 
+  const hasContent = !!prompt.trim() || attachments.length > 0;
   const canSubmit =
-    (!!prompt.trim() || attachments.length > 0) &&
-    isRepositorySelectionComplete(selection) &&
-    !creating;
+    hasContent && isRepositorySelectionComplete(selection) && !creating;
   const showReasoningPill = modelSupportsReasoning(model);
 
   if (isLoading && hasGithubIntegration === null) {
@@ -476,18 +505,44 @@ export default function NewTaskScreen() {
                 </ScrollView>
 
                 <Pressable
-                  onPress={handleCreateTask}
-                  disabled={!canSubmit}
+                  onPress={
+                    isTranscribing
+                      ? undefined
+                      : isRecording
+                        ? handleMicPress
+                        : hasContent
+                          ? handleCreateTask
+                          : handleMicPress
+                  }
+                  onLongPress={handleMicLongPress}
+                  disabled={
+                    isTranscribing || (hasContent && !canSubmit && !isRecording)
+                  }
+                  accessibilityLabel={
+                    isRecording
+                      ? "Stop recording"
+                      : hasContent
+                        ? "Create task"
+                        : "Record voice"
+                  }
                   className={`h-9 w-9 items-center justify-center rounded-lg ${
-                    canSubmit ? "bg-gray-12" : "bg-gray-5"
+                    canSubmit || isRecording || (!hasContent && !isTranscribing)
+                      ? "bg-gray-12"
+                      : "bg-gray-5"
                   }`}
                 >
-                  {creating ? (
+                  {creating || isTranscribing ? (
                     <ActivityIndicator
                       size="small"
                       color={themeColors.background}
                     />
-                  ) : (
+                  ) : isRecording ? (
+                    <StopIcon
+                      size={18}
+                      color={themeColors.status.error}
+                      weight="fill"
+                    />
+                  ) : hasContent ? (
                     <ArrowUp
                       size={18}
                       color={
@@ -495,6 +550,8 @@ export default function NewTaskScreen() {
                       }
                       weight="bold"
                     />
+                  ) : (
+                    <MicrophoneIcon size={18} color={themeColors.background} />
                   )}
                 </Pressable>
               </View>
