@@ -16,11 +16,18 @@ import {
 import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useReducer } from "react";
+import {
+  buildSimpleTranscript,
+  initialPlaceNestDialogState,
+  type NestCreationMode,
+  placeNestDialogReducer,
+  suggestName,
+} from "./placeNestDialogReducer";
 
 const log = logger.scope("place-nest-dialog");
 
-export type NestCreationMode = "guided" | "simple";
+export type { NestCreationMode };
 
 export interface PlaceNestDialogProps {
   open: boolean;
@@ -47,39 +54,26 @@ export function PlaceNestDialog({
   onClose,
   onCreated,
 }: PlaceNestDialogProps) {
-  const [initialGoal, setInitialGoal] = useState("");
-  const [answer, setAnswer] = useState("");
-  const [transcript, setTranscript] = useState<GoalDraftTranscriptMessage[]>(
-    [],
+  const [state, dispatch] = useReducer(placeNestDialogReducer, null, () =>
+    initialPlaceNestDialogState(initialMode),
   );
-  const [draft, setDraft] = useState<GoalSpecDraft | null>(null);
-  const [name, setName] = useState("");
-  const [goalPrompt, setGoalPrompt] = useState("");
-  const [definitionOfDone, setDefinitionOfDone] = useState("");
-  const [simpleMode, setSimpleMode] = useState(initialMode === "simple");
-  const [drafting, setDrafting] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [lastDraftAttempt, setLastDraftAttempt] = useState<{
-    transcript: GoalDraftTranscriptMessage[];
-    currentDraft?: GoalSpecDraft;
-  } | null>(null);
+  const {
+    initialGoal,
+    answer,
+    transcript,
+    draft,
+    name,
+    goalPrompt,
+    definitionOfDone,
+    simpleMode,
+    drafting,
+    submitting,
+    error,
+    lastDraftAttempt,
+  } = state;
 
   useEffect(() => {
-    if (open) {
-      setInitialGoal("");
-      setAnswer("");
-      setTranscript([]);
-      setDraft(null);
-      setName("");
-      setGoalPrompt("");
-      setDefinitionOfDone("");
-      setSimpleMode(initialMode === "simple");
-      setError(null);
-      setLastDraftAttempt(null);
-      setDrafting(false);
-      setSubmitting(false);
-    }
+    if (open) dispatch({ type: "reset", mode: initialMode });
   }, [open, initialMode]);
 
   const roundedMapX = Math.round(mapX);
@@ -95,45 +89,38 @@ export function PlaceNestDialog({
     nextTranscript: GoalDraftTranscriptMessage[],
     currentDraft?: GoalSpecDraft,
   ) => {
-    setDrafting(true);
-    setError(null);
-    setLastDraftAttempt({ transcript: nextTranscript, currentDraft });
+    dispatch({
+      type: "draftRequested",
+      transcript: nextTranscript,
+      currentDraft,
+    });
     try {
       const response = await trpcClient.hedgemony.goalDraft.respond.mutate({
         transcript: nextTranscript,
         currentDraft,
-        mapContext: {
-          mapX: roundedMapX,
-          mapY: roundedMapY,
-        },
+        mapContext: { mapX: roundedMapX, mapY: roundedMapY },
       });
 
       if (response.kind === "ask_question") {
-        setTranscript([
-          ...nextTranscript,
-          { role: "assistant", content: response.question },
-        ]);
-        setAnswer("");
-        setLastDraftAttempt(null);
+        dispatch({
+          type: "draftQuestionReceived",
+          transcript: nextTranscript,
+          question: response.question,
+        });
         return;
       }
 
-      const nextDraft = response.draft;
-      setDraft(nextDraft);
-      setName(nextDraft.name);
-      setGoalPrompt(nextDraft.goalPrompt);
-      setDefinitionOfDone(nextDraft.definitionOfDone);
-      setTranscript([
-        ...nextTranscript,
-        { role: "assistant", content: formatDraftForTranscript(nextDraft) },
-      ]);
-      setAnswer("");
-      setLastDraftAttempt(null);
+      dispatch({
+        type: "draftProposed",
+        transcript: nextTranscript,
+        draft: response.draft,
+      });
     } catch (e) {
       log.error("Failed to draft goal spec", { error: e });
-      setError(e instanceof Error ? e.message : "Failed to draft goal spec");
-    } finally {
-      setDrafting(false);
+      dispatch({
+        type: "draftFailed",
+        message: e instanceof Error ? e.message : "Failed to draft goal spec",
+      });
     }
   };
 
@@ -148,41 +135,21 @@ export function PlaceNestDialog({
   const handleStartDraft = () => {
     const content = initialGoal.trim();
     if (!content || drafting) return;
-    const nextTranscript: GoalDraftTranscriptMessage[] = [
-      { role: "user", content },
-    ];
-    setTranscript(nextTranscript);
-    void requestDraft(nextTranscript);
+    void requestDraft([{ role: "user", content }]);
   };
 
   const handleAnswer = () => {
     const content = answer.trim();
     if (!content || drafting) return;
-    const nextTranscript: GoalDraftTranscriptMessage[] = [
-      ...transcript,
-      { role: "user", content },
-    ];
-    setTranscript(nextTranscript);
-    void requestDraft(nextTranscript, draft ?? undefined);
-  };
-
-  const handleToggleSimpleMode = () => {
-    if (!simpleMode) {
-      const fallbackGoal = goalPrompt.trim() || initialGoal.trim();
-      if (!goalPrompt.trim() && fallbackGoal) setGoalPrompt(fallbackGoal);
-    } else {
-      const fallbackGoal = goalPrompt.trim();
-      if (!name.trim() && fallbackGoal) setName(suggestName(fallbackGoal));
-    }
-    setSimpleMode((value) => !value);
-    setError(null);
-    setLastDraftAttempt(null);
+    void requestDraft(
+      [...transcript, { role: "user", content }],
+      draft ?? undefined,
+    );
   };
 
   const handleSubmit = async () => {
     if (!canSubmit || submitting) return;
-    setSubmitting(true);
-    setError(null);
+    dispatch({ type: "submitRequested" });
     try {
       const trimmedGoalPrompt = goalPrompt.trim();
       const effectiveName = simpleMode
@@ -205,8 +172,10 @@ export function PlaceNestDialog({
       onClose();
     } catch (e) {
       log.error("Failed to create nest", { error: e });
-      setError(e instanceof Error ? e.message : "Failed to create nest");
-      setSubmitting(false);
+      dispatch({
+        type: "submitFailed",
+        message: e instanceof Error ? e.message : "Failed to create nest",
+      });
     }
   };
 
@@ -224,7 +193,13 @@ export function PlaceNestDialog({
               <SimpleFormFields
                 goalPrompt={goalPrompt}
                 disabled={submitting}
-                onGoalPromptChange={setGoalPrompt}
+                onGoalPromptChange={(value) =>
+                  dispatch({
+                    type: "fieldChanged",
+                    field: "goalPrompt",
+                    value,
+                  })
+                }
               />
             ) : (
               <GoalDraftFlow
@@ -237,19 +212,41 @@ export function PlaceNestDialog({
                 definitionOfDone={definitionOfDone}
                 drafting={drafting}
                 submitting={submitting}
-                onInitialGoalChange={setInitialGoal}
-                onAnswerChange={setAnswer}
+                onInitialGoalChange={(value) =>
+                  dispatch({
+                    type: "fieldChanged",
+                    field: "initialGoal",
+                    value,
+                  })
+                }
+                onAnswerChange={(value) =>
+                  dispatch({ type: "fieldChanged", field: "answer", value })
+                }
                 onStartDraft={handleStartDraft}
                 onAnswer={handleAnswer}
-                onNameChange={setName}
-                onGoalPromptChange={setGoalPrompt}
-                onDefinitionOfDoneChange={setDefinitionOfDone}
+                onNameChange={(value) =>
+                  dispatch({ type: "fieldChanged", field: "name", value })
+                }
+                onGoalPromptChange={(value) =>
+                  dispatch({
+                    type: "fieldChanged",
+                    field: "goalPrompt",
+                    value,
+                  })
+                }
+                onDefinitionOfDoneChange={(value) =>
+                  dispatch({
+                    type: "fieldChanged",
+                    field: "definitionOfDone",
+                    value,
+                  })
+                }
               />
             )}
 
             <button
               type="button"
-              onClick={handleToggleSimpleMode}
+              onClick={() => dispatch({ type: "toggleSimpleMode" })}
               className="self-start text-(--accent-11) text-[13px] hover:text-(--accent-12)"
               disabled={submitting || drafting}
             >
@@ -564,33 +561,4 @@ function LabeledField({
       {children}
     </div>
   );
-}
-
-function formatDraftForTranscript(draft: GoalSpecDraft): string {
-  return [
-    "Proposed spec",
-    "",
-    `Name: ${draft.name}`,
-    `Summary: ${draft.summary}`,
-    `Spec:\n${draft.goalPrompt}`,
-    `Definition of done: ${draft.definitionOfDone}`,
-  ].join("\n");
-}
-
-function suggestName(goal: string): string {
-  const firstLine = goal.split("\n")[0].trim();
-  return firstLine.length > 80 ? `${firstLine.slice(0, 77)}...` : firstLine;
-}
-
-function buildSimpleTranscript(input: {
-  goalPrompt: string;
-}): GoalDraftTranscriptMessage[] {
-  return [
-    {
-      role: "user",
-      content: ["Created through simple form.", "", input.goalPrompt].join(
-        "\n",
-      ),
-    },
-  ];
 }
