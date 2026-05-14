@@ -11,6 +11,7 @@ import {
   useHogletPositionStore,
 } from "../stores/hogletPositionStore";
 import { selectTaskSummary, useHogletStore } from "../stores/hogletStore";
+import { useRegisterHogletVisualPosition } from "../utils/hogletVisualPositions";
 import { HOGLET_RADIUS } from "../utils/worldObstacles";
 import { AnimatedHedgehog } from "./AnimatedHedgehog";
 import { HogletHammer } from "./HogletHammer";
@@ -64,6 +65,7 @@ export function WildHoglet({
     y,
     walkPath ?? computedPath,
   );
+  useRegisterHogletVisualPosition(hoglet.id, motionX, motionY);
 
   const prStatusQuery = useQuery(
     trpc.workspace.getTaskPrStatus.queryOptions(

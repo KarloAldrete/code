@@ -21,6 +21,15 @@ export const HEDGEHOUSE_OBSTACLE_RADIUS = 100;
 // clear. Lives here so the right-click handler, brood re-layout, and wild
 // re-layout all inflate obstacles by the same amount.
 export const HOGLET_RADIUS = 24;
+// The builder sprite is larger than hoglets (72px). Treat its center as a
+// solid circle so hoglets do not path directly through it.
+export const BUILDER_OBSTACLE_RADIUS = 36;
+
+export interface HogletObstaclePosition {
+  hogletId: string;
+  x: number;
+  y: number;
+}
 
 interface WorldObstacleOptions {
   /** A nest the builder is en-route to construct. Not in `nests` yet, but
@@ -51,4 +60,17 @@ export function worldObstacles(
     radius: HEDGEHOUSE_OBSTACLE_RADIUS,
   });
   return obstacles;
+}
+
+export function hogletObstacles(
+  positions: HogletObstaclePosition[],
+  excludeIds: ReadonlySet<string> = new Set(),
+): Obstacle[] {
+  return positions
+    .filter((pos) => !excludeIds.has(pos.hogletId))
+    .map((pos) => ({
+      x: pos.x,
+      y: pos.y,
+      radius: HOGLET_RADIUS,
+    }));
 }

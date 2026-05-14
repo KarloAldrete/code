@@ -6,7 +6,12 @@ import {
   useRef,
   useState,
 } from "react";
-import { findPath, snapGoal, type Vec2 } from "../utils/pathfinding";
+import {
+  findPath,
+  type Obstacle,
+  snapGoal,
+  type Vec2,
+} from "../utils/pathfinding";
 import { worldObstacles } from "../utils/worldObstacles";
 
 const DEFAULT_BUILD_ANIMATION_MS = 1500;
@@ -64,6 +69,7 @@ export interface BuilderCoordinator {
     target: Vec2,
     onArrive: "idle" | "build",
     buildingFor?: Nest,
+    extraObstacles?: Obstacle[],
   ) => Vec2;
   /** Called by BuilderSprite when it reaches the final waypoint. */
   handleArrive: () => void;
@@ -124,7 +130,12 @@ export function useBuilderCoordinator({
   }, [buildAnimationMs, commitPendingBuild]);
 
   const startWalk = useCallback(
-    (target: Vec2, onArrive: "idle" | "build", buildingFor?: Nest): Vec2 => {
+    (
+      target: Vec2,
+      onArrive: "idle" | "build",
+      buildingFor?: Nest,
+      extraObstacles: Obstacle[] = [],
+    ): Vec2 => {
       if (buildingTimerRef.current) {
         clearTimeout(buildingTimerRef.current);
         buildingTimerRef.current = null;
@@ -155,7 +166,10 @@ export function useBuilderCoordinator({
         return from;
       }
       const pendingObstacle = buildingFor ?? pendingBuildRef.current;
-      const obstacles = worldObstacles(nests, { pendingNest: pendingObstacle });
+      const obstacles = [
+        ...worldObstacles(nests, { pendingNest: pendingObstacle }),
+        ...extraObstacles,
+      ];
       const snapped = snapGoal(from, target, obstacles);
       const plan = findPath(from, snapped, obstacles);
       const resolvedGoal = plan[plan.length - 1] ?? snapped;

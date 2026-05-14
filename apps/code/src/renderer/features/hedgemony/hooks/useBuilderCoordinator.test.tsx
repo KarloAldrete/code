@@ -180,6 +180,18 @@ describe("useBuilderCoordinator", () => {
     }
   });
 
+  it("paths around extra unit obstacles supplied by the caller", () => {
+    const { result } = renderHook(() =>
+      useBuilderCoordinator({ nests: [], initialPos: { x: 0, y: 0 } }),
+    );
+    act(() => {
+      result.current.startWalk({ x: 400, y: 0 }, "idle", undefined, [
+        { x: 200, y: 0, radius: 24 },
+      ]);
+    });
+    expect(result.current.path.length).toBeGreaterThanOrEqual(3);
+  });
+
   it("handleArrive is a no-op when not walking", () => {
     const { result } = renderHook(() => useBuilderCoordinator({ nests: [] }));
     act(() => {

@@ -36,8 +36,14 @@ import { selectHogletById, useHogletStore } from "../stores/hogletStore";
 import { selectNests, useNestStore } from "../stores/nestStore";
 import { useSpawnDialogStore } from "../stores/spawnDialogStore";
 import { collectHogletWorldPositions } from "../utils/hogletPositions";
-import { findPath } from "../utils/pathfinding";
-import { HOGLET_RADIUS, worldObstacles } from "../utils/worldObstacles";
+import { applyHogletVisualPositions } from "../utils/hogletVisualPositions";
+import { findPath, type Obstacle } from "../utils/pathfinding";
+import {
+  BUILDER_OBSTACLE_RADIUS,
+  hogletObstacles,
+  HOGLET_RADIUS,
+  worldObstacles,
+} from "../utils/worldObstacles";
 import { BuilderCommandPanel } from "./BuilderCommandPanel";
 import { DyingHogletLayer } from "./DyingHogletLayer";
 import { HedgehouseCommandPanel } from "./HedgehouseCommandPanel";
@@ -581,6 +587,41 @@ export function HedgemonyMapView() {
     }, 600);
   }, []);
 
+  const collectLiveHogletPositions = useCallback(() => {
+    return applyHogletVisualPositions(
+      collectHogletWorldPositions(
+        selectNests(useNestStore.getState()),
+        useHogletStore.getState().byBucket,
+        useHogletPositionStore.getState().positions,
+      ),
+    );
+  }, []);
+
+  const unitObstacles = useCallback(
+    ({
+      excludeHogletIds,
+      includeBuilder,
+    }: {
+      excludeHogletIds?: ReadonlySet<string>;
+      includeBuilder: boolean;
+    }): Obstacle[] => {
+      const obstacles = hogletObstacles(
+        collectLiveHogletPositions(),
+        excludeHogletIds,
+      );
+      if (includeBuilder) {
+        const pos = builder.visualPosRef.current;
+        obstacles.push({
+          x: pos.x,
+          y: pos.y,
+          radius: BUILDER_OBSTACLE_RADIUS,
+        });
+      }
+      return obstacles;
+    },
+    [builder.visualPosRef, collectLiveHogletPositions],
+  );
+
   const handleMapClick = (x: number, y: number) => {
     switch (mode.kind) {
       case "relocatingNest": {
@@ -622,16 +663,14 @@ export function HedgemonyMapView() {
 
     if (selection.type === "hoglets") {
       const positionStore = useHogletPositionStore.getState();
-      const obstacles = worldObstacles(nests);
+      const staticObstacles = worldObstacles(nests);
       // Resolve each hoglet's landing point against its current position so a
       // click on the far side of an obstacle routes around it rather than
       // clipping through. Read positions via the same helper box-select uses
-      // so the "current" position matches what's rendered.
-      const positionsNow = collectHogletWorldPositions(
-        nests,
-        useHogletStore.getState().byBucket,
-        positionStore.positions,
-      );
+      // so the "current" position matches what's rendered. The visual overlay
+      // is important for rapid re-orders: persisted positions already point
+      // at the previous destination while the sprite may still be mid-walk.
+      const positionsNow = collectLiveHogletPositions();
       const currentById = new Map(
         positionsNow.map((p) => [p.hogletId, { x: p.x, y: p.y }]),
       );
@@ -654,6 +693,13 @@ export function HedgemonyMapView() {
       let resolvedY = targetY;
       for (const slot of desired) {
         const from = currentById.get(slot.id) ?? { x: slot.x, y: slot.y };
+        const obstacles = [
+          ...staticObstacles,
+          ...unitObstacles({
+            excludeHogletIds: new Set([slot.id]),
+            includeBuilder: true,
+          }),
+        ];
         const path = findPath(
           from,
           { x: slot.x, y: slot.y },
@@ -669,7 +715,12 @@ export function HedgemonyMapView() {
         }
       }
       if (selection.includeBuilder) {
-        builder.startWalk({ x: targetX, y: targetY }, "idle");
+        builder.startWalk(
+          { x: targetX, y: targetY },
+          "idle",
+          undefined,
+          unitObstacles({ includeBuilder: false }),
+        );
       }
       playSfx("order");
       playVoice("hoglet:order_move");
@@ -679,7 +730,12 @@ export function HedgemonyMapView() {
 
     playSfx("order");
     playVoice("hoglet:order_move");
-    const resolved = builder.startWalk({ x: targetX, y: targetY }, "idle");
+    const resolved = builder.startWalk(
+      { x: targetX, y: targetY },
+      "idle",
+      undefined,
+      unitObstacles({ includeBuilder: false }),
+    );
     flashMoveMarker(Math.round(resolved.x), Math.round(resolved.y));
   };
 
@@ -688,10 +744,8 @@ export function HedgemonyMapView() {
       const nestsNow = selectNests(useNestStore.getState());
       const byBucket = useHogletStore.getState().byBucket;
       const overrides = useHogletPositionStore.getState().positions;
-      const positions = collectHogletWorldPositions(
-        nestsNow,
-        byBucket,
-        overrides,
+      const positions = applyHogletVisualPositions(
+        collectHogletWorldPositions(nestsNow, byBucket, overrides),
       );
       const hit = positions
         .filter((p) => p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY)
@@ -1003,6 +1057,7 @@ export function HedgemonyMapView() {
             { x: created.mapX, y: created.mapY },
             "build",
             created,
+            unitObstacles({ includeBuilder: false }),
           );
         }}
       />

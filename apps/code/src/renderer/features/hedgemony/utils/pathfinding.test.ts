@@ -81,6 +81,24 @@ describe("findPath", () => {
     expect(dEnd).toBeLessThan(inflatedRadius(obstacle) + 5);
   });
 
+  it("snaps a hoglet target off another hoglet obstacle", () => {
+    const hogletRadius = 24;
+    const from = { x: -200, y: 0 };
+    const occupied = { x: 0, y: 0 };
+    const obstacle: Obstacle = {
+      x: occupied.x,
+      y: occupied.y,
+      radius: hogletRadius,
+    };
+
+    const path = findPath(from, occupied, [obstacle], hogletRadius);
+
+    const end = path[path.length - 1];
+    expect(distance(end, occupied)).toBeGreaterThanOrEqual(
+      hogletRadius * 2 - 1e-6,
+    );
+  });
+
   it("returns a reachable approach point when target is encircled", () => {
     const from = { x: -400, y: 0 };
     const to = { x: 300, y: 0 };
