@@ -93,3 +93,14 @@ export const selectTaskSummary =
   (taskId: string) =>
   (state: HogletStore): Schemas.TaskSummary | null =>
     state.taskSummaries[taskId] ?? null;
+
+export const selectHogletById =
+  (hogletId: string | null) =>
+  (state: HogletStore): Hoglet | null => {
+    if (!hogletId) return null;
+    for (const bucket of Object.values(state.byBucket)) {
+      const match = bucket.find((h) => h.id === hogletId);
+      if (match) return match;
+    }
+    return null;
+  };

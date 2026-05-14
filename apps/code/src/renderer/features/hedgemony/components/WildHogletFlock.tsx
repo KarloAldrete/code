@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import { selectWildHoglets, useHogletStore } from "../stores/hogletStore";
 import { WildHoglet } from "./WildHoglet";
 
@@ -13,6 +14,11 @@ import { WildHoglet } from "./WildHoglet";
  */
 const RING_INNER = 380;
 const RING_THICKNESS = 320;
+
+interface WildHogletFlockProps {
+  selectedHogletId: string | null;
+  onHogletSelect: (hogletId: string) => void;
+}
 
 function hashToUnit(id: string, seed: number): number {
   let h = 2166136261 ^ seed;
@@ -31,8 +37,12 @@ function wildPosition(hogletId: string): { x: number; y: number } {
   };
 }
 
-export function WildHogletFlock() {
+export function WildHogletFlock({
+  selectedHogletId,
+  onHogletSelect,
+}: WildHogletFlockProps) {
   const hoglets = useHogletStore(selectWildHoglets);
+  const positionOverrides = useHogletPositionStore((s) => s.positions);
 
   const ordered = useMemo(
     () =>
@@ -48,7 +58,8 @@ export function WildHogletFlock() {
   return (
     <>
       {ordered.map((hoglet, index) => {
-        const { x, y } = wildPosition(hoglet.id);
+        const override = positionOverrides[hoglet.id];
+        const { x, y } = override ?? wildPosition(hoglet.id);
         return (
           <WildHoglet
             key={hoglet.id}
@@ -56,6 +67,8 @@ export function WildHogletFlock() {
             index={index}
             x={x}
             y={y}
+            selected={selectedHogletId === hoglet.id}
+            onSelect={onHogletSelect}
           />
         );
       })}

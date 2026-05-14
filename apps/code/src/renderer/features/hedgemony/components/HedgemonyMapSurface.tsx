@@ -54,6 +54,7 @@ interface HedgemonyMapSurfaceProps {
   builderPositionRef?: MutableRefObject<Vec2>;
   builderSelected: boolean;
   builderAnimation: BuilderAnimation;
+  hogletSelected: boolean;
   pendingNest: Nest | null;
   buildMode: boolean;
   moveMarker: MoveMarker | null;
@@ -80,6 +81,7 @@ export function HedgemonyMapSurface({
   builderPositionRef,
   builderSelected,
   builderAnimation,
+  hogletSelected,
   pendingNest,
   buildMode,
   moveMarker,
@@ -301,7 +303,7 @@ export function HedgemonyMapSurface({
     if (!start || !onMapClick) return;
     if (
       (event.target as HTMLElement).closest(
-        "[data-hedgemony-nest], [data-hedgemony-hedgehouse]",
+        "[data-hedgemony-nest], [data-hedgemony-hedgehouse], [data-hedgemony-hoglet]",
       ) &&
       !placementMode
     ) {
@@ -521,6 +523,11 @@ export function HedgemonyMapSurface({
       {!placementMode && builderSelected && (
         <div className="-translate-x-1/2 pointer-events-none absolute top-3 left-1/2 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2) px-3 py-1 text-(--gray-11) text-[12px] shadow-sm">
           Right-click the map to move the builder
+        </div>
+      )}
+      {!placementMode && hogletSelected && (
+        <div className="-translate-x-1/2 pointer-events-none absolute top-3 left-1/2 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2) px-3 py-1 text-(--gray-11) text-[12px] shadow-sm">
+          Right-click the map to move this hoglet
         </div>
       )}
     </div>

@@ -1,12 +1,8 @@
 import { useSortable } from "@dnd-kit/react/sortable";
-import { getAuthenticatedClient } from "@features/auth/hooks/authClient";
 import type { Hoglet } from "@main/services/hedgemony/schemas";
 import { Tooltip } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
-import type { Task } from "@shared/types";
-import { useNavigationStore } from "@stores/navigationStore";
 import { useQuery } from "@tanstack/react-query";
-import { logger } from "@utils/logger";
 import { motion } from "framer-motion";
 import { selectTaskSummary, useHogletStore } from "../stores/hogletStore";
 import { AnimatedHedgehog } from "./AnimatedHedgehog";
@@ -19,8 +15,6 @@ import {
   type TaskStatus,
 } from "./hogletStatus";
 
-const log = logger.scope("wild-hoglet");
-
 const SPRITE_SIZE = 40;
 
 interface WildHogletProps {
@@ -28,12 +22,20 @@ interface WildHogletProps {
   index: number;
   x: number;
   y: number;
+  selected: boolean;
+  onSelect: (hogletId: string) => void;
 }
 
-export function WildHoglet({ hoglet, index, x, y }: WildHogletProps) {
+export function WildHoglet({
+  hoglet,
+  index,
+  x,
+  y,
+  selected,
+  onSelect,
+}: WildHogletProps) {
   const summary = useHogletStore(selectTaskSummary(hoglet.taskId));
   const trpc = useTRPC();
-  const navigateToTask = useNavigationStore((s) => s.navigateToTask);
 
   const { ref, isDragging } = useSortable({
     id: hoglet.id,
@@ -62,16 +64,9 @@ export function WildHoglet({ hoglet, index, x, y }: WildHogletProps) {
   const fps = FPS_BY_TASK_STATUS[status ?? "not_started"];
   const dimmed = status === "cancelled";
 
-  const handleClick = async (event: React.MouseEvent) => {
+  const handleClick = (event: React.MouseEvent) => {
     event.stopPropagation();
-    try {
-      const client = await getAuthenticatedClient();
-      if (!client) return;
-      const task = (await client.getTask(hoglet.taskId)) as Task;
-      navigateToTask(task);
-    } catch (error) {
-      log.error("Failed to open task", { taskId: hoglet.taskId, error });
-    }
+    onSelect(hoglet.id);
   };
 
   return (
@@ -86,13 +81,20 @@ export function WildHoglet({ hoglet, index, x, y }: WildHogletProps) {
         <button
           ref={ref}
           type="button"
-          data-hedgemony-wild
+          data-hedgemony-hoglet
           aria-label={`Wild hoglet: ${title}`}
+          aria-pressed={selected}
           onClick={handleClick}
           onContextMenu={(event) => event.preventDefault()}
           className="-translate-x-1/2 -translate-y-1/2 flex cursor-grab flex-col items-center border-0 bg-transparent p-0 active:cursor-grabbing"
         >
           <div className="relative">
+            {selected && (
+              <span
+                aria-hidden
+                className="-inset-1.5 absolute rounded-full border-(--accent-9) border-2 bg-(--accent-3)/30 shadow-[0_0_0_2px_var(--accent-4)]"
+              />
+            )}
             <AnimatedHedgehog
               animation={animationKey}
               fps={fps}

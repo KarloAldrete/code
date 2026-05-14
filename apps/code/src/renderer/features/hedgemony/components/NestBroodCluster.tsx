@@ -1,6 +1,7 @@
 import type { Hoglet, Nest } from "@main/services/hedgemony/schemas";
 import { useEffect, useMemo } from "react";
 import { initializeNestHogletStore } from "../service/hogletSubscriptionService";
+import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import { selectNestHoglets, useHogletStore } from "../stores/hogletStore";
 import { BroodHoglet } from "./BroodHoglet";
 
@@ -8,6 +9,8 @@ const RADIUS = 92;
 
 interface NestBroodClusterProps {
   nest: Nest;
+  selectedHogletId: string | null;
+  onHogletSelect: (hogletId: string) => void;
 }
 
 function broodPosition(
@@ -26,8 +29,13 @@ function broodPosition(
   };
 }
 
-export function NestBroodCluster({ nest }: NestBroodClusterProps) {
+export function NestBroodCluster({
+  nest,
+  selectedHogletId,
+  onHogletSelect,
+}: NestBroodClusterProps) {
   const hoglets = useHogletStore(selectNestHoglets(nest.id));
+  const positionOverrides = useHogletPositionStore((s) => s.positions);
 
   useEffect(() => {
     return initializeNestHogletStore(nest.id);
@@ -47,10 +55,13 @@ export function NestBroodCluster({ nest }: NestBroodClusterProps) {
   return (
     <>
       {ordered.map((hoglet, index) => {
-        const position = broodPosition(index, ordered.length, {
-          x: nest.mapX,
-          y: nest.mapY,
-        });
+        const override = positionOverrides[hoglet.id];
+        const position =
+          override ??
+          broodPosition(index, ordered.length, {
+            x: nest.mapX,
+            y: nest.mapY,
+          });
         return (
           <BroodHoglet
             key={hoglet.id}
@@ -59,6 +70,8 @@ export function NestBroodCluster({ nest }: NestBroodClusterProps) {
             index={index}
             x={position.x}
             y={position.y}
+            selected={selectedHogletId === hoglet.id}
+            onSelect={onHogletSelect}
           />
         );
       })}

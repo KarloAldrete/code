@@ -20,8 +20,10 @@ import {
   type BookmarkSlot,
   useHedgemonyViewStore,
 } from "../stores/hedgemonyViewStore";
+import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import {
   SIGNAL_STAGING_BUCKET,
+  selectHogletById,
   useHogletStore,
   WILD_BUCKET,
 } from "../stores/hogletStore";
@@ -31,6 +33,7 @@ import { BuilderCommandPanel } from "./BuilderCommandPanel";
 import { HedgehouseCommandPanel } from "./HedgehouseCommandPanel";
 import { HedgemonyHoldingPanel } from "./HedgemonyHoldingPanel";
 import { HedgemonyMapSurface, type MoveMarker } from "./HedgemonyMapSurface";
+import { HogletDetailPanel } from "./HogletDetailPanel";
 import { NestBroodCluster } from "./NestBroodCluster";
 import { NestDetailPanel } from "./NestDetailPanel";
 import { type NestCreationMode, PlaceNestDialog } from "./PlaceNestDialog";
@@ -43,6 +46,7 @@ type Selection =
   | { type: "nest"; id: string }
   | { type: "builder" }
   | { type: "hedgehouse" }
+  | { type: "hoglet"; id: string }
   | null;
 
 /**
@@ -312,6 +316,17 @@ export function HedgemonyMapView() {
 
     const targetX = Math.round(x);
     const targetY = Math.round(y);
+
+    if (selection.type === "hoglet") {
+      useHogletPositionStore
+        .getState()
+        .setPosition(selection.id, targetX, targetY);
+      playSfx("order");
+      playVoice("hoglet:order_move");
+      flashMoveMarker(targetX, targetY);
+      return;
+    }
+
     playSfx("order");
     playVoice("hoglet:order_move");
     const resolved = builder.startWalk({ x: targetX, y: targetY }, "idle");
@@ -324,8 +339,16 @@ export function HedgemonyMapView() {
       : null;
   const builderSelected = selection?.type === "builder";
   const hedgehouseSelected = selection?.type === "hedgehouse";
+  const selectedHogletId = selection?.type === "hoglet" ? selection.id : null;
+  const activeHoglet = useHogletStore(selectHogletById(selectedHogletId));
   const buildMode = mode.kind === "placingNest";
   const relocatingNestId = mode.kind === "relocatingNest" ? mode.nestId : null;
+
+  const handleHogletSelect = useCallback((hogletId: string) => {
+    playSfx("select");
+    playVoice("hoglet:select");
+    setSelection({ type: "hoglet", id: hogletId });
+  }, []);
 
   const beginBuildNest = () => {
     setMode({ kind: "placingNest", creationMode: "guided" });
@@ -423,6 +446,7 @@ export function HedgemonyMapView() {
         builderPositionRef={builder.visualPosRef}
         builderSelected={builderSelected}
         builderAnimation={builder.animation}
+        hogletSelected={selectedHogletId !== null}
         pendingNest={builder.pendingNest}
         buildMode={buildMode}
         moveMarker={moveMarker}
@@ -448,9 +472,17 @@ export function HedgemonyMapView() {
         }}
       >
         {nests.map((nest) => (
-          <NestBroodCluster key={nest.id} nest={nest} />
+          <NestBroodCluster
+            key={nest.id}
+            nest={nest}
+            selectedHogletId={selectedHogletId}
+            onHogletSelect={handleHogletSelect}
+          />
         ))}
-        <WildHogletFlock />
+        <WildHogletFlock
+          selectedHogletId={selectedHogletId}
+          onHogletSelect={handleHogletSelect}
+        />
       </HedgemonyMapSurface>
       {activeNest && (
         <NestDetailPanel
@@ -475,6 +507,15 @@ export function HedgemonyMapView() {
         {hedgehouseSelected && !spawnHogletOpen && (
           <HedgehouseCommandPanel
             onSpawnWildHog={openSpawnHoglet}
+            onClose={() => setSelection(null)}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {activeHoglet && (
+          <HogletDetailPanel
+            key={activeHoglet.id}
+            hoglet={activeHoglet}
             onClose={() => setSelection(null)}
           />
         )}
@@ -633,7 +674,9 @@ async function adoptHoglet(
     return;
   }
 
-  // Optimistic move: source bucket → nest bucket.
+  // Optimistic move: source bucket → nest bucket. Drop any standalone position
+  // override so the hoglet snaps back into the new nest's orbit instead of
+  // hovering at its stale wild-position.
   const optimistic: Hoglet = {
     ...original,
     nestId,
@@ -641,6 +684,7 @@ async function adoptHoglet(
   };
   store.remove(bucketKey, hogletId);
   store.upsert(nestId, optimistic);
+  useHogletPositionStore.getState().clearPosition(hogletId);
 
   try {
     const updated = await trpcClient.hedgemony.hoglets.adopt.mutate({
@@ -684,6 +728,9 @@ async function releaseHoglet(
   };
   store.remove(sourceNestId, hogletId);
   store.upsert(destinationBucket, optimistic);
+  // Same reasoning as adoptHoglet: a release re-homes the hoglet, so the
+  // operator-placed override no longer matches the new layout.
+  useHogletPositionStore.getState().clearPosition(hogletId);
 
   try {
     const updated = await trpcClient.hedgemony.hoglets.release.mutate({
