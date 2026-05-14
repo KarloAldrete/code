@@ -13,11 +13,15 @@ import { useNestStore } from "../stores/nestStore";
 
 const log = logger.scope("place-nest-dialog");
 
+export type NestCreationMode = "guided" | "simple";
+
 export interface PlaceNestDialogProps {
   open: boolean;
   /** World-space coordinates (already adjusted for pan/zoom). */
   mapX: number;
   mapY: number;
+  /** Which Builder button opened the dialog. Defaults to "guided". */
+  initialMode?: NestCreationMode;
   onClose: () => void;
   onCreated?: (mapX: number, mapY: number) => void;
 }
@@ -26,13 +30,14 @@ export function PlaceNestDialog({
   open,
   mapX,
   mapY,
+  initialMode = "guided",
   onClose,
   onCreated,
 }: PlaceNestDialogProps) {
   const [name, setName] = useState("");
   const [goalPrompt, setGoalPrompt] = useState("");
   const [definitionOfDone, setDefinitionOfDone] = useState("");
-  const [simpleMode, setSimpleMode] = useState(false);
+  const [simpleMode, setSimpleMode] = useState(initialMode === "simple");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,11 +46,11 @@ export function PlaceNestDialog({
       setName("");
       setGoalPrompt("");
       setDefinitionOfDone("");
-      setSimpleMode(false);
+      setSimpleMode(initialMode === "simple");
       setError(null);
       setSubmitting(false);
     }
-  }, [open]);
+  }, [open, initialMode]);
 
   const canSubmit =
     name.trim().length > 0 &&

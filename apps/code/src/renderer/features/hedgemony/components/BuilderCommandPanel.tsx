@@ -1,13 +1,17 @@
-import { Plus } from "@phosphor-icons/react";
+import { Lightning, Plus } from "@phosphor-icons/react";
 import { motion } from "framer-motion";
 
 interface BuilderCommandPanelProps {
+  /** Guided path: conversational goal-writing flow → full spec. */
   onBuildNest: () => void;
+  /** Simple path: one-field form → minimal nest + auto-spawned first hoglet. */
+  onQuickNest: () => void;
   onClose: () => void;
 }
 
 export function BuilderCommandPanel({
   onBuildNest,
+  onQuickNest,
   onClose,
 }: BuilderCommandPanelProps) {
   return (
@@ -24,15 +28,24 @@ export function BuilderCommandPanel({
         </span>
         <span className="text-(--gray-10)">Right-click to move</span>
       </div>
-      <div className="border-(--gray-5) border-l pl-3">
+      <div className="flex items-center gap-2 border-(--gray-5) border-l pl-3">
         <button
           type="button"
           onClick={onBuildNest}
           className="flex h-9 items-center gap-1.5 rounded-(--radius-2) border border-(--accent-7) bg-(--accent-3) px-3 font-medium text-(--accent-11) text-[12px] transition-colors hover:bg-(--accent-4) hover:text-(--accent-12)"
-          title="Build a new nest"
+          title="Guided goal-writing flow with a clarifying question and full spec"
         >
           <Plus size={14} />
           Build nest
+        </button>
+        <button
+          type="button"
+          onClick={onQuickNest}
+          className="flex h-9 items-center gap-1.5 rounded-(--radius-2) border border-(--gray-6) bg-(--gray-2) px-3 font-medium text-(--gray-12) text-[12px] transition-colors hover:bg-(--gray-3)"
+          title="Simple form + auto-spawn one hoglet"
+        >
+          <Lightning size={14} />
+          Quick nest
         </button>
       </div>
       <button

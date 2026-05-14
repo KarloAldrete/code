@@ -20,7 +20,7 @@ import {
   type MoveMarker,
 } from "./HedgemonyMapSurface";
 import { NestDetailPanel } from "./NestDetailPanel";
-import { PlaceNestDialog } from "./PlaceNestDialog";
+import { type NestCreationMode, PlaceNestDialog } from "./PlaceNestDialog";
 import { SpawnHogletDialog } from "./SpawnHogletDialog";
 
 const log = logger.scope("hedgemony-map-view");
@@ -50,6 +50,7 @@ export function HedgemonyMapView() {
   });
   const [buildMode, setBuildMode] = useState(false);
   const [relocatingNestId, setRelocatingNestId] = useState<string | null>(null);
+  const [pendingMode, setPendingMode] = useState<NestCreationMode>("guided");
   const [moveMarker, setMoveMarker] = useState<MoveMarker | null>(null);
   const [commandPath, setCommandPath] = useState<CommandPath | null>(null);
   const buildingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -252,6 +253,14 @@ export function HedgemonyMapView() {
 
   const beginBuildNest = () => {
     setRelocatingNestId(null);
+    setPendingMode("guided");
+    setBuildMode(true);
+    setSelection({ type: "builder" });
+  };
+
+  const beginQuickNest = () => {
+    setRelocatingNestId(null);
+    setPendingMode("simple");
     setBuildMode(true);
     setSelection({ type: "builder" });
   };
@@ -300,6 +309,7 @@ export function HedgemonyMapView() {
         {builderSelected && !buildMode && (
           <BuilderCommandPanel
             onBuildNest={beginBuildNest}
+            onQuickNest={beginQuickNest}
             onClose={() => setSelection(null)}
           />
         )}
@@ -308,6 +318,7 @@ export function HedgemonyMapView() {
         open={pendingPlacement !== null}
         mapX={pendingPlacement?.x ?? 0}
         mapY={pendingPlacement?.y ?? 0}
+        initialMode={pendingMode}
         onClose={() => setPendingPlacement(null)}
         onCreated={(mapX, mapY) => {
           flashCommandPath({
