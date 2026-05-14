@@ -31,6 +31,10 @@ import { moveNest } from "../service/nestMutations";
 import { initializeNestStore } from "../service/nestSubscriptionService";
 import { initializePrGraphForNest } from "../service/prGraphSubscriptionService";
 import {
+  computeMapClickAction,
+  type ViewMode,
+} from "../state/computeMapClickAction";
+import {
   type ControlGroupSelection,
   type ControlGroupSlot,
   useControlGroupStore,
@@ -80,18 +84,6 @@ type Selection =
   | { type: "hedgehouse" }
   | { type: "hoglets"; ids: string[]; includeBuilder?: boolean }
   | null;
-
-/**
- * Top-level interaction modes for the map. At most one is active at a time;
- * collapsing the prior `buildMode`/`relocatingNestId`/`pendingMode` booleans
- * into a discriminated union so handlers switch once with exhaustive checks
- * instead of hand-rolling the same priority ladder. Selection lives outside
- * the mode — it persists across mode transitions.
- */
-type ViewMode =
-  | { kind: "browsing" }
-  | { kind: "placingNest"; creationMode: NestCreationMode }
-  | { kind: "relocatingNest"; nestId: string };
 
 export function HedgemonyMapView() {
   const nests = useNestStore(selectNests);
@@ -654,30 +646,36 @@ export function HedgemonyMapView() {
   );
 
   const handleMapClick = (x: number, y: number) => {
-    switch (mode.kind) {
-      case "relocatingNest": {
-        const nest = nests.find((n) => n.id === mode.nestId);
-        setMode({ kind: "browsing" });
-        if (!nest) return;
-        const targetX = Math.round(x);
-        const targetY = Math.round(y);
-        flashMoveMarker(targetX, targetY);
+    const { nextMode, action } = computeMapClickAction({
+      mode,
+      click: { x, y },
+      nests,
+    });
+    setMode(nextMode);
+    switch (action.kind) {
+      case "moveNest": {
+        flashMoveMarker(action.mapX, action.mapY);
         playSfx("order");
         playVoice("hoglet:order_move", genderForName(BUILDER_NAME));
-        void moveNest(nest, targetX, targetY, {
+        void moveNest(action.nest, action.mapX, action.mapY, {
           undoable: true,
           flashMoveMarker,
         });
         return;
       }
-      case "placingNest": {
-        const creationMode = mode.creationMode;
-        setMode({ kind: "browsing" });
-        setPendingPlacement({ x, y, creationMode });
+      case "placeNest": {
+        setPendingPlacement({
+          x: action.x,
+          y: action.y,
+          creationMode: action.creationMode,
+        });
         return;
       }
-      case "browsing":
+      case "clearSelection": {
         setSelection(null);
+        return;
+      }
+      case "noop":
         return;
     }
   };
