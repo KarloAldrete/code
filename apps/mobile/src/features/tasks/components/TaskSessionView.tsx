@@ -20,6 +20,7 @@ import {
   ToolMessage,
   type ToolStatus,
 } from "@/features/chat";
+import { getRandomThinkingActivity } from "@/features/chat/utils/thinkingMessages";
 import { useThemeColors } from "@/lib/theme";
 import type { PlanEntry, SessionEvent, SessionNotification } from "../types";
 import { PlanStatusBar } from "./PlanStatusBar";
@@ -47,6 +48,7 @@ interface TaskSessionViewProps {
 
 interface ToolData {
   toolName: string;
+  rawToolName?: string;
   toolCallId: string;
   status: ToolStatus;
   args?: Record<string, unknown>;
@@ -131,6 +133,7 @@ function parseSessionNotification(
         type: "tool",
         toolData: {
           toolName: update.title ?? "Unknown Tool",
+          rawToolName: meta?.toolName,
           toolCallId: update.toolCallId ?? "",
           status: mapToolStatus(update.status),
           args: update.rawInput,
@@ -145,6 +148,7 @@ function parseSessionNotification(
         type: "tool_update",
         toolData: {
           toolName: update.title ?? "Unknown Tool",
+          rawToolName: meta?.toolName,
           toolCallId: update.toolCallId ?? "",
           status: mapToolStatus(update.status),
           args: update.rawInput,
@@ -174,6 +178,20 @@ function isQuestionTool(toolData?: ToolData): boolean {
   if (toolData.toolName.toLowerCase().includes("question")) return true;
   if (Array.isArray(toolData.args?.questions)) return true;
   return false;
+}
+
+function hasPendingQuestionMessage(message: ParsedMessage): boolean {
+  const isPendingQuestion =
+    message.type === "tool" &&
+    isQuestionTool(message.toolData) &&
+    (message.toolData?.status === "pending" ||
+      message.toolData?.status === "running");
+
+  if (isPendingQuestion) {
+    return true;
+  }
+
+  return message.children?.some(hasPendingQuestionMessage) ?? false;
 }
 
 // Mutable processor state persisted across renders via useRef.
@@ -568,7 +586,10 @@ function AgentToolCard({
               <ToolMessage
                 key={child.id}
                 toolName={child.toolData.toolName}
-                kind={deriveToolKind(child.toolData.toolName)}
+                rawToolName={child.toolData.rawToolName}
+                kind={deriveToolKind(
+                  child.toolData.rawToolName ?? child.toolData.toolName,
+                )}
                 status={child.toolData.status}
                 args={child.toolData.args}
                 result={child.toolData.result}
@@ -601,14 +622,22 @@ function useElapsedTimer() {
 }
 
 function ThinkingIndicator() {
-  const themeColors = useThemeColors();
   const [dots, setDots] = useState(1);
+  const [activity, setActivity] = useState(getRandomThinkingActivity);
   const elapsed = useElapsedTimer();
+  const themeColors = useThemeColors();
 
   useEffect(() => {
     const interval = setInterval(() => {
       setDots((d) => (d % 3) + 1);
     }, 500);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setActivity(getRandomThinkingActivity());
+    }, 2000);
     return () => clearInterval(interval);
   }, []);
 
@@ -618,7 +647,8 @@ function ThinkingIndicator() {
         <View className="flex-row items-center gap-2">
           <Brain size={12} color={themeColors.gray[8]} />
           <Text className="font-mono text-[12px] text-gray-8">
-            Thinking{".".repeat(dots)}
+            {activity}
+            {".".repeat(dots)}
           </Text>
         </View>
         <Text className="font-mono text-[12px] text-gray-8">
@@ -630,9 +660,9 @@ function ThinkingIndicator() {
 }
 
 function ConnectingIndicator() {
-  const themeColors = useThemeColors();
   const [dots, setDots] = useState(1);
   const elapsed = useElapsedTimer();
+  const themeColors = useThemeColors();
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -714,6 +744,29 @@ export function TaskSessionView({
   const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
   const themeColors = useThemeColors();
   const flatListRef = useRef<FlatList>(null);
+  const hasPendingQuestion = useMemo(
+    () => messages.some(hasPendingQuestionMessage),
+    [messages],
+  );
+  const showActivityIndicator = agentActive && !hasPendingQuestion;
+  const effectiveContentContainerStyle = useMemo(() => {
+    const baseStyle = (contentContainerStyle ?? {}) as {
+      paddingTop?: number;
+      [key: string]: unknown;
+    };
+
+    if (!showActivityIndicator) {
+      return baseStyle;
+    }
+
+    return {
+      ...baseStyle,
+      // In the inverted list, paddingTop becomes visual bottom spacing.
+      // Reserve enough room so the floating activity indicator never
+      // covers the last visible row while the agent is working.
+      paddingTop: (baseStyle.paddingTop ?? 0) + 28,
+    };
+  }, [contentContainerStyle, showActivityIndicator]);
   // Inverted FlatList: scrollY is the distance from the visual bottom, so
   // any non-trivial value means the user has scrolled up from the latest
   // message. Use a small threshold to ignore iOS bounce.
@@ -765,7 +818,10 @@ export function TaskSessionView({
           return (
             <ToolMessage
               toolName={item.toolData.toolName}
-              kind={deriveToolKind(item.toolData.toolName)}
+              rawToolName={item.toolData.rawToolName}
+              kind={deriveToolKind(
+                item.toolData.rawToolName ?? item.toolData.toolName,
+              )}
               status={item.toolData.status}
               args={item.toolData.args}
               result={item.toolData.result}
@@ -788,7 +844,7 @@ export function TaskSessionView({
         renderItem={renderMessage}
         keyExtractor={(item) => item.id}
         inverted
-        contentContainerStyle={contentContainerStyle}
+        contentContainerStyle={effectiveContentContainerStyle}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator
@@ -844,7 +900,7 @@ export function TaskSessionView({
       />
       {/* Thinking/connecting indicators absolutely positioned above the Composer area.
           Rendered outside FlatList to avoid inverted-list double-mount bugs. */}
-      {(isConnecting || isThinking) && (
+      {showActivityIndicator && (
         <View className="absolute inset-x-0 bottom-[92px] pb-2">
           {isConnecting ? (
             <ConnectingIndicator />

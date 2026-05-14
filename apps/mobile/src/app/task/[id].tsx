@@ -31,6 +31,7 @@ import { taskKeys } from "@/features/tasks/hooks/useTasks";
 import { useTaskSessionStore } from "@/features/tasks/stores/taskSessionStore";
 import { useTaskStore } from "@/features/tasks/stores/taskStore";
 import type { Task } from "@/features/tasks/types";
+import { getSessionActivityPhase } from "@/features/tasks/utils/sessionActivity";
 import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
 
@@ -367,24 +368,9 @@ export default function TaskDetailScreen() {
     }
   }, [taskId, task, disconnectFromTask, connectToTask, updateTaskInCache]);
 
-  const visibleAgentTypes = [
-    "agent_message_chunk",
-    "agent_message",
-    "agent_thought_chunk",
-    "tool_call",
-  ];
-  const hasAnyAgentOutput =
-    session?.events.some((e) => {
-      if (e.type !== "session_update") return false;
-      const su = (e.notification as Record<string, unknown>)?.update;
-      return visibleAgentTypes.includes(
-        (su as Record<string, unknown>)?.sessionUpdate as string,
-      );
-    }) ?? false;
-
-  const isConnecting =
-    retrying || (!!session?.awaitingAgentOutput && !hasAnyAgentOutput);
-  const isThinking = !!session?.awaitingAgentOutput && hasAnyAgentOutput;
+  const activityPhase = getSessionActivityPhase({ retrying, session });
+  const isConnecting = activityPhase === "connecting";
+  const isThinking = activityPhase === "working";
   const showAutomationContext =
     fromAutomation === "1" || task?.origin_product === "automation";
   const automationContextLabel =
