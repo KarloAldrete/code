@@ -11,10 +11,11 @@ import { trpcClient } from "@renderer/trpc/client";
 import { useNavigationStore } from "@stores/navigationStore";
 import { logger } from "@utils/logger";
 import { useCallback, useEffect, useRef } from "react";
+import { useLocalScheduleRunsStore } from "../stores/localScheduleRunsStore";
 import { useWorkThreadsStore } from "../stores/workThreadsStore";
 import { nextRunForPreset, presetForCron } from "../utils/schedulePresets";
 import { decodePrompt } from "../utils/sourcesPrompt";
-import { useScheduledTasks, useUpdateScheduledTask } from "./useScheduledTasks";
+import { useScheduledTasks } from "./useScheduledTasks";
 
 // Scheduled tasks default to a lighter model per adapter, since they're
 // long-running cron jobs where the heavier flagship models add cost/latency
@@ -68,14 +69,17 @@ export type FireFn = (
 
 /**
  * Build the function that fires a scheduled task through the regular local-task
- * path (TaskService.createTask), then optimistically updates the automation's
- * `last_run_*` fields so the schedules UI reflects the local run.
+ * path (TaskService.createTask), then records the run in the local schedule-runs
+ * store so the schedules UI reflects the local fire.
+ *
+ * Note: the PostHog TaskAutomation serializer treats `last_run_*` as read-only,
+ * so PATCH'ing those fields is a no-op — we keep the source of truth for local
+ * runs in our own client-side store and overlay it on the server's view.
  */
 export function useFireScheduledTask(): FireFn {
   const { folders, isLoaded: foldersLoaded } = useFolders();
   const addThread = useWorkThreadsStore((s) => s.addThread);
   const navigateToWorkTask = useNavigationStore((s) => s.navigateToWorkTask);
-  const updateScheduledTask = useUpdateScheduledTask();
   const adapter = useSettingsStore((s) => s.lastUsedAdapter ?? "claude");
 
   return useCallback(
@@ -101,6 +105,7 @@ export function useFireScheduledTask(): FireFn {
 
       const firedAt = new Date().toISOString();
       const taskService = get<TaskService>(RENDERER_TOKENS.TaskService);
+      const recordRun = useLocalScheduleRunsStore.getState().recordRun;
 
       const result = await taskService.createTask(input, (output) => {
         addThread(output.task.id);
@@ -113,51 +118,23 @@ export function useFireScheduledTask(): FireFn {
           error: result.error,
           failedStep: result.failedStep,
         });
-        try {
-          await updateScheduledTask.mutateAsync({
-            id: automation.id,
-            updates: {
-              last_run_at: firedAt,
-              last_run_status: "failed",
-              last_error: result.error ?? "Unknown error",
-            },
-          });
-        } catch (e) {
-          log.error("Failed to update automation status (failure path)", {
-            id: automation.id,
-            error: e,
-          });
-        }
+        recordRun(automation.id, {
+          lastRunAt: firedAt,
+          status: "failed",
+          error: result.error ?? "Unknown error",
+        });
         return null;
       }
 
-      try {
-        await updateScheduledTask.mutateAsync({
-          id: automation.id,
-          updates: {
-            last_run_at: firedAt,
-            last_run_status: "in_progress",
-            last_task_id: result.data.task.id,
-            last_error: null,
-          },
-        });
-      } catch (e) {
-        log.error("Failed to update automation status (success path)", {
-          id: automation.id,
-          error: e,
-        });
-      }
+      recordRun(automation.id, {
+        lastRunAt: firedAt,
+        status: "running",
+        taskId: result.data.task.id,
+      });
 
       return { taskId: result.data.task.id };
     },
-    [
-      folders,
-      foldersLoaded,
-      addThread,
-      navigateToWorkTask,
-      updateScheduledTask,
-      adapter,
-    ],
+    [folders, foldersLoaded, addThread, navigateToWorkTask, adapter],
   );
 }
 

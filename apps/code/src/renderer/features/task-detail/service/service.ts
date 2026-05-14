@@ -180,11 +180,21 @@ export class TaskService {
   }
 
   /**
-   * Inject the freshly created task into every populated tasks-list cache, so
-   * views that read `useTasks()` (e.g. WorkTaskDetailView) can render the new
-   * task immediately instead of waiting for the next 30s poll.
+   * Make the freshly created task readable from React Query so views like
+   * WorkTaskDetailView don't show a "Loading task..." flash while the 30s
+   * `useTasks` poll catches up.
+   *
+   * Writes to two places:
+   *   1. Per-task detail cache at `["tasks", "detail", id]` — exact key, so it
+   *      lands even on cold start before any list query has run.
+   *   2. Every populated `["tasks", "list", ...]` cache — no-op for filter
+   *      combinations that haven't been queried yet.
    */
   private optimisticallyAddTaskToListCache(output: TaskCreationOutput): void {
+    queryClient.setQueryData<Task>(
+      ["tasks", "detail", output.task.id],
+      output.task,
+    );
     queryClient.setQueriesData<Task[]>(
       { queryKey: ["tasks", "list"] },
       (old) => {

@@ -30,6 +30,7 @@ import {
   useScheduledTasks,
   useUpdateScheduledTask,
 } from "../hooks/useScheduledTasks";
+import { useScheduleDisplayInfo } from "../stores/localScheduleRunsStore";
 import { type PendingEditDraft, useWorkStore } from "../stores/workStore";
 import { describeCron, parseSchedule } from "../utils/parseSchedule";
 import { decodePrompt, encodePrompt } from "../utils/sourcesPrompt";
@@ -151,6 +152,7 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
   const deleteScheduledTask = useDeleteScheduledTask();
   const fireScheduledTask = useFireScheduledTask();
   const navigateToWorkTask = useNavigationStore((s) => s.navigateToWorkTask);
+  const lastRunDisplay = useScheduleDisplayInfo(existing);
   const [isRunningNow, setIsRunningNow] = useState(false);
 
   const isEditing = editingId !== null && existing !== null;
@@ -421,7 +423,7 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
               </Flex>
             )}
 
-            {isEditing && existing.last_run_at && (
+            {isEditing && lastRunDisplay.lastRunAt && (
               <Flex
                 direction="column"
                 gap="2"
@@ -435,17 +437,17 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
                     <Flex align="center" gap="2">
                       <ScheduledTaskStatusBadge automation={existing} />
                       <Text size="2" className="truncate text-(--gray-12)">
-                        {formatRelativeTimeLong(existing.last_run_at)}
+                        {formatRelativeTimeLong(lastRunDisplay.lastRunAt)}
                       </Text>
                     </Flex>
                   </Flex>
-                  {existing.last_task_id && (
+                  {lastRunDisplay.taskId && (
                     <Button
                       size="2"
                       variant="soft"
                       onClick={() => {
-                        if (existing.last_task_id)
-                          navigateToWorkTask(existing.last_task_id);
+                        if (lastRunDisplay.taskId)
+                          navigateToWorkTask(lastRunDisplay.taskId);
                       }}
                     >
                       <ArrowSquareOut size={14} />
@@ -453,9 +455,9 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
                     </Button>
                   )}
                 </Flex>
-                {existing.last_error && (
+                {lastRunDisplay.error && (
                   <Callout.Root size="1" color="red" variant="soft">
-                    <Callout.Text>{existing.last_error}</Callout.Text>
+                    <Callout.Text>{lastRunDisplay.error}</Callout.Text>
                   </Callout.Root>
                 )}
               </Flex>
