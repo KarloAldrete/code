@@ -11,12 +11,12 @@ import type { GitService } from "../git/service";
 import { buildLocalBootstrapHandoff } from "./local-bootstrap-handoff";
 import type { NestChatService } from "./nest-chat-service";
 import {
-  type CompleteNestInput,
+  type CompactValidatedNestInput,
   type CreateNestInput,
-  type ForgetCompletedNestContextInput,
   type HedgehogStateView,
   HedgemonyEvent,
   type HedgemonyEvents,
+  type MarkValidatedInput,
   type Nest,
   type NestIdInput,
   type NestMessage,
@@ -109,47 +109,59 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
     return archived;
   }
 
-  complete(input: CompleteNestInput): Nest {
+  markValidated(input: MarkValidatedInput): Nest {
     const existing = this.nests.findById(input.id);
     if (!existing) {
       throw new Error(`Nest not found: ${input.id}`);
     }
     if (existing.status === "archived") {
-      throw new Error("archived_nest_cannot_complete");
+      throw new Error("archived_nest_cannot_validate");
     }
     if (existing.status === "dormant") {
-      log.warn("complete called for already-dormant nest", { id: existing.id });
+      throw new Error("dormant_nest_cannot_validate");
+    }
+    if (existing.status === "validated") {
+      log.warn("markValidated called for already-validated nest", {
+        id: existing.id,
+      });
       return existing;
     }
 
-    const completed = this.nests.update(input.id, { status: "dormant" });
-    if (!completed) {
+    const validated = this.nests.update(input.id, { status: "validated" });
+    if (!validated) {
       throw new Error(`Nest not found: ${input.id}`);
     }
-    const completionMessage = this.nestChat.recordCompletionContext(
-      completed,
+    const validationMessage = this.nestChat.recordValidationContext(
+      validated,
       input,
     );
-    this.emitMessageAppended(completionMessage);
-    log.info("Nest completed", { id: completed.id });
-    this.emitChange(completed, { kind: "completed", nest: completed });
-    return completed;
+    this.emitMessageAppended(validationMessage);
+    log.info("Nest validated", { id: validated.id });
+    this.emitChange(validated, { kind: "validated", nest: validated });
+    return validated;
   }
 
-  forgetCompletedContext(input: ForgetCompletedNestContextInput): Nest {
+  compactValidatedNest(input: CompactValidatedNestInput): Nest {
     const nest = this.nests.findById(input.id);
     if (!nest) {
       throw new Error(`Nest not found: ${input.id}`);
     }
-    if (nest.status !== "dormant") {
-      throw new Error("nest_must_be_dormant_to_forget_context");
+    if (nest.status !== "validated") {
+      throw new Error("nest_must_be_validated_to_compact");
     }
 
-    const forgetMessage = this.nestChat.forgetCompletedContext(nest, input);
-    this.emitMessageAppended(forgetMessage);
-    log.info("Completed nest context forgotten", { id: nest.id });
-    this.emitChange(nest, { kind: "status", nest });
-    return nest;
+    const compacted = this.nests.update(input.id, { status: "dormant" });
+    if (!compacted) {
+      throw new Error(`Nest not found: ${input.id}`);
+    }
+    const compactionMessage = this.nestChat.compactValidatedNest(
+      compacted,
+      input,
+    );
+    this.emitMessageAppended(compactionMessage);
+    log.info("Validated nest compacted", { id: compacted.id });
+    this.emitChange(compacted, { kind: "status", nest: compacted });
+    return compacted;
   }
 
   unarchive(input: NestIdInput): Nest {

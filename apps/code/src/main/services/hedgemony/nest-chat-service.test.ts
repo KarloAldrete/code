@@ -199,10 +199,10 @@ describe("NestChatService", () => {
     expect(first.payloadJson).toContain('"type":"bootstrap_handoff_final"');
   });
 
-  it("compacts old context before writing the completion summary", () => {
-    const nest = makeNest({ status: "dormant" });
+  it("writes the validation summary without compacting context yet", () => {
+    const nest = makeNest({ status: "validated" });
 
-    service.recordCompletionContext(nest, {
+    service.recordValidationContext(nest, {
       id: nest.id,
       summary: "Goal is satisfied by the merged checkout PRs.",
       prUrls: ["https://github.com/posthog/posthog/pull/1"],
@@ -210,28 +210,23 @@ describe("NestChatService", () => {
       caveats: ["Watch errors for a day."],
     });
 
-    expect(messageRepository.compactCompletedContext).toHaveBeenCalledWith(
-      nest.id,
-    );
-    const completion = service.list({ nestId: nest.id }).at(-1);
-    expect(completion?.kind).toBe("audit");
-    expect(completion?.body).toContain("Nest completed");
-    expect(completion?.body).toContain(
+    expect(messageRepository.compactCompletedContext).not.toHaveBeenCalled();
+    const validation = service.list({ nestId: nest.id }).at(-1);
+    expect(validation?.kind).toBe("audit");
+    expect(validation?.body).toContain("Nest validated");
+    expect(validation?.body).toContain(
       "Goal is satisfied by the merged checkout PRs.",
     );
-    expect(completion?.body).toContain(
+    expect(validation?.body).toContain(
       "PRs: https://github.com/posthog/posthog/pull/1",
     );
-    expect(completion?.body).toContain(
-      "Compacted context: deleted 2 detail rows, compacted 1 context rows.",
-    );
-    expect(completion?.payloadJson).toContain('"type":"nest_completed"');
+    expect(validation?.payloadJson).toContain('"type":"nest_validated"');
   });
 
-  it("can forget completed context without deleting the nest row", () => {
-    const nest = makeNest({ status: "dormant" });
+  it("compacts context when a validated nest is compacted", () => {
+    const nest = makeNest({ status: "validated" });
 
-    service.forgetCompletedContext(nest, {
+    service.compactValidatedNest(nest, {
       id: nest.id,
       reason: "Operator requested local DB cleanup.",
     });
@@ -239,12 +234,12 @@ describe("NestChatService", () => {
     expect(messageRepository.compactCompletedContext).toHaveBeenCalledWith(
       nest.id,
     );
-    const forget = service.list({ nestId: nest.id }).at(-1);
-    expect(forget?.kind).toBe("audit");
-    expect(forget?.body).toContain("Completed nest context forgotten");
-    expect(forget?.body).toContain("Operator requested local DB cleanup.");
-    expect(forget?.payloadJson).toContain(
-      '"type":"completed_context_forgotten"',
+    const compacted = service.list({ nestId: nest.id }).at(-1);
+    expect(compacted?.kind).toBe("audit");
+    expect(compacted?.body).toContain("Validated nest compacted");
+    expect(compacted?.body).toContain("Operator requested local DB cleanup.");
+    expect(compacted?.payloadJson).toContain(
+      '"type":"validated_nest_compacted"',
     );
   });
 });

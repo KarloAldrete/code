@@ -1,3 +1,4 @@
+import { logger } from "../../../utils/logger";
 import { spawnHogletArgs } from "../hedgehog-tools";
 import {
   clampReasoningEffortForAdapter,
@@ -6,6 +7,8 @@ import {
 } from "../schemas";
 import type { HandlerResult, HedgehogToolHandler } from "./types";
 import { recordToolValidationError, stringifyError, truncate } from "./utils";
+
+const log = logger.scope("spawn-hoglet-handler");
 
 export const MAX_SPAWN_CALLS_PER_TICK = 3;
 
@@ -32,21 +35,46 @@ export const spawnHogletHandler: HedgehogToolHandler = {
       );
     }
     const args = parsed.data;
-    const soleAvailable =
-      ctx.repositoryContext.availableRepositories.length === 1
-        ? (ctx.repositoryContext.availableRepositories[0] ?? null)
+    const available = ctx.repositoryContext.availableRepositories;
+    const availableSet = new Set(available);
+    if (args.repository && !availableSet.has(args.repository)) {
+      const detail =
+        available.length === 0
+          ? "no repositories are configured locally"
+          : `must be one of: ${available.join(", ")}`;
+      return recordToolValidationError(
+        deps,
+        ctx.nest.id,
+        "spawn_hoglet",
+        `repository '${args.repository}' is not in available_repositories (${detail})`,
+      );
+    }
+    const persistedPrimary =
+      ctx.nest.primaryRepository && availableSet.has(ctx.nest.primaryRepository)
+        ? ctx.nest.primaryRepository
         : null;
+    if (ctx.nest.primaryRepository && persistedPrimary === null) {
+      log.warn(
+        "nest.primaryRepository missing from available_repositories; falling through",
+        {
+          nestId: ctx.nest.id,
+          primaryRepository: ctx.nest.primaryRepository,
+          available,
+        },
+      );
+    }
+    const soleAvailable =
+      available.length === 1 ? (available[0] ?? null) : null;
     const repository =
-      args.repository ?? ctx.nest.primaryRepository ?? soleAvailable ?? null;
+      args.repository ?? persistedPrimary ?? soleAvailable ?? null;
     const repositorySource: "tool_call" | "nest_primary" | "sole_available" =
       args.repository
         ? "tool_call"
-        : ctx.nest.primaryRepository
+        : persistedPrimary
           ? "nest_primary"
           : "sole_available";
 
     if (!repository) {
-      const available = ctx.repositoryContext.availableRepositories;
       const detail =
         available.length === 0
           ? "no repositories are configured locally"

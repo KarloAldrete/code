@@ -1,8 +1,68 @@
 import { z } from "zod";
-import { executionModeSchema } from "../../../shared/types";
+import { logger } from "../../utils/logger";
 
+const schemaLog = logger.scope("hedgemony-schemas");
+
+/**
+ * GitHub-style repository slug. Matches what `parseGithubUrl` produces:
+ * `owner/repo` with each segment limited to GitHub's allowed character set.
+ * Used everywhere a repository identifier is stored or transmitted.
+ */
+export const repoSlugSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(140)
+  .regex(/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/, {
+    message: "must look like owner/repo with safe characters only",
+  });
+
+/**
+ * Model identifiers we trust to be passed verbatim to the cloud task API.
+ * Keep the regex permissive enough for vendor-specific model strings
+ * (`claude-opus-4-7`, `gpt-5.5`, `claude-sonnet-4-6-20251001`) but reject
+ * paths, URLs, shell metacharacters, and unbounded growth.
+ */
+export const modelIdentifierSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(128)
+  .regex(/^[A-Za-z0-9._:-]+$/, {
+    message:
+      "model identifier may only contain alphanum, dot, dash, colon, underscore",
+  });
+
+/**
+ * Execution modes that can be persisted into the per-nest loadout or read
+ * back from settings-storage. Tighter than `executionModeSchema`:
+ * `bypassPermissions` is excluded so a tampered `loadoutJson` row or
+ * settings-storage entry cannot silently disable per-tool approvals for
+ * every hoglet spawned from a nest. `auto` is kept because it is the
+ * documented Codex default.
+ */
+export const persistedExecutionModeSchema = z.enum([
+  "default",
+  "acceptEdits",
+  "plan",
+  "auto",
+  "read-only",
+  "full-access",
+]);
+export type PersistedExecutionMode = z.infer<
+  typeof persistedExecutionModeSchema
+>;
+
+/**
+ * Nest lifecycle status. `validated` is a terminal-but-queryable state the
+ * operator confirms when the goal is met; the follow-up `compact` action then
+ * transitions a `validated` nest to `dormant`, trimming the chat to a bounded
+ * summary. `archived` is independent of the validation track (operator
+ * cancels/buries the nest).
+ */
 export const nestStatus = z.enum([
   "active",
+  "validated",
   "dormant",
   "archived",
   "needs_attention",
@@ -130,22 +190,34 @@ export const updateNestInput = z.object({
 });
 export type UpdateNestInput = z.infer<typeof updateNestInput>;
 
-export const nestIdInput = z.object({ id: z.string() });
+/**
+ * Identifier shape for nests and hoglets. Stored as UUIDv7 strings; we accept
+ * any 36-char UUID-ish so older rows still parse but reject unbounded strings
+ * and shell metacharacters.
+ */
+export const hedgemonyIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .regex(/^[A-Za-z0-9._-]+$/);
+
+export const nestIdInput = z.object({ id: hedgemonyIdSchema });
 export type NestIdInput = z.infer<typeof nestIdInput>;
 
-export const completeNestInput = nestIdInput.extend({
+export const markValidatedInput = nestIdInput.extend({
   summary: z.string().trim().min(1).max(8000),
   prUrls: z.array(z.string().trim().min(1)).max(25).optional(),
   taskIds: z.array(z.string().trim().min(1)).max(50).optional(),
   caveats: z.array(z.string().trim().min(1)).max(10).optional(),
 });
-export type CompleteNestInput = z.infer<typeof completeNestInput>;
+export type MarkValidatedInput = z.infer<typeof markValidatedInput>;
 
-export const forgetCompletedNestContextInput = nestIdInput.extend({
+export const compactValidatedNestInput = nestIdInput.extend({
   reason: z.string().trim().min(1).max(1000).optional(),
 });
-export type ForgetCompletedNestContextInput = z.infer<
-  typeof forgetCompletedNestContextInput
+export type CompactValidatedNestInput = z.infer<
+  typeof compactValidatedNestInput
 >;
 
 export const recordBootstrapHandoffInput = z.object({
@@ -207,14 +279,16 @@ export const hedgehogStateView = z.object({
 export type HedgehogStateView = z.infer<typeof hedgehogStateView>;
 
 /**
- * Discriminated event yielded by `nests.watch(id)`. Status/completed/archived
+ * Discriminated event yielded by `nests.watch(id)`. Status/validated/archived
  * come from `NestService` CRUD; `hedgehog_tick` comes from the tick service;
  * `message_appended` carries newly-written nest chat rows so the renderer
- * doesn't need a separate `nestChat.watch` subscription.
+ * doesn't need a separate `nestChat.watch` subscription. `validated` fires
+ * when the operator confirms goal completion; the subsequent compaction
+ * (`validated` → `dormant`) emits another `status` event.
  */
 export const nestWatchEvent = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("status"), nest }),
-  z.object({ kind: z.literal("completed"), nest }),
+  z.object({ kind: z.literal("validated"), nest }),
   z.object({ kind: z.literal("archived"), nest }),
   z.object({ kind: z.literal("hedgehog_tick"), state: hedgehogStateView }),
   z.object({ kind: z.literal("message_appended"), message: nestMessage }),
@@ -258,25 +332,126 @@ export type HedgemonyReasoningEffort = z.infer<typeof hedgemonyReasoningEffort>;
 export const hogletRuntimeAdapter = z.enum(["claude", "codex"]);
 export type HogletRuntimeAdapter = z.infer<typeof hogletRuntimeAdapter>;
 
-export const nestLoadout = z
-  .object({
-    model: z.string().optional(),
-    runtimeAdapter: hogletRuntimeAdapter.optional(),
-    reasoningEffort: hedgemonyReasoningEffort.optional(),
-    executionMode: executionModeSchema.optional(),
-    environment: z.enum(["local", "cloud"]).optional(),
-    heartbeatIntervalMs: z.number().int().min(60_000).max(600_000).optional(),
-  })
-  .catch({});
+export const nestLoadout = z.object({
+  model: modelIdentifierSchema.optional(),
+  runtimeAdapter: hogletRuntimeAdapter.optional(),
+  reasoningEffort: hedgemonyReasoningEffort.optional(),
+  executionMode: persistedExecutionModeSchema.optional(),
+  environment: z.enum(["local", "cloud"]).optional(),
+  heartbeatIntervalMs: z.number().int().min(60_000).max(600_000).optional(),
+});
 export type NestLoadout = z.infer<typeof nestLoadout>;
 
+/**
+ * Loadouts live in `nests.loadoutJson` and are loaded back into the hedgehog
+ * tick. We refuse to honour fields we can't validate (a tampered row could
+ * otherwise set `executionMode: "bypassPermissions"` for every hoglet spawned
+ * from that nest), but we never throw — a corrupt row falls back to defaults
+ * with a single warning so the operator can keep working.
+ */
 export function parseNestLoadout(loadoutJson: string | null): NestLoadout {
   if (!loadoutJson) return {};
+  let raw: unknown;
   try {
-    return nestLoadout.parse(JSON.parse(loadoutJson));
-  } catch {
+    raw = JSON.parse(loadoutJson);
+  } catch (error) {
+    schemaLog.warn("nestLoadout JSON.parse failed; falling back to defaults", {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return {};
   }
+  const result = nestLoadout.safeParse(raw);
+  if (!result.success) {
+    schemaLog.warn("nestLoadout shape rejected; falling back to defaults", {
+      issues: result.error.issues.map((issue) => ({
+        path: issue.path,
+        code: issue.code,
+        message: issue.message,
+      })),
+    });
+    return {};
+  }
+  return result.data;
+}
+
+/**
+ * Validates a single `ScratchpadEntry` (defined structurally in
+ * `hedgehog-prompts.ts`). Kept here so the schema and the parser live next
+ * to each other.
+ */
+export const scratchpadEntrySchema = z.object({
+  ts: z.string().min(1).max(64),
+  kind: z.enum(["decision", "observation", "note"]),
+  summary: z.string().min(1).max(1000),
+});
+
+/**
+ * Top-level shape of `hedgemony_hedgehog_state.serializedStateJson`. Anything
+ * outside this shape is dropped to keep adversarial entries out of the next
+ * hedgehog prompt.
+ */
+export const scratchpadStateSchema = z.object({
+  scratchpad: z.array(scratchpadEntrySchema).max(200).optional(),
+});
+
+export function parseScratchpadState(
+  serializedStateJson: string | null,
+): z.infer<typeof scratchpadEntrySchema>[] {
+  if (!serializedStateJson) return [];
+  let raw: unknown;
+  try {
+    raw = JSON.parse(serializedStateJson);
+  } catch (error) {
+    schemaLog.warn("scratchpad JSON.parse failed; starting fresh", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return [];
+  }
+  const result = scratchpadStateSchema.safeParse(raw);
+  if (!result.success) {
+    schemaLog.warn("scratchpad shape rejected; starting fresh", {
+      issues: result.error.issues.map((issue) => ({
+        path: issue.path,
+        code: issue.code,
+      })),
+    });
+    return [];
+  }
+  return result.data.scratchpad ?? [];
+}
+
+/**
+ * Shape of the `payloadJson` row written by nest creation when bootstrap
+ * context exists. `deriveRepositoryContext` reads this on every tick to know
+ * which repositories the hedgehog can spawn into.
+ */
+export const nestChatCreationBootstrapPayloadSchema = z.object({
+  type: z.string().optional(),
+  creationBootstrap: z
+    .object({
+      repositories: z.array(repoSlugSchema).max(10).optional(),
+      primaryRepository: repoSlugSchema.nullable().optional(),
+    })
+    .optional(),
+  repositories: z.array(repoSlugSchema).max(10).optional(),
+  primaryRepository: repoSlugSchema.nullable().optional(),
+});
+export type NestChatCreationBootstrapPayload = z.infer<
+  typeof nestChatCreationBootstrapPayloadSchema
+>;
+
+export function parseNestChatCreationBootstrapPayload(
+  payloadJson: string | null,
+): NestChatCreationBootstrapPayload | null {
+  if (!payloadJson) return null;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(payloadJson);
+  } catch {
+    return null;
+  }
+  const result = nestChatCreationBootstrapPayloadSchema.safeParse(raw);
+  return result.success ? result.data : null;
 }
 
 export const DEFAULT_HOGLET_MODEL = "claude-opus-4-7";
@@ -342,25 +517,32 @@ export type RecordSignalBackedHogletInput = z.infer<
 >;
 
 export const adoptHogletInput = z.object({
-  hogletId: z.string(),
-  nestId: z.string(),
+  hogletId: hedgemonyIdSchema,
+  nestId: hedgemonyIdSchema,
 });
 export type AdoptHogletInput = z.infer<typeof adoptHogletInput>;
 
 export const releaseHogletInput = z.object({
-  hogletId: z.string(),
+  hogletId: hedgemonyIdSchema,
 });
 export type ReleaseHogletInput = z.infer<typeof releaseHogletInput>;
 
 export const dismissSignalHogletInput = z.object({
-  hogletId: z.string(),
+  hogletId: hedgemonyIdSchema,
 });
 export type DismissSignalHogletInput = z.infer<typeof dismissSignalHogletInput>;
 
 export const retireHogletInput = z.object({
-  hogletId: z.string(),
+  hogletId: hedgemonyIdSchema,
 });
 export type RetireHogletInput = z.infer<typeof retireHogletInput>;
+
+export const retireHogletByTaskIdInput = z.object({
+  taskId: z.string().trim().min(1).max(64),
+});
+export type RetireHogletByTaskIdInput = z.infer<
+  typeof retireHogletByTaskIdInput
+>;
 
 export const listHogletsInput = z.object({
   wildOnly: z.boolean().optional(),
@@ -418,15 +600,15 @@ export const feedbackEvent = z.object({
 export type FeedbackEvent = z.infer<typeof feedbackEvent>;
 
 export const injectPromptEventPayload = z.object({
-  taskId: z.string(),
-  hogletId: z.string(),
-  nestId: z.string().nullable(),
+  taskId: z.string().min(1).max(64),
+  hogletId: z.string().min(1).max(64),
+  nestId: z.string().min(1).max(64).nullable(),
   source: feedbackEventSource,
-  payloadRef: z.string(),
-  payloadHash: z.string(),
-  prompt: z.string(),
-  prUrl: z.string(),
-  fallbackPrompt: z.string(),
+  payloadRef: z.string().min(1).max(512),
+  payloadHash: z.string().min(1).max(128),
+  prompt: z.string().max(8000),
+  prUrl: z.string().max(512),
+  fallbackPrompt: z.string().max(8000),
 });
 export type InjectPromptEventPayload = z.infer<typeof injectPromptEventPayload>;
 

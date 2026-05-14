@@ -1,11 +1,22 @@
 import { useDroppable } from "@dnd-kit/react";
 import type { Nest } from "@main/services/hedgemony/schemas";
+import { CheckCircle, Snowflake, Sparkle } from "@phosphor-icons/react";
 import { Tooltip } from "@radix-ui/themes";
 import nestImage from "@renderer/assets/images/hedgemony/nest.png";
 import { animate, motion, useMotionValue } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  selectNestHoglets,
+  selectTaskSummary,
+  useHogletStore,
+} from "../stores/hogletStore";
 import { selectHedgehogState, useNestStore } from "../stores/nestStore";
+import {
+  deriveNestLifecycle,
+  type NestLifecycle,
+} from "../utils/nestLifecycle";
 import { AnimatedHedgehog } from "./AnimatedHedgehog";
+import type { TaskStatus } from "./hogletStatus";
 
 const NEST_SIZE = 140;
 const HOG_SIZE_IDLE = 44;
@@ -46,17 +57,59 @@ interface NestSpriteProps {
   onFocus?: (nest: Nest) => void;
 }
 
-function territoryBackground(nest: Nest): string {
+function territoryBackground(nest: Nest, lifecycle: NestLifecycle): string {
   if (nest.health !== "ok") {
     return "radial-gradient(circle, rgba(251, 146, 60, 0.22) 0%, rgba(251, 146, 60, 0.1) 42%, transparent 72%)";
   }
   if (nest.status === "needs_attention") {
     return "radial-gradient(circle, rgba(248, 113, 113, 0.22) 0%, rgba(248, 113, 113, 0.1) 42%, transparent 72%)";
   }
-  if (nest.status === "dormant") {
-    return "radial-gradient(circle, rgba(148, 163, 184, 0.18) 0%, rgba(148, 163, 184, 0.08) 42%, transparent 72%)";
+  switch (lifecycle) {
+    case "dormant":
+      return "radial-gradient(circle, rgba(148, 163, 184, 0.18) 0%, rgba(148, 163, 184, 0.08) 42%, transparent 72%)";
+    case "validated":
+      return "radial-gradient(circle, rgba(74, 222, 128, 0.22) 0%, rgba(74, 222, 128, 0.1) 42%, transparent 72%)";
+    case "validating":
+      return "radial-gradient(circle, rgba(168, 85, 247, 0.26) 0%, rgba(168, 85, 247, 0.12) 42%, transparent 72%)";
+    case "planning":
+      return "radial-gradient(circle, rgba(125, 211, 252, 0.18) 0%, rgba(125, 211, 252, 0.08) 42%, transparent 72%)";
+    default:
+      return "radial-gradient(circle, rgba(251, 146, 60, 0.18) 0%, rgba(251, 146, 60, 0.08) 42%, transparent 72%)";
   }
-  return "radial-gradient(circle, rgba(251, 146, 60, 0.18) 0%, rgba(251, 146, 60, 0.08) 42%, transparent 72%)";
+}
+
+const LIFECYCLE_LABEL: Record<NestLifecycle, string> = {
+  planning: "Planning",
+  working: "Working",
+  validating: "Validating",
+  validated: "Validated",
+  dormant: "Dormant",
+  archived: "Archived",
+};
+
+function LifecycleBadge({ lifecycle }: { lifecycle: NestLifecycle }) {
+  if (lifecycle === "validating") {
+    return (
+      <span className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-(--purple-9) text-(--gray-1) shadow">
+        <Sparkle size={12} weight="fill" />
+      </span>
+    );
+  }
+  if (lifecycle === "validated") {
+    return (
+      <span className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-(--green-9) text-(--gray-1) shadow">
+        <CheckCircle size={12} weight="fill" />
+      </span>
+    );
+  }
+  if (lifecycle === "dormant") {
+    return (
+      <span className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-(--gray-8) text-(--gray-1) shadow">
+        <Snowflake size={12} weight="fill" />
+      </span>
+    );
+  }
+  return null;
 }
 
 export function NestSprite({
@@ -73,6 +126,20 @@ export function NestSprite({
   const [facing, setFacing] = useState<"left" | "right">("right");
   const hedgehogState = useNestStore(selectHedgehogState(nest.id));
   const isTicking = hedgehogState?.state === "ticking";
+
+  const hoglets = useHogletStore(selectNestHoglets(nest.id));
+  const taskSummaries = useHogletStore((s) => s.taskSummaries);
+  const lifecycle = useMemo(
+    () =>
+      deriveNestLifecycle({
+        nest,
+        hoglets,
+        taskStatusFor: (taskId) =>
+          (selectTaskSummary(taskId)({ taskSummaries } as never)?.latest_run
+            ?.status as TaskStatus | null) ?? "not_started",
+      }),
+    [nest, hoglets, taskSummaries],
+  );
 
   const { ref: dropRef, isDropTarget } = useDroppable({
     id: `nest-drop-${nest.id}`,
@@ -109,7 +176,7 @@ export function NestSprite({
     };
   }, [nest.mapX, nest.mapY, motionX, motionY]);
 
-  const showResident = nest.status !== "dormant";
+  const showResident = lifecycle !== "dormant";
 
   return (
     <motion.div
@@ -157,7 +224,7 @@ export function NestSprite({
                   : selected
                     ? TERRITORY_SIZE_SELECTED
                     : TERRITORY_SIZE,
-                background: territoryBackground(nest),
+                background: territoryBackground(nest, lifecycle),
                 filter: isDropTarget ? "saturate(1.6) brightness(1.1)" : "none",
               }}
             />
@@ -239,9 +306,15 @@ export function NestSprite({
                 />
               </motion.div>
             )}
+            <LifecycleBadge lifecycle={lifecycle} />
           </div>
-          <div className="mt-1 max-w-[160px] truncate rounded-(--radius-2) bg-(--gray-3) px-2 py-0.5 font-medium text-(--gray-12) text-[12px] shadow-sm">
-            {nest.name}
+          <div className="mt-1 flex max-w-[180px] items-center gap-1 truncate rounded-(--radius-2) bg-(--gray-3) px-2 py-0.5 font-medium text-(--gray-12) text-[12px] shadow-sm">
+            <span className="truncate">{nest.name}</span>
+            {lifecycle !== "working" && lifecycle !== "archived" && (
+              <span className="shrink-0 text-(--gray-10) text-[10px] uppercase tracking-wider">
+                · {LIFECYCLE_LABEL[lifecycle]}
+              </span>
+            )}
           </div>
         </motion.button>
       </Tooltip>

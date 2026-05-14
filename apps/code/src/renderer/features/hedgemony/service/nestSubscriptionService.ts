@@ -9,8 +9,10 @@ type WatchHandle = { unsubscribe: () => void };
 
 /**
  * Subscribes to a single nest's watch stream. The watch channel multiplexes
- * five event kinds — status/completed/archived (nest CRUD), hedgehog_tick
- * (sprite glow state), and message_appended (live chat append).
+ * five event kinds — status/validated/archived (nest CRUD), hedgehog_tick
+ * (sprite glow state), and message_appended (live chat append). Both `status`
+ * and `validated` upsert the nest row so the renderer sees the new status
+ * (validated/dormant/etc.) without re-fetching.
  */
 function watchNest(id: string): WatchHandle {
   return trpcClient.hedgemony.nests.watch.subscribe(
@@ -23,7 +25,7 @@ function watchNest(id: string): WatchHandle {
             nestStore.remove(event.nest.id);
             return;
           case "status":
-          case "completed":
+          case "validated":
             nestStore.upsert(event.nest);
             return;
           case "hedgehog_tick":

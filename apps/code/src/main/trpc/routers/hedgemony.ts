@@ -17,15 +17,15 @@ import {
 } from "../../services/hedgemony/pr-graph-service";
 import {
   adoptHogletInput,
-  completeNestInput,
+  compactValidatedNestInput,
   createNestInput,
   dismissSignalHogletInput,
   feedbackEvent,
-  forgetCompletedNestContextInput,
   goalDraftRespondInput,
   goalDraftResponse,
   HedgemonyEvent,
   hoglet,
+  hogletWatchEvent,
   hogletWatchScope,
   injectPromptEventPayload,
   linkPrDependencyInput,
@@ -38,9 +38,11 @@ import {
   listNestsOutput,
   listPrDependenciesForNestInput,
   listPrDependenciesForNestOutput,
+  markValidatedInput,
   nest,
   nestIdInput,
   nestMessage,
+  nestWatchEvent,
   parseNestLoadout,
   prDependency,
   prGraphWatchEvent,
@@ -51,6 +53,7 @@ import {
   recordRoutedFeedbackInput,
   recordSignalBackedHogletInput,
   releaseHogletInput,
+  retireHogletByTaskIdInput,
   retireHogletInput,
   sendNestMessageInput,
   spawnFollowUpHogletInput,
@@ -107,15 +110,15 @@ export const hedgemonyRouter = router({
       .output(nest)
       .mutation(({ input }) => getService().archive(input)),
 
-    complete: publicProcedure
-      .input(completeNestInput)
+    markValidated: publicProcedure
+      .input(markValidatedInput)
       .output(nest)
-      .mutation(({ input }) => getService().complete(input)),
+      .mutation(({ input }) => getService().markValidated(input)),
 
-    forgetCompletedContext: publicProcedure
-      .input(forgetCompletedNestContextInput)
+    compact: publicProcedure
+      .input(compactValidatedNestInput)
       .output(nest)
-      .mutation(({ input }) => getService().forgetCompletedContext(input)),
+      .mutation(({ input }) => getService().compactValidatedNest(input)),
 
     unarchive: publicProcedure
       .input(nestIdInput)
@@ -147,7 +150,7 @@ export const hedgemonyRouter = router({
       });
       for await (const data of iterable) {
         if (data.nestId === input.id) {
-          yield data.event;
+          yield nestWatchEvent.parse(data.event);
         }
       }
     }),
@@ -203,16 +206,21 @@ export const hedgemonyRouter = router({
 
     dismissSignal: publicProcedure
       .input(dismissSignalHogletInput)
+      .output(z.void())
       .mutation(({ input }) => {
         getHogletService().dismissSignal(input);
       }),
 
-    retire: publicProcedure.input(retireHogletInput).mutation(({ input }) => {
-      getHogletService().retire(input);
-    }),
+    retire: publicProcedure
+      .input(retireHogletInput)
+      .output(z.void())
+      .mutation(({ input }) => {
+        getHogletService().retire(input);
+      }),
 
     retireByTaskId: publicProcedure
-      .input(z.object({ taskId: z.string() }))
+      .input(retireHogletByTaskIdInput)
+      .output(z.void())
       .mutation(({ input }) => {
         getHogletService().retireByTaskId(input.taskId);
       }),
@@ -239,13 +247,13 @@ export const hedgemonyRouter = router({
         for await (const data of iterable) {
           const { bucket } = data;
           if (input.kind === "wild" && bucket.kind === "wild") {
-            yield data.event;
+            yield hogletWatchEvent.parse(data.event);
           } else if (
             input.kind === "nest" &&
             bucket.kind === "nest" &&
             bucket.nestId === input.nestId
           ) {
-            yield data.event;
+            yield hogletWatchEvent.parse(data.event);
           }
         }
       }),

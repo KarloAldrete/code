@@ -2,11 +2,11 @@ import { inject, injectable } from "inversify";
 import type { NestMessageRepository } from "../../db/repositories/nest-message-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import type {
-  CompleteNestInput,
+  CompactValidatedNestInput,
   CreateNestInput,
-  ForgetCompletedNestContextInput,
   GoalDraftTranscriptMessage,
   ListNestChatInput,
+  MarkValidatedInput,
   Nest,
   NestMessage,
   RecordBootstrapHandoffInput,
@@ -112,36 +112,33 @@ export class NestChatService {
     });
   }
 
-  recordCompletionContext(nest: Nest, input: CompleteNestInput): NestMessage {
-    const compaction = this.messages.compactCompletedContext(nest.id);
-
+  recordValidationContext(nest: Nest, input: MarkValidatedInput): NestMessage {
     return this.messages.create({
       nestId: nest.id,
       kind: "audit",
-      body: formatCompletionContext(input, compaction),
+      body: formatValidationContext(input),
       payloadJson: JSON.stringify({
-        type: "nest_completed",
+        type: "nest_validated",
         summary: input.summary,
         prUrls: input.prUrls ?? [],
         taskIds: input.taskIds ?? [],
         caveats: input.caveats ?? [],
-        compaction,
       }),
     });
   }
 
-  forgetCompletedContext(
+  compactValidatedNest(
     nest: Nest,
-    input: ForgetCompletedNestContextInput,
+    input: CompactValidatedNestInput,
   ): NestMessage {
     const compaction = this.messages.compactCompletedContext(nest.id);
 
     return this.messages.create({
       nestId: nest.id,
       kind: "audit",
-      body: formatForgetCompletedContext(input, compaction),
+      body: formatCompactValidatedNest(input, compaction),
       payloadJson: JSON.stringify({
-        type: "completed_context_forgotten",
+        type: "validated_nest_compacted",
         reason: input.reason ?? null,
         compaction,
       }),
@@ -306,15 +303,9 @@ function getPayloadType(payloadJson: string | null): string | null {
   }
 }
 
-function formatCompletionContext(
-  input: CompleteNestInput,
-  compaction: {
-    deletedDetailMessages: number;
-    compactedContextMessages: number;
-  },
-): string {
+function formatValidationContext(input: MarkValidatedInput): string {
   return [
-    "Nest completed",
+    "Nest validated",
     input.summary,
     input.prUrls && input.prUrls.length > 0
       ? `PRs: ${input.prUrls.join(", ")}`
@@ -325,21 +316,20 @@ function formatCompletionContext(
     input.caveats && input.caveats.length > 0
       ? `Caveats: ${input.caveats.join("; ")}`
       : null,
-    `Compacted context: deleted ${compaction.deletedDetailMessages} detail rows, compacted ${compaction.compactedContextMessages} context rows.`,
   ]
     .filter(Boolean)
     .join("\n\n");
 }
 
-function formatForgetCompletedContext(
-  input: ForgetCompletedNestContextInput,
+function formatCompactValidatedNest(
+  input: CompactValidatedNestInput,
   compaction: {
     deletedDetailMessages: number;
     compactedContextMessages: number;
   },
 ): string {
   return [
-    "Completed nest context forgotten",
+    "Validated nest compacted",
     input.reason ? `Reason: ${input.reason}` : null,
     `Compacted context: deleted ${compaction.deletedDetailMessages} detail rows, compacted ${compaction.compactedContextMessages} context rows.`,
   ]

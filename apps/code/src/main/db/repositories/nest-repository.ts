@@ -6,7 +6,12 @@ import type { DatabaseService } from "../service";
 
 export type Nest = typeof hedgemonyNests.$inferSelect;
 export type NewNest = typeof hedgemonyNests.$inferInsert;
-export type NestStatus = "active" | "dormant" | "archived" | "needs_attention";
+export type NestStatus =
+  | "active"
+  | "validated"
+  | "dormant"
+  | "archived"
+  | "needs_attention";
 export type NestHealth = "ok" | "worktree_missing" | "db_inconsistent";
 
 export interface CreateNestData {

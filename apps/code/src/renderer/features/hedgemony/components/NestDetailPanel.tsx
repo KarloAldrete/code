@@ -12,11 +12,13 @@ import {
   ArrowsClockwise,
   ArrowsOutCardinal,
   ChatCircle,
+  CheckCircle,
   Crosshair,
   FloppyDisk,
   GitMerge,
   PaperPlaneRight,
   SignOut,
+  Sparkle,
   Trash,
   Warning,
   X,
@@ -48,8 +50,17 @@ import {
 import { selectNestMessages, useNestChatStore } from "../stores/nestChatStore";
 import { selectHedgehogState, useNestStore } from "../stores/nestStore";
 import { selectEdgesForNest, usePrGraphStore } from "../stores/prGraphStore";
+import { deriveNestLifecycle } from "../utils/nestLifecycle";
 import { CommandConsole } from "./CommandConsole";
+import { CompactNestDialog } from "./CompactNestDialog";
 import { STATUS_BADGE_COLOR, type TaskStatus } from "./hogletStatus";
+import { MarkValidatedDialog } from "./MarkValidatedDialog";
+import {
+  type FeedbackRoutedPayload,
+  type PrGraphRoutedPayload,
+  parseFeedbackRoutedPayload,
+  parsePrGraphRoutedPayload,
+} from "./nest-payload-schemas";
 
 const log = logger.scope("nest-detail-panel");
 
@@ -86,6 +97,43 @@ export function NestDetailPanel({
     (s) => s.loadingByNestId[nest.id] ?? false,
   );
   const hedgehogState = useNestStore(selectHedgehogState(nest.id));
+
+  const hoglets = useHogletStore(selectNestHoglets(nest.id));
+  const taskSummaries = useHogletStore((s) => s.taskSummaries);
+  const lifecycle = useMemo(
+    () =>
+      deriveNestLifecycle({
+        nest,
+        hoglets,
+        taskStatusFor: (taskId) =>
+          (selectTaskSummary(taskId)({ taskSummaries } as never)?.latest_run
+            ?.status as TaskStatus | null) ?? "not_started",
+      }),
+    [nest, hoglets, taskSummaries],
+  );
+
+  const editable = lifecycle === "planning" || lifecycle === "working";
+  const showChatComposer = lifecycle !== "dormant" && lifecycle !== "archived";
+
+  const validatedTaskIds = useMemo(
+    () => hoglets.map((h) => h.taskId),
+    [hoglets],
+  );
+
+  const validationDefaultSummary = useMemo(() => {
+    const lines = [
+      nest.definitionOfDone
+        ? `Definition of done met: ${nest.definitionOfDone}`
+        : "Goal satisfied.",
+    ];
+    if (hoglets.length > 0) {
+      lines.push(`${hoglets.length} hoglet(s) completed their work.`);
+    }
+    return lines.join("\n\n");
+  }, [nest.definitionOfDone, hoglets.length]);
+
+  const [validateDialogOpen, setValidateDialogOpen] = useState(false);
+  const [compactDialogOpen, setCompactDialogOpen] = useState(false);
 
   const [chatDraft, setChatDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -230,12 +278,63 @@ export function NestDetailPanel({
 
       <ScrollArea type="auto" scrollbars="vertical" className="min-h-0 flex-1">
         <Flex direction="column" gap="4" px="4" py="3">
+          {lifecycle === "validating" && (
+            <div className="rounded-(--radius-2) border border-(--purple-7) bg-(--purple-2) p-3">
+              <Flex direction="column" gap="2">
+                <Flex align="center" gap="2">
+                  <Sparkle
+                    size={16}
+                    weight="fill"
+                    className="text-(--purple-11)"
+                  />
+                  <Text size="2" weight="medium" className="text-(--purple-12)">
+                    Ready to validate
+                  </Text>
+                </Flex>
+                <Text size="2" color="gray">
+                  All hoglets finished and the definition of done is set. Review
+                  and confirm the goal is met.
+                </Text>
+                <Button
+                  size="2"
+                  color="purple"
+                  onClick={() => setValidateDialogOpen(true)}
+                  className="self-start"
+                >
+                  <CheckCircle size={14} />
+                  Mark validated
+                </Button>
+              </Flex>
+            </div>
+          )}
+
+          {lifecycle === "validated" && (
+            <div className="rounded-(--radius-2) border border-(--green-7) bg-(--green-2) p-3">
+              <Flex direction="column" gap="2">
+                <Flex align="center" gap="2">
+                  <CheckCircle
+                    size={16}
+                    weight="fill"
+                    className="text-(--green-11)"
+                  />
+                  <Text size="2" weight="medium" className="text-(--green-12)">
+                    Validated
+                  </Text>
+                </Flex>
+                <Text size="2" color="gray">
+                  Goal confirmed. Compact the nest when you no longer need the
+                  full chat trail.
+                </Text>
+              </Flex>
+            </div>
+          )}
+
           <LabeledField label="Name" htmlFor="nest-detail-name">
             <TextField.Root
               id="nest-detail-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              disabled={saving || archiving}
+              disabled={saving || archiving || !editable}
             />
           </LabeledField>
 
@@ -245,7 +344,7 @@ export function NestDetailPanel({
               value={goalPrompt}
               onChange={(e) => setGoalPrompt(e.target.value)}
               rows={3}
-              disabled={saving || archiving}
+              disabled={saving || archiving || !editable}
             />
           </LabeledField>
 
@@ -258,7 +357,7 @@ export function NestDetailPanel({
               value={definitionOfDone}
               onChange={(e) => setDefinitionOfDone(e.target.value)}
               rows={2}
-              disabled={saving || archiving}
+              disabled={saving || archiving || !editable}
             />
           </LabeledField>
 
@@ -304,60 +403,94 @@ export function NestDetailPanel({
         </Flex>
       </ScrollArea>
 
-      <div className="flex flex-col gap-2 border-(--accent-a5) border-t bg-(--gray-a2) px-3 py-2">
-        <Flex gap="2" align="center">
-          <TextField.Root
-            placeholder={t("Message the hedgehog…")}
-            value={chatDraft}
-            onChange={(e) => setChatDraft(e.target.value)}
-            onKeyDown={handleChatKeyDown}
-            disabled={sending}
-            className="flex-1"
-          />
-          <IconButton
-            onClick={handleSendChat}
-            disabled={!chatDraft.trim() || sending}
-            loading={sending}
-            size="2"
-            variant="soft"
-            aria-label="Send message"
-          >
-            <PaperPlaneRight size={14} />
-          </IconButton>
-        </Flex>
-        {chatError && (
-          <Text size="1" color="red">
-            {chatError}
-          </Text>
-        )}
-      </div>
+      {showChatComposer && (
+        <div className="flex flex-col gap-2 border-(--accent-a5) border-t bg-(--gray-a2) px-3 py-2">
+          <Flex gap="2" align="center">
+            <TextField.Root
+              placeholder={t("Message the hedgehog…")}
+              value={chatDraft}
+              onChange={(e) => setChatDraft(e.target.value)}
+              onKeyDown={handleChatKeyDown}
+              disabled={sending}
+              className="flex-1"
+            />
+            <IconButton
+              onClick={handleSendChat}
+              disabled={!chatDraft.trim() || sending}
+              loading={sending}
+              size="2"
+              variant="soft"
+              aria-label="Send message"
+            >
+              <PaperPlaneRight size={14} />
+            </IconButton>
+          </Flex>
+          {chatError && (
+            <Text size="1" color="red">
+              {chatError}
+            </Text>
+          )}
+        </div>
+      )}
 
       <CommandConsole.Footer align="end">
-        <Button
-          onClick={handleSave}
-          disabled={!canSave || saving || archiving}
-          loading={saving}
-          size="2"
-          title="Save (S)"
-        >
-          <FloppyDisk size={14} />
-          {t("Save")}
-          <KeyHint className="ml-1">S</KeyHint>
-        </Button>
-        <Button
-          variant="soft"
-          color="red"
-          onClick={handleArchive}
-          disabled={saving || archiving}
-          loading={archiving}
-          size="2"
-          title="Archive (A)"
-        >
-          <Archive size={14} />
-          {t("Archive")}
-          <KeyHint className="ml-1">A</KeyHint>
-        </Button>
+        {editable && (
+          <Button
+            onClick={handleSave}
+            disabled={!canSave || saving || archiving}
+            loading={saving}
+            size="2"
+            title="Save (S)"
+          >
+            <FloppyDisk size={14} />
+            {t("Save")}
+            <KeyHint className="ml-1">S</KeyHint>
+          </Button>
+        )}
+        {lifecycle === "validated" && (
+          <Button
+            color="gray"
+            variant="soft"
+            onClick={() => setCompactDialogOpen(true)}
+            disabled={saving || archiving}
+            size="2"
+          >
+            <Archive size={14} />
+            Compact nest
+          </Button>
+        )}
+        {lifecycle !== "dormant" && lifecycle !== "archived" && (
+          <Button
+            variant="soft"
+            color="red"
+            onClick={handleArchive}
+            disabled={saving || archiving}
+            loading={archiving}
+            size="2"
+            title="Archive (A)"
+          >
+            <Archive size={14} />
+            {t("Archive")}
+            <KeyHint className="ml-1">A</KeyHint>
+          </Button>
+        )}
       </CommandConsole.Footer>
+
+      <MarkValidatedDialog
+        open={validateDialogOpen}
+        onOpenChange={setValidateDialogOpen}
+        nest={nest}
+        defaultSummary={validationDefaultSummary}
+        defaultPrUrls={[]}
+        defaultTaskIds={validatedTaskIds}
+        onValidated={(validated) => useNestStore.getState().upsert(validated)}
+      />
+      <CompactNestDialog
+        open={compactDialogOpen}
+        onOpenChange={setCompactDialogOpen}
+        nest={nest}
+        onCompacted={(compacted) => useNestStore.getState().upsert(compacted)}
+      />
     </CommandConsole>
   );
 }
@@ -377,49 +510,6 @@ const KIND_ACCENT: Record<NestMessageKind, string> = {
   tool_result: "text-(--blue-11)",
   hoglet_summary: "text-(--gray-11)",
 };
-
-interface FeedbackRoutedPayload {
-  type: "feedback_routed";
-  source: "pr_review" | "ci" | "issue" | "hedgehog";
-  outcome: "injected" | "follow_up_spawned" | "failed";
-  payloadRef: string;
-  hogletTaskId: string;
-}
-
-function parseFeedbackRoutedPayload(
-  payloadJson: string | null,
-): FeedbackRoutedPayload | null {
-  if (!payloadJson) return null;
-  try {
-    const parsed = JSON.parse(payloadJson) as Record<string, unknown>;
-    if (parsed.type !== "feedback_routed") return null;
-    return parsed as unknown as FeedbackRoutedPayload;
-  } catch {
-    return null;
-  }
-}
-
-interface PrGraphRoutedPayload {
-  type: "pr_graph_rebase_routed";
-  edgeId: string;
-  outcome: "injected" | "follow_up_spawned" | "failed" | "broken";
-  parentTaskId: string;
-  childTaskId: string;
-  note: string | null;
-}
-
-function parsePrGraphRoutedPayload(
-  payloadJson: string | null,
-): PrGraphRoutedPayload | null {
-  if (!payloadJson) return null;
-  try {
-    const parsed = JSON.parse(payloadJson) as Record<string, unknown>;
-    if (parsed.type !== "pr_graph_rebase_routed") return null;
-    return parsed as unknown as PrGraphRoutedPayload;
-  } catch {
-    return null;
-  }
-}
 
 function NestChatMessage({ message }: { message: NestMessage }) {
   const routed = parseFeedbackRoutedPayload(message.payloadJson);

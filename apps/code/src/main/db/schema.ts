@@ -105,7 +105,7 @@ export const hedgemonyNests = sqliteTable(
     mapX: integer().notNull(),
     mapY: integer().notNull(),
     status: text({
-      enum: ["active", "dormant", "archived", "needs_attention"],
+      enum: ["active", "validated", "dormant", "archived", "needs_attention"],
     })
       .notNull()
       .default("active"),

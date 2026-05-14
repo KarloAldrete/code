@@ -62,7 +62,9 @@ async function main() {
     .filter(([key]) => key !== "$comment")
     .filter(([gender]) => !GENDER_FILTER || gender === GENDER_FILTER);
   if (genders.length === 0) {
-    console.error("No usable voice IDs in voice-lines.json generation_metadata.voices.elevenlabs");
+    console.error(
+      "No usable voice IDs in voice-lines.json generation_metadata.voices.elevenlabs",
+    );
     process.exit(1);
   }
 

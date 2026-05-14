@@ -1,4 +1,5 @@
 import { inject, injectable } from "inversify";
+import { z } from "zod";
 import type {
   ExecutionMode,
   Task,
@@ -8,11 +9,142 @@ import type {
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import type { AuthService } from "../auth/service";
-import type { HedgemonyReasoningEffort } from "./schemas";
+import { type HedgemonyReasoningEffort, repoSlugSchema } from "./schemas";
 
 const log = logger.scope("hedgemony-cloud-task-client");
 
 const REPO_INTEGRATION_CACHE_TTL_MS = 5 * 60 * 1000;
+
+export class CloudApiResponseError extends Error {
+  constructor(
+    readonly endpoint: string,
+    readonly issues: ReadonlyArray<{ path: PropertyKey[]; message: string }>,
+  ) {
+    super(`cloud_api_response_invalid: ${endpoint}`);
+    this.name = "CloudApiResponseError";
+  }
+}
+
+/**
+ * Run a Zod schema over a `Response` JSON body. Throws `CloudApiResponseError`
+ * on shape mismatch so callers get a typed signal that the cloud returned
+ * something unsafe to consume. We never trust the response to be well-formed.
+ */
+async function parseJsonResponse<TSchema extends z.ZodTypeAny>(
+  endpoint: string,
+  response: Response,
+  schema: TSchema,
+): Promise<z.infer<TSchema>> {
+  const raw = await response.json();
+  const result = schema.safeParse(raw);
+  if (!result.success) {
+    log.warn("cloud API response rejected by schema", {
+      endpoint,
+      issues: result.error.issues.slice(0, 8).map((issue) => ({
+        path: issue.path,
+        code: issue.code,
+        message: issue.message,
+      })),
+    });
+    throw new CloudApiResponseError(
+      endpoint,
+      result.error.issues.map((issue) => ({
+        path: issue.path,
+        message: issue.message,
+      })),
+    );
+  }
+  return result.data;
+}
+
+const githubPrUrlSchema = z
+  .string()
+  .max(512)
+  .refine((value) => {
+    try {
+      const url = new URL(value);
+      if (url.protocol !== "https:") return false;
+      return url.host === "github.com" || url.host.endsWith(".github.com");
+    } catch {
+      return false;
+    }
+  }, "pr_url must be an https URL on github.com");
+
+const branchSchema = z
+  .string()
+  .min(1)
+  .max(256)
+  .regex(/^[A-Za-z0-9._\-/]+$/);
+
+const taskRunOutputSchema = z
+  .object({
+    pr_url: githubPrUrlSchema.optional().nullable(),
+  })
+  .passthrough()
+  .nullable();
+
+const taskRunSchema = z
+  .object({
+    id: z.string().min(1).max(64),
+    task: z.string().min(1).max(64).optional(),
+    branch: branchSchema.nullable().optional(),
+    status: z.string().min(1).max(64).optional(),
+    output: taskRunOutputSchema.optional(),
+  })
+  .passthrough();
+
+const taskSchema = z
+  .object({
+    id: z.string().min(1).max(64),
+    repository: repoSlugSchema.nullable().optional(),
+    latest_run: taskRunSchema.nullable().optional(),
+  })
+  .passthrough();
+
+const integrationsResponseSchema = z
+  .object({
+    results: z
+      .array(
+        z
+          .object({
+            id: z.string().min(1).max(64),
+            installation_id: z.string().min(1).max(64),
+          })
+          .passthrough(),
+      )
+      .optional(),
+  })
+  .passthrough();
+
+const integrationReposResponseSchema = z
+  .object({
+    results: z.array(z.string().min(1).max(140)).optional(),
+  })
+  .passthrough();
+
+/**
+ * Reject `apiHost` values that would let the cloud API base URL escape into a
+ * path component or non-HTTPS scheme. Auth state is the source of truth for
+ * `apiHost`, but we never want to construct request URLs from a value that
+ * could be coerced into reaching a different origin.
+ */
+function assertValidApiHost(apiHost: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(apiHost);
+  } catch {
+    throw new Error("cloud_api_host_invalid: not a URL");
+  }
+  if (parsed.protocol !== "https:") {
+    throw new Error("cloud_api_host_invalid: must be https");
+  }
+  if (parsed.pathname !== "" && parsed.pathname !== "/") {
+    throw new Error("cloud_api_host_invalid: must not contain a path");
+  }
+  if (parsed.search !== "" || parsed.hash !== "") {
+    throw new Error("cloud_api_host_invalid: must not contain query or hash");
+  }
+}
 
 interface CreateTaskRunOptions {
   environment?: "local" | "cloud";
@@ -93,7 +225,11 @@ export class CloudTaskClient {
       });
       throw new Error(`create_task_failed: HTTP ${response.status}`);
     }
-    return (await response.json()) as Task;
+    return (await parseJsonResponse(
+      "POST /tasks/",
+      response,
+      taskSchema,
+    )) as unknown as Task;
   }
 
   async deleteTask(taskId: string): Promise<void> {
@@ -127,7 +263,11 @@ export class CloudTaskClient {
         `cloud_task_fetch_failed: HTTP ${response.status} for task ${taskId}`,
       );
     }
-    const task = (await response.json()) as Task;
+    const task = (await parseJsonResponse(
+      "GET /tasks/{id}/",
+      response,
+      taskSchema,
+    )) as unknown as Task;
     return { task, latestRun: task.latest_run ?? null };
   }
 
@@ -173,7 +313,11 @@ export class CloudTaskClient {
       });
       throw new Error(`create_task_run_failed: HTTP ${response.status}`);
     }
-    return (await response.json()) as TaskRun;
+    return (await parseJsonResponse(
+      "POST /tasks/{id}/runs/",
+      response,
+      taskRunSchema,
+    )) as unknown as TaskRun;
   }
 
   async startTaskRun(
@@ -205,7 +349,11 @@ export class CloudTaskClient {
       });
       throw new Error(`start_task_run_failed: HTTP ${response.status}`);
     }
-    return (await response.json()) as Task;
+    return (await parseJsonResponse(
+      "POST /tasks/{id}/runs/{runId}/start/",
+      response,
+      taskSchema,
+    )) as unknown as Task;
   }
 
   async updateTaskRun(
@@ -238,7 +386,11 @@ export class CloudTaskClient {
       });
       throw new Error(`update_task_run_failed: HTTP ${response.status}`);
     }
-    return (await response.json()) as TaskRun;
+    return (await parseJsonResponse(
+      "PATCH /tasks/{id}/runs/{runId}/",
+      response,
+      taskRunSchema,
+    )) as unknown as TaskRun;
   }
 
   /**
@@ -272,9 +424,11 @@ export class CloudTaskClient {
         });
         return null;
       }
-      const integrationsData = (await integrationsRes.json()) as {
-        results?: Array<{ id: string; installation_id: string }>;
-      };
+      const integrationsData = await parseJsonResponse(
+        "GET /users/@me/integrations/",
+        integrationsRes,
+        integrationsResponseSchema,
+      );
       const integrations = integrationsData.results ?? [];
 
       const map = new Map<string, string>();
@@ -285,9 +439,20 @@ export class CloudTaskClient {
             `${apiHost}/api/users/@me/integrations/github/${integration.installation_id}/repos/?limit=500`,
           );
           if (!reposRes.ok) return;
-          const reposData = (await reposRes.json()) as {
-            results?: string[];
-          };
+          let reposData: z.infer<typeof integrationReposResponseSchema>;
+          try {
+            reposData = await parseJsonResponse(
+              "GET /users/@me/integrations/github/{installationId}/repos/",
+              reposRes,
+              integrationReposResponseSchema,
+            );
+          } catch (error) {
+            log.warn("integration repos response rejected by schema", {
+              installationId: integration.installation_id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return;
+          }
           for (const repo of reposData.results ?? []) {
             if (!map.has(repo.toLowerCase())) {
               map.set(repo.toLowerCase(), integration.id);
@@ -309,6 +474,7 @@ export class CloudTaskClient {
 
   private async resolveContext(): Promise<{ apiHost: string; teamId: number }> {
     const { apiHost } = await this.auth.getValidAccessToken();
+    assertValidApiHost(apiHost);
     const stateProjectId = this.auth.getState().projectId;
     if (typeof stateProjectId === "number") {
       this.cachedFallbackContext = { apiHost, teamId: stateProjectId };

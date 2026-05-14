@@ -44,7 +44,9 @@ import {
   type Nest,
   type NestChangedEvent,
   type NestMessage,
+  parseNestChatCreationBootstrapPayload,
   parseNestLoadout,
+  parseScratchpadState,
 } from "./schemas";
 
 const log = logger.scope("hedgehog-tick-service");
@@ -509,27 +511,20 @@ export class HedgehogTickService {
     };
 
     for (const message of recentChat) {
-      if (!message.payloadJson) continue;
-      try {
-        const payload = JSON.parse(message.payloadJson) as Record<
-          string,
-          unknown
-        >;
-        const bootstrap =
-          payload.creationBootstrap &&
-          typeof payload.creationBootstrap === "object"
-            ? (payload.creationBootstrap as Record<string, unknown>)
-            : payload;
-        addRepositories(bootstrap.repositories);
-        addRepository(bootstrap.primaryRepository);
-        if (
-          !primaryRepository &&
-          typeof bootstrap.primaryRepository === "string"
-        ) {
-          const trimmed = bootstrap.primaryRepository.trim();
-          if (trimmed.length > 0) primaryRepository = trimmed;
-        }
-      } catch {}
+      const payload = parseNestChatCreationBootstrapPayload(
+        message.payloadJson,
+      );
+      if (!payload) continue;
+      const bootstrap = payload.creationBootstrap ?? payload;
+      addRepositories(bootstrap.repositories);
+      addRepository(bootstrap.primaryRepository ?? null);
+      if (
+        !primaryRepository &&
+        typeof bootstrap.primaryRepository === "string"
+      ) {
+        const trimmed = bootstrap.primaryRepository.trim();
+        if (trimmed.length > 0) primaryRepository = trimmed;
+      }
     }
 
     for (const entry of hoglets) addRepository(entry.repository);
@@ -609,16 +604,7 @@ export class HedgehogTickService {
 
   private loadScratchpad(nestId: string): ScratchpadEntry[] {
     const row = this.stateRepo.findByNestId(nestId);
-    if (!row?.serializedStateJson) return [];
-    try {
-      const parsed = JSON.parse(row.serializedStateJson) as {
-        scratchpad?: ScratchpadEntry[];
-      };
-      return Array.isArray(parsed.scratchpad) ? parsed.scratchpad : [];
-    } catch (error) {
-      log.warn("scratchpad json corrupt, ignoring", { nestId, error });
-      return [];
-    }
+    return parseScratchpadState(row?.serializedStateJson ?? null);
   }
 
   private summariseLlmResponse(

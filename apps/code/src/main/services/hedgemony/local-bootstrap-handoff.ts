@@ -6,8 +6,22 @@ import type {
   GoalSpecBootstrapContext,
   RecordBootstrapHandoffInput,
 } from "./schemas";
+import { wrapUntrusted } from "./wrap-untrusted";
 
 const MAX_FILE_PREVIEW_CHARS = 1200;
+const MAX_REF_LABEL_CHARS = 256;
+const REPO_REF_PART_RE = /^[A-Za-z0-9._-]+$/;
+
+export function isValidRepoRef(ref: string): boolean {
+  const parts = ref.split("/");
+  if (parts.length !== 2) return false;
+  for (const part of parts) {
+    if (!part) return false;
+    if (part === "." || part === "..") return false;
+    if (!REPO_REF_PART_RE.test(part)) return false;
+  }
+  return true;
+}
 
 interface LocalRepoMatch {
   ref: string;
@@ -76,8 +90,8 @@ async function matchLocalRepository(
 
   if (!match) {
     const cloneTarget = cloneTargetForRepoRef(ref);
-    if (cloneTarget && options.cloneRepository) {
-      const repoUrl = githubUrlForRepoRef(ref);
+    const repoUrl = githubUrlForRepoRef(ref);
+    if (cloneTarget && repoUrl && options.cloneRepository) {
       try {
         let cloned = false;
         if (!existsSync(cloneTarget.targetPath)) {
@@ -114,7 +128,9 @@ async function matchLocalRepository(
       ref,
       path: null,
       remoteUrl: null,
-      matchReason: "not found in local repository table",
+      matchReason: cloneTarget
+        ? "not found in local repository table"
+        : "rejected: invalid repository slug",
       cloneError: null,
       files: [],
     };
@@ -156,9 +172,7 @@ function summarizeFile(filePath: string): string {
   try {
     const content = readFileSync(filePath, "utf8").trim();
     if (!content) return "(empty)";
-    return content.length > MAX_FILE_PREVIEW_CHARS
-      ? `${content.slice(0, MAX_FILE_PREVIEW_CHARS).trimEnd()}\n...`
-      : content;
+    return content;
   } catch {
     return "(unreadable)";
   }
@@ -189,11 +203,15 @@ function formatLocalHandoff(
 
   const fileSummaries = matches
     .flatMap((match) =>
-      match.files.map((file) =>
-        [`### ${match.ref} / ${file.path}`, "```", file.summary, "```"].join(
-          "\n",
-        ),
-      ),
+      match.files.map((file) => {
+        const safeRef = match.ref.slice(0, MAX_REF_LABEL_CHARS);
+        const safePath = file.path.slice(0, MAX_REF_LABEL_CHARS);
+        const wrapped = wrapUntrusted(file.summary, {
+          source: `file:${safeRef}/${safePath}`,
+          maxChars: MAX_FILE_PREVIEW_CHARS,
+        });
+        return [`### ${safeRef} / ${safePath}`, wrapped].join("\n");
+      }),
     )
     .join("\n\n");
 
@@ -246,13 +264,14 @@ function normalize(value: string): string {
 }
 
 function cloneTargetForRepoRef(ref: string): { targetPath: string } | null {
-  const parts = ref.split("/");
-  if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+  if (!isValidRepoRef(ref)) return null;
+  const [owner, repo] = ref.split("/");
   return {
-    targetPath: join(getWorktreeLocation(), "repositories", parts[0], parts[1]),
+    targetPath: join(getWorktreeLocation(), "repositories", owner, repo),
   };
 }
 
-function githubUrlForRepoRef(ref: string): string {
+function githubUrlForRepoRef(ref: string): string | null {
+  if (!isValidRepoRef(ref)) return null;
   return `https://github.com/${ref}.git`;
 }

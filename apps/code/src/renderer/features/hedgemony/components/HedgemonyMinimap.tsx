@@ -23,6 +23,7 @@ function nestDotColor(nest: Nest): string {
   if (nest.health !== "ok") return "var(--orange-9)";
   if (nest.status === "needs_attention") return "var(--red-9)";
   if (nest.status === "dormant") return "var(--gray-8)";
+  if (nest.status === "validated") return "var(--green-9)";
   return "var(--amber-9)";
 }
 

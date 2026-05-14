@@ -101,14 +101,14 @@ function createMockNestChatService() {
     recordCreationContext: vi.fn(() => [makeMessage(), makeMessage()]),
     recordBootstrapHandoff: vi.fn(() => makeMessage()),
     recordBootstrapHandoffFailure: vi.fn(() => makeMessage()),
-    recordCompletionContext: vi.fn(() => makeMessage()),
-    forgetCompletedContext: vi.fn(() => makeMessage()),
+    recordValidationContext: vi.fn(() => makeMessage()),
+    compactValidatedNest: vi.fn(() => makeMessage()),
   } as unknown as NestChatService & {
     recordCreationContext: ReturnType<typeof vi.fn>;
     recordBootstrapHandoff: ReturnType<typeof vi.fn>;
     recordBootstrapHandoffFailure: ReturnType<typeof vi.fn>;
-    recordCompletionContext: ReturnType<typeof vi.fn>;
-    forgetCompletedContext: ReturnType<typeof vi.fn>;
+    recordValidationContext: ReturnType<typeof vi.fn>;
+    compactValidatedNest: ReturnType<typeof vi.fn>;
   };
 }
 
@@ -465,7 +465,7 @@ describe("NestService", () => {
     });
   });
 
-  it("completes a nest by marking it dormant and compacting context", async () => {
+  it("validates an active nest and records the validation context", async () => {
     const listener = vi.fn();
     service.on(HedgemonyEvent.NestChanged, listener);
     const nest = await service.create({
@@ -475,15 +475,15 @@ describe("NestService", () => {
       mapY: 1,
     });
 
-    const completed = service.complete({
+    const validated = service.markValidated({
       id: nest.id,
       summary: "Merged checkout fixes and verified the happy path.",
       prUrls: ["https://github.com/posthog/posthog/pull/1"],
       taskIds: ["task-1"],
     });
 
-    expect(completed.status).toBe("dormant");
-    expect(nestChat.recordCompletionContext).toHaveBeenCalledWith(completed, {
+    expect(validated.status).toBe("validated");
+    expect(nestChat.recordValidationContext).toHaveBeenCalledWith(validated, {
       id: nest.id,
       summary: "Merged checkout fixes and verified the happy path.",
       prUrls: ["https://github.com/posthog/posthog/pull/1"],
@@ -491,29 +491,47 @@ describe("NestService", () => {
     });
     expect(listener).toHaveBeenLastCalledWith({
       nestId: nest.id,
-      event: { kind: "completed", nest: completed },
+      event: { kind: "validated", nest: validated },
     });
   });
 
-  it("does not record duplicate completion context for dormant nests", async () => {
+  it("does not record duplicate validation context for validated nests", async () => {
     const nest = await service.create({
       name: "Checkout",
       goalPrompt: "Improve checkout",
       mapX: 1,
       mapY: 1,
     });
-    const completed = service.complete({ id: nest.id, summary: "Done" });
+    const validated = service.markValidated({ id: nest.id, summary: "Done" });
     const listener = vi.fn();
     service.on(HedgemonyEvent.NestChanged, listener);
 
-    const repeated = service.complete({ id: nest.id, summary: "Done again" });
+    const repeated = service.markValidated({
+      id: nest.id,
+      summary: "Done again",
+    });
 
-    expect(repeated).toEqual(completed);
-    expect(nestChat.recordCompletionContext).toHaveBeenCalledTimes(1);
+    expect(repeated).toEqual(validated);
+    expect(nestChat.recordValidationContext).toHaveBeenCalledTimes(1);
     expect(listener).not.toHaveBeenCalled();
   });
 
-  it("forgets context only for dormant nests", async () => {
+  it("rejects markValidated on dormant nests", async () => {
+    const nest = await service.create({
+      name: "Already shipped",
+      goalPrompt: "Done",
+      mapX: 1,
+      mapY: 1,
+    });
+    const validated = service.markValidated({ id: nest.id, summary: "Done" });
+    service.compactValidatedNest({ id: validated.id });
+
+    expect(() =>
+      service.markValidated({ id: nest.id, summary: "Encore" }),
+    ).toThrowError("dormant_nest_cannot_validate");
+  });
+
+  it("compacts only validated nests, transitioning them to dormant", async () => {
     const active = await service.create({
       name: "Active",
       goalPrompt: "Still working",
@@ -521,20 +539,21 @@ describe("NestService", () => {
       mapY: 1,
     });
 
-    expect(() =>
-      service.forgetCompletedContext({ id: active.id }),
-    ).toThrowError("nest_must_be_dormant_to_forget_context");
+    expect(() => service.compactValidatedNest({ id: active.id })).toThrowError(
+      "nest_must_be_validated_to_compact",
+    );
 
-    const dormant = service.complete({
+    const validated = service.markValidated({
       id: active.id,
       summary: "Done",
     });
-    service.forgetCompletedContext({
-      id: dormant.id,
+    const dormant = service.compactValidatedNest({
+      id: validated.id,
       reason: "Clean up old context.",
     });
 
-    expect(nestChat.forgetCompletedContext).toHaveBeenCalledWith(dormant, {
+    expect(dormant.status).toBe("dormant");
+    expect(nestChat.compactValidatedNest).toHaveBeenCalledWith(dormant, {
       id: dormant.id,
       reason: "Clean up old context.",
     });
@@ -558,10 +577,10 @@ describe("NestService", () => {
       "Nest not found: missing",
     );
     expect(() =>
-      service.complete({ id: "missing", summary: "Done" }),
+      service.markValidated({ id: "missing", summary: "Done" }),
     ).toThrowError("Nest not found: missing");
-    expect(() =>
-      service.forgetCompletedContext({ id: "missing" }),
-    ).toThrowError("Nest not found: missing");
+    expect(() => service.compactValidatedNest({ id: "missing" })).toThrowError(
+      "Nest not found: missing",
+    );
   });
 });

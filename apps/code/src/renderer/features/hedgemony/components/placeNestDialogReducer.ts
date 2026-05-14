@@ -1,7 +1,10 @@
-import type {
-  GoalDraftTranscriptMessage,
-  GoalSpecDraft,
+import {
+  type GoalDraftTranscriptMessage,
+  type GoalSpecDraft,
+  goalDraftTranscriptMessage,
+  goalSpecDraft,
 } from "@main/services/hedgemony/schemas";
+import { z } from "zod";
 
 export type NestCreationMode = "guided" | "simple";
 
@@ -197,6 +200,22 @@ export function buildSimpleTranscript(input: {
 
 const DRAFT_STORAGE_KEY = "hedgemony-nest-draft";
 
+/**
+ * Schema for the `nest-draft` localStorage entry. The renderer's own code
+ * writes this, but we re-validate on restore so a corrupt or tampered
+ * localStorage row can't slide unknown fields into reducer state.
+ */
+const persistedNestDraftSchema = z.object({
+  initialGoal: z.string().max(8000),
+  answer: z.string().max(8000),
+  transcript: z.array(goalDraftTranscriptMessage).max(32),
+  draft: goalSpecDraft.nullable(),
+  name: z.string().max(240),
+  goalPrompt: z.string().max(8000),
+  definitionOfDone: z.string().max(8000),
+  simpleMode: z.boolean(),
+});
+
 export interface PersistedNestDraft {
   initialGoal: string;
   answer: string;
@@ -223,13 +242,21 @@ export function saveNestDraft(state: PlaceNestDialogState): void {
 }
 
 export function restoreNestDraft(): PersistedNestDraft | null {
+  const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+  if (!raw) return null;
+  let parsed: unknown;
   try {
-    const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as PersistedNestDraft;
+    parsed = JSON.parse(raw);
   } catch {
+    localStorage.removeItem(DRAFT_STORAGE_KEY);
     return null;
   }
+  const result = persistedNestDraftSchema.safeParse(parsed);
+  if (!result.success) {
+    localStorage.removeItem(DRAFT_STORAGE_KEY);
+    return null;
+  }
+  return result.data;
 }
 
 export function clearNestDraft(): void {

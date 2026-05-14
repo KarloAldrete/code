@@ -168,7 +168,16 @@ describe("buildLocalBootstrapHandoff", () => {
       makeRepository({ path: repoPath }),
     ]);
 
-    expect(handoff.handoffMarkdown).toContain(`${"a".repeat(1200)}\n...`);
+    // File content is wrapped in an <untrusted_signal> envelope and truncated
+    // to MAX_FILE_PREVIEW_CHARS with a length marker — never paste the raw
+    // file content directly into the LLM prompt.
+    expect(handoff.handoffMarkdown).toContain(
+      '<untrusted_signal source="file:',
+    );
+    expect(handoff.handoffMarkdown).toContain("a".repeat(1200));
+    expect(handoff.handoffMarkdown).toContain(
+      "[truncated, original length: 1300 chars]",
+    );
     expect(handoff.handoffMarkdown).not.toContain("a".repeat(1300));
   });
 });
