@@ -637,13 +637,16 @@ export class PostHogAPIClient {
 
   /**
    * HACKATHON SHORTCUT — no dedicated collaborators endpoint exists on the
-   * backend yet, so we squat on the existing `repository_config` JSON field as
-   * a metadata bag. Read the current `repository_config`, merge in the new
-   * uuids alongside the `work_thread` marker, write it back via PATCH.
+   * backend yet. The backend Task serializer doesn't expose `repository_config`
+   * (verified: not in the OpenAPI schema), so the earlier squat on that field
+   * was silently dropped server-side. `json_schema` IS on the serializer and
+   * round-trips as arbitrary JSON, so we nest under `json_schema.__code_meta`
+   * to avoid clobbering any legitimate schema written there (e.g. by the
+   * task-discovery setup flow).
    *
    * Replace with `POST /api/projects/{team}/tasks/{id}/collaborators/` once the
    * proper backend (`Task.collaborators` M2M + endpoint) ships. The change is
-   * isolated to this function — call sites stay the same.
+   * isolated to this function + the readers — call sites stay the same.
    */
   async addTaskCollaborators(
     taskId: string,
@@ -651,9 +654,14 @@ export class PostHogAPIClient {
   ): Promise<{ ok: boolean }> {
     if (userUuids.length === 0) return { ok: true };
     const task = (await this.getTask(taskId)) as unknown as Task;
-    const existing = (task.repository_config ?? {}) as Record<string, unknown>;
-    const existingCollaborators = Array.isArray(existing.collaborators)
-      ? (existing.collaborators as unknown[]).filter(
+    const existingSchema = (task.json_schema ?? {}) as Record<string, unknown>;
+    const existingMeta =
+      typeof existingSchema.__code_meta === "object" &&
+      existingSchema.__code_meta !== null
+        ? (existingSchema.__code_meta as Record<string, unknown>)
+        : {};
+    const existingCollaborators = Array.isArray(existingMeta.collaborators)
+      ? (existingMeta.collaborators as unknown[]).filter(
           (v): v is string => typeof v === "string",
         )
       : [];
@@ -669,36 +677,37 @@ export class PostHogAPIClient {
       return { ok: true };
     }
 
-    const newRepositoryConfig = {
-      ...existing,
-      work_thread: true,
-      collaborators: merged,
+    const newJsonSchema = {
+      ...existingSchema,
+      __code_meta: {
+        ...existingMeta,
+        work_thread: true,
+        collaborators: merged,
+      },
     };
     log.info("addTaskCollaborators PATCH body", {
       taskId,
-      existing,
-      newRepositoryConfig,
+      existingSchema,
+      newJsonSchema,
     });
     const patchResponse = (await this.updateTask(taskId, {
-      repository_config: newRepositoryConfig,
+      json_schema: newJsonSchema,
     } as Partial<Schemas.Task>)) as unknown as {
       id?: string;
-      repository_config?: unknown;
+      json_schema?: unknown;
     };
     log.info("addTaskCollaborators PATCH response", {
       taskId,
-      returned_repository_config: patchResponse?.repository_config,
+      returned_json_schema: patchResponse?.json_schema,
     });
 
-    // Verify by reading the task back — if the backend silently dropped our
-    // keys, this re-fetch will show it.
     try {
       const verify = (await this.getTask(taskId)) as unknown as {
-        repository_config?: unknown;
+        json_schema?: unknown;
       };
       log.info("addTaskCollaborators GET verify", {
         taskId,
-        repository_config: verify?.repository_config,
+        json_schema: verify?.json_schema,
       });
     } catch (error) {
       log.warn("addTaskCollaborators GET verify failed", { taskId, error });

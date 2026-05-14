@@ -211,14 +211,13 @@ export function WorkSidebarMenu() {
                 const isActive =
                   workView === "task-detail" && activeTaskId === id;
                 const serverCollaborators = (() => {
-                  const config = task.repository_config as
-                    | { collaborators?: unknown }
+                  const schema = task.json_schema as
+                    | { __code_meta?: { collaborators?: unknown } | null }
                     | null
                     | undefined;
-                  return Array.isArray(config?.collaborators)
-                    ? (config.collaborators as unknown[]).filter(
-                        (v): v is string => typeof v === "string",
-                      )
+                  const collabs = schema?.__code_meta?.collaborators;
+                  return Array.isArray(collabs)
+                    ? collabs.filter((v): v is string => typeof v === "string")
                     : [];
                 })();
                 const localCollaborators = participantsByTask[id] ?? [];
