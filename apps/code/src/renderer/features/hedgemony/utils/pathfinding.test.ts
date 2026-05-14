@@ -173,6 +173,26 @@ describe("findPath", () => {
     }
   });
 
+  it("backs out locally when a rapid replan starts inside an obstacle buffer", () => {
+    const agentRadius = 24;
+    const obstacle: Obstacle = { x: 0, y: 0, radius: 24 };
+    const from = { x: -30, y: 0 };
+    const to = { x: 120, y: 0 };
+
+    const path = findPath(from, to, [obstacle], agentRadius);
+
+    expect(path.length).toBeGreaterThanOrEqual(3);
+    expect(path[0]).toEqual(from);
+    // The old escape walked toward the target and crossed through the unit at
+    // x=0 before routing. A rapid re-click must first back out on the same
+    // side it came from, then plan around the blocker.
+    expect(path[1].x).toBeLessThan(from.x);
+    expect(distance(path[1], obstacle)).toBeGreaterThanOrEqual(
+      obstacle.radius + agentRadius - 1e-6,
+    );
+  });
+
+
   it("routes around multiple obstacles that both block the straight line", () => {
     const from = { x: -300, y: 0 };
     const to = { x: 300, y: 0 };

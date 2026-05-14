@@ -111,20 +111,13 @@ export function snapGoal(
   return nearestFreePointOnLine(from, to, infl);
 }
 
-// Returns a free perimeter point to escape an obstacle the agent started
-// inside. Called when `from` is blocked but we need a planFrom for A*.
-//
-// Naive "walk toward the goal" escape is wrong: from a point just inside the
-// inflated boundary, the line to a goal on the far side of the obstacle
-// crosses the obstacle's interior. The resulting first segment visibly cuts
-// through the building (this was the Hedgehouse cut-through bug).
-//
-// Strategy: push the agent *radially outward* from the deepest obstacle it
-// is inside, so the escape segment is always perpendicular-ish to the
-// obstacle's edge and stays inside the radial cone — i.e. never crosses to
-// the far side. Fallbacks (walk-toward-goal, radial sweep) cover the
-// degenerate cases (agent exactly at the obstacle center, or escape blocked
-// by an overlapping second obstacle).
+// Returns a nearby free perimeter point when a plan starts inside an
+// inflated obstacle. This happens naturally with rapid re-orders: a sprite can
+// be close enough to a unit/building that its center is inside the avoidance
+// buffer even though the art does not visibly overlap. The escape must be a
+// local push-out, not a walk toward the new goal, otherwise a target on the far
+// side makes the first segment cut straight through the blocker before A* gets
+// to route around it.
 function firstFreePointTowards(
   from: Vec2,
   to: Vec2,
@@ -132,59 +125,16 @@ function firstFreePointTowards(
 ): Vec2 | null {
   if (!pointBlocked(from, infl)) return from;
 
-  // Find the obstacle the agent is most deeply inside. If multiple overlap,
-  // escaping from the deepest one is the safest choice — pushing out of a
-  // shallower overlap may still leave us inside the deeper one.
-  let containing: InflatedObstacle | null = null;
-  let bestDepth = -Infinity;
-  for (const o of infl) {
-    const dxc = from.x - o.x;
-    const dyc = from.y - o.y;
-    const d2 = dxc * dxc + dyc * dyc;
-    if (d2 < o.r2) {
-      const depth = o.radius - Math.sqrt(d2);
-      if (depth > bestDepth) {
-        bestDepth = depth;
-        containing = o;
-      }
-    }
-  }
+  const pushed = pushOutOf(from, infl);
+  if (!pointBlocked(pushed, infl)) return pushed;
 
-  if (containing) {
-    const rdx = from.x - containing.x;
-    const rdy = from.y - containing.y;
-    const rd = Math.hypot(rdx, rdy);
-    if (rd > 0) {
-      // Push to just outside the inflated perimeter, along the radial
-      // direction. By construction the segment from→candidate stays inside
-      // the radial cone of the obstacle, never crossing through its
-      // interior to the far side.
-      const r = containing.radius + EPS;
-      const candidate = {
-        x: containing.x + (rdx / rd) * r,
-        y: containing.y + (rdy / rd) * r,
-      };
-      if (!pointBlocked(candidate, infl)) return candidate;
-    }
-    // rd === 0 (agent at obstacle center): no preferred radial direction.
-    // Fall through to the existing strategies.
-  }
-
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const dist = Math.hypot(dx, dy);
-  if (dist > 0) {
-    const steps = Math.max(1, Math.ceil(dist / (CELL / 4)));
-    for (let i = 1; i <= steps; i++) {
-      const t = i / steps;
-      const c = { x: from.x + dx * t, y: from.y + dy * t };
-      if (!pointBlocked(c, infl)) return c;
-    }
-  }
-  // Last-resort radial sweep — used when the goal is also inside the same
-  // obstacle cluster and we still need *some* free perimeter point.
+  // Last-resort radial sweep — used for pathological overlapping obstacle
+  // clusters where iterative push-out still cannot find a free point. Start
+  // near the goal direction for determinism, but keep the sweep local.
+  const goalAngle = Math.atan2(to.y - from.y, to.x - from.x);
   for (let r = CELL; r < 4096; r += CELL) {
-    for (let theta = 0; theta < Math.PI * 2; theta += Math.PI / 8) {
+    for (let step = 0; step < 16; step++) {
+      const theta = goalAngle + step * (Math.PI / 8);
       const c = {
         x: from.x + Math.cos(theta) * r,
         y: from.y + Math.sin(theta) * r,
