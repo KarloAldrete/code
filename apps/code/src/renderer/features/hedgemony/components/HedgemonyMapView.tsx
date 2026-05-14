@@ -61,7 +61,6 @@ import { BuilderCommandPanel } from "./BuilderCommandPanel";
 import type { BuilderSpriteHandle } from "./BuilderSprite";
 import { DyingHogletLayer } from "./DyingHogletLayer";
 import { DyingNestLayer } from "./DyingNestLayer";
-import { FinOpsPanel } from "./FinOpsPanel";
 import { HedgehouseCommandPanel } from "./HedgehouseCommandPanel";
 import { HedgemonyHotkeyHelper } from "./HedgemonyHotkeyHelper";
 import {
@@ -84,7 +83,6 @@ type Selection =
   | { type: "nest"; id: string }
   | { type: "builder" }
   | { type: "hedgehouse" }
-  | { type: "money-hog" }
   | { type: "hoglets"; ids: string[]; includeBuilder?: boolean }
   | null;
 
@@ -446,7 +444,7 @@ export function HedgemonyMapView() {
   const assignControlGroup = useControlGroupStore((s) => s.assign);
   const handleAssignControlGroup = useCallback(
     (slot: ControlGroupSlot) => {
-      if (!selection || selection.type === "money-hog") {
+      if (!selection) {
         toast(`Nothing selected for group ${slot}`, {
           description: "Select a unit or nest first, then assign.",
         });
@@ -1009,13 +1007,6 @@ export function HedgemonyMapView() {
           playSfx("select");
           setSelection({ type: "hedgehouse" });
         }}
-        moneyHogSelected={selection?.type === "money-hog"}
-        onMoneyHogSelect={() => {
-          playSfx("select");
-          setSelection((prev) =>
-            prev?.type === "money-hog" ? null : { type: "money-hog" },
-          );
-        }}
       >
         {nests.map((nest) => (
           <NestBroodCluster
@@ -1076,11 +1067,6 @@ export function HedgemonyMapView() {
         )}
       </AnimatePresence>
       <AnimatePresence>
-        {selection?.type === "money-hog" && (
-          <FinOpsPanel onClose={() => setSelection(null)} />
-        )}
-      </AnimatePresence>
-      <AnimatePresence>
         {activeHoglet && (
           <HogletDetailPanel
             key={activeHoglet.id}
@@ -1115,6 +1101,28 @@ export function HedgemonyMapView() {
           />
         )}
       </AnimatePresence>
+      {/* Lives inside mapContent so it portals into the fullscreen overlay's
+          z-1000 stacking context. Rendered outside, Radix Dialog's default
+          z-index sits below the overlay and the modal is invisible in
+          fullscreen. */}
+      <PlaceNestDialog
+        open={pendingPlacement !== null}
+        mapX={pendingPlacement?.x ?? 0}
+        mapY={pendingPlacement?.y ?? 0}
+        initialMode={pendingPlacement?.creationMode ?? "guided"}
+        onClose={() => setPendingPlacement(null)}
+        onCreated={(created) => {
+          playSfx("place");
+          playVoice("builder:place_nest", genderForName(BUILDER_NAME));
+          builder.startWalk(
+            { x: created.mapX, y: created.mapY },
+            builderPosOrFallback(),
+            "build",
+            created,
+            unitObstacles({ includeBuilder: false }),
+          );
+        }}
+      />
     </div>
   );
 
@@ -1168,24 +1176,6 @@ export function HedgemonyMapView() {
       ) : (
         <div className="relative h-full w-full">{mapContent}</div>
       )}
-      <PlaceNestDialog
-        open={pendingPlacement !== null}
-        mapX={pendingPlacement?.x ?? 0}
-        mapY={pendingPlacement?.y ?? 0}
-        initialMode={pendingPlacement?.creationMode ?? "guided"}
-        onClose={() => setPendingPlacement(null)}
-        onCreated={(created) => {
-          playSfx("place");
-          playVoice("builder:place_nest", genderForName(BUILDER_NAME));
-          builder.startWalk(
-            { x: created.mapX, y: created.mapY },
-            builderPosOrFallback(),
-            "build",
-            created,
-            unitObstacles({ includeBuilder: false }),
-          );
-        }}
-      />
     </DragDropProvider>
   );
 }

@@ -102,8 +102,6 @@ export function useBuilderCoordinator({
   const getCurrentPositionRef = useRef(getCurrentPosition);
   getCurrentPositionRef.current = getCurrentPosition;
 
-  // The machine is created once. React StrictMode double-invokes effects
-  // but not lazy refs, so this initializer runs exactly once per mount.
   const machineRef = useRef<BuilderStateMachine | null>(null);
   const [snapshot, setSnapshot] = useState<BuilderSnapshot>(() => ({
     state: { kind: "idle" },
@@ -112,19 +110,27 @@ export function useBuilderCoordinator({
     pendingNest: null,
   }));
 
-  if (machineRef.current === null) {
-    machineRef.current = new BuilderStateMachine({
+  // Create the machine on mount and dispose on unmount. The construction
+  // lives inside the effect — not in the render body via a lazy ref — so
+  // React StrictMode's simulated mount → unmount → remount cycle gets a
+  // fresh machine on the second mount. The previous lazy-ref pattern kept
+  // the same instance across the cycle, so cleanup permanently flipped its
+  // `disposed` flag and every subsequent `emit` short-circuited, silently
+  // freezing the builder (no path snapshot ever reached React state).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: initialPos and
+  // buildAnimationMs are captured at first mount by design; changing them
+  // at runtime intentionally does not rebuild the machine.
+  useEffect(() => {
+    const machine = new BuilderStateMachine({
       initialPos,
       buildAnimationMs,
       onChange: setSnapshot,
       onCommitPendingBuild: (nest) => onPendingBuildCommitRef.current?.(nest),
     });
-  }
-
-  useEffect(() => {
-    const machine = machineRef.current;
+    machineRef.current = machine;
     return () => {
-      machine?.dispose();
+      machine.dispose();
+      machineRef.current = null;
     };
   }, []);
 
