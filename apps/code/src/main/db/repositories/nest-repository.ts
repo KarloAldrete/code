@@ -15,6 +15,7 @@ export interface CreateNestData {
   definitionOfDone?: string | null;
   mapX: number;
   mapY: number;
+  primaryRepository?: string | null;
 }
 
 export interface UpdateNestData {
@@ -66,6 +67,7 @@ export class NestRepository {
       mapY: data.mapY,
       status: "active",
       loadoutJson: "{}",
+      primaryRepository: data.primaryRepository ?? null,
       createdAt: timestamp,
       updatedAt: timestamp,
     };

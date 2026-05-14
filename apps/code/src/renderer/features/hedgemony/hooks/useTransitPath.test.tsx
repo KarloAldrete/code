@@ -29,6 +29,7 @@ function makeNest(overrides: Partial<Nest> & { id: string }): Nest {
     health: overrides.health ?? "ok",
     targetMetricId: null,
     loadoutJson: null,
+    primaryRepository: null,
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
   };

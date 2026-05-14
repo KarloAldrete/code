@@ -79,6 +79,7 @@ function createMockNestService(nestIds: string[] = ["nest-1"]): NestService {
         health: "ok",
         targetMetricId: null,
         loadoutJson: null,
+        primaryRepository: null,
         createdAt: "",
         updatedAt: "",
       })),

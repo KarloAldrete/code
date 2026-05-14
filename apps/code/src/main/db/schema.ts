@@ -116,6 +116,7 @@ export const hedgemonyNests = sqliteTable(
       .default("ok"),
     targetMetricId: text(),
     loadoutJson: text(),
+    primaryRepository: text(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

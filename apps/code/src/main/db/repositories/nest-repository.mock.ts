@@ -49,6 +49,7 @@ export function createMockNestRepository(): MockNestRepository {
         health: "ok",
         targetMetricId: null,
         loadoutJson: "{}",
+        primaryRepository: data.primaryRepository ?? null,
         createdAt: timestamp,
         updatedAt: timestamp,
       };

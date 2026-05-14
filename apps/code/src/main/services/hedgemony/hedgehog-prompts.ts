@@ -88,6 +88,9 @@ export function buildUserPrompt(input: BuildUserPromptInput): string {
     `name: ${nest.name}`,
     `id: ${nest.id}`,
     `status: ${nest.status}`,
+    nest.primaryRepository
+      ? `primary_repository: ${nest.primaryRepository}`
+      : "primary_repository: (none — hoglets will spawn without a repo unless you supply one)",
     "",
     "### Goal prompt",
     nest.goalPrompt,
@@ -182,7 +185,11 @@ export function buildUserPrompt(input: BuildUserPromptInput): string {
 
   const actionGuidance =
     hoglets.length === 0
-      ? "## Action\nThis nest has no hoglets yet. Read the goal prompt and any bootstrap context in chat, then spawn hoglets to decompose the goal into concrete work items. Each hoglet should be scoped to a specific piece of work. If repositories are mentioned, use the repository field."
+      ? `## Action\nThis nest has no hoglets yet. Read the goal prompt and any bootstrap context in chat, then spawn hoglets to decompose the goal into concrete work items. Each hoglet should be scoped to a specific piece of work.${
+          nest.primaryRepository
+            ? ` The nest's primary_repository (${nest.primaryRepository}) is used automatically when you omit the spawn_hoglet repository field — override it only when a hoglet needs to touch a different repo.`
+            : " The nest has no primary_repository set, so set the spawn_hoglet repository field explicitly for any hoglet that needs to touch code."
+        }`
       : "## Action\nDecide what to do this tick. Prefer terse, justified actions. Emit tool_use blocks. If no action is needed, call write_audit_entry once and stop.";
 
   return [

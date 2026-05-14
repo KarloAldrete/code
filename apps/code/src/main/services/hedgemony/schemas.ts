@@ -22,6 +22,7 @@ export const nest = z.object({
   health: nestHealth,
   targetMetricId: z.string().nullable(),
   loadoutJson: z.string().nullable(),
+  primaryRepository: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
