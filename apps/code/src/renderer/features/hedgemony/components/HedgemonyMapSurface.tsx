@@ -11,6 +11,7 @@ import {
 import type { Vec2 } from "../utils/pathfinding";
 import { BgmControl } from "./BgmControl";
 import { type BuilderAnimation, BuilderSprite } from "./BuilderSprite";
+import { MapBackdrop } from "./MapBackdrop";
 import { NestSprite } from "./NestSprite";
 
 const ZOOM_WHEEL_STEP = 0.0015;
@@ -237,7 +238,7 @@ export function HedgemonyMapSurface({
         onDragEnd={() => setPan(x.get(), y.get())}
         className="absolute inset-0 origin-center"
       >
-        <MapBackdrop />
+        <MapBackdrop nests={nests} />
         {nests.map((nest) => (
           <NestSprite
             key={nest.id}
@@ -355,103 +356,6 @@ export function HedgemonyMapSurface({
           Use Relocate in the panel to move this nest
         </div>
       )}
-    </div>
-  );
-}
-
-function MapBackdrop() {
-  return (
-    <div
-      className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 h-[4000px] w-[4000px] overflow-hidden"
-      style={{
-        backgroundColor: "var(--gray-1)",
-        backgroundImage: [
-          // soft warm meadow wash at center
-          "radial-gradient(ellipse 60% 50% at 50% 50%, var(--grass-a3) 0%, transparent 70%)",
-          // scattered hedge clumps — irregular, varying sizes
-          "radial-gradient(ellipse 320px 200px at 18% 22%, var(--green-a6) 0%, var(--green-a3) 45%, transparent 70%)",
-          "radial-gradient(ellipse 240px 160px at 82% 28%, var(--green-a6) 0%, var(--green-a3) 45%, transparent 70%)",
-          "radial-gradient(ellipse 380px 220px at 14% 78%, var(--green-a5) 0%, var(--green-a2) 50%, transparent 75%)",
-          "radial-gradient(ellipse 300px 200px at 86% 80%, var(--green-a6) 0%, var(--green-a3) 45%, transparent 70%)",
-          "radial-gradient(ellipse 200px 140px at 38% 12%, var(--grass-a5) 0%, transparent 65%)",
-          "radial-gradient(ellipse 220px 160px at 64% 88%, var(--grass-a5) 0%, transparent 65%)",
-          "radial-gradient(ellipse 180px 120px at 8% 48%, var(--green-a4) 0%, transparent 65%)",
-          "radial-gradient(ellipse 200px 140px at 92% 52%, var(--green-a4) 0%, transparent 65%)",
-          // subtle topographical contour rings
-          "radial-gradient(circle at 50% 50%, transparent 480px, var(--gray-a3) 481px, transparent 484px)",
-          "radial-gradient(circle at 50% 50%, transparent 900px, var(--gray-a2) 901px, transparent 904px)",
-          "radial-gradient(circle at 50% 50%, transparent 1320px, var(--gray-a2) 1321px, transparent 1324px)",
-        ].join(", "),
-        backgroundRepeat: "no-repeat",
-      }}
-    >
-      <MapZone
-        x={0}
-        y={0}
-        width={1900}
-        height={1280}
-        label="Active nests"
-        description="goal territory"
-        variant="primary"
-      />
-      <MapZone
-        x={-1220}
-        y={860}
-        width={880}
-        height={520}
-        label="Wilds"
-        description="ad-hoc hoglets"
-        variant="muted"
-      />
-      <MapZone
-        x={1180}
-        y={-820}
-        width={900}
-        height={540}
-        label="Signal staging"
-        description="unrouted signal work"
-        variant="muted"
-      />
-    </div>
-  );
-}
-
-function MapZone({
-  x,
-  y,
-  width,
-  height,
-  label,
-  description,
-  variant,
-}: {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  label: string;
-  description: string;
-  variant: "primary" | "muted";
-}) {
-  return (
-    <div
-      className={`-translate-x-1/2 -translate-y-1/2 absolute top-1/2 left-1/2 rounded-[64px] border border-dashed ${
-        variant === "primary"
-          ? "border-(--grass-a6) bg-(--grass-a2)"
-          : "border-(--gray-a5) bg-(--gray-a1)"
-      }`}
-      style={{
-        width,
-        height,
-        transform: `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`,
-      }}
-    >
-      <div className="absolute top-5 left-6 rounded-(--radius-2) border border-(--gray-a4) bg-(--gray-a2) px-2 py-1 text-(--gray-10) shadow-sm backdrop-blur-sm">
-        <div className="font-medium text-(--gray-11) text-[12px] uppercase tracking-[0.16em]">
-          {label}
-        </div>
-        <div className="mt-0.5 text-[11px]">{description}</div>
-      </div>
     </div>
   );
 }
