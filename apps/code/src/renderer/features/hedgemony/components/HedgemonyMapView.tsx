@@ -1,10 +1,6 @@
 import { PointerSensor } from "@dnd-kit/dom";
 import type { DragDropEvents } from "@dnd-kit/react";
 import { DragDropProvider } from "@dnd-kit/react";
-import type { Hoglet, Nest } from "@main/services/hedgemony/schemas";
-import { trpcClient } from "@renderer/trpc/client";
-import { ANALYTICS_EVENTS } from "@shared/types/analytics";
-import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -15,18 +11,19 @@ import { playSfx } from "../audio/sfx";
 import { playVoice } from "../audio/voice";
 import { useBuilderCoordinator } from "../hooks/useBuilderCoordinator";
 import { useSignalIngestion } from "../hooks/useSignalIngestion";
+import {
+  type HogletDragSource,
+  type HogletDragTarget,
+  handleHogletDrop,
+} from "../service/hogletMutations";
+import { moveNest } from "../service/nestMutations";
 import { initializeNestStore } from "../service/nestSubscriptionService";
 import {
   type BookmarkSlot,
   useHedgemonyViewStore,
 } from "../stores/hedgemonyViewStore";
 import { useHogletPositionStore } from "../stores/hogletPositionStore";
-import {
-  SIGNAL_STAGING_BUCKET,
-  selectHogletById,
-  useHogletStore,
-  WILD_BUCKET,
-} from "../stores/hogletStore";
+import { selectHogletById, useHogletStore } from "../stores/hogletStore";
 import { selectNests, useNestStore } from "../stores/nestStore";
 import { useSpawnDialogStore } from "../stores/spawnDialogStore";
 import { BuilderCommandPanel } from "./BuilderCommandPanel";
@@ -264,40 +261,6 @@ export function HedgemonyMapView() {
     }, 600);
   }, []);
 
-  async function moveNest(
-    nest: Nest,
-    mapX: number,
-    mapY: number,
-    options: { undoable?: boolean } = {},
-  ) {
-    const previous = nest;
-    useNestStore.getState().upsert({ ...nest, mapX, mapY });
-    try {
-      const updated = await trpcClient.hedgemony.nests.update.mutate({
-        id: nest.id,
-        mapX,
-        mapY,
-      });
-      useNestStore.getState().upsert(updated);
-      if (options.undoable) {
-        toast("Nest moved", {
-          action: {
-            label: "Undo",
-            onClick: () => {
-              flashMoveMarker(previous.mapX, previous.mapY);
-              void moveNest(updated, previous.mapX, previous.mapY);
-            },
-          },
-        });
-      }
-    } catch (error) {
-      log.error("Failed to move nest", { id: nest.id, error });
-      useNestStore.getState().upsert(previous);
-      toast.error("Could not move nest");
-      playSfx("error");
-    }
-  }
-
   const handleMapClick = (x: number, y: number) => {
     switch (mode.kind) {
       case "relocatingNest": {
@@ -309,7 +272,10 @@ export function HedgemonyMapView() {
         flashMoveMarker(targetX, targetY);
         playSfx("order");
         playVoice("hoglet:order_move");
-        void moveNest(nest, targetX, targetY, { undoable: true });
+        void moveNest(nest, targetX, targetY, {
+          undoable: true,
+          flashMoveMarker,
+        });
         return;
       }
       case "placingNest": {
@@ -393,57 +359,9 @@ export function HedgemonyMapView() {
 
   const handleDragEnd = useCallback<DragDropEvents["dragend"]>((event) => {
     if (event.canceled) return;
-    const source = event.operation.source?.data as
-      | {
-          type?: string;
-          hogletId?: string;
-          sourceNestId?: string | null;
-          sourceBucket?: "wild" | "signal_staging";
-        }
-      | undefined;
-    const target = event.operation.target?.data as
-      | { type?: string; nestId?: string }
-      | undefined;
-    if (
-      !source ||
-      source.type !== "hoglet" ||
-      typeof source.hogletId !== "string"
-    ) {
-      return;
-    }
-    const { hogletId, sourceNestId = null, sourceBucket } = source;
-
-    if (target?.type === "nest" && target.nestId) {
-      if (sourceNestId !== null) {
-        toast.error("Release this hoglet to wild before adopting it elsewhere");
-        return;
-      }
-      const adoptedFrom: "wild" | "signal" =
-        sourceBucket === "signal_staging" ? "signal" : "wild";
-      void adoptHoglet(hogletId, target.nestId, sourceBucket, adoptedFrom);
-    } else if (target?.type === "wild") {
-      if (sourceNestId === null) {
-        // Signal-staging → wild and wild → wild are no-ops; the bucket is
-        // determined by the hoglet's signalReportId, not by operator choice.
-        if (sourceBucket === "signal_staging") {
-          toast.error(
-            "Signal hoglets can't move to wild — drop on a nest or use Dismiss",
-          );
-        }
-        return;
-      }
-      void releaseHoglet(hogletId, sourceNestId);
-    } else if (target?.type === "signal_staging") {
-      if (sourceNestId === null) {
-        // Already in staging (or wild). Wild → staging is rejected: the bucket
-        // belongs to the signal-report linkage.
-        if (sourceBucket === "wild") {
-          toast.error("Wild hoglets can't become signal-staged");
-        }
-        return;
-      }
-      void releaseHoglet(hogletId, sourceNestId);
-    }
+    const source = event.operation.source?.data as HogletDragSource | undefined;
+    const target = event.operation.target?.data as HogletDragTarget | undefined;
+    handleHogletDrop(source, target);
   }, []);
 
   // The map + every floating panel that should appear on top of it. In
@@ -672,99 +590,4 @@ function BookmarkChips({ onRecall, onSave }: BookmarkChipsProps) {
       })}
     </div>
   );
-}
-
-async function adoptHoglet(
-  hogletId: string,
-  nestId: string,
-  sourceBucket: "wild" | "signal_staging" | undefined,
-  trackSource: "wild" | "signal",
-): Promise<void> {
-  const bucketKey =
-    sourceBucket === "signal_staging" ? SIGNAL_STAGING_BUCKET : WILD_BUCKET;
-  const store = useHogletStore.getState();
-  const original = store.byBucket[bucketKey]?.find((h) => h.id === hogletId);
-  if (!original) {
-    log.warn("Adopt: source hoglet not found in source bucket", {
-      hogletId,
-      bucketKey,
-    });
-    return;
-  }
-
-  // Optimistic move: source bucket → nest bucket. Drop any standalone position
-  // override so the hoglet snaps back into the new nest's orbit instead of
-  // hovering at its stale wild-position.
-  const optimistic: Hoglet = {
-    ...original,
-    nestId,
-    updatedAt: new Date().toISOString(),
-  };
-  store.remove(bucketKey, hogletId);
-  store.upsert(nestId, optimistic);
-  useHogletPositionStore.getState().clearPosition(hogletId);
-
-  try {
-    const updated = await trpcClient.hedgemony.hoglets.adopt.mutate({
-      hogletId,
-      nestId,
-    });
-    useHogletStore.getState().upsert(nestId, updated);
-    track(ANALYTICS_EVENTS.HEDGEMONY_HOGLET_ADOPTED, { source: trackSource });
-  } catch (error) {
-    log.error("Failed to adopt hoglet", { hogletId, nestId, error });
-    const current = useHogletStore.getState();
-    current.remove(nestId, hogletId);
-    current.upsert(bucketKey, original);
-    toast.error("Could not adopt hoglet");
-  }
-}
-
-async function releaseHoglet(
-  hogletId: string,
-  sourceNestId: string,
-): Promise<void> {
-  const store = useHogletStore.getState();
-  const original = store.byBucket[sourceNestId]?.find((h) => h.id === hogletId);
-  if (!original) {
-    log.warn("Release: source hoglet not found in nest bucket", {
-      hogletId,
-      sourceNestId,
-    });
-    return;
-  }
-
-  // Destination bucket is determined by signalReportId — signal-backed
-  // hoglets return to staging, ad-hoc ones return to wild. This matches the
-  // server-side routing in HogletService.release.
-  const destinationBucket =
-    original.signalReportId !== null ? SIGNAL_STAGING_BUCKET : WILD_BUCKET;
-  const optimistic: Hoglet = {
-    ...original,
-    nestId: null,
-    updatedAt: new Date().toISOString(),
-  };
-  store.remove(sourceNestId, hogletId);
-  store.upsert(destinationBucket, optimistic);
-  // Same reasoning as adoptHoglet: a release re-homes the hoglet, so the
-  // operator-placed override no longer matches the new layout.
-  useHogletPositionStore.getState().clearPosition(hogletId);
-
-  try {
-    const updated = await trpcClient.hedgemony.hoglets.release.mutate({
-      hogletId,
-    });
-    useHogletStore.getState().upsert(destinationBucket, updated);
-    track(ANALYTICS_EVENTS.HEDGEMONY_HOGLET_RELEASED, { source: "nest" });
-  } catch (error) {
-    log.error("Failed to release hoglet", {
-      hogletId,
-      sourceNestId,
-      error,
-    });
-    const current = useHogletStore.getState();
-    current.remove(destinationBucket, hogletId);
-    current.upsert(sourceNestId, original);
-    toast.error("Could not release hoglet");
-  }
 }
