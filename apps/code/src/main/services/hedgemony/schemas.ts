@@ -736,6 +736,53 @@ export const prGraphWatchEvent = z.discriminatedUnion("kind", [
 ]);
 export type PrGraphWatchEvent = z.infer<typeof prGraphWatchEvent>;
 
+export const usageWorkload = z.enum([
+  "hedgehog-tick",
+  "brood-hoglet",
+  "wild-hoglet",
+]);
+export type UsageWorkloadValue = z.infer<typeof usageWorkload>;
+
+export const aggregateRow = z.object({
+  totalInputTokens: z.number(),
+  totalOutputTokens: z.number(),
+  totalCacheReadTokens: z.number(),
+  totalCacheCreationTokens: z.number(),
+  totalCostUsd: z.number(),
+  eventCount: z.number(),
+});
+export type AggregateRowValue = z.infer<typeof aggregateRow>;
+
+export const finopsSummaryInput = z
+  .object({
+    since: z.string().datetime().optional(),
+  })
+  .optional();
+export type FinopsSummaryInput = z.infer<typeof finopsSummaryInput>;
+
+export const finopsSummary = z.object({
+  global: aggregateRow,
+  byWorkload: z.array(
+    z.object({
+      workload: usageWorkload,
+      row: aggregateRow,
+    }),
+  ),
+  byModel: z.array(
+    z.object({
+      model: z.string(),
+      row: aggregateRow,
+    }),
+  ),
+  topNests: z.array(
+    z.object({
+      nestId: z.string(),
+      row: aggregateRow,
+    }),
+  ),
+});
+export type FinopsSummary = z.infer<typeof finopsSummary>;
+
 export const HedgemonyEvent = {
   NestChanged: "nest-changed",
   HogletChanged: "hoglet-changed",

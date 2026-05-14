@@ -10,3 +10,16 @@ export function useIsOrgAdmin(): { isAdmin: boolean | null } {
   if (isLoading || level === null) return { isAdmin: null };
   return { isAdmin: level >= ORGANIZATION_ADMIN_LEVEL };
 }
+
+// Demo accounts (Brooker-Fam / nexus-games) allowed to see the raw FinOps
+// dialog alongside PostHog org members. Raw API cost figures here are not the
+// consumer product price, so this is an explicit demo allowlist.
+const INTERNAL_DEMO_EMAILS = new Set<string>(["seanosh@gmail.com"]);
+
+export function useCanViewFinOps(): boolean | null {
+  const client = useOptionalAuthenticatedClient();
+  const { data, isLoading } = useCurrentUser({ client });
+  if (isLoading || !data) return null;
+  const email = data.email.toLowerCase();
+  return email.endsWith("@posthog.com") || INTERNAL_DEMO_EMAILS.has(email);
+}

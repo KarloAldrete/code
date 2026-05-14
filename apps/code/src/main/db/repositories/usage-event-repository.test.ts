@@ -199,6 +199,244 @@ describe("UsageEventRepository", () => {
     expect(usage.aggregateByHoglet(h1.id).totalCostUsd).toBeCloseTo(1.0, 6);
     expect(usage.aggregateByHoglet(h2.id).totalCostUsd).toBeCloseTo(2.0, 6);
   });
+
+  it("aggregateGlobal returns zeros on empty db", () => {
+    const agg = usage.aggregateGlobal();
+    expect(agg.eventCount).toBe(0);
+    expect(agg.totalCostUsd).toBe(0);
+    expect(agg.totalInputTokens).toBe(0);
+  });
+
+  it("aggregateGlobal sums across nests, hoglets, and hedgehog ticks", () => {
+    const n1 = insertNest("n1");
+    const n2 = insertNest("n2");
+    const h1 = insertHoglet(n1.id, "task-1");
+
+    // brood hoglet turn
+    usage.insertIgnoreOnDuplicate({
+      nestId: n1.id,
+      hogletId: h1.id,
+      taskId: "task-1",
+      taskRunId: "run-a",
+      turnIndex: 0,
+      environment: "dev",
+      workload: "brood-hoglet",
+      model: "claude-opus-4-7",
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      costUsd: 1.0,
+      costSource: "sdk",
+    });
+    // wild hoglet, no nest
+    usage.insertIgnoreOnDuplicate({
+      nestId: null,
+      hogletId: null,
+      taskId: "task-wild",
+      taskRunId: "run-wild",
+      turnIndex: 0,
+      environment: "dev",
+      workload: "wild-hoglet",
+      model: "claude-sonnet-4-6",
+      inputTokens: 20,
+      outputTokens: 10,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      costUsd: 0.25,
+      costSource: "sdk",
+    });
+    // hedgehog tick on n2
+    usage.insertIgnoreOnDuplicate({
+      nestId: n2.id,
+      hogletId: null,
+      taskId: null,
+      taskRunId: null,
+      turnIndex: null,
+      environment: "dev",
+      workload: "hedgehog-tick",
+      model: "claude-opus-4-7",
+      inputTokens: 5,
+      outputTokens: 5,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      costUsd: 0.1,
+      costSource: "pricing_table",
+    });
+
+    const agg = usage.aggregateGlobal();
+    expect(agg.eventCount).toBe(3);
+    expect(agg.totalCostUsd).toBeCloseTo(1.35, 6);
+    expect(agg.totalInputTokens).toBe(125);
+    expect(agg.totalOutputTokens).toBe(65);
+  });
+
+  it("aggregateByWorkload groups across the three workload kinds", () => {
+    const n1 = insertNest("n1");
+    const h1 = insertHoglet(n1.id, "task-1");
+
+    usage.insertIgnoreOnDuplicate({
+      nestId: n1.id,
+      hogletId: h1.id,
+      taskId: "task-1",
+      taskRunId: "run-a",
+      turnIndex: 0,
+      environment: "dev",
+      workload: "brood-hoglet",
+      model: "claude-opus-4-7",
+      inputTokens: 10,
+      outputTokens: 10,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      costUsd: 1.0,
+      costSource: "sdk",
+    });
+    usage.insertIgnoreOnDuplicate({
+      nestId: null,
+      hogletId: null,
+      taskId: "task-2",
+      taskRunId: "run-b",
+      turnIndex: 0,
+      environment: "dev",
+      workload: "wild-hoglet",
+      model: "claude-opus-4-7",
+      inputTokens: 10,
+      outputTokens: 10,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      costUsd: 2.0,
+      costSource: "sdk",
+    });
+    usage.insertIgnoreOnDuplicate({
+      nestId: n1.id,
+      hogletId: null,
+      taskId: null,
+      taskRunId: null,
+      turnIndex: null,
+      environment: "dev",
+      workload: "hedgehog-tick",
+      model: "claude-opus-4-7",
+      inputTokens: 10,
+      outputTokens: 10,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      costUsd: 0.5,
+      costSource: "pricing_table",
+    });
+
+    const rows = usage.aggregateByWorkload();
+    expect(rows).toHaveLength(3);
+    const byKind = new Map(rows.map((r) => [r.workload, r.row]));
+    expect(byKind.get("brood-hoglet")?.totalCostUsd).toBeCloseTo(1.0, 6);
+    expect(byKind.get("wild-hoglet")?.totalCostUsd).toBeCloseTo(2.0, 6);
+    expect(byKind.get("hedgehog-tick")?.totalCostUsd).toBeCloseTo(0.5, 6);
+  });
+
+  it("aggregateByModel groups and orders by cost desc", () => {
+    const n1 = insertNest("n1");
+    const h1 = insertHoglet(n1.id, "task-1");
+
+    usage.insertIgnoreOnDuplicate({
+      nestId: n1.id,
+      hogletId: h1.id,
+      taskId: "task-1",
+      taskRunId: "run-a",
+      turnIndex: 0,
+      environment: "dev",
+      workload: "brood-hoglet",
+      model: "claude-sonnet-4-6",
+      inputTokens: 10,
+      outputTokens: 10,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      costUsd: 0.3,
+      costSource: "sdk",
+    });
+    usage.insertIgnoreOnDuplicate({
+      nestId: n1.id,
+      hogletId: h1.id,
+      taskId: "task-1",
+      taskRunId: "run-a",
+      turnIndex: 1,
+      environment: "dev",
+      workload: "brood-hoglet",
+      model: "claude-opus-4-7",
+      inputTokens: 10,
+      outputTokens: 10,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      costUsd: 1.5,
+      costSource: "sdk",
+    });
+
+    const rows = usage.aggregateByModel();
+    expect(rows).toHaveLength(2);
+    // ordered by cost desc → opus first
+    expect(rows[0].model).toBe("claude-opus-4-7");
+    expect(rows[0].row.totalCostUsd).toBeCloseTo(1.5, 6);
+    expect(rows[1].model).toBe("claude-sonnet-4-6");
+    expect(rows[1].row.totalCostUsd).toBeCloseTo(0.3, 6);
+  });
+
+  it("topNestsByCost ranks nests, excludes null-nest events, and honors limit", () => {
+    const n1 = insertNest("cheap");
+    const n2 = insertNest("expensive");
+    const n3 = insertNest("middle");
+    const h1 = insertHoglet(n1.id, "t1");
+    const h2 = insertHoglet(n2.id, "t2");
+    const h3 = insertHoglet(n3.id, "t3");
+
+    const seed = (
+      nestId: string,
+      hogletId: string,
+      taskRunId: string,
+      cost: number,
+    ) =>
+      usage.insertIgnoreOnDuplicate({
+        nestId,
+        hogletId,
+        taskId: taskRunId,
+        taskRunId,
+        turnIndex: 0,
+        environment: "dev",
+        workload: "brood-hoglet",
+        model: "claude-opus-4-7",
+        inputTokens: 1,
+        outputTokens: 1,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        costUsd: cost,
+        costSource: "sdk",
+      });
+
+    seed(n1.id, h1.id, "r-cheap", 0.1);
+    seed(n2.id, h2.id, "r-expensive", 9.99);
+    seed(n3.id, h3.id, "r-middle", 1.0);
+    // Wild hoglet event (null nestId) must be excluded from the ranking.
+    usage.insertIgnoreOnDuplicate({
+      nestId: null,
+      hogletId: null,
+      taskId: "task-wild",
+      taskRunId: "run-wild",
+      turnIndex: 0,
+      environment: "dev",
+      workload: "wild-hoglet",
+      model: "claude-opus-4-7",
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      costUsd: 50,
+      costSource: "sdk",
+    });
+
+    const top = usage.topNestsByCost(2);
+    expect(top).toHaveLength(2);
+    expect(top[0].nestId).toBe(n2.id);
+    expect(top[0].row.totalCostUsd).toBeCloseTo(9.99, 6);
+    expect(top[1].nestId).toBe(n3.id);
+    expect(top[1].row.totalCostUsd).toBeCloseTo(1.0, 6);
+  });
 });
 
 describe("HogletRepository.incrementUsage", () => {

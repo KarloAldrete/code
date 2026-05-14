@@ -38,6 +38,7 @@ import {
 import { HedgehouseSprite } from "./HedgehouseSprite";
 import { HedgemonyMinimap } from "./HedgemonyMinimap";
 import { MapBackdrop } from "./MapBackdrop";
+import { MoneyHogToolbarButton } from "./MoneyHogToolbarButton";
 import { NestConstructionSite } from "./NestConstructionSite";
 import { NestSprite } from "./NestSprite";
 import { SfxControl } from "./SfxControl";
@@ -123,6 +124,8 @@ interface HedgemonyMapSurfaceProps {
   onToggleFullscreen?: () => void;
   hedgehouseSelected?: boolean;
   onHedgehouseSelect?: () => void;
+  moneyHogSelected?: boolean;
+  onMoneyHogSelect?: () => void;
 }
 
 function HedgemonyMapSurfaceImpl(
@@ -150,6 +153,8 @@ function HedgemonyMapSurfaceImpl(
     onToggleFullscreen,
     hedgehouseSelected,
     onHedgehouseSelect,
+    moneyHogSelected,
+    onMoneyHogSelect,
   }: HedgemonyMapSurfaceProps,
   ref: Ref<MapSurfaceHandle>,
 ) {
@@ -725,6 +730,10 @@ function HedgemonyMapSurfaceImpl(
       >
         <BgmControl />
         <SfxControl />
+        <MoneyHogToolbarButton
+          selected={moneyHogSelected}
+          onSelect={onMoneyHogSelect}
+        />
         <button
           type="button"
           onClick={fitToContents}

@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { hedgemonyUsageEvents } from "../schema";
@@ -182,5 +182,102 @@ export class UsageEventRepository {
       )
       .get();
     return row ?? emptyAggregate;
+  }
+
+  aggregateGlobal(since?: string): AggregateRow {
+    const row = this.db
+      .select({
+        totalInputTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.inputTokens}), 0)`,
+        totalOutputTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.outputTokens}), 0)`,
+        totalCacheReadTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.cacheReadTokens}), 0)`,
+        totalCacheCreationTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.cacheCreationTokens}), 0)`,
+        totalCostUsd: sql<number>`coalesce(sum(${hedgemonyUsageEvents.costUsd}), 0)`,
+        eventCount: sql<number>`count(*)`,
+      })
+      .from(hedgemonyUsageEvents)
+      .where(since ? gte(hedgemonyUsageEvents.occurredAt, since) : undefined)
+      .get();
+    return row ?? emptyAggregate;
+  }
+
+  aggregateByWorkload(
+    since?: string,
+  ): Array<{ workload: UsageWorkload; row: AggregateRow }> {
+    const rows = this.db
+      .select({
+        workload: hedgemonyUsageEvents.workload,
+        totalInputTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.inputTokens}), 0)`,
+        totalOutputTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.outputTokens}), 0)`,
+        totalCacheReadTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.cacheReadTokens}), 0)`,
+        totalCacheCreationTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.cacheCreationTokens}), 0)`,
+        totalCostUsd: sql<number>`coalesce(sum(${hedgemonyUsageEvents.costUsd}), 0)`,
+        eventCount: sql<number>`count(*)`,
+      })
+      .from(hedgemonyUsageEvents)
+      .where(since ? gte(hedgemonyUsageEvents.occurredAt, since) : undefined)
+      .groupBy(hedgemonyUsageEvents.workload)
+      .all();
+    return rows.map(({ workload, ...row }) => ({
+      workload: workload as UsageWorkload,
+      row,
+    }));
+  }
+
+  aggregateByModel(
+    since?: string,
+  ): Array<{ model: string; row: AggregateRow }> {
+    const rows = this.db
+      .select({
+        model: hedgemonyUsageEvents.model,
+        totalInputTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.inputTokens}), 0)`,
+        totalOutputTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.outputTokens}), 0)`,
+        totalCacheReadTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.cacheReadTokens}), 0)`,
+        totalCacheCreationTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.cacheCreationTokens}), 0)`,
+        totalCostUsd: sql<number>`coalesce(sum(${hedgemonyUsageEvents.costUsd}), 0)`,
+        eventCount: sql<number>`count(*)`,
+      })
+      .from(hedgemonyUsageEvents)
+      .where(since ? gte(hedgemonyUsageEvents.occurredAt, since) : undefined)
+      .groupBy(hedgemonyUsageEvents.model)
+      .orderBy(desc(sql`sum(${hedgemonyUsageEvents.costUsd})`))
+      .all();
+    return rows.map(({ model, ...row }) => ({ model, row }));
+  }
+
+  /**
+   * Top nests by total cost. Events with a null `nestId` (e.g. wild hoglet
+   * turns recorded before adoption) are excluded — the rollup is for nest
+   * attribution only.
+   */
+  topNestsByCost(
+    limit = 5,
+    since?: string,
+  ): Array<{ nestId: string; row: AggregateRow }> {
+    const rows = this.db
+      .select({
+        nestId: hedgemonyUsageEvents.nestId,
+        totalInputTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.inputTokens}), 0)`,
+        totalOutputTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.outputTokens}), 0)`,
+        totalCacheReadTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.cacheReadTokens}), 0)`,
+        totalCacheCreationTokens: sql<number>`coalesce(sum(${hedgemonyUsageEvents.cacheCreationTokens}), 0)`,
+        totalCostUsd: sql<number>`coalesce(sum(${hedgemonyUsageEvents.costUsd}), 0)`,
+        eventCount: sql<number>`count(*)`,
+      })
+      .from(hedgemonyUsageEvents)
+      .where(
+        since
+          ? and(
+              isNotNull(hedgemonyUsageEvents.nestId),
+              gte(hedgemonyUsageEvents.occurredAt, since),
+            )
+          : isNotNull(hedgemonyUsageEvents.nestId),
+      )
+      .groupBy(hedgemonyUsageEvents.nestId)
+      .orderBy(desc(sql`sum(${hedgemonyUsageEvents.costUsd})`))
+      .limit(limit)
+      .all();
+    return rows
+      .filter((r): r is typeof r & { nestId: string } => r.nestId !== null)
+      .map(({ nestId, ...row }) => ({ nestId, row }));
   }
 }

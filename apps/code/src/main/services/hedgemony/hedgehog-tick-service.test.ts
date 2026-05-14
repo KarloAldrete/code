@@ -389,7 +389,7 @@ function buildService(mocks: Mocks): HedgehogTickService {
     })),
     recordHogletTurn: vi.fn(() => null),
     init: vi.fn(),
-  } as unknown as ConstructorParameters<typeof HedgehogTickService>[12];
+  } as unknown as ConstructorParameters<typeof HedgehogTickService>[13];
   return new HedgehogTickService(
     mocks.llm,
     mocks.nestService,

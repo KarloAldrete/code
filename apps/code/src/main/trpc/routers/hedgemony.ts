@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { FeedbackEventRepository } from "../../db/repositories/feedback-event-repository";
 import type { OperatorDecisionRepository } from "../../db/repositories/operator-decision-repository";
+import type { UsageEventRepository } from "../../db/repositories/usage-event-repository";
 import { container } from "../../di/container";
 import { MAIN_TOKENS } from "../../di/tokens";
 import {
@@ -23,6 +24,8 @@ import {
   createNestInput,
   dismissSignalHogletInput,
   feedbackEvent,
+  finopsSummary,
+  finopsSummaryInput,
   goalDraftRespondInput,
   goalDraftResponse,
   HedgemonyEvent,
@@ -94,6 +97,8 @@ const getPrGraphService = () =>
   container.get<PrGraphService>(MAIN_TOKENS.PrGraphService);
 const getSignalIngestionService = () =>
   container.get<SignalIngestionService>(MAIN_TOKENS.SignalIngestionService);
+const getUsageEventRepository = () =>
+  container.get<UsageEventRepository>(MAIN_TOKENS.UsageEventRepository);
 
 export const hedgemonyRouter = router({
   goalDraft: router({
@@ -463,5 +468,26 @@ export const hedgemonyRouter = router({
         yield hogletIngestedEventPayload.parse(data);
       }
     }),
+  }),
+  usage: router({
+    /**
+     * Global FinOps summary across every nest, hoglet, and hedgehog tick.
+     * Backs the "Money Hedgehog" toolbar chip and detail dialog. Gated in the
+     * UI by `useCanViewFinOps` — the data shown here is raw API cost, not
+     * consumer-priced product cost.
+     */
+    summary: publicProcedure
+      .input(finopsSummaryInput)
+      .output(finopsSummary)
+      .query(({ input }) => {
+        const repo = getUsageEventRepository();
+        const since = input?.since;
+        return {
+          global: repo.aggregateGlobal(since),
+          byWorkload: repo.aggregateByWorkload(since),
+          byModel: repo.aggregateByModel(since),
+          topNests: repo.topNestsByCost(5, since),
+        };
+      }),
   }),
 });
