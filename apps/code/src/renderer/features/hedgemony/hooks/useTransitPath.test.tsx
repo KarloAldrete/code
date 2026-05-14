@@ -1,9 +1,21 @@
 import type { Nest } from "@main/services/hedgemony/schemas";
 import { act, renderHook } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useHogletPositionStore } from "../stores/hogletPositionStore";
+import { useHogletStore } from "../stores/hogletStore";
 import { useNestStore } from "../stores/nestStore";
 import { HOGLET_RADIUS, NEST_OBSTACLE_RADIUS } from "../utils/worldObstacles";
 import { useTransitPath } from "./useTransitPath";
+
+vi.mock("@renderer/trpc/client", () => ({
+  trpcClient: {
+    secureStore: {
+      getItem: { query: vi.fn().mockResolvedValue(null) },
+      setItem: { query: vi.fn().mockResolvedValue(undefined) },
+      removeItem: { query: vi.fn().mockResolvedValue(undefined) },
+    },
+  },
+}));
 
 function makeNest(overrides: Partial<Nest> & { id: string }): Nest {
   return {
@@ -29,6 +41,8 @@ describe("useTransitPath", () => {
       hedgehogStateByNestId: {},
       loaded: false,
     });
+    useHogletStore.getState().reset();
+    useHogletPositionStore.getState().reset();
   });
 
   it("returns undefined on first mount", () => {

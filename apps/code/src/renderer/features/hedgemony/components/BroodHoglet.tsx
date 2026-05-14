@@ -61,6 +61,7 @@ export function BroodHoglet({
     y,
     HOGLET_RADIUS,
     walkPath === undefined,
+    hoglet.id,
   );
   const { motionX, motionY, isWalking, facing } = useWalkTo(
     x,

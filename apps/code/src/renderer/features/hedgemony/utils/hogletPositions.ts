@@ -9,6 +9,8 @@ import {
 } from "./worldObstacles";
 
 const OBSTACLE_CLEARANCE = 28;
+const COLLISION_ITERATIONS = 18;
+const POSITION_EPSILON = 0.01;
 const WILD_RING_INNER =
   HEDGEHOUSE_OBSTACLE_RADIUS + HOGLET_RADIUS + OBSTACLE_CLEARANCE;
 const WILD_RING_THICKNESS = 90;
@@ -72,6 +74,84 @@ export interface HogletWorldPosition {
   y: number;
 }
 
+function hasMoved(a: Vec2, b: Vec2): boolean {
+  return Math.hypot(a.x - b.x, a.y - b.y) > POSITION_EPSILON;
+}
+
+function pairDirection(a: string, b: string): Vec2 {
+  const angle = hashToUnit(`${a}:${b}`, 19) * Math.PI * 2;
+  return { x: Math.cos(angle), y: Math.sin(angle) };
+}
+
+export function resolveHogletLayoutCollisions(
+  positions: HogletWorldPosition[],
+  nests: Nest[],
+): HogletWorldPosition[] {
+  const obstacles = worldObstacles(nests);
+  const resolved = positions.map((pos) => {
+    const snapped = snapPointOutsideObstacles(pos, obstacles, HOGLET_RADIUS);
+    return { ...pos, x: snapped.x, y: snapped.y };
+  });
+
+  for (let iteration = 0; iteration < COLLISION_ITERATIONS; iteration++) {
+    let moved = false;
+
+    for (const pos of resolved) {
+      const snapped = snapPointOutsideObstacles(pos, obstacles, HOGLET_RADIUS);
+      if (hasMoved(pos, snapped)) {
+        pos.x = snapped.x;
+        pos.y = snapped.y;
+        moved = true;
+      }
+    }
+
+    for (let i = 0; i < resolved.length; i++) {
+      for (let j = i + 1; j < resolved.length; j++) {
+        const a = resolved[i];
+        const b = resolved[j];
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        let dist = Math.hypot(dx, dy);
+        let ux: number;
+        let uy: number;
+
+        if (dist < POSITION_EPSILON) {
+          const dir = pairDirection(a.hogletId, b.hogletId);
+          ux = dir.x;
+          uy = dir.y;
+          dist = 0;
+        } else {
+          ux = dx / dist;
+          uy = dy / dist;
+        }
+
+        const minDist = HOGLET_RADIUS * 2;
+        if (dist >= minDist) continue;
+
+        const push = (minDist - dist) / 2;
+        a.x -= ux * push;
+        a.y -= uy * push;
+        b.x += ux * push;
+        b.y += uy * push;
+        moved = true;
+      }
+    }
+
+    for (const pos of resolved) {
+      const snapped = snapPointOutsideObstacles(pos, obstacles, HOGLET_RADIUS);
+      if (hasMoved(pos, snapped)) {
+        pos.x = snapped.x;
+        pos.y = snapped.y;
+        moved = true;
+      }
+    }
+
+    if (!moved) break;
+  }
+
+  return resolved;
+}
+
 /**
  * Compute the on-map world position for every hoglet currently rendered on the
  * surface — wild flock + nest broods. Mirrors the layout logic in
@@ -84,16 +164,13 @@ export function collectHogletWorldPositions(
   byBucket: Record<string, Hoglet[]>,
   overrides: Record<string, { x: number; y: number }>,
 ): HogletWorldPosition[] {
-  const out: HogletWorldPosition[] = [];
+  const base: HogletWorldPosition[] = [];
 
   const wild = byBucket[WILD_BUCKET] ?? [];
   for (const hoglet of sortByCreated(wild)) {
     const override = overrides[hoglet.id];
-    const pos = avoidHogletObstacleCollision(
-      override ?? wildHogletPosition(hoglet.id),
-      nests,
-    );
-    out.push({ hogletId: hoglet.id, x: pos.x, y: pos.y });
+    const pos = override ?? wildHogletPosition(hoglet.id);
+    base.push({ hogletId: hoglet.id, x: pos.x, y: pos.y });
   }
 
   for (const nest of nests) {
@@ -101,17 +178,15 @@ export function collectHogletWorldPositions(
     const ordered = sortByCreated(brood);
     ordered.forEach((hoglet, index) => {
       const override = overrides[hoglet.id];
-      const pos = avoidHogletObstacleCollision(
+      const pos =
         override ??
-          broodHogletPosition(index, ordered.length, {
-            x: nest.mapX,
-            y: nest.mapY,
-          }),
-        nests,
-      );
-      out.push({ hogletId: hoglet.id, x: pos.x, y: pos.y });
+        broodHogletPosition(index, ordered.length, {
+          x: nest.mapX,
+          y: nest.mapY,
+        });
+      base.push({ hogletId: hoglet.id, x: pos.x, y: pos.y });
     });
   }
 
-  return out;
+  return resolveHogletLayoutCollisions(base, nests);
 }

@@ -17,8 +17,8 @@ export const NEST_OBSTACLE_RADIUS = 86;
 export const HEDGEHOUSE_OBSTACLE_RADIUS = 100;
 // Buffer past the visible hoglet sprite so the art, nameplate, and hover target
 // never overlap an obstacle after path-snapping. Wild hoglets are 40px, brood
-// are 44px; 36 leaves room for the pixel art plus the small label below it.
-export const HOGLET_RADIUS = 36;
+// are 44px; 44 leaves room for the pixel art plus the small label below it.
+export const HOGLET_RADIUS = 44;
 // The builder sprite is larger than hoglets (72px). Treat its center as a
 // solid circle so hoglets do not path directly through it.
 export const BUILDER_OBSTACLE_RADIUS = 36;

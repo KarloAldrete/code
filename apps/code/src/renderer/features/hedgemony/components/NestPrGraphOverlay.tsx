@@ -2,8 +2,12 @@ import type { Nest, PrDependencyView } from "@main/services/hedgemony/schemas";
 import { useMemo } from "react";
 import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import { selectNestHoglets, useHogletStore } from "../stores/hogletStore";
+import { selectNests, useNestStore } from "../stores/nestStore";
 import { selectEdgesForNest, usePrGraphStore } from "../stores/prGraphStore";
-import { broodHogletPosition } from "../utils/hogletPositions";
+import {
+  broodHogletPosition,
+  collectHogletWorldPositions,
+} from "../utils/hogletPositions";
 
 /**
  * Renders the PR dependency arrows for a single nest. Lives inside the same
@@ -20,7 +24,9 @@ import { broodHogletPosition } from "../utils/hogletPositions";
 export function NestPrGraphOverlay({ nest }: { nest: Nest }) {
   const edges = usePrGraphStore(selectEdgesForNest(nest.id));
   const hoglets = useHogletStore(selectNestHoglets(nest.id));
+  const byBucket = useHogletStore((s) => s.byBucket);
   const positionOverrides = useHogletPositionStore((s) => s.positions);
+  const nests = useNestStore(selectNests);
 
   // Stable ordering matches NestBroodCluster's `[...hoglets].sort(byCreatedAt)`
   // so brood-position indices line up.
@@ -35,16 +41,31 @@ export function NestPrGraphOverlay({ nest }: { nest: Nest }) {
 
   const positionByTaskId = useMemo(() => {
     const map = new Map<string, { x: number; y: number }>();
+    const resolvedByHogletId = new Map(
+      collectHogletWorldPositions(nests, byBucket, positionOverrides).map(
+        (pos) => [pos.hogletId, pos],
+      ),
+    );
     orderedHoglets.forEach((hoglet, index) => {
       const override = positionOverrides[hoglet.id];
       const fallback = broodHogletPosition(index, orderedHoglets.length, {
         x: nest.mapX,
         y: nest.mapY,
       });
-      map.set(hoglet.taskId, override ?? fallback);
+      map.set(
+        hoglet.taskId,
+        resolvedByHogletId.get(hoglet.id) ?? override ?? fallback,
+      );
     });
     return map;
-  }, [orderedHoglets, positionOverrides, nest.mapX, nest.mapY]);
+  }, [
+    orderedHoglets,
+    positionOverrides,
+    nest.mapX,
+    nest.mapY,
+    nests,
+    byBucket,
+  ]);
 
   const resolvedEdges = useMemo(
     () =>

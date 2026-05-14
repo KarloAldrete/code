@@ -5,8 +5,8 @@ import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import { selectNestHoglets, useHogletStore } from "../stores/hogletStore";
 import { selectNests, useNestStore } from "../stores/nestStore";
 import {
-  avoidHogletObstacleCollision,
   broodHogletPosition,
+  collectHogletWorldPositions,
 } from "../utils/hogletPositions";
 import { BroodHoglet } from "./BroodHoglet";
 
@@ -22,6 +22,7 @@ export function NestBroodCluster({
   onHogletSelect,
 }: NestBroodClusterProps) {
   const hoglets = useHogletStore(selectNestHoglets(nest.id));
+  const byBucket = useHogletStore((s) => s.byBucket);
   const positionOverrides = useHogletPositionStore((s) => s.positions);
   const nests = useNestStore(selectNests);
 
@@ -38,20 +39,29 @@ export function NestBroodCluster({
     [hoglets],
   );
 
+  const resolvedPositions = useMemo(
+    () =>
+      new Map(
+        collectHogletWorldPositions(nests, byBucket, positionOverrides).map(
+          (pos) => [pos.hogletId, pos],
+        ),
+      ),
+    [nests, byBucket, positionOverrides],
+  );
+
   if (ordered.length === 0) return null;
 
   return (
     <>
       {ordered.map((hoglet, index) => {
         const override = positionOverrides[hoglet.id];
-        const position = avoidHogletObstacleCollision(
+        const position =
+          resolvedPositions.get(hoglet.id) ??
           override ??
-            broodHogletPosition(index, ordered.length, {
-              x: nest.mapX,
-              y: nest.mapY,
-            }),
-          nests,
-        );
+          broodHogletPosition(index, ordered.length, {
+            x: nest.mapX,
+            y: nest.mapY,
+          });
         return (
           <BroodHoglet
             key={hoglet.id}

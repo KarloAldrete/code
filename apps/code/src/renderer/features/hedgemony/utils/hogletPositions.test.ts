@@ -96,4 +96,32 @@ describe("hogletPositions", () => {
       NEST_OBSTACLE_RADIUS + HOGLET_RADIUS,
     );
   });
+
+  it("separates hoglets that would otherwise share a resting point", () => {
+    const nest = makeNest({ id: "nest-1" });
+    const first = makeHoglet({ id: "hoglet-1", nestId: nest.id });
+    const second = makeHoglet({ id: "hoglet-2", nestId: nest.id });
+
+    const positions = collectHogletWorldPositions(
+      [nest],
+      {
+        [WILD_BUCKET]: [],
+        [nest.id]: [first, second],
+      },
+      {
+        [first.id]: { x: 0, y: 0 },
+        [second.id]: { x: 0, y: 0 },
+      },
+    );
+
+    expect(positions).toHaveLength(2);
+    expect(distance(positions[0], positions[1])).toBeGreaterThanOrEqual(
+      HOGLET_RADIUS * 2 - 0.1,
+    );
+    for (const pos of positions) {
+      expect(
+        distance(pos, { x: nest.mapX, y: nest.mapY }),
+      ).toBeGreaterThanOrEqual(NEST_OBSTACLE_RADIUS + HOGLET_RADIUS - 0.1);
+    }
+  });
 });

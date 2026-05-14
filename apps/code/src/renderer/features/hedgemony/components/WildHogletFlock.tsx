@@ -3,7 +3,7 @@ import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import { selectWildHoglets, useHogletStore } from "../stores/hogletStore";
 import { selectNests, useNestStore } from "../stores/nestStore";
 import {
-  avoidHogletObstacleCollision,
+  collectHogletWorldPositions,
   wildHogletPosition,
 } from "../utils/hogletPositions";
 import { WildHoglet } from "./WildHoglet";
@@ -28,6 +28,7 @@ export function WildHogletFlock({
   onHogletSelect,
 }: WildHogletFlockProps) {
   const hoglets = useHogletStore(selectWildHoglets);
+  const byBucket = useHogletStore((s) => s.byBucket);
   const positionOverrides = useHogletPositionStore((s) => s.positions);
   const nests = useNestStore(selectNests);
 
@@ -40,16 +41,26 @@ export function WildHogletFlock({
     [hoglets],
   );
 
+  const resolvedPositions = useMemo(
+    () =>
+      new Map(
+        collectHogletWorldPositions(nests, byBucket, positionOverrides).map(
+          (pos) => [pos.hogletId, pos],
+        ),
+      ),
+    [nests, byBucket, positionOverrides],
+  );
+
   if (ordered.length === 0) return null;
 
   return (
     <>
       {ordered.map((hoglet, index) => {
         const override = positionOverrides[hoglet.id];
-        const { x, y } = avoidHogletObstacleCollision(
-          override ?? wildHogletPosition(hoglet.id),
-          nests,
-        );
+        const { x, y } =
+          resolvedPositions.get(hoglet.id) ??
+          override ??
+          wildHogletPosition(hoglet.id);
         return (
           <WildHoglet
             key={hoglet.id}

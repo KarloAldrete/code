@@ -681,7 +681,8 @@ export function HedgemonyMapView() {
         selection.ids.length === 1
           ? [{ id: selection.ids[0], x: targetX, y: targetY }]
           : selection.ids.map((id, i) => {
-              const ringRadius = 28 + selection.ids.length * 4;
+              const ringRadius =
+                HOGLET_RADIUS / Math.sin(Math.PI / selection.ids.length) + 12;
               const angle = (2 * Math.PI * i) / selection.ids.length;
               return {
                 id,
