@@ -30,6 +30,7 @@ function makeNest(overrides: Partial<Nest> & { id: string }): Nest {
     targetMetricId: null,
     loadoutJson: null,
     primaryRepository: null,
+    mergedIntoId: null,
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
   };

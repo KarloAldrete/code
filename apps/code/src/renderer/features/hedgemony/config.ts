@@ -52,4 +52,12 @@ export const HEDGEMONY_CONFIG = {
     // confident snap without feeling abrupt.
     ease: [0.4, 0, 0.2, 1] as [number, number, number, number],
   },
+  federation: {
+    builderTickMs: 60_000,
+    overlapEmbeddingThreshold: 0.78,
+    mergeProposeAfterTicks: 5,
+    autoExecuteThreshold: 0.95,
+    autoExecuteEnabled: false,
+    overlapDecayMs: 24 * 60 * 60 * 1000,
+  },
 } as const;

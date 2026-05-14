@@ -82,6 +82,13 @@ export class NestMessageRepository {
     return created;
   }
 
+  deleteById(id: string): void {
+    this.db
+      .delete(hedgemonyNestMessages)
+      .where(eq(hedgemonyNestMessages.id, id))
+      .run();
+  }
+
   compactCompletedContext(nestId: string): CompactNestContextResult {
     const deletedDetailMessages = this.db
       .delete(hedgemonyNestMessages)

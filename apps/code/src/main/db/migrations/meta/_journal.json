@@ -113,6 +113,20 @@
       "when": 1779400000000,
       "tag": "0015_hedgemony_tick_log",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1779500000000,
+      "tag": "0016_hedgemony_federation",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1779500001000,
+      "tag": "0017_hedgemony_nest_merged_into",
+      "breakpoints": true
     }
   ]
 }

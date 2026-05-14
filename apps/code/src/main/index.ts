@@ -14,6 +14,7 @@ import type { AppLifecycleService } from "./services/app-lifecycle/service";
 import type { AuthService } from "./services/auth/service";
 import type { ExternalAppsService } from "./services/external-apps/service";
 import type { GitHubIntegrationService } from "./services/github-integration/service";
+import type { BuilderTickService } from "./services/hedgemony/builder-tick-service";
 import type { FeedbackRoutingService } from "./services/hedgemony/feedback-routing-service";
 import type { HedgehogTickService } from "./services/hedgemony/hedgehog-tick-service";
 import type { PrGraphService } from "./services/hedgemony/pr-graph-service";
@@ -192,6 +193,15 @@ async function initializeServices(): Promise<void> {
     MAIN_TOKENS.PrGraphService,
   );
   prGraphService.start();
+
+  // Boot the across-nests Builder federation tick. Slower cadence than the
+  // hedgehog tick; computes overlaps between active nests and writes
+  // proposals when sustained thresholds are met. Inert with fewer than two
+  // active nests.
+  const builderTickService = container.get<BuilderTickService>(
+    MAIN_TOKENS.BuilderTickService,
+  );
+  builderTickService.start();
 
   // Track app started event
   trackAppEvent(ANALYTICS_EVENTS.APP_STARTED);

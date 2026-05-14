@@ -117,6 +117,7 @@ export const hedgemonyNests = sqliteTable(
     targetMetricId: text(),
     loadoutJson: text(),
     primaryRepository: text(),
+    mergedIntoId: text(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -254,6 +255,90 @@ export const hedgemonyTickLog = sqliteTable(
     }).notNull(),
   },
   (t) => [index("hedgemony_tick_log_window_idx").on(t.nestId, t.tickedAt)],
+);
+
+export const hedgemonyBuilderState = sqliteTable("hedgemony_builder_state", {
+  id: text().primaryKey(),
+  lastTickAt: text(),
+  configJson: text(),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const hedgemonyOverlap = sqliteTable(
+  "hedgemony_overlap",
+  {
+    id: id(),
+    nestAId: text()
+      .notNull()
+      .references(() => hedgemonyNests.id, { onDelete: "cascade" }),
+    nestBId: text()
+      .notNull()
+      .references(() => hedgemonyNests.id, { onDelete: "cascade" }),
+    kind: text({
+      enum: [
+        "goal_embedding",
+        "pr_graph",
+        "signal_runnerup",
+        "scratchpad",
+        "chat_xref",
+      ],
+    }).notNull(),
+    score: real().notNull(),
+    evidenceJson: text().notNull(),
+    firstSeenAt: text().notNull().default(sql`(CURRENT_TIMESTAMP)`),
+    lastSeenAt: text().notNull().default(sql`(CURRENT_TIMESTAMP)`),
+    resolvedAt: text(),
+  },
+  (t) => [
+    index("hedgemony_overlap_pair_idx").on(t.nestAId, t.nestBId),
+    index("hedgemony_overlap_open_idx").on(t.resolvedAt),
+  ],
+);
+
+export const hedgemonyBuilderProposal = sqliteTable(
+  "hedgemony_builder_proposal",
+  {
+    id: id(),
+    kind: text({
+      enum: ["merge", "split", "bridge", "forward", "adopt"],
+    }).notNull(),
+    primaryNestId: text(),
+    secondaryNestId: text(),
+    hogletId: text(),
+    signalReportId: text(),
+    evidenceJson: text().notNull(),
+    status: text({
+      enum: ["open", "accepted", "dismissed", "snoozed", "auto_executed"],
+    }).notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    resolvedAt: text(),
+  },
+  (t) => [
+    index("hedgemony_builder_proposal_open_idx").on(t.status, t.createdAt),
+  ],
+);
+
+export const hedgemonyNestBridge = sqliteTable(
+  "hedgemony_nest_bridge",
+  {
+    id: id(),
+    nestAId: text()
+      .notNull()
+      .references(() => hedgemonyNests.id, { onDelete: "cascade" }),
+    nestBId: text()
+      .notNull()
+      .references(() => hedgemonyNests.id, { onDelete: "cascade" }),
+    kind: text({
+      enum: ["signal_forward", "scratchpad_ref", "pr_dep", "shared_doc"],
+    }).notNull(),
+    payloadJson: text().notNull(),
+    createdBy: text({ enum: ["builder", "operator"] }).notNull(),
+    createdAt: createdAt(),
+    removedAt: text(),
+  },
+  (t) => [index("hedgemony_nest_bridge_pair_idx").on(t.nestAId, t.nestBId)],
 );
 
 export const authPreferences = sqliteTable(

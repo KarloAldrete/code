@@ -81,6 +81,7 @@ export const nest = z.object({
   targetMetricId: z.string().nullable(),
   loadoutJson: z.string().nullable(),
   primaryRepository: z.string().nullable(),
+  mergedIntoId: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -676,10 +677,165 @@ export const prGraphWatchEvent = z.discriminatedUnion("kind", [
 ]);
 export type PrGraphWatchEvent = z.infer<typeof prGraphWatchEvent>;
 
+export const overlapKind = z.enum([
+  "goal_embedding",
+  "pr_graph",
+  "signal_runnerup",
+  "scratchpad",
+  "chat_xref",
+]);
+export type OverlapKind = z.infer<typeof overlapKind>;
+
+export const overlap = z.object({
+  id: z.string(),
+  nestAId: z.string(),
+  nestBId: z.string(),
+  kind: overlapKind,
+  score: z.number(),
+  evidenceJson: z.string(),
+  firstSeenAt: z.string(),
+  lastSeenAt: z.string(),
+  resolvedAt: z.string().nullable(),
+});
+export type Overlap = z.infer<typeof overlap>;
+
+export const listOverlapsOutput = z.array(overlap);
+
+export const proposalKind = z.enum([
+  "merge",
+  "split",
+  "bridge",
+  "forward",
+  "adopt",
+]);
+export type ProposalKind = z.infer<typeof proposalKind>;
+
+export const proposalStatus = z.enum([
+  "open",
+  "accepted",
+  "dismissed",
+  "snoozed",
+  "auto_executed",
+]);
+export type ProposalStatus = z.infer<typeof proposalStatus>;
+
+export const proposal = z.object({
+  id: z.string(),
+  kind: proposalKind,
+  primaryNestId: z.string().nullable(),
+  secondaryNestId: z.string().nullable(),
+  hogletId: z.string().nullable(),
+  signalReportId: z.string().nullable(),
+  evidenceJson: z.string(),
+  status: proposalStatus,
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  resolvedAt: z.string().nullable(),
+});
+export type Proposal = z.infer<typeof proposal>;
+
+export const listProposalsInput = z.object({
+  status: proposalStatus.optional(),
+});
+export type ListProposalsInput = z.infer<typeof listProposalsInput>;
+
+export const listProposalsOutput = z.array(proposal);
+
+export const proposalIdInput = z.object({ id: z.string().min(1) });
+export type ProposalIdInput = z.infer<typeof proposalIdInput>;
+
+export const bridgeKind = z.enum([
+  "signal_forward",
+  "scratchpad_ref",
+  "pr_dep",
+  "shared_doc",
+]);
+export type BridgeKind = z.infer<typeof bridgeKind>;
+
+export const bridgeCreatedBy = z.enum(["builder", "operator"]);
+export type BridgeCreatedBy = z.infer<typeof bridgeCreatedBy>;
+
+export const bridge = z.object({
+  id: z.string(),
+  nestAId: z.string(),
+  nestBId: z.string(),
+  kind: bridgeKind,
+  payloadJson: z.string(),
+  createdBy: bridgeCreatedBy,
+  createdAt: z.string(),
+  removedAt: z.string().nullable(),
+});
+export type Bridge = z.infer<typeof bridge>;
+
+export const listBridgesInput = z.object({
+  nestId: z.string().min(1).optional(),
+});
+export type ListBridgesInput = z.infer<typeof listBridgesInput>;
+
+export const listBridgesOutput = z.array(bridge);
+
+export const createBridgeInput = z.object({
+  nestAId: z.string().min(1),
+  nestBId: z.string().min(1),
+  kind: bridgeKind,
+  payloadJson: z.string(),
+  createdBy: bridgeCreatedBy.default("operator"),
+});
+export type CreateBridgeInput = z.infer<typeof createBridgeInput>;
+
+export const removeBridgeInput = z.object({ id: z.string().min(1) });
+export type RemoveBridgeInput = z.infer<typeof removeBridgeInput>;
+
+export const mergeNestsInput = z.object({
+  primaryNestId: z.string().min(1),
+  secondaryNestId: z.string().min(1),
+  proposalId: z.string().min(1).optional(),
+});
+export type MergeNestsInput = z.infer<typeof mergeNestsInput>;
+
+export const splitNestInput = z.object({
+  sourceNestId: z.string().min(1),
+  newNestName: z.string().trim().min(1),
+  newNestGoalPrompt: z.string().trim().min(1),
+  newMapX: z.number(),
+  newMapY: z.number(),
+  hogletIdsToMove: z.array(z.string()).default([]),
+  proposalId: z.string().min(1).optional(),
+});
+export type SplitNestInput = z.infer<typeof splitNestInput>;
+
+export const builderState = z.object({
+  id: z.string(),
+  lastTickAt: z.string().nullable(),
+  configJson: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type BuilderState = z.infer<typeof builderState>;
+
+export const updateBuilderStateInput = z.object({
+  configJson: z.string().nullable().optional(),
+});
+export type UpdateBuilderStateInput = z.infer<typeof updateBuilderStateInput>;
+
+export const proposalWatchEvent = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("upsert"), proposal: proposal }),
+  z.object({ kind: z.literal("removed"), proposalId: z.string() }),
+]);
+export type ProposalWatchEvent = z.infer<typeof proposalWatchEvent>;
+
+export const overlapWatchEvent = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("upsert"), overlap: overlap }),
+  z.object({ kind: z.literal("resolved"), overlapId: z.string() }),
+]);
+export type OverlapWatchEvent = z.infer<typeof overlapWatchEvent>;
+
 export const HedgemonyEvent = {
   NestChanged: "nest-changed",
   HogletChanged: "hoglet-changed",
   PrGraphChanged: "pr-graph-changed",
+  ProposalChanged: "proposal-changed",
+  OverlapChanged: "overlap-changed",
 } as const;
 
 /**
@@ -723,4 +879,6 @@ export interface HedgemonyEvents {
   [HedgemonyEvent.NestChanged]: NestChangedEvent;
   [HedgemonyEvent.HogletChanged]: HogletChangedEvent;
   [HedgemonyEvent.PrGraphChanged]: PrGraphChangedEvent;
+  [HedgemonyEvent.ProposalChanged]: ProposalWatchEvent;
+  [HedgemonyEvent.OverlapChanged]: OverlapWatchEvent;
 }

@@ -50,6 +50,7 @@ export function createMockNestRepository(): MockNestRepository {
         targetMetricId: null,
         loadoutJson: "{}",
         primaryRepository: data.primaryRepository ?? null,
+        mergedIntoId: null,
         createdAt: timestamp,
         updatedAt: timestamp,
       };

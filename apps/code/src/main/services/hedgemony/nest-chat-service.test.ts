@@ -18,6 +18,7 @@ function makeNest(overrides: Partial<Nest> = {}): Nest {
     targetMetricId: null,
     loadoutJson: "{}",
     primaryRepository: null,
+    mergedIntoId: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,

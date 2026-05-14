@@ -31,6 +31,7 @@ export interface UpdateNestData {
   mapY?: number;
   status?: NestStatus;
   health?: NestHealth;
+  mergedIntoId?: string | null;
 }
 
 const byId = (id: string) => eq(hedgemonyNests.id, id);

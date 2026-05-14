@@ -14,6 +14,7 @@ function makeNest(overrides: Partial<Nest> = {}): Nest {
     status: "active",
     health: "ok",
     primaryRepository: null,
+    mergedIntoId: null,
     targetMetricId: null,
     loadoutJson: null,
     createdAt: now,

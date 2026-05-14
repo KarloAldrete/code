@@ -41,6 +41,10 @@ export const MAIN_TOKENS = Object.freeze({
   FeedbackEventRepository: Symbol.for("Main.FeedbackEventRepository"),
   PrDependencyRepository: Symbol.for("Main.PrDependencyRepository"),
   TickLogRepository: Symbol.for("Main.TickLogRepository"),
+  BuilderStateRepository: Symbol.for("Main.BuilderStateRepository"),
+  OverlapRepository: Symbol.for("Main.OverlapRepository"),
+  ProposalRepository: Symbol.for("Main.ProposalRepository"),
+  BridgeRepository: Symbol.for("Main.BridgeRepository"),
 
   // Services
   AgentAuthAdapter: Symbol.for("Main.AgentAuthAdapter"),
@@ -93,4 +97,6 @@ export const MAIN_TOKENS = Object.freeze({
   FeedbackRoutingService: Symbol.for("Main.FeedbackRoutingService"),
   PrGraphService: Symbol.for("Main.PrGraphService"),
   CloudTaskClient: Symbol.for("Main.CloudTaskClient"),
+  BuilderTickService: Symbol.for("Main.BuilderTickService"),
+  FederationService: Symbol.for("Main.FederationService"),
 });

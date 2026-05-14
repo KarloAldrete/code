@@ -25,6 +25,7 @@ function makeNest(overrides: Partial<Nest> = {}): Nest {
     targetMetricId: overrides.targetMetricId ?? null,
     loadoutJson: overrides.loadoutJson ?? null,
     primaryRepository: overrides.primaryRepository ?? null,
+    mergedIntoId: overrides.mergedIntoId ?? null,
     createdAt: overrides.createdAt ?? "2026-01-01T00:00:00Z",
     updatedAt: overrides.updatedAt ?? "2026-01-01T00:00:00Z",
   };
