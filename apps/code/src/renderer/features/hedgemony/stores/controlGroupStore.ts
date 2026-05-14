@@ -26,7 +26,7 @@ interface ControlGroupActions {
 
 type ControlGroupStore = ControlGroupState & ControlGroupActions;
 
-export const useControlGroupStore = create<ControlGroupStore>((set) => ({
+export const useControlGroupStore = create<ControlGroupStore>()((set) => ({
   groups: {},
   assign: (slot, selection) =>
     set((state) => ({ groups: { ...state.groups, [slot]: selection } })),

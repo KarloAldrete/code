@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { executionModeSchema } from "../../../shared/types";
 
 export const nestStatus = z.enum([
   "active",
@@ -261,11 +262,21 @@ export const nestLoadout = z
     model: z.string().optional(),
     runtimeAdapter: hogletRuntimeAdapter.optional(),
     reasoningEffort: hedgemonyReasoningEffort.optional(),
+    executionMode: executionModeSchema.optional(),
     environment: z.enum(["local", "cloud"]).optional(),
     heartbeatIntervalMs: z.number().int().min(60_000).max(600_000).optional(),
   })
   .catch({});
 export type NestLoadout = z.infer<typeof nestLoadout>;
+
+export function parseNestLoadout(loadoutJson: string | null): NestLoadout {
+  if (!loadoutJson) return {};
+  try {
+    return nestLoadout.parse(JSON.parse(loadoutJson));
+  } catch {
+    return {};
+  }
+}
 
 export const DEFAULT_HOGLET_MODEL = "claude-opus-4-7";
 export const DEFAULT_CODEX_HOGLET_MODEL = "gpt-5.5";

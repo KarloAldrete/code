@@ -189,6 +189,7 @@ function HedgemonyMapSurfaceImpl(
     panX: x,
     panY: y,
     onCommit: commitPan,
+    wasdEnabled: !hedgehouseSelected && selectedNestId === null,
   });
   const [placementPointer, setPlacementPointer] = useState<{
     x: number;

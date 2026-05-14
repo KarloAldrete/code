@@ -32,13 +32,15 @@ export const spawnHogletHandler: HedgehogToolHandler = {
       );
     }
     const args = parsed.data;
+    const repository =
+      args.repository ?? ctx.repositoryContext.primaryRepository ?? undefined;
 
     try {
       const { hoglet, taskRunId } = await deps.hogletService.spawnInNest(
         {
           nestId: ctx.nest.id,
           prompt: args.prompt,
-          repository: args.repository,
+          repository,
         },
         ctx.loadout,
       );
@@ -52,7 +54,8 @@ export const spawnHogletHandler: HedgehogToolHandler = {
           hogletName: hoglet.name,
           taskId: hoglet.taskId,
           taskRunId,
-          repository: args.repository ?? null,
+          repository: repository ?? null,
+          repositoryInherited: args.repository === undefined && !!repository,
           model:
             ctx.loadout.model ??
             defaultModelForAdapter(ctx.loadout.runtimeAdapter),

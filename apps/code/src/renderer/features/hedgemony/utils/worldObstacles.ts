@@ -1,8 +1,5 @@
 import type { Nest } from "@main/services/hedgemony/schemas";
-import {
-  HEDGEHOUSE_MAP_X,
-  HEDGEHOUSE_MAP_Y,
-} from "../components/HedgehouseSprite";
+import { HEDGEHOUSE_MAP_X, HEDGEHOUSE_MAP_Y } from "../constants/map";
 import type { Obstacle } from "./pathfinding";
 
 // Shared collision radii for everything that should block walking — kept here

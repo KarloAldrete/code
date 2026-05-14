@@ -220,6 +220,41 @@ describe("PrGraphService", () => {
     expect(cloudTasks.getTaskWithLatestRun).toHaveBeenCalledTimes(1);
   });
 
+  it("does not emit duplicate rebase events after the parent debounce window", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+    try {
+      vi.setSystemTime(new Date("2026-05-13T00:00:00.000Z"));
+      const child = makeHoglet({ taskId: "task-child", nestId: "nest-1" });
+      const { service } = buildService({
+        edges: [
+          {
+            nestId: "nest-1",
+            parentTaskId: "task-parent",
+            childTaskId: "task-child",
+            state: "pending",
+          },
+        ],
+        hoglets: [child],
+        prUrl: "https://github.com/org/repo/pull/1",
+        branch: "feature/parent",
+        prDetails: { state: "closed", merged: true, draft: false },
+      });
+
+      const received: RebaseChildEventPayload[] = [];
+      service.on(PrGraphServiceEvent.RebaseChild, (payload) => {
+        received.push(payload);
+      });
+
+      await service.runPoll();
+      vi.setSystemTime(new Date("2026-05-13T00:01:00.000Z"));
+      await service.runPoll();
+
+      expect(received).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("queues rebase events when no listener is attached and drains via consumePending", async () => {
     const child = makeHoglet({ taskId: "task-child", nestId: "nest-1" });
     const { service } = buildService({

@@ -99,11 +99,13 @@ function createMockNestChatService() {
   return {
     recordCreationContext: vi.fn(() => [makeMessage(), makeMessage()]),
     recordBootstrapHandoff: vi.fn(() => makeMessage()),
+    recordBootstrapHandoffFailure: vi.fn(() => makeMessage()),
     recordCompletionContext: vi.fn(() => makeMessage()),
     forgetCompletedContext: vi.fn(() => makeMessage()),
   } as unknown as NestChatService & {
     recordCreationContext: ReturnType<typeof vi.fn>;
     recordBootstrapHandoff: ReturnType<typeof vi.fn>;
+    recordBootstrapHandoffFailure: ReturnType<typeof vi.fn>;
     recordCompletionContext: ReturnType<typeof vi.fn>;
     forgetCompletedContext: ReturnType<typeof vi.fn>;
   };
@@ -283,6 +285,42 @@ describe("NestService", () => {
     );
   });
 
+  it("keeps the nest and records degraded bootstrap context when handoff fails", async () => {
+    repositoryRepository.findAll.mockImplementationOnce(() => {
+      throw new Error("db_down");
+    });
+    const listener = vi.fn();
+    service.on(HedgemonyEvent.NestChanged, listener);
+
+    const nest = await service.create({
+      name: "Explore repo",
+      goalPrompt: "Explore missing local repo",
+      definitionOfDone: "Repo context captured",
+      mapX: 42,
+      mapY: -7,
+      creationMode: "guided",
+      creationBootstrap: {
+        mode: "agent_bootstrap",
+        repositories: ["Brooker-Fam/nexus-game"],
+        primaryRepository: "Brooker-Fam/nexus-game",
+        prompt: "Inspect the repo and produce a handoff.",
+        handoffInstructions: "Persist the handoff.",
+      },
+    });
+
+    expect(service.get({ id: nest.id })).toEqual(nest);
+    expect(nestChat.recordBootstrapHandoff).not.toHaveBeenCalled();
+    expect(nestChat.recordBootstrapHandoffFailure).toHaveBeenCalledWith(
+      nest,
+      expect.objectContaining({ name: "Explore repo" }),
+      expect.stringContaining("db_down"),
+    );
+    expect(listener).toHaveBeenCalledWith({
+      nestId: nest.id,
+      event: { kind: "status", nest },
+    });
+  });
+
   it("updates nest fields without recreating the row", async () => {
     const nest = await service.create({
       name: "Original",
@@ -379,6 +417,24 @@ describe("NestService", () => {
       nestId: nest.id,
       event: { kind: "completed", nest: completed },
     });
+  });
+
+  it("does not record duplicate completion context for dormant nests", async () => {
+    const nest = await service.create({
+      name: "Checkout",
+      goalPrompt: "Improve checkout",
+      mapX: 1,
+      mapY: 1,
+    });
+    const completed = service.complete({ id: nest.id, summary: "Done" });
+    const listener = vi.fn();
+    service.on(HedgemonyEvent.NestChanged, listener);
+
+    const repeated = service.complete({ id: nest.id, summary: "Done again" });
+
+    expect(repeated).toEqual(completed);
+    expect(nestChat.recordCompletionContext).toHaveBeenCalledTimes(1);
+    expect(listener).not.toHaveBeenCalled();
   });
 
   it("forgets context only for dormant nests", async () => {

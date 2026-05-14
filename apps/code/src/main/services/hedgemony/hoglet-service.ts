@@ -1,21 +1,23 @@
+import { Saga, type SagaLogger } from "@posthog/shared";
 import { inject, injectable } from "inversify";
+import type { Task, TaskRun } from "../../../shared/types";
 import type { HogletRepository } from "../../db/repositories/hoglet-repository";
 import type { PrDependencyRepository } from "../../db/repositories/pr-dependency-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
+import type { WorkspaceService } from "../workspace/service";
 import type { AffinityRouterService } from "./affinity-router";
 import type { CloudTaskClient } from "./cloud-task-client";
 import { HOGLET_NAMES } from "./hoglet-names";
+import {
+  readUserTaskPreferences,
+  resolveHogletRuntime,
+} from "./hoglet-runtime-preferences";
 import type { PrGraphService } from "./pr-graph-service";
 import {
   type AdoptHogletInput,
-  clampReasoningEffortForAdapter,
-  DEFAULT_HOGLET_ENVIRONMENT,
-  DEFAULT_HOGLET_RUNTIME_ADAPTER,
   type DismissSignalHogletInput,
-  defaultModelForAdapter,
-  defaultReasoningEffortForAdapter,
   HedgemonyEvent,
   type HedgemonyEvents,
   type Hoglet,
@@ -37,6 +39,96 @@ const log = logger.scope("hoglet-service");
 export const MAX_WILD_HOGLETS = 25;
 export const MAX_SIGNAL_STAGING_HOGLETS = 25;
 export const MAX_NEST_HOGLETS = 10;
+
+type CreateTaskInput = Parameters<CloudTaskClient["createTask"]>[0];
+type CreateTaskRunInput = Parameters<CloudTaskClient["createTaskRun"]>[1];
+
+interface HogletSpawnSagaInput<TOutput> {
+  task: CreateTaskInput;
+  run: CreateTaskRunInput;
+  prompt: string;
+  ensureCloudWorkspace: (
+    taskId: string,
+    branch: string | null | undefined,
+  ) => Promise<void>;
+  createLocalSidecar: (context: {
+    task: Task;
+    run: TaskRun;
+  }) => Promise<TOutput> | TOutput;
+  rollbackLocalSidecar: (output: TOutput) => Promise<void> | void;
+}
+
+interface SpawnInNestSagaOutput {
+  hoglet: Hoglet;
+  taskRunId: string;
+  task: Task;
+}
+
+interface SpawnFollowUpSagaOutput {
+  hoglet: Hoglet;
+  taskRunId: string;
+}
+
+class HogletSpawnSaga<TOutput> extends Saga<
+  HogletSpawnSagaInput<TOutput>,
+  TOutput
+> {
+  readonly sagaName = "HogletSpawnSaga";
+
+  constructor(
+    private readonly cloudTasks: CloudTaskClient,
+    logger?: SagaLogger,
+  ) {
+    super(logger);
+  }
+
+  protected async execute(
+    input: HogletSpawnSagaInput<TOutput>,
+  ): Promise<TOutput> {
+    const task = await this.step({
+      name: "create-cloud-task",
+      execute: () => this.cloudTasks.createTask(input.task),
+      rollback: (createdTask) => this.cloudTasks.deleteTask(createdTask.id),
+    });
+
+    const run = await this.step({
+      name: "create-cloud-task-run",
+      execute: () => this.cloudTasks.createTaskRun(task.id, input.run),
+      rollback: async (createdRun) => {
+        await this.cloudTasks.updateTaskRun(task.id, createdRun.id, {
+          status: "cancelled",
+          errorMessage: "Cancelled after Hedgemony spawn failed",
+        });
+      },
+    });
+
+    await this.step({
+      name: "ensure-cloud-workspace",
+      execute: () => input.ensureCloudWorkspace(task.id, run.branch ?? null),
+      rollback: async () => {},
+    });
+
+    await this.step({
+      name: "start-cloud-task-run",
+      execute: () =>
+        this.cloudTasks.startTaskRun(task.id, run.id, {
+          pendingUserMessage: input.prompt,
+        }),
+      rollback: async () => {
+        await this.cloudTasks.updateTaskRun(task.id, run.id, {
+          status: "cancelled",
+          errorMessage: "Cancelled after Hedgemony spawn failed",
+        });
+      },
+    });
+
+    return await this.step({
+      name: "create-local-sidecar",
+      execute: () => Promise.resolve(input.createLocalSidecar({ task, run })),
+      rollback: (output) => Promise.resolve(input.rollbackLocalSidecar(output)),
+    });
+  }
+}
 
 function bucketForHoglet(h: Hoglet): HogletBucket {
   if (h.nestId !== null) return { kind: "nest", nestId: h.nestId };
@@ -63,6 +155,8 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
     private readonly cloudTasks: CloudTaskClient,
     @inject(MAIN_TOKENS.PrGraphService)
     private readonly prGraph: PrGraphService,
+    @inject(MAIN_TOKENS.WorkspaceService)
+    private readonly workspaceService: WorkspaceService,
   ) {
     super();
   }
@@ -74,6 +168,13 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
     );
     if (available.length === 0) return null;
     return available[Math.floor(Math.random() * available.length)];
+  }
+
+  private assertNestCapacity(nestId: string): void {
+    const activeCount = this.hoglets.findAllForNest(nestId).length;
+    if (activeCount >= MAX_NEST_HOGLETS) {
+      throw new Error("nest_hoglet_cap_reached");
+    }
   }
 
   list(input: ListHogletsInput): Hoglet[] {
@@ -174,6 +275,8 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
       return created;
     }
 
+    this.assertNestCapacity(match.nestId);
+
     const created = this.hoglets.create({
       taskId: input.taskId,
       name: this.assignName(),
@@ -207,6 +310,7 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
       // explicit migration; operator must release first.
       throw new Error("hoglet_already_adopted");
     }
+    this.assertNestCapacity(input.nestId);
 
     const previousBucket = bucketForHoglet(existing);
     // Operator override clears the affinity score — the hoglet is now in its
@@ -344,65 +448,81 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
     input: SpawnHogletInNestInput,
     loadout: NestLoadout = {},
   ): Promise<{ hoglet: Hoglet; taskRunId: string }> {
-    const nestHoglets = this.hoglets.findAllForNest(input.nestId);
-    const activeCount = nestHoglets.filter((h) => !h.deletedAt).length;
-    if (activeCount >= MAX_NEST_HOGLETS) {
-      throw new Error("nest_hoglet_cap_reached");
-    }
+    this.assertNestCapacity(input.nestId);
 
-    const runtimeAdapter =
-      loadout.runtimeAdapter ?? DEFAULT_HOGLET_RUNTIME_ADAPTER;
-    const model = loadout.model ?? defaultModelForAdapter(runtimeAdapter);
-    const reasoningEffort = clampReasoningEffortForAdapter(
-      loadout.reasoningEffort ??
-        defaultReasoningEffortForAdapter(runtimeAdapter),
-      runtimeAdapter,
-    );
-    const environment = loadout.environment ?? DEFAULT_HOGLET_ENVIRONMENT;
+    const runtime = resolveHogletRuntime(loadout, readUserTaskPreferences());
 
-    const task = await this.cloudTasks.createTask({
-      title: truncateTitle(input.prompt),
-      description: input.prompt,
-      repository: input.repository ?? null,
-      originProduct: "automation",
+    const result = await new HogletSpawnSaga<SpawnInNestSagaOutput>(
+      this.cloudTasks,
+      log,
+    ).run({
+      task: {
+        title: truncateTitle(input.prompt),
+        description: input.prompt,
+        repository: input.repository ?? null,
+        originProduct: "automation",
+      },
+      run: {
+        environment: runtime.environment,
+        mode: "background",
+        runtimeAdapter: runtime.runtimeAdapter,
+        model: runtime.model,
+        reasoningEffort: runtime.reasoningEffort,
+        initialPermissionMode: runtime.executionMode,
+        prAuthorshipMode: "bot",
+      },
+      prompt: input.prompt,
+      ensureCloudWorkspace: (taskId, branch) =>
+        this.ensureCloudWorkspace(taskId, branch),
+      createLocalSidecar: ({ task, run }) => {
+        const hoglet = this.hoglets.create({
+          taskId: task.id,
+          name: this.assignName(),
+          nestId: input.nestId,
+          signalReportId: null,
+        });
+        return { hoglet, taskRunId: run.id, task };
+      },
+      rollbackLocalSidecar: ({ hoglet }) => {
+        this.hoglets.softDelete(hoglet.id);
+      },
     });
+    if (!result.success) throw new Error(result.error);
 
-    const run = await this.cloudTasks.createTaskRun(task.id, {
-      environment,
-      mode: "background",
-      runtimeAdapter,
-      model,
-      reasoningEffort,
-      prAuthorshipMode: "bot",
-    });
-    await this.cloudTasks.startTaskRun(task.id, run.id, {
-      pendingUserMessage: input.prompt,
-    });
-
-    const created = this.hoglets.create({
-      taskId: task.id,
-      name: this.assignName(),
-      nestId: input.nestId,
-      signalReportId: null,
-    });
+    const { hoglet: created, taskRunId, task } = result.data;
 
     log.info("Hoglet spawned in nest", {
       id: created.id,
       name: created.name,
       taskId: task.id,
-      taskRunId: run.id,
+      taskRunId,
       nestId: input.nestId,
-      model,
-      reasoningEffort,
-      runtimeAdapter,
-      environment,
+      model: runtime.model,
+      reasoningEffort: runtime.reasoningEffort,
+      runtimeAdapter: runtime.runtimeAdapter,
+      executionMode: runtime.executionMode,
+      environment: runtime.environment,
     });
 
     this.emitChange(
       { kind: "nest", nestId: input.nestId },
       { kind: "upsert", hoglet: created },
     );
-    return { hoglet: created, taskRunId: run.id };
+    return { hoglet: created, taskRunId };
+  }
+
+  async ensureCloudWorkspace(
+    taskId: string,
+    branch?: string | null,
+  ): Promise<void> {
+    await this.workspaceService.createWorkspace({
+      taskId,
+      mainRepoPath: "",
+      folderId: "",
+      folderPath: "",
+      mode: "cloud",
+      branch: branch ?? undefined,
+    });
   }
 
   /**
@@ -413,36 +533,74 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
    * new child Task to the parent, so the hedgehog and PR-graph UIs track
    * them together.
    */
-  async spawnFollowUp(input: SpawnFollowUpHogletInput): Promise<Hoglet> {
+  async spawnFollowUp(
+    input: SpawnFollowUpHogletInput,
+    loadout: NestLoadout = {},
+  ): Promise<Hoglet> {
+    this.assertNestCapacity(input.nestId);
+
     const parent = await this.cloudTasks.getTaskWithLatestRun(
       input.parentTaskId,
     );
-    const childTask = await this.cloudTasks.createTask({
-      title: `Follow-up: ${parent.task.title}`,
-      description: input.prompt,
-      repository: parent.task.repository ?? null,
-      originProduct: "user_created",
-      githubIntegration: parent.task.github_integration ?? null,
-      githubUserIntegration: parent.task.github_user_integration ?? null,
-    });
 
-    const created = this.hoglets.create({
-      taskId: childTask.id,
-      name: this.assignName(),
-      nestId: input.nestId,
-      signalReportId: null,
-    });
+    const runtime = resolveHogletRuntime(loadout, readUserTaskPreferences());
 
-    this.prDependencies.insert({
-      nestId: input.nestId,
-      parentTaskId: input.parentTaskId,
-      childTaskId: childTask.id,
-      state: "follow_up",
+    const result = await new HogletSpawnSaga<SpawnFollowUpSagaOutput>(
+      this.cloudTasks,
+      log,
+    ).run({
+      task: {
+        title: `Follow-up: ${parent.task.title}`,
+        description: input.prompt,
+        repository: parent.task.repository ?? null,
+        originProduct: "user_created",
+        githubIntegration: parent.task.github_integration ?? null,
+        githubUserIntegration: parent.task.github_user_integration ?? null,
+      },
+      run: {
+        environment: runtime.environment,
+        mode: "background",
+        runtimeAdapter: runtime.runtimeAdapter,
+        model: runtime.model,
+        reasoningEffort: runtime.reasoningEffort,
+        initialPermissionMode: runtime.executionMode,
+        prAuthorshipMode: "bot",
+      },
+      prompt: input.prompt,
+      ensureCloudWorkspace: (taskId, branch) =>
+        this.ensureCloudWorkspace(taskId, branch),
+      createLocalSidecar: ({ task, run }) => {
+        const hoglet = this.hoglets.create({
+          taskId: task.id,
+          name: this.assignName(),
+          nestId: input.nestId,
+          signalReportId: null,
+        });
+        try {
+          this.prDependencies.insert({
+            nestId: input.nestId,
+            parentTaskId: input.parentTaskId,
+            childTaskId: task.id,
+            state: "follow_up",
+          });
+        } catch (error) {
+          this.hoglets.softDelete(hoglet.id);
+          throw error;
+        }
+        return { hoglet, taskRunId: run.id };
+      },
+      rollbackLocalSidecar: ({ hoglet }) => {
+        this.hoglets.softDelete(hoglet.id);
+      },
     });
+    if (!result.success) throw new Error(result.error);
+
+    const created = result.data.hoglet;
 
     log.info("Follow-up hoglet spawned", {
       id: created.id,
       taskId: created.taskId,
+      taskRunId: result.data.taskRunId,
       nestId: input.nestId,
       parentTaskId: input.parentTaskId,
       payloadRef: input.payloadRef,

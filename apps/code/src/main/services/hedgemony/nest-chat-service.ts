@@ -91,6 +91,27 @@ export class NestChatService {
     });
   }
 
+  recordBootstrapHandoffFailure(
+    nest: Nest,
+    input: CreateNestInput,
+    errorMessage: string,
+  ): NestMessage {
+    return this.messages.create({
+      nestId: nest.id,
+      kind: "tool_result",
+      visibility: "summary",
+      sourceTaskId: `local-bootstrap:${nest.id}`,
+      body: formatBootstrapHandoffFailure(input, errorMessage),
+      payloadJson: JSON.stringify({
+        type: "bootstrap_handoff_degraded",
+        taskId: `local-bootstrap:${nest.id}`,
+        repositories: input.creationBootstrap?.repositories ?? [],
+        primaryRepository: input.creationBootstrap?.primaryRepository ?? null,
+        errorMessage,
+      }),
+    });
+  }
+
   recordCompletionContext(nest: Nest, input: CompleteNestInput): NestMessage {
     const compaction = this.messages.compactCompletedContext(nest.id);
 
@@ -255,6 +276,24 @@ function formatBootstrapHandoff(input: RecordBootstrapHandoffInput): string {
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+function formatBootstrapHandoffFailure(
+  input: CreateNestInput,
+  errorMessage: string,
+): string {
+  const bootstrap = input.creationBootstrap;
+  const repositories =
+    bootstrap && bootstrap.repositories.length > 0
+      ? bootstrap.repositories.join(", ")
+      : "unknown";
+  return [
+    "Bootstrap handoff degraded",
+    `Primary repository: ${bootstrap?.primaryRepository ?? "not set"}`,
+    `Repositories: ${repositories}`,
+    "Local bootstrap did not complete. The nest was created with its accepted spec and creation transcript, but repository context should be refreshed before relying on autonomous decomposition.",
+    `Error: ${errorMessage}`,
+  ].join("\n\n");
 }
 
 function getPayloadType(payloadJson: string | null): string | null {

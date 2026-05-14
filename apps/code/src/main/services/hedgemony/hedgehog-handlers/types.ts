@@ -2,7 +2,10 @@ import type { PrDependency } from "../../../db/repositories/pr-dependency-reposi
 import type { AnthropicToolUseBlock } from "../../llm-gateway/schemas";
 import type { CloudTaskClient } from "../cloud-task-client";
 import type { FeedbackRoutingService } from "../feedback-routing-service";
-import type { HogletWithState } from "../hedgehog-prompts";
+import type {
+  HogletWithState,
+  NestRepositoryContext,
+} from "../hedgehog-prompts";
 import type { HedgehogToolName } from "../hedgehog-tools";
 import type { HogletService } from "../hoglet-service";
 import type { PrGraphService } from "../pr-graph-service";
@@ -24,6 +27,7 @@ export interface TickContext {
   readonly budget: TickBudget;
   readonly prDependencies: PrDependency[];
   readonly loadout: NestLoadout;
+  readonly repositoryContext: NestRepositoryContext;
 }
 
 export interface WriteNestMessageInput {

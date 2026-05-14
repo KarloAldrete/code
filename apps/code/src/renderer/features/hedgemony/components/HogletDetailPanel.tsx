@@ -1,5 +1,6 @@
 import { CommandCenterSessionView } from "@features/command-center/components/CommandCenterSessionView";
 import { archiveTaskImperative } from "@features/tasks/hooks/useArchiveTask";
+import { useWorkspace } from "@features/workspace/hooks/useWorkspace";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import type { Hoglet } from "@main/services/hedgemony/schemas";
 import {
@@ -21,23 +22,19 @@ import {
   Text,
   Tooltip,
 } from "@radix-ui/themes";
-import { trpcClient } from "@renderer/trpc/client";
+import { trpcClient, useTRPC } from "@renderer/trpc/client";
 import type { Task } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { toast } from "sonner";
+import { SIGNAL_STAGING_BUCKET, WILD_BUCKET } from "../constants/buckets";
 import { useHogletPositionStore } from "../stores/hogletPositionStore";
-import {
-  SIGNAL_STAGING_BUCKET,
-  selectTaskSummary,
-  useHogletStore,
-  WILD_BUCKET,
-} from "../stores/hogletStore";
+import { selectTaskSummary, useHogletStore } from "../stores/hogletStore";
 import { wildHogletPosition } from "../utils/hogletPositions";
 import { CommandConsole } from "./CommandConsole";
 import { STATUS_BADGE_COLOR, type TaskStatus } from "./hogletStatus";
@@ -78,17 +75,85 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
     (s) => s.positions[hoglet.id] !== undefined,
   );
   const queryClient = useQueryClient();
+  const trpcReact = useTRPC();
+  const workspace = useWorkspace(hoglet.taskId);
+  const ensuredCloudWorkspaceForRun = useRef<string | null>(null);
 
   const [chatOpen, setChatOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [retireDialogOpen, setRetireDialogOpen] = useState(false);
   const [retiring, setRetiring] = useState(false);
+  const [cloudWorkspaceError, setCloudWorkspaceError] = useState(false);
 
   const taskQuery = useAuthenticatedQuery<Task>(
     ["tasks", "detail", hoglet.taskId],
     (client) => client.getTask(hoglet.taskId) as unknown as Promise<Task>,
     { staleTime: 30_000 },
   );
+  const summaryUpdatedAt = summary?.updated_at ?? null;
+  const detailUpdatedAt = taskQuery.data?.updated_at ?? null;
+  const latestRun = taskQuery.data?.latest_run ?? null;
+  const latestRunId = latestRun?.id ?? null;
+  const cloudWorkspaceNeeded =
+    latestRun?.environment === "cloud" && workspace?.mode !== "cloud";
+
+  useEffect(() => {
+    if (!summaryUpdatedAt || summaryUpdatedAt === detailUpdatedAt) {
+      return;
+    }
+    void queryClient.invalidateQueries({
+      queryKey: ["tasks", "detail", hoglet.taskId],
+    });
+  }, [detailUpdatedAt, hoglet.taskId, queryClient, summaryUpdatedAt]);
+
+  useEffect(() => {
+    if (
+      !cloudWorkspaceNeeded ||
+      !latestRunId ||
+      ensuredCloudWorkspaceForRun.current === latestRunId
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    ensuredCloudWorkspaceForRun.current = latestRunId;
+    setCloudWorkspaceError(false);
+
+    trpcClient.workspace.create
+      .mutate({
+        taskId: hoglet.taskId,
+        mainRepoPath: "",
+        folderId: "",
+        folderPath: "",
+        mode: "cloud",
+        branch: latestRun.branch ?? undefined,
+      })
+      .then(() =>
+        queryClient.invalidateQueries(trpcReact.workspace.getAll.pathFilter()),
+      )
+      .catch((error) => {
+        log.error("Failed to ensure cloud workspace for hoglet", {
+          taskId: hoglet.taskId,
+          taskRunId: latestRunId,
+          error,
+        });
+        if (!cancelled) {
+          ensuredCloudWorkspaceForRun.current = null;
+          setCloudWorkspaceError(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    cloudWorkspaceNeeded,
+    hoglet.taskId,
+    latestRun?.branch,
+    latestRunId,
+    queryClient,
+    trpcReact.workspace.getAll,
+  ]);
 
   const status: NonNullable<TaskStatus> = (summary?.latest_run?.status ??
     "not_started") as NonNullable<TaskStatus>;
@@ -271,7 +336,7 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
             </button>
           </div>
           <div className="min-h-0 flex-1">
-            {taskQuery.data ? (
+            {taskQuery.data && !cloudWorkspaceNeeded ? (
               <CommandCenterSessionView
                 taskId={hoglet.taskId}
                 task={taskQuery.data}
@@ -279,9 +344,11 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
               />
             ) : (
               <div className="flex h-full items-center justify-center text-(--gray-10) text-[12px]">
-                {taskQuery.isError
-                  ? "Could not load task"
-                  : "Loading conversation…"}
+                {cloudWorkspaceError
+                  ? "Could not prepare cloud session"
+                  : taskQuery.isError
+                    ? "Could not load task"
+                    : "Loading conversation…"}
               </div>
             )}
           </div>

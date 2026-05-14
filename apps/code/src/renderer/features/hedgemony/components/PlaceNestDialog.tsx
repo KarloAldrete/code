@@ -103,7 +103,7 @@ export function PlaceNestDialog({
     if (hasContent) {
       saveNestDraft(state);
     }
-  }, [open, state, initialGoal.trim, transcript.length]);
+  }, [open, state, initialGoal, transcript.length]);
 
   const roundedMapX = Math.round(mapX);
   const roundedMapY = Math.round(mapY);

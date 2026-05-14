@@ -1,5 +1,5 @@
 import type { Hoglet, Nest } from "@main/services/hedgemony/schemas";
-import { WILD_BUCKET } from "../stores/hogletStore";
+import { WILD_BUCKET } from "../constants/buckets";
 
 const WILD_RING_INNER = 130;
 const WILD_RING_THICKNESS = 90;

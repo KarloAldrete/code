@@ -41,6 +41,7 @@ import {
   nest,
   nestIdInput,
   nestMessage,
+  parseNestLoadout,
   prDependency,
   prGraphWatchEvent,
   rebaseChildEventPayload,
@@ -124,9 +125,13 @@ export const hedgemonyRouter = router({
     spawnFollowUpHoglet: publicProcedure
       .input(spawnFollowUpHogletInput)
       .output(hoglet)
-      .mutation(
-        async ({ input }) => await getHogletService().spawnFollowUp(input),
-      ),
+      .mutation(async ({ input }) => {
+        const nest = getService().get({ id: input.nestId });
+        return await getHogletService().spawnFollowUp(
+          input,
+          parseNestLoadout(nest.loadoutJson),
+        );
+      }),
 
     /**
      * Per-nest watch. Emits on status change, archive, and (later) hoglet

@@ -52,6 +52,7 @@ export class LlmGatewayService {
       model?: string;
       betas?: string[];
       effort?: LlmGatewayEffortLevel;
+      signal?: AbortSignal;
     } = {},
   ): Promise<PromptOutput> {
     const {
@@ -60,6 +61,7 @@ export class LlmGatewayService {
       model = DEFAULT_GATEWAY_MODEL,
       betas,
       effort,
+      signal,
     } = options;
 
     const auth = await this.authService.getValidAccessToken();
@@ -106,6 +108,7 @@ export class LlmGatewayService {
         method: "POST",
         headers,
         body: JSON.stringify(requestBody),
+        signal,
       },
     );
 
@@ -179,6 +182,7 @@ export class LlmGatewayService {
       effort?: LlmGatewayEffortLevel;
       tools: AnthropicToolDefinition[];
       toolChoice?: AnthropicToolChoice;
+      signal?: AbortSignal;
     },
   ): Promise<PromptWithToolsOutput> {
     const {
@@ -188,6 +192,7 @@ export class LlmGatewayService {
       effort,
       tools,
       toolChoice,
+      signal,
     } = options;
 
     const auth = await this.authService.getValidAccessToken();
@@ -234,6 +239,7 @@ export class LlmGatewayService {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(requestBody),
+        signal,
       },
     );
 

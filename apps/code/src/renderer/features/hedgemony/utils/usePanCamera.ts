@@ -7,16 +7,27 @@ const BOOST_MULTIPLIER = 2.2;
 const COMMIT_DEBOUNCE_MS = 200;
 const MAX_FRAME_DT_S = 0.05;
 
-const KEYS_LEFT = new Set(["ArrowLeft", "KeyA"]);
-const KEYS_RIGHT = new Set(["ArrowRight", "KeyD"]);
-const KEYS_UP = new Set(["ArrowUp", "KeyW"]);
-const KEYS_DOWN = new Set(["ArrowDown", "KeyS"]);
-const PAN_KEYS = new Set([
-  ...KEYS_LEFT,
-  ...KEYS_RIGHT,
-  ...KEYS_UP,
-  ...KEYS_DOWN,
+const ARROW_LEFT = new Set(["ArrowLeft"]);
+const ARROW_RIGHT = new Set(["ArrowRight"]);
+const ARROW_UP = new Set(["ArrowUp"]);
+const ARROW_DOWN = new Set(["ArrowDown"]);
+const WASD_LEFT = new Set(["KeyA"]);
+const WASD_RIGHT = new Set(["KeyD"]);
+const WASD_UP = new Set(["KeyW"]);
+const WASD_DOWN = new Set(["KeyS"]);
+const ARROW_PAN_KEYS = new Set([
+  ...ARROW_LEFT,
+  ...ARROW_RIGHT,
+  ...ARROW_UP,
+  ...ARROW_DOWN,
 ]);
+const WASD_PAN_KEYS = new Set([
+  ...WASD_LEFT,
+  ...WASD_RIGHT,
+  ...WASD_UP,
+  ...WASD_DOWN,
+]);
+const PAN_KEYS = new Set([...ARROW_PAN_KEYS, ...WASD_PAN_KEYS]);
 
 function anyHeld(pressed: Set<string>, keys: Set<string>) {
   for (const key of keys) if (pressed.has(key)) return true;
@@ -35,6 +46,7 @@ interface UsePanCameraOptions {
   panX: MotionValue<number>;
   panY: MotionValue<number>;
   onCommit: (x: number, y: number) => void;
+  wasdEnabled?: boolean;
 }
 
 /**
@@ -47,6 +59,7 @@ export function usePanCamera({
   panX,
   panY,
   onCommit,
+  wasdEnabled = true,
 }: UsePanCameraOptions) {
   const onCommitRef = useRef(onCommit);
   onCommitRef.current = onCommit;
@@ -80,10 +93,16 @@ export function usePanCamera({
       let dy = 0;
 
       if (!isTypingTarget(document.activeElement)) {
-        if (anyHeld(pressed, KEYS_LEFT)) dx += 1;
-        if (anyHeld(pressed, KEYS_RIGHT)) dx -= 1;
-        if (anyHeld(pressed, KEYS_UP)) dy += 1;
-        if (anyHeld(pressed, KEYS_DOWN)) dy -= 1;
+        if (anyHeld(pressed, ARROW_LEFT)) dx += 1;
+        if (anyHeld(pressed, ARROW_RIGHT)) dx -= 1;
+        if (anyHeld(pressed, ARROW_UP)) dy += 1;
+        if (anyHeld(pressed, ARROW_DOWN)) dy -= 1;
+        if (wasdEnabled) {
+          if (anyHeld(pressed, WASD_LEFT)) dx += 1;
+          if (anyHeld(pressed, WASD_RIGHT)) dx -= 1;
+          if (anyHeld(pressed, WASD_UP)) dy += 1;
+          if (anyHeld(pressed, WASD_DOWN)) dy -= 1;
+        }
       }
       // Normalize keyboard diagonal so corner movement isn't sqrt(2) faster.
       const keyMag = Math.hypot(dx, dy);
@@ -107,7 +126,7 @@ export function usePanCamera({
             px >= zr.left - EDGE_ZONE_PX &&
             px <= zr.right + EDGE_ZONE_PX &&
             py >= zr.top - EDGE_ZONE_PX &&
-            py <= zr.bottom
+            py <= zr.bottom + EDGE_ZONE_PX
           ) {
             excluded = true;
             break;
@@ -144,6 +163,7 @@ export function usePanCamera({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.shiftKey) boost = true;
       if (!PAN_KEYS.has(e.code)) return;
+      if (!wasdEnabled && WASD_PAN_KEYS.has(e.code)) return;
       if (isTypingTarget(document.activeElement)) return;
       pressed.add(e.code);
       e.preventDefault();
@@ -217,5 +237,5 @@ export function usePanCamera({
       window.removeEventListener("blur", onWindowBlur);
       document.removeEventListener("pointerout", onPointerLeaveDoc);
     };
-  }, [containerRef, panX, panY]);
+  }, [containerRef, panX, panY, wasdEnabled]);
 }

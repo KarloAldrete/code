@@ -1,5 +1,10 @@
 import { inject, injectable } from "inversify";
-import type { Task, TaskRun, TaskRunStatus } from "../../../shared/types";
+import type {
+  ExecutionMode,
+  Task,
+  TaskRun,
+  TaskRunStatus,
+} from "../../../shared/types";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import type { AuthService } from "../auth/service";
@@ -14,6 +19,7 @@ interface CreateTaskRunOptions {
   runtimeAdapter?: "claude" | "codex";
   model?: string;
   reasoningEffort?: HedgemonyReasoningEffort;
+  initialPermissionMode?: ExecutionMode;
   prAuthorshipMode?: "user" | "bot";
 }
 
@@ -30,12 +36,13 @@ interface UpdateTaskRunPatch {
  * Thin main-process client for the cloud task API. Mirrors the renderer-side
  * `PosthogAPIClient` task surface that the hedgehog tick service needs:
  * createTaskRun, startTaskRun, updateTaskRun, getTaskWithLatestRun. Uses
- * `AuthService.authenticatedFetch` and resolves `team_id` lazily (cached after
- * first call) — same pattern as `AffinityRouterService`.
+ * `AuthService.authenticatedFetch` and resolves `team_id` lazily from auth
+ * state or the current user endpoint.
  */
 @injectable()
 export class CloudTaskClient {
-  private cachedTeamId: number | null = null;
+  private cachedFallbackContext: { apiHost: string; teamId: number } | null =
+    null;
 
   constructor(
     @inject(MAIN_TOKENS.AuthService)
@@ -83,6 +90,24 @@ export class CloudTaskClient {
     return (await response.json()) as Task;
   }
 
+  async deleteTask(taskId: string): Promise<void> {
+    const { apiHost, teamId } = await this.resolveContext();
+    const response = await this.auth.authenticatedFetch(
+      fetch,
+      `${apiHost}/api/projects/${teamId}/tasks/${taskId}/`,
+      { method: "DELETE" },
+    );
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      log.error("deleteTask failed", {
+        taskId,
+        status: response.status,
+        errorText,
+      });
+      throw new Error(`delete_task_failed: HTTP ${response.status}`);
+    }
+  }
+
   async getTaskWithLatestRun(
     taskId: string,
   ): Promise<{ task: Task; latestRun: TaskRun | null }> {
@@ -116,6 +141,9 @@ export class CloudTaskClient {
     if (options.model !== undefined) body.model = options.model;
     if (options.reasoningEffort !== undefined) {
       body.reasoning_effort = options.reasoningEffort;
+    }
+    if (options.initialPermissionMode !== undefined) {
+      body.initial_permission_mode = options.initialPermissionMode;
     }
     if (options.prAuthorshipMode !== undefined) {
       body.pr_authorship_mode = options.prAuthorshipMode;
@@ -211,10 +239,11 @@ export class CloudTaskClient {
     const { apiHost } = await this.auth.getValidAccessToken();
     const stateProjectId = this.auth.getState().projectId;
     if (typeof stateProjectId === "number") {
+      this.cachedFallbackContext = { apiHost, teamId: stateProjectId };
       return { apiHost, teamId: stateProjectId };
     }
-    if (this.cachedTeamId !== null) {
-      return { apiHost, teamId: this.cachedTeamId };
+    if (this.cachedFallbackContext?.apiHost === apiHost) {
+      return { apiHost, teamId: this.cachedFallbackContext.teamId };
     }
     const response = await this.auth.authenticatedFetch(
       fetch,
@@ -230,7 +259,7 @@ export class CloudTaskClient {
     if (typeof id !== "number") {
       throw new Error("cloud_task_team_unresolved");
     }
-    this.cachedTeamId = id;
+    this.cachedFallbackContext = { apiHost, teamId: id };
     return { apiHost, teamId: id };
   }
 }

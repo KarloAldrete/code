@@ -460,7 +460,7 @@ function asksForRepoFindings(question: string): boolean {
     lower.includes("architectural patterns") ||
     lower.includes("dependencies") ||
     lower.includes("framework") ||
-    lower.includes("how existing games")
+    lower.includes("existing patterns")
   );
 }
 
@@ -473,51 +473,49 @@ function buildRepoDiscoveryFirstDraft(
     .trim();
   const repositories = extractRepoReferences(transcriptText);
   const repoLabel = formatRepositoryList(repositories);
-  const gameName = inferGameName(transcriptText);
-  const gameLabel = gameName ? `${gameName} game` : "new game";
-  const titleGame = gameName ?? "New game";
   const repoTail =
     repositories.length === 1
       ? (repositories[0]?.split("/").at(-1) ?? "target repo")
       : "Target repositories";
 
   const draft: GoalSpecDraftCore = {
-    name: `${titleGame}: discovery and implementation`,
-    summary: `Explore ${repoLabel}, understand its existing game architecture, and add a ${gameLabel} without breaking existing games.`,
-    primaryScenario: `The hedgehog first inspects ${repoLabel} to learn how games are structured, registered, built, and tested, then implements a playable ${gameLabel} that fits those conventions.`,
+    name: "Repository discovery and implementation",
+    summary: `Explore ${repoLabel}, understand the existing architecture, and deliver the requested change without disrupting unrelated behavior.`,
+    primaryScenario: `The hedgehog first inspects ${repoLabel} to learn how the codebase is structured, built, tested, and extended, then implements the requested outcome using those conventions.`,
     userStories: [
       {
         priority: "P1",
-        story: `As an operator, I want the hedgehog to inspect ${repoLabel} before changing code so that the ${gameLabel} follows the repo's actual architecture.`,
+        story: `As an operator, I want the hedgehog to inspect ${repoLabel} before changing code so that the work follows the repo's actual architecture.`,
         acceptanceScenarios: [
-          `Given ${repoLabel} is accessible, when the nest starts, then it documents the game framework, existing game registration flow, dependencies, file structure, and validation commands before implementation.`,
+          `Given ${repoLabel} is accessible, when the nest starts, then it documents the relevant architecture, dependencies, file structure, extension points, and validation commands before implementation.`,
         ],
       },
       {
         priority: "P1",
-        story: `As a player, I want a playable ${gameLabel} integrated with the existing game surface so that I can launch it alongside the other games.`,
+        story:
+          "As an operator, I want the requested change implemented through the repo's established patterns so that the result is maintainable and easy to validate.",
         acceptanceScenarios: [
-          `Given the existing game menu or routing pattern, when the ${gameLabel} is added, then it appears through the same entry mechanism as existing games.`,
-          `Given an existing game is launched after the change, when it runs, then its behavior is unchanged.`,
+          "Given the relevant integration points have been identified, when the change is implemented, then it fits those entry points without broad unrelated rewrites.",
+          "Given the repo has relevant tests or checks, when validation runs after the change, then regressions caused by the work are fixed or documented with blockers.",
         ],
       },
     ],
     requirements: [
       {
         id: "FR-001",
-        text: `Inspect ${repoLabel} and summarize the relevant architecture, dependencies, game registration pattern, asset pipeline, and validation commands before implementation.`,
+        text: `Inspect ${repoLabel} and summarize the relevant architecture, dependencies, integration points, data flow, and validation commands before implementation.`,
       },
       {
         id: "FR-002",
-        text: `Implement a playable ${gameLabel} using the repo's established framework and file structure conventions.`,
+        text: "Implement the requested outcome using the repo's established framework, file structure, and naming conventions.",
       },
       {
         id: "FR-003",
-        text: "Integrate the new game into the existing launch/menu/routing surface without changing unrelated games.",
+        text: "Keep unrelated features, routes, workflows, and configuration unchanged except where the requested outcome requires an explicit integration.",
       },
       {
         id: "FR-004",
-        text: "Run the repo's relevant validation commands and fix regressions caused by the new game.",
+        text: "Run the repo's relevant validation commands and fix regressions caused by the requested change.",
       },
       {
         id: "FR-005",
@@ -526,9 +524,9 @@ function buildRepoDiscoveryFirstDraft(
     ],
     keyEntities: [
       `${repoTail}: target repo set to inspect before implementation`,
-      "Existing games: regression surface that must keep working",
-      `${titleGame}: new game to add after discovery`,
-      "Game registry/menu/routing: integration point to identify during discovery",
+      "Requested outcome: the operator's desired behavior or deliverable from the transcript",
+      "Existing extension points: integration surfaces to identify during discovery",
+      "Validation commands: repo-specific checks to run after implementation",
     ],
     assumptions: [
       "Goal drafting cannot inspect or clone the repo; repository discovery must happen inside the created nest before implementation.",
@@ -537,18 +535,18 @@ function buildRepoDiscoveryFirstDraft(
     successCriteria: [
       {
         id: "SC-001",
-        text: `The nest records the discovered repo architecture and validation path before implementing the ${gameLabel}.`,
+        text: "The nest records the discovered repo architecture and validation path before implementation.",
       },
       {
         id: "SC-002",
-        text: `The ${gameLabel} is playable through the repo's normal game entry surface.`,
+        text: "The requested change is implemented through the repo's normal extension or integration surface.",
       },
       {
         id: "SC-003",
-        text: "Existing games continue to launch or pass their relevant validation after the change.",
+        text: "Relevant tests, builds, or manual validation pass, or any blockers are captured with enough detail for follow-up.",
       },
     ],
-    definitionOfDone: `The hedgehog has documented the discovered shape of ${repoLabel}, implemented a playable ${gameLabel} using that shape, integrated it without unrelated game regressions, and captured validation evidence from the repo's relevant checks.`,
+    definitionOfDone: `The hedgehog has documented the discovered shape of ${repoLabel}, implemented the requested outcome using that shape, avoided unrelated regressions, and captured validation evidence from the repo's relevant checks.`,
   };
 
   return {
@@ -613,7 +611,7 @@ function buildBootstrapContext(
       "- Work from the operator's natural language. If multiple repositories are mentioned, inspect them as a set and describe their relationships.",
       "- Use local repository context when available. If a repository is not available locally, record that as an unknown instead of pretending it was inspected.",
       "- Keep this bootstrap read-only.",
-      "- Identify architecture, dependencies, frameworks, package managers, game/app registration patterns, validation commands, and risky integration points.",
+      "- Identify architecture, dependencies, frameworks, package managers, app/feature registration patterns, validation commands, and risky integration points.",
       "- Recommend 1-many hoglet seeds grouped by repository. Each seed should include repo, objective, acceptance signal, dependencies/blockers, and whether it is discovery, implementation, or validation work.",
       "- Capture unknowns and blockers explicitly instead of guessing.",
       "- Do not spawn agents or implement the feature.",
@@ -636,16 +634,35 @@ function buildBootstrapContext(
 }
 
 function extractRepoReferences(text: string): string[] {
-  const matches = text.matchAll(/\b([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\b/g);
   const seen = new Set<string>();
   const repositories: string[] = [];
-  for (const match of matches) {
-    const repo = match[1];
+
+  const addRepo = (repo: string | undefined) => {
+    if (!repo) return;
     const key = repo.toLowerCase();
-    if (seen.has(key)) continue;
+    if (seen.has(key)) return;
     seen.add(key);
     repositories.push(repo);
+  };
+
+  const repoPart = "[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,98}[A-Za-z0-9])?";
+  const ownerPart = "[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?";
+  const githubUrlPattern = new RegExp(
+    `https?://(?:www\\.)?github\\.com/(${ownerPart}/${repoPart})(?:[/?#]|$)`,
+    "g",
+  );
+  for (const match of text.matchAll(githubUrlPattern)) {
+    addRepo(match[1]);
   }
+
+  const ownerRepoPattern = new RegExp(
+    `(^|[\\s([{'"])((${ownerPart})/(${repoPart}))(?=$|[\\s)\\]}'",.:;!?])`,
+    "g",
+  );
+  for (const match of text.matchAll(ownerRepoPattern)) {
+    addRepo(match[2]);
+  }
+
   return repositories.slice(0, 10);
 }
 
@@ -657,12 +674,4 @@ function formatRepositoryList(repositories: string[]): string {
     return repositories[0] ?? "the target repository";
   }
   return repositories.join(", ");
-}
-
-function inferGameName(text: string): string | undefined {
-  const lower = text.toLowerCase();
-  if (lower.includes("pong")) {
-    return "Pong";
-  }
-  return undefined;
 }

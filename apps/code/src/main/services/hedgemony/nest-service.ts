@@ -21,6 +21,7 @@ import {
   type NestWatchEvent,
   type UpdateNestInput,
 } from "./schemas";
+import { stringifyError } from "./utils";
 
 const log = logger.scope("nest-service");
 
@@ -69,24 +70,9 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
       this.emitMessageAppended(message);
     }
     if (input.creationBootstrap) {
-      const handoffMessage = this.nestChat.recordBootstrapHandoff(
-        await buildLocalBootstrapHandoff(
-          created.id,
-          input.creationBootstrap,
-          this.repositories.findAll(),
-          {
-            cloneRepository: (repoUrl, targetPath) =>
-              this.git
-                .cloneRepository(
-                  repoUrl,
-                  targetPath,
-                  `hedgemony-bootstrap-${created.id}`,
-                )
-                .then(() => undefined),
-            registerFolder: (folderPath, remoteUrl) =>
-              this.folders.addFolder(folderPath, { remoteUrl }),
-          },
-        ),
+      const handoffMessage = await this.buildBootstrapHandoffMessage(
+        created,
+        input,
       );
       this.emitMessageAppended(handoffMessage);
     }
@@ -122,6 +108,10 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
     }
     if (existing.status === "archived") {
       throw new Error("archived_nest_cannot_complete");
+    }
+    if (existing.status === "dormant") {
+      log.warn("complete called for already-dormant nest", { id: existing.id });
+      return existing;
     }
 
     const completed = this.nests.update(input.id, { status: "dormant" });
@@ -190,5 +180,47 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
 
   private emitChange(nest: Nest, event: NestWatchEvent): void {
     this.emit(HedgemonyEvent.NestChanged, { nestId: nest.id, event });
+  }
+
+  private async buildBootstrapHandoffMessage(
+    nest: Nest,
+    input: CreateNestInput,
+  ): Promise<NestMessage> {
+    if (!input.creationBootstrap) {
+      throw new Error("creation_bootstrap_missing");
+    }
+
+    try {
+      return this.nestChat.recordBootstrapHandoff(
+        await buildLocalBootstrapHandoff(
+          nest.id,
+          input.creationBootstrap,
+          this.repositories.findAll(),
+          {
+            cloneRepository: (repoUrl, targetPath) =>
+              this.git
+                .cloneRepository(
+                  repoUrl,
+                  targetPath,
+                  `hedgemony-bootstrap-${nest.id}`,
+                )
+                .then(() => undefined),
+            registerFolder: (folderPath, remoteUrl) =>
+              this.folders.addFolder(folderPath, { remoteUrl }),
+          },
+        ),
+      );
+    } catch (error) {
+      const errorMessage = stringifyError(error);
+      log.warn("Local bootstrap handoff failed during nest creation", {
+        nestId: nest.id,
+        error: errorMessage,
+      });
+      return this.nestChat.recordBootstrapHandoffFailure(
+        nest,
+        input,
+        errorMessage,
+      );
+    }
   }
 }

@@ -140,8 +140,8 @@ export function AnimatedHedgehog({
   return (
     <div
       aria-hidden
+      className="relative"
       style={{
-        position: "relative",
         width: size,
         height: size,
         transform: facing === "left" ? "scaleX(-1)" : undefined,
@@ -149,9 +149,8 @@ export function AnimatedHedgehog({
       }}
     >
       <div
+        className="absolute inset-0"
         style={{
-          position: "absolute",
-          inset: 0,
           backgroundImage: `url(${spritesImage})`,
           backgroundPosition: `-${frame.x * scale}px -${frame.y * scale}px`,
           backgroundSize: atlasBgSize,
@@ -162,9 +161,8 @@ export function AnimatedHedgehog({
         return (
           <div
             key={name}
+            className="absolute inset-0"
             style={{
-              position: "absolute",
-              inset: 0,
               backgroundImage: `url(${spritesImage})`,
               backgroundPosition: `-${af.x * scale}px -${af.y * scale}px`,
               backgroundSize: atlasBgSize,

@@ -69,8 +69,6 @@ const DEFAULT_VIEW: Omit<
   holdingPanel: DEFAULT_HOLDING_PANEL,
 };
 
-export const BUILDER_NAME = "James";
-
 export const useHedgemonyViewStore = create<HedgemonyViewStore>()(
   persist(
     (set) => ({

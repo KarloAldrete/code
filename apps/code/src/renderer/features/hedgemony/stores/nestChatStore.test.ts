@@ -1,28 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-const mockListNestChat = vi.hoisted(() => vi.fn());
-
-vi.mock("@renderer/trpc/client", () => ({
-  trpcClient: {
-    hedgemony: {
-      nestChat: {
-        list: {
-          query: mockListNestChat,
-        },
-      },
-    },
-  },
-}));
-
-vi.mock("@utils/logger", () => ({
-  logger: {
-    scope: () => ({
-      error: vi.fn(),
-    }),
-  },
-}));
-
 import type { NestMessage } from "@main/services/hedgemony/schemas";
+import { beforeEach, describe, expect, it } from "vitest";
 import { selectNestMessages, useNestChatStore } from "./nestChatStore";
 
 const message = {
@@ -38,34 +15,24 @@ const message = {
 
 describe("nestChatStore", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
     useNestChatStore.setState({
       messagesByNestId: {},
       loadingByNestId: {},
     });
   });
 
-  it("loads messages through the tRPC boundary", async () => {
-    mockListNestChat.mockResolvedValue([message]);
+  it("sets messages for a nest", () => {
+    useNestChatStore.getState().setMessages("nest-1", [message]);
 
-    await useNestChatStore.getState().load("nest-1");
-
-    expect(mockListNestChat).toHaveBeenCalledWith({ nestId: "nest-1" });
     expect(selectNestMessages("nest-1")(useNestChatStore.getState())).toEqual([
       message,
     ]);
-    expect(useNestChatStore.getState().loadingByNestId["nest-1"]).toBe(false);
   });
 
-  it("clears loading state when the tRPC call fails", async () => {
-    mockListNestChat.mockRejectedValue(new Error("boom"));
+  it("sets loading state for a nest", () => {
+    useNestChatStore.getState().setLoading("nest-1", true);
 
-    await useNestChatStore.getState().load("nest-1");
-
-    expect(selectNestMessages("nest-1")(useNestChatStore.getState())).toEqual(
-      [],
-    );
-    expect(useNestChatStore.getState().loadingByNestId["nest-1"]).toBe(false);
+    expect(useNestChatStore.getState().loadingByNestId["nest-1"]).toBe(true);
   });
 
   it("returns an empty list when no nest is selected", () => {

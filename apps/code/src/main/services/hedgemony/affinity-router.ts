@@ -43,7 +43,7 @@ interface RouteMatch {
 @injectable()
 export class AffinityRouterService {
   private readonly threshold: number;
-  private cachedTeamId: number | null = null;
+  private cachedTeamContext: { apiHost: string; teamId: number } | null = null;
 
   constructor(
     @inject(MAIN_TOKENS.AuthService)
@@ -123,7 +123,9 @@ export class AffinityRouterService {
   }
 
   private async resolveTeamId(apiHost: string): Promise<number | null> {
-    if (this.cachedTeamId !== null) return this.cachedTeamId;
+    if (this.cachedTeamContext?.apiHost === apiHost) {
+      return this.cachedTeamContext.teamId;
+    }
     const response = await this.auth.authenticatedFetch(
       fetch,
       `${apiHost}/api/users/@me/`,
@@ -133,11 +135,9 @@ export class AffinityRouterService {
       team?: { id?: unknown } | null;
     };
     const id = data.team?.id;
-    if (typeof id === "number") {
-      this.cachedTeamId = id;
-      return id;
-    }
-    return null;
+    if (typeof id !== "number") return null;
+    this.cachedTeamContext = { apiHost, teamId: id };
+    return id;
   }
 
   private async queryBestMatch(input: {

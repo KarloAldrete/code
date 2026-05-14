@@ -14,11 +14,8 @@ import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { useState } from "react";
 import { toast } from "sonner";
-import {
-  SIGNAL_STAGING_BUCKET,
-  selectTaskSummary,
-  useHogletStore,
-} from "../stores/hogletStore";
+import { SIGNAL_STAGING_BUCKET } from "../constants/buckets";
+import { selectTaskSummary, useHogletStore } from "../stores/hogletStore";
 import {
   PR_BADGE_COLOR,
   PR_STATE_LABEL,

@@ -3,7 +3,7 @@ import {
   HEDGEHOUSE_AVOID_RADIUS,
   HEDGEHOUSE_MAP_X,
   HEDGEHOUSE_MAP_Y,
-} from "../HedgehouseSprite";
+} from "../../constants/map";
 import {
   findZoneFor,
   PROPS_DEFAULT,

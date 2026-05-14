@@ -1,9 +1,7 @@
 import type { Hoglet } from "@main/services/hedgemony/schemas";
 import type { Schemas } from "@renderer/api/generated";
 import { create } from "zustand";
-
-export const WILD_BUCKET = "wild";
-export const SIGNAL_STAGING_BUCKET = "signal_staging";
+import { SIGNAL_STAGING_BUCKET, WILD_BUCKET } from "../constants/buckets";
 
 export interface DyingHogletEntry {
   hogletId: string;
@@ -15,7 +13,8 @@ interface HogletStoreState {
   byBucket: Record<string, Hoglet[]>;
   taskSummaries: Record<string, Schemas.TaskSummary>;
   loaded: Record<string, boolean>;
-  dying: Map<string, DyingHogletEntry>;
+  dying: Record<string, DyingHogletEntry>;
+  dyingList: DyingHogletEntry[];
 }
 
 interface HogletStoreActions {
@@ -34,7 +33,8 @@ const initialState: HogletStoreState = {
   byBucket: {},
   taskSummaries: {},
   loaded: {},
-  dying: new Map(),
+  dying: {},
+  dyingList: [],
 };
 
 export const useHogletStore = create<HogletStore>()((set) => ({
@@ -69,16 +69,17 @@ export const useHogletStore = create<HogletStore>()((set) => ({
 
   startDying: (hogletId, x, y) =>
     set((state) => {
-      const next = new Map(state.dying);
-      next.set(hogletId, { hogletId, x, y });
-      return { dying: next };
+      const dying = { ...state.dying, [hogletId]: { hogletId, x, y } };
+      return {
+        dying,
+        dyingList: Object.values(dying),
+      };
     }),
 
   finalizeDeath: (hogletId) =>
     set((state) => {
-      const next = new Map(state.dying);
-      next.delete(hogletId);
-      return { dying: next };
+      const { [hogletId]: _removed, ...next } = state.dying;
+      return { dying: next, dyingList: Object.values(next) };
     }),
 
   setTaskSummaries: (summaries) =>
@@ -129,6 +130,5 @@ export const selectHogletById =
     return null;
   };
 
-export const selectDyingHoglets = (state: HogletStore): DyingHogletEntry[] => [
-  ...state.dying.values(),
-];
+export const selectDyingHoglets = (state: HogletStore): DyingHogletEntry[] =>
+  state.dyingList;

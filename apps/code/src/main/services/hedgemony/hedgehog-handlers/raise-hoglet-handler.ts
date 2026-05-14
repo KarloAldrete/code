@@ -1,11 +1,8 @@
 import { raiseHogletArgs } from "../hedgehog-tools";
 import {
-  clampReasoningEffortForAdapter,
-  DEFAULT_HOGLET_ENVIRONMENT,
-  DEFAULT_HOGLET_RUNTIME_ADAPTER,
-  defaultModelForAdapter,
-  defaultReasoningEffortForAdapter,
-} from "../schemas";
+  readUserTaskPreferences,
+  resolveHogletRuntime,
+} from "../hoglet-runtime-preferences";
 import type { HandlerResult, HedgehogToolHandler } from "./types";
 import { recordToolValidationError, stringifyError, truncate } from "./utils";
 
@@ -59,25 +56,23 @@ export const raiseHogletHandler: HedgehogToolHandler = {
     }
 
     try {
-      const runtimeAdapter =
-        ctx.loadout.runtimeAdapter ?? DEFAULT_HOGLET_RUNTIME_ADAPTER;
-      const model =
-        ctx.loadout.model ?? defaultModelForAdapter(runtimeAdapter);
-      const reasoningEffort = clampReasoningEffortForAdapter(
-        ctx.loadout.reasoningEffort ??
-          defaultReasoningEffortForAdapter(runtimeAdapter),
-        runtimeAdapter,
+      const runtime = resolveHogletRuntime(
+        ctx.loadout,
+        readUserTaskPreferences(),
       );
-      const environment =
-        ctx.loadout.environment ?? DEFAULT_HOGLET_ENVIRONMENT;
       const run = await deps.cloudTasks.createTaskRun(entry.hoglet.taskId, {
-        environment,
+        environment: runtime.environment,
         mode: "background",
-        runtimeAdapter,
-        model,
-        reasoningEffort,
+        runtimeAdapter: runtime.runtimeAdapter,
+        model: runtime.model,
+        reasoningEffort: runtime.reasoningEffort,
+        initialPermissionMode: runtime.executionMode,
         prAuthorshipMode: "bot",
       });
+      await deps.hogletService.ensureCloudWorkspace(
+        entry.hoglet.taskId,
+        run.branch ?? null,
+      );
       await deps.cloudTasks.startTaskRun(entry.hoglet.taskId, run.id, {
         pendingUserMessage: args.prompt,
       });

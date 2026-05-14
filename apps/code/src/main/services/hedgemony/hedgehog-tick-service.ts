@@ -25,6 +25,10 @@ import {
   type ScratchpadEntry,
 } from "./hedgehog-prompts";
 import { HEDGEHOG_TOOLS } from "./hedgehog-tools";
+import {
+  readUserTaskPreferences,
+  resolveHogletRuntime,
+} from "./hoglet-runtime-preferences";
 import type { HogletService } from "./hoglet-service";
 import type { NestChatService } from "./nest-chat-service";
 import type { NestService } from "./nest-service";
@@ -36,8 +40,8 @@ import {
   type HogletChangedEvent,
   type Nest,
   type NestChangedEvent,
-  type NestLoadout,
-  nestLoadout,
+  type NestMessage,
+  parseNestLoadout,
 } from "./schemas";
 
 const log = logger.scope("hedgehog-tick-service");
@@ -60,15 +64,6 @@ function getHeartbeatIntervalMs(): number {
   return DEFAULT_HEARTBEAT_INTERVAL_MS;
 }
 
-function parseLoadout(loadoutJson: string | null): NestLoadout {
-  if (!loadoutJson) return {};
-  try {
-    return nestLoadout.parse(JSON.parse(loadoutJson));
-  } catch {
-    return {};
-  }
-}
-
 /**
  * Slice 6 of Hedgemony — the hedgehog. A per-nest ephemeral orchestrator that
  * ticks on (heartbeat | new hoglet event | operator chat message), assembles
@@ -85,7 +80,14 @@ export class HedgehogTickService {
   private started = false;
   private readonly inFlight = new Set<string>();
   private readonly lastEnqueuedAt = new Map<string, number>();
+  private readonly tickAbortControllers = new Map<string, AbortController>();
   private heartbeatHandle: ReturnType<typeof setInterval> | null = null;
+  private readonly onNestChanged = (data: NestChangedEvent): void => {
+    this.handleNestEvent(data);
+  };
+  private readonly onHogletChanged = (data: HogletChangedEvent): void => {
+    this.handleHogletEvent(data);
+  };
 
   constructor(
     @inject(MAIN_TOKENS.LlmGatewayService)
@@ -128,12 +130,8 @@ export class HedgehogTickService {
       });
     }
 
-    this.nestService.on(HedgemonyEvent.NestChanged, (data) =>
-      this.handleNestEvent(data),
-    );
-    this.hogletService.on(HedgemonyEvent.HogletChanged, (data) =>
-      this.handleHogletEvent(data),
-    );
+    this.nestService.on(HedgemonyEvent.NestChanged, this.onNestChanged);
+    this.hogletService.on(HedgemonyEvent.HogletChanged, this.onHogletChanged);
 
     this.heartbeatHandle = setInterval(() => {
       this.runHeartbeat().catch((error) =>
@@ -154,6 +152,14 @@ export class HedgehogTickService {
       clearInterval(this.heartbeatHandle);
       this.heartbeatHandle = null;
     }
+    this.nestService.off(HedgemonyEvent.NestChanged, this.onNestChanged);
+    this.hogletService.off(HedgemonyEvent.HogletChanged, this.onHogletChanged);
+    for (const [nestId, controller] of this.tickAbortControllers) {
+      controller.abort();
+      this.stateRepo.upsert({ nestId, state: "idle" });
+    }
+    this.tickAbortControllers.clear();
+    this.inFlight.clear();
     log.info("HedgehogTickService stopped");
   }
 
@@ -213,22 +219,34 @@ export class HedgehogTickService {
     const activeNests = this.nestService
       .list()
       .filter((n) => n.status === "active");
+    const activeNestIds = new Set(activeNests.map((nest) => nest.id));
+    this.pruneLastEnqueuedAt(activeNestIds);
+
+    const dueNestIds: string[] = [];
     for (const nest of activeNests) {
-      const loadout = parseLoadout(nest.loadoutJson);
+      const loadout = parseNestLoadout(nest.loadoutJson);
       const interval = loadout.heartbeatIntervalMs ?? globalInterval;
       const state = this.stateRepo.findByNestId(nest.id);
       const last = state?.lastTickAt ? new Date(state.lastTickAt).getTime() : 0;
       if (Date.now() - last < interval) continue;
-      await this.enqueueTick(nest.id, "heartbeat");
+      dueNestIds.push(nest.id);
     }
+    await Promise.all(
+      dueNestIds.map((nestId) => this.enqueueTick(nestId, "heartbeat")),
+    );
   }
 
   private async runTick(nestId: string, reason: string): Promise<void> {
     if (this.inFlight.has(nestId)) return;
     this.inFlight.add(nestId);
+    const abortController = new AbortController();
+    this.tickAbortControllers.set(nestId, abortController);
     try {
-      await this.tick(nestId, reason);
+      await this.tick(nestId, reason, abortController.signal);
     } finally {
+      if (this.tickAbortControllers.get(nestId) === abortController) {
+        this.tickAbortControllers.delete(nestId);
+      }
       this.inFlight.delete(nestId);
     }
   }
@@ -237,7 +255,12 @@ export class HedgehogTickService {
    * The full tick lifecycle. Public for tests; production callers should use
    * `enqueueTick` so debouncing and the in-flight lock apply.
    */
-  async tick(nestId: string, reason: string): Promise<void> {
+  async tick(
+    nestId: string,
+    reason: string,
+    abortSignal?: AbortSignal,
+  ): Promise<void> {
+    if (abortSignal?.aborted) return;
     const nest = (() => {
       try {
         return this.nestService.get({ id: nestId });
@@ -263,16 +286,23 @@ export class HedgehogTickService {
 
     try {
       const context = await this.buildContext(nest, budget);
+      if (abortSignal?.aborted) return;
       const recentChat = this.nestChat.list({ nestId, detail: false });
+      const repositoryContext = this.deriveRepositoryContext(
+        recentChat,
+        context.hoglets,
+      );
+      const tickContext = { ...context, repositoryContext };
       const scratchpad = this.loadScratchpad(nestId);
       const userPrompt = buildUserPrompt({
         nest,
-        hoglets: context.hoglets,
+        hoglets: tickContext.hoglets,
         recentChat,
         scratchpad,
         triggerReason: reason,
-        prDependencies: context.prDependencies,
-        loadout: context.loadout,
+        prDependencies: tickContext.prDependencies,
+        loadout: tickContext.loadout,
+        repositoryContext,
       });
 
       const response = await this.llm.promptWithTools(
@@ -284,12 +314,15 @@ export class HedgehogTickService {
           effort: HEDGEHOG_EFFORT,
           tools: HEDGEHOG_TOOLS,
           toolChoice: { type: "auto" },
+          signal: abortSignal,
         },
       );
+      if (abortSignal?.aborted) return;
 
       newScratchpadEntries.push(...this.summariseLlmResponse(reason, response));
 
       for (const block of response.toolUseBlocks) {
+        if (abortSignal?.aborted) return;
         const handler = HEDGEHOG_HANDLERS.get(
           block.name as Parameters<typeof HEDGEHOG_HANDLERS.get>[0],
         );
@@ -302,7 +335,7 @@ export class HedgehogTickService {
           });
           continue;
         }
-        const result = await handler.handle(context, block, deps);
+        const result = await handler.handle(tickContext, block, deps);
         newScratchpadEntries.push({
           ts: new Date().toISOString(),
           kind: "decision",
@@ -325,6 +358,10 @@ export class HedgehogTickService {
         });
       }
     } catch (error) {
+      if (abortSignal?.aborted || isAbortError(error)) {
+        log.debug("tick aborted", { nestId, reason });
+        return;
+      }
       log.error("tick body errored", { nestId, reason, error });
       newScratchpadEntries.push({
         ts: new Date().toISOString(),
@@ -338,19 +375,24 @@ export class HedgehogTickService {
         payloadJson: { tickReason: reason, type: "tick_error" },
       });
     } finally {
-      const scratchpad = this.loadScratchpad(nestId);
-      const nextScratchpad = appendScratchpad(scratchpad, newScratchpadEntries);
-      const lastTickAt = new Date().toISOString();
-      this.stateRepo.upsert({
-        nestId,
-        state: "idle",
-        lastTickAt,
-        serializedStateJson: JSON.stringify({ scratchpad: nextScratchpad }),
-      });
-      this.nestService.emitHedgehogTick(nestId, {
-        state: "idle",
-        lastTickAt,
-      });
+      if (!abortSignal?.aborted) {
+        const scratchpad = this.loadScratchpad(nestId);
+        const nextScratchpad = appendScratchpad(
+          scratchpad,
+          newScratchpadEntries,
+        );
+        const lastTickAt = new Date().toISOString();
+        this.stateRepo.upsert({
+          nestId,
+          state: "idle",
+          lastTickAt,
+          serializedStateJson: JSON.stringify({ scratchpad: nextScratchpad }),
+        });
+        this.nestService.emitHedgehogTick(nestId, {
+          state: "idle",
+          lastTickAt,
+        });
+      }
     }
   }
 
@@ -368,7 +410,16 @@ export class HedgehogTickService {
     nest: Nest,
     budget: TickBudget,
   ): Promise<TickContext> {
-    const loadout = parseLoadout(nest.loadoutJson);
+    const rawLoadout = parseNestLoadout(nest.loadoutJson);
+    const runtime = resolveHogletRuntime(rawLoadout, readUserTaskPreferences());
+    const loadout = {
+      ...rawLoadout,
+      runtimeAdapter: runtime.runtimeAdapter,
+      model: runtime.model,
+      reasoningEffort: runtime.reasoningEffort,
+      executionMode: runtime.executionMode,
+      environment: runtime.environment,
+    };
     const hoglets = this.hogletService
       .list({ nestId: nest.id })
       .filter((h): h is Hoglet => !h.deletedAt);
@@ -376,7 +427,7 @@ export class HedgehogTickService {
     const prStateCache = new Map<string, HogletPrState>();
     for (const hoglet of hoglets) {
       try {
-        const { latestRun } = await this.cloudTasks.getTaskWithLatestRun(
+        const { task, latestRun } = await this.cloudTasks.getTaskWithLatestRun(
           hoglet.taskId,
         );
         const prUrlCandidate = latestRun?.output?.pr_url;
@@ -389,6 +440,7 @@ export class HedgehogTickService {
           : null;
         enriched.push({
           hoglet,
+          repository: task.repository ?? null,
           taskRunStatus: latestRun?.status ?? "no_run",
           latestRunId: latestRun?.id ?? null,
           branch: latestRun?.branch ?? null,
@@ -402,6 +454,7 @@ export class HedgehogTickService {
         });
         enriched.push({
           hoglet,
+          repository: null,
           taskRunStatus: "unknown",
           latestRunId: null,
           branch: null,
@@ -411,7 +464,65 @@ export class HedgehogTickService {
       }
     }
     const prDeps = this.prDependencies.listForNest(nest.id);
-    return { nest, hoglets: enriched, budget, prDependencies: prDeps, loadout };
+    return {
+      nest,
+      hoglets: enriched,
+      budget,
+      prDependencies: prDeps,
+      loadout,
+      repositoryContext: { repositories: [], primaryRepository: null },
+    };
+  }
+
+  private deriveRepositoryContext(
+    recentChat: NestMessage[],
+    hoglets: HogletWithState[],
+  ): { repositories: string[]; primaryRepository: string | null } {
+    const repositories = new Set<string>();
+    let primaryRepository: string | null = null;
+
+    const addRepository = (value: unknown): void => {
+      if (typeof value !== "string") return;
+      const trimmed = value.trim();
+      if (trimmed.length > 0) repositories.add(trimmed);
+    };
+
+    const addRepositories = (value: unknown): void => {
+      if (!Array.isArray(value)) return;
+      for (const entry of value) addRepository(entry);
+    };
+
+    for (const message of recentChat) {
+      if (!message.payloadJson) continue;
+      try {
+        const payload = JSON.parse(message.payloadJson) as Record<
+          string,
+          unknown
+        >;
+        const bootstrap =
+          payload.creationBootstrap &&
+          typeof payload.creationBootstrap === "object"
+            ? (payload.creationBootstrap as Record<string, unknown>)
+            : payload;
+        addRepositories(bootstrap.repositories);
+        addRepository(bootstrap.primaryRepository);
+        if (
+          !primaryRepository &&
+          typeof bootstrap.primaryRepository === "string"
+        ) {
+          const trimmed = bootstrap.primaryRepository.trim();
+          if (trimmed.length > 0) primaryRepository = trimmed;
+        }
+      } catch {}
+    }
+
+    for (const entry of hoglets) addRepository(entry.repository);
+
+    const list = [...repositories];
+    if (!primaryRepository && list.length === 1) {
+      primaryRepository = list[0] ?? null;
+    }
+    return { repositories: list, primaryRepository };
   }
 
   private async resolvePrState(
@@ -481,4 +592,18 @@ export class HedgehogTickService {
     });
     this.nestService.emitMessageAppended(message);
   }
+
+  private pruneLastEnqueuedAt(activeNestIds: Set<string>): void {
+    for (const nestId of this.lastEnqueuedAt.keys()) {
+      if (!activeNestIds.has(nestId) && !this.inFlight.has(nestId)) {
+        this.lastEnqueuedAt.delete(nestId);
+      }
+    }
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException
+    ? error.name === "AbortError"
+    : error instanceof Error && error.name === "AbortError";
 }

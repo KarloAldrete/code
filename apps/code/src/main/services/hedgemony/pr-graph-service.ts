@@ -23,6 +23,7 @@ import {
   type RecordRebaseOutcomeInput,
   type UnlinkPrDependencyInput,
 } from "./schemas";
+import { stringifyError } from "./utils";
 
 const log = logger.scope("pr-graph-service");
 
@@ -60,6 +61,7 @@ export class PrGraphService extends TypedEventEmitter<PrGraphServiceEvents> {
   private pollHandle: ReturnType<typeof setInterval> | null = null;
   private readonly pending: RebaseChildEventPayload[] = [];
   private readonly lastPolledAt = new Map<string, number>();
+  private readonly emittedRebaseEdgeIds = new Set<string>();
   private pollingNow = false;
 
   constructor(
@@ -150,6 +152,7 @@ export class PrGraphService extends TypedEventEmitter<PrGraphServiceEvents> {
     const existing = this.prDependencies.findById(input.id);
     if (!existing) return;
     this.prDependencies.delete(input.id);
+    this.emittedRebaseEdgeIds.delete(existing.id);
     this.emitGraphChange(existing.nestId, {
       kind: "removed",
       edgeId: existing.id,
@@ -168,6 +171,7 @@ export class PrGraphService extends TypedEventEmitter<PrGraphServiceEvents> {
     ];
     for (const edge of edges) {
       this.prDependencies.delete(edge.id);
+      this.emittedRebaseEdgeIds.delete(edge.id);
       this.emitGraphChange(edge.nestId, {
         kind: "removed",
         edgeId: edge.id,
@@ -199,6 +203,7 @@ export class PrGraphService extends TypedEventEmitter<PrGraphServiceEvents> {
   recordRebaseOutcome(input: RecordRebaseOutcomeInput): PrDependency {
     const edge = this.prDependencies.findById(input.edgeId);
     if (!edge) throw new Error("edge_not_found");
+    this.emittedRebaseEdgeIds.delete(edge.id);
 
     const nextState = outcomeToState(input.outcome);
     const updated =
@@ -313,6 +318,8 @@ export class PrGraphService extends TypedEventEmitter<PrGraphServiceEvents> {
     promptOverride: string | undefined,
     parentContext?: { prUrl: string; parentBranch: string | null },
   ): Promise<void> {
+    if (this.emittedRebaseEdgeIds.has(edge.id)) return;
+
     let prUrl = parentContext?.prUrl ?? null;
     let parentBranch = parentContext?.parentBranch ?? null;
     if (!prUrl) {
@@ -349,6 +356,7 @@ export class PrGraphService extends TypedEventEmitter<PrGraphServiceEvents> {
     const prompt = promptOverride ?? buildRebasePrompt(prUrl, parentBranch);
     const fallbackPrompt = buildRebaseFollowUpPrompt(prUrl, parentBranch);
 
+    this.emittedRebaseEdgeIds.add(edge.id);
     this.emitRebase({
       edgeId: edge.id,
       nestId: edge.nestId,
@@ -405,15 +413,5 @@ function describeRebaseOutcome(
       return "Routed rebase failed: no live session and no nest available.";
     case "broken":
       return "Rebase delivery broken — operator follow-up required.";
-  }
-}
-
-function stringifyError(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return String(error);
   }
 }

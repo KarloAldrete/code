@@ -12,6 +12,7 @@ import { playSfx } from "../audio/sfx";
 import { useSfxStore } from "../audio/sfxStore";
 import { playVoice } from "../audio/voice";
 import type { HedgemonyHotkeyContext } from "../constants/hotkeys";
+import { HEDGEHOUSE_MAP_X, HEDGEHOUSE_MAP_Y } from "../constants/map";
 import { useBuilderCoordinator } from "../hooks/useBuilderCoordinator";
 import { useSignalIngestion } from "../hooks/useSignalIngestion";
 import {
@@ -41,7 +42,6 @@ import { HOGLET_RADIUS, worldObstacles } from "../utils/worldObstacles";
 import { BuilderCommandPanel } from "./BuilderCommandPanel";
 import { DyingHogletLayer } from "./DyingHogletLayer";
 import { HedgehouseCommandPanel } from "./HedgehouseCommandPanel";
-import { HEDGEHOUSE_MAP_X, HEDGEHOUSE_MAP_Y } from "./HedgehouseSprite";
 import { HedgemonyHoldingPanel } from "./HedgemonyHoldingPanel";
 import { HedgemonyHotkeyHelper } from "./HedgemonyHotkeyHelper";
 import {
@@ -91,6 +91,7 @@ export function HedgemonyMapView() {
   } | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
   const [moveMarker, setMoveMarker] = useState<MoveMarker | null>(null);
+  const moveMarkerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const spawnHogletOpen = useSpawnDialogStore((s) => s.spawnHogletOpen);
   const openSpawnHoglet = useSpawnDialogStore((s) => s.openSpawnHoglet);
   const closeSpawnHoglet = useSpawnDialogStore((s) => s.closeSpawnHoglet);
@@ -121,6 +122,14 @@ export function HedgemonyMapView() {
 
   useEffect(() => {
     return initializeNestStore();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (moveMarkerTimerRef.current) {
+        clearTimeout(moveMarkerTimerRef.current);
+      }
+    };
   }, []);
 
   // Slice 8 — bootstrap a PR-graph edge subscription per nest. Each nest
@@ -576,112 +585,118 @@ export function HedgemonyMapView() {
   const flashMoveMarker = useCallback((x: number, y: number) => {
     const id = Date.now();
     setMoveMarker({ id, x, y });
-    setTimeout(() => {
+    if (moveMarkerTimerRef.current) {
+      clearTimeout(moveMarkerTimerRef.current);
+    }
+    moveMarkerTimerRef.current = setTimeout(() => {
+      moveMarkerTimerRef.current = null;
       setMoveMarker((current) => (current?.id === id ? null : current));
     }, 600);
   }, []);
 
-  const handleMapClick = (x: number, y: number) => {
-    switch (mode.kind) {
-      case "relocatingNest": {
-        const nest = nests.find((n) => n.id === mode.nestId);
+  const handleMapClick = useCallback(
+    (x: number, y: number) => {
+      switch (mode.kind) {
+        case "relocatingNest": {
+          const nest = nests.find((candidate) => candidate.id === mode.nestId);
+          setMode({ kind: "browsing" });
+          if (!nest) return;
+          const targetX = Math.round(x);
+          const targetY = Math.round(y);
+          flashMoveMarker(targetX, targetY);
+          playSfx("order");
+          playVoice("hoglet:order_move");
+          void moveNest(nest, targetX, targetY, {
+            undoable: true,
+            flashMoveMarker,
+          });
+          return;
+        }
+        case "placingNest": {
+          const creationMode = mode.creationMode;
+          setMode({ kind: "browsing" });
+          setPendingPlacement({ x, y, creationMode });
+          return;
+        }
+        case "browsing":
+          setSelection(null);
+          return;
+      }
+    },
+    [flashMoveMarker, mode, nests],
+  );
+
+  const handleMapRightClick = useCallback(
+    (x: number, y: number) => {
+      if (mode.kind !== "browsing") {
         setMode({ kind: "browsing" });
-        if (!nest) return;
-        const targetX = Math.round(x);
-        const targetY = Math.round(y);
-        flashMoveMarker(targetX, targetY);
+        return;
+      }
+      if (!selection || selection.type === "nest") return;
+
+      const targetX = Math.round(x);
+      const targetY = Math.round(y);
+
+      if (selection.type === "hoglets") {
+        const positionStore = useHogletPositionStore.getState();
+        const obstacles = worldObstacles(nests);
+        const positionsNow = collectHogletWorldPositions(
+          nests,
+          useHogletStore.getState().byBucket,
+          positionStore.positions,
+        );
+        const currentById = new Map(
+          positionsNow.map((position) => [
+            position.hogletId,
+            { x: position.x, y: position.y },
+          ]),
+        );
+        const desired: { id: string; x: number; y: number }[] =
+          selection.ids.length === 1
+            ? [{ id: selection.ids[0], x: targetX, y: targetY }]
+            : selection.ids.map((id, index) => {
+                const ringRadius = 28 + selection.ids.length * 4;
+                const angle = (2 * Math.PI * index) / selection.ids.length;
+                return {
+                  id,
+                  x: targetX + Math.cos(angle) * ringRadius,
+                  y: targetY + Math.sin(angle) * ringRadius,
+                };
+              });
+        let resolvedX = targetX;
+        let resolvedY = targetY;
+        for (const slot of desired) {
+          const from = currentById.get(slot.id) ?? { x: slot.x, y: slot.y };
+          const path = findPath(
+            from,
+            { x: slot.x, y: slot.y },
+            obstacles,
+            HOGLET_RADIUS,
+          );
+          if (path.length === 0) continue;
+          positionStore.setWalkPath(slot.id, path);
+          if (selection.ids.length === 1) {
+            const last = path[path.length - 1];
+            resolvedX = Math.round(last.x);
+            resolvedY = Math.round(last.y);
+          }
+        }
+        if (selection.includeBuilder) {
+          builder.startWalk({ x: targetX, y: targetY }, "idle");
+        }
         playSfx("order");
         playVoice("hoglet:order_move");
-        void moveNest(nest, targetX, targetY, {
-          undoable: true,
-          flashMoveMarker,
-        });
+        flashMoveMarker(resolvedX, resolvedY);
         return;
       }
-      case "placingNest": {
-        const creationMode = mode.creationMode;
-        setMode({ kind: "browsing" });
-        setPendingPlacement({ x, y, creationMode });
-        return;
-      }
-      case "browsing":
-        setSelection(null);
-        return;
-    }
-  };
 
-  const handleMapRightClick = (x: number, y: number) => {
-    if (mode.kind !== "browsing") {
-      setMode({ kind: "browsing" });
-      return;
-    }
-    if (!selection || selection.type === "nest") return;
-
-    const targetX = Math.round(x);
-    const targetY = Math.round(y);
-
-    if (selection.type === "hoglets") {
-      const positionStore = useHogletPositionStore.getState();
-      const obstacles = worldObstacles(nests);
-      // Resolve each hoglet's landing point against its current position so a
-      // click on the far side of an obstacle routes around it rather than
-      // clipping through. Read positions via the same helper box-select uses
-      // so the "current" position matches what's rendered.
-      const positionsNow = collectHogletWorldPositions(
-        nests,
-        useHogletStore.getState().byBucket,
-        positionStore.positions,
-      );
-      const currentById = new Map(
-        positionsNow.map((p) => [p.hogletId, { x: p.x, y: p.y }]),
-      );
-      // Multi-select formation: pack them in a small ring around the target so
-      // they don't all stack on a single pixel. Single-select just heads to
-      // the exact click point.
-      const desired: { id: string; x: number; y: number }[] =
-        selection.ids.length === 1
-          ? [{ id: selection.ids[0], x: targetX, y: targetY }]
-          : selection.ids.map((id, i) => {
-              const ringRadius = 28 + selection.ids.length * 4;
-              const angle = (2 * Math.PI * i) / selection.ids.length;
-              return {
-                id,
-                x: targetX + Math.cos(angle) * ringRadius,
-                y: targetY + Math.sin(angle) * ringRadius,
-              };
-            });
-      let resolvedX = targetX;
-      let resolvedY = targetY;
-      for (const slot of desired) {
-        const from = currentById.get(slot.id) ?? { x: slot.x, y: slot.y };
-        const path = findPath(
-          from,
-          { x: slot.x, y: slot.y },
-          obstacles,
-          HOGLET_RADIUS,
-        );
-        if (path.length === 0) continue;
-        positionStore.setWalkPath(slot.id, path);
-        if (selection.ids.length === 1) {
-          const last = path[path.length - 1];
-          resolvedX = Math.round(last.x);
-          resolvedY = Math.round(last.y);
-        }
-      }
-      if (selection.includeBuilder) {
-        builder.startWalk({ x: targetX, y: targetY }, "idle");
-      }
       playSfx("order");
       playVoice("hoglet:order_move");
-      flashMoveMarker(resolvedX, resolvedY);
-      return;
-    }
-
-    playSfx("order");
-    playVoice("hoglet:order_move");
-    const resolved = builder.startWalk({ x: targetX, y: targetY }, "idle");
-    flashMoveMarker(Math.round(resolved.x), Math.round(resolved.y));
-  };
+      const resolved = builder.startWalk({ x: targetX, y: targetY }, "idle");
+      flashMoveMarker(Math.round(resolved.x), Math.round(resolved.y));
+    },
+    [builder, flashMoveMarker, mode.kind, nests, selection],
+  );
 
   const handleBoxSelect = useCallback(
     ({ minX, minY, maxX, maxY, additive }: MapBoxSelection) => {
@@ -819,7 +834,7 @@ export function HedgemonyMapView() {
 
   // The map + every floating panel that should appear on top of it. In
   // fullscreen, this entire bundle is portalled to document.body so the
-  // panels (which use position: fixed) sit above the z-[1000] overlay rather
+  // panels (which use position: fixed) sit above the z-1000 overlay rather
   // than getting hidden behind it. The outer `relative` wrapper anchors the
   // absolutely-positioned panels (NestDetailPanel, SpawnHogletPanel, etc.)
   // to the map area so they don't bleed onto the app sidebar.
@@ -966,7 +981,7 @@ export function HedgemonyMapView() {
             // visually covers the HeaderRow's `drag` region, the OS still
             // captures pointer events at the top of the screen for window
             // dragging, killing top-edge camera pan.
-            className="no-drag fixed inset-0 z-[1000] bg-(--gray-1)"
+            className="no-drag fixed inset-0 z-1000 bg-(--gray-1)"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -1014,11 +1029,7 @@ function FullscreenVignette() {
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none absolute inset-0"
-      style={{
-        background:
-          "radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.18) 92%, rgba(0,0,0,0.34) 100%)",
-      }}
+      className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_55%,rgba(0,0,0,0.18)_92%,rgba(0,0,0,0.34)_100%)]"
     />
   );
 }

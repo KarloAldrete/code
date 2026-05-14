@@ -7,11 +7,8 @@ import { useEffect, useState } from "react";
 import { selectHedgehogState, useNestStore } from "../stores/nestStore";
 import { AnimatedHedgehog } from "./AnimatedHedgehog";
 
-const NEST_SIZE = 140;
 const HOG_SIZE_IDLE = 44;
 const HOG_SIZE_MOVING = 88;
-const SELECTION_RING_SIZE = NEST_SIZE + 24;
-const DROP_RING_SIZE = NEST_SIZE + 44;
 const TERRITORY_SIZE = 220;
 const TERRITORY_SIZE_SELECTED = 260;
 const TERRITORY_SIZE_DROP_TARGET = 280;
@@ -137,10 +134,7 @@ export function NestSprite({
             onFocus?.(nest);
           }}
         >
-          <div
-            className="relative"
-            style={{ width: NEST_SIZE, height: NEST_SIZE }}
-          >
+          <div className="relative h-[140px] w-[140px]">
             <div
               className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 rounded-full transition-all duration-150"
               style={{
@@ -161,10 +155,8 @@ export function NestSprite({
             {isTicking && (
               <motion.div
                 aria-hidden
-                className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 rounded-full"
+                className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 h-[260px] w-[260px] rounded-full"
                 style={{
-                  width: TERRITORY_SIZE_SELECTED,
-                  height: TERRITORY_SIZE_SELECTED,
                   background:
                     "radial-gradient(circle, rgba(253, 224, 71, 0.40) 0%, rgba(253, 224, 71, 0.18) 50%, transparent 78%)",
                   mixBlendMode: "screen",
@@ -183,11 +175,7 @@ export function NestSprite({
             )}
             {isDropTarget && (
               <motion.span
-                className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 rounded-full border-(--accent-9) border-2 border-dashed"
-                style={{
-                  width: DROP_RING_SIZE,
-                  height: DROP_RING_SIZE,
-                }}
+                className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 h-[184px] w-[184px] rounded-full border-(--accent-9) border-2 border-dashed"
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.15, ease: "easeOut" }}
@@ -195,11 +183,7 @@ export function NestSprite({
             )}
             {selected && !isDropTarget && (
               <motion.span
-                className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 rounded-full border-(--accent-9) border-2"
-                style={{
-                  width: SELECTION_RING_SIZE,
-                  height: SELECTION_RING_SIZE,
-                }}
+                className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 h-[164px] w-[164px] rounded-full border-(--accent-9) border-2"
                 initial={{ opacity: 0, scale: 0.85 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.18, ease: "easeOut" }}
@@ -208,8 +192,7 @@ export function NestSprite({
             <motion.img
               src={nestImage}
               alt=""
-              className="pointer-events-none absolute inset-0 select-none drop-shadow-md"
-              style={{ width: NEST_SIZE, height: NEST_SIZE }}
+              className="pointer-events-none absolute inset-0 h-[140px] w-[140px] select-none drop-shadow-md"
               draggable={false}
               animate={{
                 opacity: isMoving ? 0 : 1,

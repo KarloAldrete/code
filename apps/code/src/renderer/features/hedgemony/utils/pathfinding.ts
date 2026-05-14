@@ -8,6 +8,8 @@ const EPS = 0.5;
 const SQRT2 = Math.SQRT2;
 const OCTILE_DIAG_COST = SQRT2 - 1;
 const SNAP_MAX_ITERATIONS = 8;
+const MAX_ASTAR_ITERATION_MULTIPLIER = 4;
+const MAX_ASTAR_ITERATIONS = 200_000;
 
 type InflatedObstacle = { x: number; y: number; r2: number; radius: number };
 
@@ -314,7 +316,13 @@ export function findPath(
   ];
 
   let found = false;
-  while (open.size() > 0) {
+  let iterations = 0;
+  const maxIterations = Math.min(
+    cols * rows * MAX_ASTAR_ITERATION_MULTIPLIER,
+    MAX_ASTAR_ITERATIONS,
+  );
+  while (open.size() > 0 && iterations < maxIterations) {
+    iterations += 1;
     const current = open.pop();
     if (!current) break;
     const currentKey = current.row * cols + current.col;

@@ -14,6 +14,7 @@ export type HogletPrState = "open" | "closed" | "merged" | "draft" | "unknown";
 
 export interface HogletWithState {
   hoglet: Hoglet;
+  repository: string | null;
   taskRunStatus:
     | "not_started"
     | "queued"
@@ -33,6 +34,11 @@ export interface ScratchpadEntry {
   ts: string;
   kind: "decision" | "observation" | "note";
   summary: string;
+}
+
+export interface NestRepositoryContext {
+  repositories: string[];
+  primaryRepository: string | null;
 }
 
 export const HEDGEHOG_SYSTEM_PROMPT = `You are the hedgehog: a per-nest orchestrator inside Hedgemony, PostHog Code's autonomous-delivery RTS. Each "tick" is one ephemeral call — no long-running conversation, no in-memory state. Everything important about the nest is in the user prompt below.
@@ -63,6 +69,7 @@ interface BuildUserPromptInput {
   triggerReason: string;
   prDependencies: PrDependency[];
   loadout: NestLoadout;
+  repositoryContext: NestRepositoryContext;
 }
 
 export function buildUserPrompt(input: BuildUserPromptInput): string {
@@ -74,6 +81,7 @@ export function buildUserPrompt(input: BuildUserPromptInput): string {
     triggerReason,
     prDependencies,
     loadout,
+    repositoryContext,
   } = input;
   const runtimeAdapter =
     loadout.runtimeAdapter ?? DEFAULT_HOGLET_RUNTIME_ADAPTER;
@@ -104,8 +112,23 @@ export function buildUserPrompt(input: BuildUserPromptInput): string {
     `model: ${loadout.model ?? `${model} (default)`}`,
     `runtime_adapter: ${loadout.runtimeAdapter ?? `${runtimeAdapter} (default)`}`,
     `reasoning_effort: ${effortIsDefault ? `${reasoningEffort} (default)` : reasoningEffort}`,
+    `execution_mode: ${loadout.executionMode ?? "unset"}`,
     `environment: ${loadout.environment ?? "cloud (default)"}`,
   ].join("\n");
+
+  const repositorySection =
+    repositoryContext.repositories.length === 0
+      ? "## Repository context\n(no repository context captured for this nest)"
+      : [
+          "## Repository context",
+          `primary_repository: ${repositoryContext.primaryRepository ?? "not set"}`,
+          `repositories: ${repositoryContext.repositories.join(", ")}`,
+          repositoryContext.primaryRepository
+            ? "Dispatcher default: spawn_hoglet calls without a repository inherit primary_repository."
+            : null,
+        ]
+          .filter(Boolean)
+          .join("\n");
 
   const hogletSection =
     hoglets.length === 0
@@ -115,6 +138,7 @@ export function buildUserPrompt(input: BuildUserPromptInput): string {
           ...hoglets.map((entry) => {
             const {
               hoglet,
+              repository,
               taskRunStatus,
               latestRunId,
               branch,
@@ -128,6 +152,7 @@ export function buildUserPrompt(input: BuildUserPromptInput): string {
               `  latest_run_status: ${taskRunStatus}`,
             ].filter(Boolean) as string[];
             if (latestRunId) lines.push(`  latest_run_id: ${latestRunId}`);
+            if (repository) lines.push(`  repository: ${repository}`);
             if (branch) lines.push(`  branch: ${branch}`);
             if (prUrl) lines.push(`  pr_url: ${prUrl}`);
             if (prState) lines.push(`  pr_state: ${prState}`);
@@ -189,6 +214,7 @@ export function buildUserPrompt(input: BuildUserPromptInput): string {
     `## Tick trigger\n${triggerReason}`,
     goalSection,
     loadoutSection,
+    repositorySection,
     hogletSection,
     prGraphSection,
     chatSection,

@@ -33,6 +33,7 @@ import { logger } from "@utils/logger";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { loadNestChatMessages } from "../service/nestChatService";
 import { selectNestMessages, useNestChatStore } from "../stores/nestChatStore";
 import { selectHedgehogState, useNestStore } from "../stores/nestStore";
 import { selectEdgesForNest, usePrGraphStore } from "../stores/prGraphStore";
@@ -65,7 +66,6 @@ export function NestDetailPanel({
   const loadingMessages = useNestChatStore(
     (s) => s.loadingByNestId[nest.id] ?? false,
   );
-  const loadMessages = useNestChatStore((s) => s.load);
   const hedgehogState = useNestStore(selectHedgehogState(nest.id));
 
   const [chatDraft, setChatDraft] = useState("");
@@ -79,8 +79,8 @@ export function NestDetailPanel({
     setError(null);
     setChatDraft("");
     setChatError(null);
-    void loadMessages(nest.id);
-  }, [nest, loadMessages]);
+    void loadNestChatMessages(nest.id);
+  }, [nest]);
 
   const handleSendChat = async () => {
     const body = chatDraft.trim();

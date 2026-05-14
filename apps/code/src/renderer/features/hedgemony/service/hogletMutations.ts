@@ -4,12 +4,9 @@ import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { toast } from "sonner";
+import { SIGNAL_STAGING_BUCKET, WILD_BUCKET } from "../constants/buckets";
 import { useHogletPositionStore } from "../stores/hogletPositionStore";
-import {
-  SIGNAL_STAGING_BUCKET,
-  useHogletStore,
-  WILD_BUCKET,
-} from "../stores/hogletStore";
+import { useHogletStore } from "../stores/hogletStore";
 
 const log = logger.scope("hoglet-mutations");
 

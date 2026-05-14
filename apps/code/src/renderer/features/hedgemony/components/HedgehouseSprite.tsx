@@ -1,9 +1,6 @@
 import { Tooltip } from "@radix-ui/themes";
 import { motion } from "framer-motion";
-
-export const HEDGEHOUSE_MAP_X = 0;
-export const HEDGEHOUSE_MAP_Y = 0;
-export const HEDGEHOUSE_AVOID_RADIUS = 220;
+import { HEDGEHOUSE_MAP_X, HEDGEHOUSE_MAP_Y } from "../constants/map";
 
 const HEDGEHOUSE_SIZE = 220;
 const SELECTION_RING_SIZE = 232;
@@ -255,7 +252,7 @@ export function HedgehouseSprite({
             />
           </svg>
 
-          <div className="mt-1 max-w-[180px] truncate rounded-(--radius-2) border border-(--gray-5) bg-(--gray-3) px-2 py-0.5 font-medium text-(--gray-12) text-[12px] shadow-sm">
+          <div className="mt-1 max-w-45 truncate rounded-(--radius-2) border border-(--gray-5) bg-(--gray-3) px-2 py-0.5 font-medium text-(--gray-12) text-[12px] shadow-sm">
             Hedgehouse
           </div>
         </motion.button>

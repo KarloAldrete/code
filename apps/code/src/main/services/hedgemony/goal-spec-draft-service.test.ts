@@ -454,7 +454,9 @@ describe("GoalSpecDraftService", () => {
 
     expect(response.kind).toBe("propose_spec");
     if (response.kind === "propose_spec") {
-      expect(response.draft.name).toContain("Pong");
+      expect(response.draft.name).toBe(
+        "Repository discovery and implementation",
+      );
       expect(response.draft.summary).toContain("Brooker-Fam/nexus-game");
       expect(response.draft.summary).toContain("Brooker-Fam/nexus-ui");
       expect(response.draft.requirements[0].text).toContain(

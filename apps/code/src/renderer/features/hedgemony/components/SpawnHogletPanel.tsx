@@ -46,7 +46,8 @@ import { logger } from "@utils/logger";
 import { toast } from "@utils/toast";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useHogletStore, WILD_BUCKET } from "../stores/hogletStore";
+import { WILD_BUCKET } from "../constants/buckets";
+import { useHogletStore } from "../stores/hogletStore";
 import { CommandConsole } from "./CommandConsole";
 
 const log = logger.scope("spawn-hoglet-panel");

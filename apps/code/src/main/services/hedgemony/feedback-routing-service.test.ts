@@ -326,6 +326,57 @@ describe("FeedbackRoutingService", () => {
     expect(received[0].prompt).toContain("lint");
   });
 
+  it("keeps review-comment events when check-run polling fails", async () => {
+    const hoglet = makeHoglet({ taskId: "task-1", nestId: "nest-1" });
+    const hoglets = createMockHogletService([hoglet]);
+    const git = createMockGitService({
+      reviewComments: [
+        {
+          id: 1001,
+          body: "fix the edge case",
+          path: "src/foo.ts",
+          line: 42,
+          original_line: null,
+          side: "RIGHT",
+          start_line: null,
+          start_side: null,
+          diff_hunk: "",
+          user: { login: "alice", avatar_url: "" },
+          created_at: "",
+          updated_at: "",
+          subject_type: "line",
+        },
+      ],
+    });
+    (git.getPrCheckRuns as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("network down"),
+    );
+    const cloudTasks = createMockCloudTaskClient(
+      "https://github.com/org/repo/pull/7",
+    );
+    const service = new FeedbackRoutingService(
+      hoglets,
+      nests,
+      git,
+      cloudTasks,
+      feedbackRepo as unknown as FeedbackEventRepository,
+      nestChat,
+    );
+
+    const received: InjectPromptEventPayload[] = [];
+    service.on(FeedbackRoutingEvent.InjectPrompt, (e) => {
+      received.push(e);
+    });
+
+    await service.runPoll();
+
+    expect(received).toHaveLength(1);
+    expect(received[0]).toMatchObject({
+      source: "pr_review",
+      payloadRef: "pr-comment:1001",
+    });
+  });
+
   it("queues events when there are no listeners, drained via consumePending", async () => {
     const hoglet = makeHoglet({ taskId: "task-1", nestId: "nest-1" });
     const hoglets = createMockHogletService([hoglet]);

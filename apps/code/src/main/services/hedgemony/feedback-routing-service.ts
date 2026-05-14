@@ -15,6 +15,7 @@ import type {
   InjectPromptEventPayload,
   RecordRoutedFeedbackInput,
 } from "./schemas";
+import { stringifyError } from "./utils";
 
 const log = logger.scope("feedback-routing-service");
 
@@ -33,6 +34,14 @@ export const FeedbackRoutingEvent = {
 
 export interface FeedbackRoutingEvents {
   [FeedbackRoutingEvent.InjectPrompt]: InjectPromptEventPayload;
+}
+
+interface RouteHedgehogPromptInput {
+  taskId: string;
+  hogletId: string;
+  nestId: string;
+  prompt: string;
+  toolCallId: string;
 }
 
 /**
@@ -138,6 +147,34 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
     }
 
     return row;
+  }
+
+  routeHedgehogPrompt(input: RouteHedgehogPromptInput): void {
+    const payloadRef = `hedgehog-message:${input.nestId}:${input.toolCallId}`;
+    const payloadHash = sha256(
+      `${payloadRef}:${input.hogletId}:${input.prompt}`,
+    );
+    if (
+      this.feedbackRepo.findByDedupeKey({
+        hogletTaskId: input.taskId,
+        source: "hedgehog",
+        payloadHash,
+      })
+    ) {
+      return;
+    }
+
+    this.emitInject({
+      taskId: input.taskId,
+      hogletId: input.hogletId,
+      nestId: input.nestId,
+      source: "hedgehog",
+      payloadRef,
+      payloadHash,
+      prompt: input.prompt,
+      prUrl: "",
+      fallbackPrompt: input.prompt,
+    });
   }
 
   /**
@@ -284,7 +321,17 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
     hoglet: { id: string; taskId: string; nestId: string | null },
     prUrl: string,
   ): Promise<void> {
-    const checks = await this.git.getPrCheckRuns(prUrl);
+    let checks: Awaited<ReturnType<GitService["getPrCheckRuns"]>>;
+    try {
+      checks = await this.git.getPrCheckRuns(prUrl);
+    } catch (error) {
+      log.debug("getPrCheckRuns failed", {
+        prUrl,
+        error: stringifyError(error),
+      });
+      return;
+    }
+
     for (const check of checks) {
       if (check.status !== "completed") continue;
       if (!check.conclusion || !FAILING_CONCLUSIONS.has(check.conclusion)) {
@@ -331,7 +378,7 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
     }
   }
 
-  emitInject(payload: InjectPromptEventPayload): void {
+  private emitInject(payload: InjectPromptEventPayload): void {
     const hasListeners =
       this.listenerCount(FeedbackRoutingEvent.InjectPrompt) > 0;
     if (hasListeners) {
@@ -395,14 +442,4 @@ function describeRoutedFeedback(input: RecordRoutedFeedbackInput): string {
     failed: "→ no active session, no nest; logged only",
   };
   return `Routed ${sourceLabel[input.source]} ${outcomeLabel[input.routedOutcome] ?? ""} (ref: ${input.payloadRef}).`;
-}
-
-function stringifyError(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return String(error);
-  }
 }

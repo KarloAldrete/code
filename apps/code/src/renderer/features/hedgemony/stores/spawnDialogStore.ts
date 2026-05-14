@@ -5,11 +5,16 @@ import { create } from "zustand";
  * store because the open-trigger is in CommandCenterToolbar while the panel
  * itself mounts inside HedgemonyMapView.
  */
-interface SpawnDialogStore {
+interface SpawnDialogState {
   spawnHogletOpen: boolean;
+}
+
+interface SpawnDialogActions {
   openSpawnHoglet: () => void;
   closeSpawnHoglet: () => void;
 }
+
+type SpawnDialogStore = SpawnDialogState & SpawnDialogActions;
 
 export const useSpawnDialogStore = create<SpawnDialogStore>()((set) => ({
   spawnHogletOpen: false,

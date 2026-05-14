@@ -9,7 +9,8 @@ import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { useEffect, useRef } from "react";
-import { SIGNAL_STAGING_BUCKET, useHogletStore } from "../stores/hogletStore";
+import { SIGNAL_STAGING_BUCKET } from "../constants/buckets";
+import { useHogletStore } from "../stores/hogletStore";
 import { buildSignalPrompt } from "../utils/signalPrompt";
 
 const log = logger.scope("signal-ingestion");

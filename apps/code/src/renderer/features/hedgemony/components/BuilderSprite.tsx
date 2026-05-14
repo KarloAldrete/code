@@ -6,8 +6,8 @@ import {
   useMotionValue,
 } from "framer-motion";
 import { type MutableRefObject, useEffect, useState } from "react";
+import { BUILDER_NAME } from "../constants/map";
 import type { BuilderAnimation } from "../hooks/useBuilderCoordinator";
-import { BUILDER_NAME } from "../stores/hedgemonyViewStore";
 import type { Vec2 } from "../utils/pathfinding";
 import { AnimatedHedgehog, type HedgehogAnimation } from "./AnimatedHedgehog";
 
@@ -181,7 +181,7 @@ export function BuilderSprite({
               size={SPRITE_SIZE}
             />
           </div>
-          <div className="mt-1 max-w-[140px] truncate rounded-(--radius-2) bg-(--gray-3) px-2 py-0.5 font-medium text-(--gray-11) text-[11px] shadow-sm">
+          <div className="mt-1 max-w-35 truncate rounded-(--radius-2) bg-(--gray-3) px-2 py-0.5 font-medium text-(--gray-11) text-[11px] shadow-sm">
             {builderName}
           </div>
         </motion.button>

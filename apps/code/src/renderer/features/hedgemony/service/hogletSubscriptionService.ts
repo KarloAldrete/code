@@ -2,12 +2,9 @@ import { getAuthenticatedClient } from "@features/auth/hooks/authClient";
 import type { HogletWatchEvent } from "@main/services/hedgemony/schemas";
 import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
+import { SIGNAL_STAGING_BUCKET, WILD_BUCKET } from "../constants/buckets";
 import { useHogletPositionStore } from "../stores/hogletPositionStore";
-import {
-  SIGNAL_STAGING_BUCKET,
-  useHogletStore,
-  WILD_BUCKET,
-} from "../stores/hogletStore";
+import { useHogletStore } from "../stores/hogletStore";
 import { wildHogletPosition } from "../utils/hogletPositions";
 
 const log = logger.scope("hoglet-subscription-service");

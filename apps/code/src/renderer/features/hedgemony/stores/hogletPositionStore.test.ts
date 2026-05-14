@@ -12,6 +12,7 @@ vi.mock("@renderer/trpc/client", () => ({
 
 import {
   selectHogletPosition,
+  selectHogletWalkPath,
   useHogletPositionStore,
 } from "./hogletPositionStore";
 
@@ -55,6 +56,34 @@ describe("hogletPositionStore", () => {
   it("selectHogletPosition returns undefined when no override is set", () => {
     expect(
       selectHogletPosition("nope")(useHogletPositionStore.getState()),
+    ).toBeUndefined();
+  });
+
+  it("setWalkPath stores the path and final rounded position", () => {
+    const path = [
+      { x: 1.2, y: 2.6 },
+      { x: 30.4, y: 40.8 },
+    ];
+    useHogletPositionStore.getState().setWalkPath("hg-1", path);
+
+    expect(useHogletPositionStore.getState().positions["hg-1"]).toEqual({
+      x: 30,
+      y: 41,
+    });
+    expect(
+      selectHogletWalkPath("hg-1")(useHogletPositionStore.getState()),
+    ).toEqual(path);
+  });
+
+  it("setPosition clears any existing walk path", () => {
+    useHogletPositionStore.getState().setWalkPath("hg-1", [
+      { x: 0, y: 0 },
+      { x: 10, y: 10 },
+    ]);
+    useHogletPositionStore.getState().setPosition("hg-1", 100, 200);
+
+    expect(
+      selectHogletWalkPath("hg-1")(useHogletPositionStore.getState()),
     ).toBeUndefined();
   });
 });

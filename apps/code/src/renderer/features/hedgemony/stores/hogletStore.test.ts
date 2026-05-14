@@ -26,11 +26,12 @@ vi.mock("@utils/logger", () => ({
 }));
 
 import type { Hoglet } from "@main/services/hedgemony/schemas";
+import { WILD_BUCKET } from "../constants/buckets";
 import {
+  selectDyingHoglets,
   selectWildHoglets,
   selectWildLoaded,
   useHogletStore,
-  WILD_BUCKET,
 } from "./hogletStore";
 
 function makeHoglet(overrides: Partial<Hoglet> = {}): Hoglet {
@@ -130,5 +131,21 @@ describe("hogletStore", () => {
   it("returns an empty list when wild bucket is empty", () => {
     expect(selectWildHoglets(useHogletStore.getState())).toEqual([]);
     expect(selectWildLoaded(useHogletStore.getState())).toBe(false);
+  });
+
+  it("tracks dying hoglets in a plain object", () => {
+    useHogletStore.getState().startDying("hog-1", 12, 34);
+
+    expect(useHogletStore.getState().dying).toEqual({
+      "hog-1": { hogletId: "hog-1", x: 12, y: 34 },
+    });
+    expect(selectDyingHoglets(useHogletStore.getState())).toEqual([
+      { hogletId: "hog-1", x: 12, y: 34 },
+    ]);
+
+    useHogletStore.getState().finalizeDeath("hog-1");
+
+    expect(useHogletStore.getState().dying).toEqual({});
+    expect(selectDyingHoglets(useHogletStore.getState())).toEqual([]);
   });
 });

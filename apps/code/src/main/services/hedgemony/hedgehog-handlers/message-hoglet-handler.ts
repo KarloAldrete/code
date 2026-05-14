@@ -25,16 +25,12 @@ export const messageHogletHandler: HedgehogToolHandler = {
       );
     }
 
-    deps.feedbackRouting.emitInject({
+    deps.feedbackRouting.routeHedgehogPrompt({
       taskId: entry.hoglet.taskId,
       hogletId: entry.hoglet.id,
       nestId: ctx.nest.id,
-      source: "hedgehog",
-      payloadRef: `hedgehog-message:${ctx.nest.id}:${Date.now()}`,
-      payloadHash: `hm-${entry.hoglet.id}-${Date.now()}`,
       prompt: args.prompt,
-      prUrl: "",
-      fallbackPrompt: args.prompt,
+      toolCallId: block.id,
     });
 
     deps.writeNestMessage(ctx.nest.id, {

@@ -11,11 +11,49 @@ vi.mock("../../utils/logger.js", () => ({
   },
 }));
 
+vi.mock("./hoglet-runtime-preferences", async () => {
+  const schemas =
+    await vi.importActual<typeof import("./schemas")>("./schemas");
+  return {
+    readUserTaskPreferences: vi.fn(() => ({})),
+    resolveHogletRuntime: vi.fn((loadout, preferences) => {
+      const runtimeAdapter =
+        loadout.runtimeAdapter ??
+        preferences.runtimeAdapter ??
+        schemas.DEFAULT_HOGLET_RUNTIME_ADAPTER;
+      const preferredModel =
+        preferences.runtimeAdapter === runtimeAdapter
+          ? preferences.model
+          : undefined;
+      return {
+        runtimeAdapter,
+        model:
+          loadout.model ??
+          preferredModel ??
+          schemas.defaultModelForAdapter(runtimeAdapter),
+        reasoningEffort: schemas.clampReasoningEffortForAdapter(
+          loadout.reasoningEffort ??
+            preferences.reasoningEffort ??
+            schemas.defaultReasoningEffortForAdapter(runtimeAdapter),
+          runtimeAdapter,
+        ),
+        executionMode:
+          loadout.executionMode ??
+          preferences.executionMode ??
+          (runtimeAdapter === "codex" ? "auto" : "plan"),
+        environment: loadout.environment ?? schemas.DEFAULT_HOGLET_ENVIRONMENT,
+      };
+    }),
+  };
+});
+
 import type { HogletRepository } from "../../db/repositories/hoglet-repository";
 import type { PrDependencyRepository } from "../../db/repositories/pr-dependency-repository";
 import { createMockPrDependencyRepository } from "../../db/repositories/pr-dependency-repository.mock";
+import type { WorkspaceService } from "../workspace/service";
 import type { AffinityRouterService } from "./affinity-router";
 import type { CloudTaskClient } from "./cloud-task-client";
+import { readUserTaskPreferences } from "./hoglet-runtime-preferences";
 import {
   HogletService,
   MAX_NEST_HOGLETS,
@@ -36,6 +74,20 @@ function createMockPrGraphService(): PrGraphService {
   return {
     unlinkAllForTask: vi.fn(),
   } as unknown as PrGraphService;
+}
+
+function createMockWorkspaceService(): WorkspaceService {
+  return {
+    createWorkspace: vi.fn(
+      async (input: { taskId: string; branch?: string }) => ({
+        taskId: input.taskId,
+        mode: "cloud",
+        worktree: null,
+        branchName: input.branch ?? null,
+        linkedBranch: null,
+      }),
+    ),
+  } as unknown as WorkspaceService;
 }
 
 type CreateHogletData = Parameters<HogletRepository["create"]>[0];
@@ -142,9 +194,10 @@ function createMockRepo() {
       return updated;
     }),
     findAllNames: vi.fn(() =>
-      [...hoglets.values()]
-        .filter((h) => h.name && !h.deletedAt)
-        .map((h) => h.name!),
+      [...hoglets.values()].flatMap((hoglet) => {
+        if (!hoglet.name || hoglet.deletedAt) return [];
+        return [hoglet.name];
+      }),
     ),
     softDelete: vi.fn((id: string) => {
       const existing = hoglets.get(id);
@@ -187,6 +240,13 @@ function createMockCloudTaskClient(
       status: "not_started",
     })),
     startTaskRun: vi.fn(async () => ({})),
+    updateTaskRun: vi.fn(
+      async (_taskId: string, runId: string, patch: { status?: string }) => ({
+        id: runId,
+        status: patch.status ?? "not_started",
+      }),
+    ),
+    deleteTask: vi.fn(async () => undefined),
     getTaskWithLatestRun: vi.fn(async (taskId: string) => ({
       task: {
         id: taskId,
@@ -209,19 +269,23 @@ describe("HogletService", () => {
   let router: AffinityRouterService;
   let prDeps: ReturnType<typeof createMockPrDependencyRepository>;
   let cloudTasks: CloudTaskClient;
+  let workspaceService: WorkspaceService;
   let service: HogletService;
 
   beforeEach(() => {
+    (readUserTaskPreferences as ReturnType<typeof vi.fn>).mockReturnValue({});
     repo = createMockRepo();
     router = createMockAffinityRouter(null);
     prDeps = createMockPrDependencyRepository();
     cloudTasks = createMockCloudTaskClient();
+    workspaceService = createMockWorkspaceService();
     service = new HogletService(
       repo,
       router,
       prDeps as unknown as PrDependencyRepository,
       cloudTasks,
       createMockPrGraphService(),
+      workspaceService,
     );
   });
 
@@ -458,6 +522,7 @@ describe("HogletService", () => {
         prDeps as unknown as PrDependencyRepository,
         cloudTasks,
         createMockPrGraphService(),
+        workspaceService,
       );
       const listener = vi.fn();
       service.on(HedgemonyEvent.HogletChanged, listener);
@@ -497,12 +562,39 @@ describe("HogletService", () => {
         prDeps as unknown as PrDependencyRepository,
         cloudTasks,
         createMockPrGraphService(),
+        workspaceService,
       );
       const routed = await service.recordSignalBacked({
         taskId: "task-routed",
         signalReportId: "sr-routed",
       });
       expect(routed.nestId).toBe("nest-A");
+    });
+
+    it("enforces the nest cap before auto-routing signal-backed hoglets", async () => {
+      for (let i = 0; i < MAX_NEST_HOGLETS; i++) {
+        repo._hoglets.set(
+          `h-${i}`,
+          makeHoglet({ id: `h-${i}`, taskId: `t-${i}`, nestId: "nest-A" }),
+        );
+      }
+      router = createMockAffinityRouter({ nestId: "nest-A", score: 0.9 });
+      service = new HogletService(
+        repo,
+        router,
+        prDeps as unknown as PrDependencyRepository,
+        cloudTasks,
+        createMockPrGraphService(),
+        workspaceService,
+      );
+
+      await expect(
+        service.recordSignalBacked({
+          taskId: "task-routed-overflow",
+          signalReportId: "sr-routed-overflow",
+        }),
+      ).rejects.toThrowError("nest_hoglet_cap_reached");
+      expect(repo.create).not.toHaveBeenCalled();
     });
 
     it("is idempotent for the same signalReportId", async () => {
@@ -577,6 +669,7 @@ describe("HogletService", () => {
         prDeps as unknown as PrDependencyRepository,
         cloudTasks,
         createMockPrGraphService(),
+        workspaceService,
       );
       const routed = await service.recordSignalBacked({
         taskId: "task-1",
@@ -601,6 +694,7 @@ describe("HogletService", () => {
         prDeps as unknown as PrDependencyRepository,
         cloudTasks,
         createMockPrGraphService(),
+        workspaceService,
       );
       const routed = await service.recordSignalBacked({
         taskId: "task-1",
@@ -718,6 +812,7 @@ describe("HogletService", () => {
         prDeps as unknown as PrDependencyRepository,
         cloudTasks,
         createMockPrGraphService(),
+        workspaceService,
       );
       const listener = vi.fn();
       service.on(HedgemonyEvent.HogletChanged, listener);
@@ -751,6 +846,14 @@ describe("HogletService", () => {
         expect.any(String),
         { pendingUserMessage: "Build the checkout page" },
       );
+      expect(workspaceService.createWorkspace).toHaveBeenCalledWith({
+        taskId: "cloud-task-1",
+        mainRepoPath: "",
+        folderId: "",
+        folderPath: "",
+        mode: "cloud",
+        branch: undefined,
+      });
       expect(hoglet.taskId).toBe("cloud-task-1");
       expect(hoglet.nestId).toBe("nest-1");
       expect(taskRunId).toBeTruthy();
@@ -768,6 +871,7 @@ describe("HogletService", () => {
         prDeps as unknown as PrDependencyRepository,
         cloudTasks,
         createMockPrGraphService(),
+        workspaceService,
       );
 
       await service.spawnInNest(
@@ -776,6 +880,7 @@ describe("HogletService", () => {
           model: defaultModelForAdapter("codex"),
           runtimeAdapter: "codex",
           reasoningEffort: "high",
+          executionMode: "full-access",
         },
       );
 
@@ -785,6 +890,7 @@ describe("HogletService", () => {
           model: defaultModelForAdapter("codex"),
           runtimeAdapter: "codex",
           reasoningEffort: "high",
+          initialPermissionMode: "full-access",
         }),
       );
     });
@@ -797,6 +903,7 @@ describe("HogletService", () => {
         prDeps as unknown as PrDependencyRepository,
         cloudTasks,
         createMockPrGraphService(),
+        workspaceService,
       );
 
       await service.spawnInNest(
@@ -814,6 +921,35 @@ describe("HogletService", () => {
       );
     });
 
+    it("uses user task preferences when loadout is empty", async () => {
+      (readUserTaskPreferences as ReturnType<typeof vi.fn>).mockReturnValue({
+        runtimeAdapter: "codex",
+        reasoningEffort: "medium",
+        executionMode: "full-access",
+      });
+      cloudTasks = createMockCloudTaskClient({ id: "cloud-task-prefs" });
+      service = new HogletService(
+        repo,
+        router,
+        prDeps as unknown as PrDependencyRepository,
+        cloudTasks,
+        createMockPrGraphService(),
+        workspaceService,
+      );
+
+      await service.spawnInNest({ nestId: "nest-1", prompt: "work" });
+
+      expect(cloudTasks.createTaskRun).toHaveBeenCalledWith(
+        "cloud-task-prefs",
+        expect.objectContaining({
+          model: defaultModelForAdapter("codex"),
+          runtimeAdapter: "codex",
+          reasoningEffort: "medium",
+          initialPermissionMode: "full-access",
+        }),
+      );
+    });
+
     it("passes repository to createTask when provided", async () => {
       cloudTasks = createMockCloudTaskClient();
       service = new HogletService(
@@ -822,6 +958,7 @@ describe("HogletService", () => {
         prDeps as unknown as PrDependencyRepository,
         cloudTasks,
         createMockPrGraphService(),
+        workspaceService,
       );
 
       await service.spawnInNest({
@@ -860,11 +997,46 @@ describe("HogletService", () => {
         prDeps as unknown as PrDependencyRepository,
         cloudTasks,
         createMockPrGraphService(),
+        workspaceService,
       );
 
       await expect(
         service.spawnInNest({ nestId: "nest-1", prompt: "work" }),
       ).rejects.toThrowError("cloud_unavailable");
+      expect(repo.create).not.toHaveBeenCalled();
+      expect(cloudTasks.deleteTask).toHaveBeenCalledWith("cloud-fail");
+    });
+
+    it("does not start the run or insert sidecar row when cloud workspace creation fails", async () => {
+      cloudTasks = createMockCloudTaskClient({ id: "cloud-workspace-fail" });
+      (
+        workspaceService.createWorkspace as ReturnType<typeof vi.fn>
+      ).mockRejectedValueOnce(new Error("workspace_failed"));
+      service = new HogletService(
+        repo,
+        router,
+        prDeps as unknown as PrDependencyRepository,
+        cloudTasks,
+        createMockPrGraphService(),
+        workspaceService,
+      );
+
+      await expect(
+        service.spawnInNest({ nestId: "nest-1", prompt: "work" }),
+      ).rejects.toThrowError("workspace_failed");
+      expect(cloudTasks.createTaskRun).toHaveBeenCalled();
+      expect(cloudTasks.startTaskRun).not.toHaveBeenCalled();
+      expect(cloudTasks.updateTaskRun).toHaveBeenCalledWith(
+        "cloud-workspace-fail",
+        expect.any(String),
+        {
+          status: "cancelled",
+          errorMessage: "Cancelled after Hedgemony spawn failed",
+        },
+      );
+      expect(cloudTasks.deleteTask).toHaveBeenCalledWith(
+        "cloud-workspace-fail",
+      );
       expect(repo.create).not.toHaveBeenCalled();
     });
 
@@ -879,12 +1051,50 @@ describe("HogletService", () => {
         prDeps as unknown as PrDependencyRepository,
         cloudTasks,
         createMockPrGraphService(),
+        workspaceService,
       );
 
       await expect(
         service.spawnInNest({ nestId: "nest-1", prompt: "work" }),
       ).rejects.toThrowError("start_failed");
+      expect(cloudTasks.updateTaskRun).toHaveBeenCalledWith(
+        "cloud-fail-2",
+        expect.any(String),
+        {
+          status: "cancelled",
+          errorMessage: "Cancelled after Hedgemony spawn failed",
+        },
+      );
+      expect(cloudTasks.deleteTask).toHaveBeenCalledWith("cloud-fail-2");
       expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it("rolls back cloud task state when local sidecar insertion fails", async () => {
+      cloudTasks = createMockCloudTaskClient({ id: "cloud-local-fail" });
+      (repo.create as ReturnType<typeof vi.fn>).mockImplementationOnce(() => {
+        throw new Error("sqlite_failed");
+      });
+      service = new HogletService(
+        repo,
+        router,
+        prDeps as unknown as PrDependencyRepository,
+        cloudTasks,
+        createMockPrGraphService(),
+        workspaceService,
+      );
+
+      await expect(
+        service.spawnInNest({ nestId: "nest-1", prompt: "work" }),
+      ).rejects.toThrowError("sqlite_failed");
+      expect(cloudTasks.updateTaskRun).toHaveBeenCalledWith(
+        "cloud-local-fail",
+        expect.any(String),
+        {
+          status: "cancelled",
+          errorMessage: "Cancelled after Hedgemony spawn failed",
+        },
+      );
+      expect(cloudTasks.deleteTask).toHaveBeenCalledWith("cloud-local-fail");
     });
 
     it("truncates long prompts in the task title", async () => {
@@ -895,6 +1105,7 @@ describe("HogletService", () => {
         prDeps as unknown as PrDependencyRepository,
         cloudTasks,
         createMockPrGraphService(),
+        workspaceService,
       );
       const longPrompt = "A".repeat(200);
 
@@ -913,6 +1124,7 @@ describe("HogletService", () => {
         prDeps as unknown as PrDependencyRepository,
         cloudTasks,
         createMockPrGraphService(),
+        workspaceService,
       );
 
       await service.spawnInNest(
@@ -931,6 +1143,26 @@ describe("HogletService", () => {
   });
 
   describe("spawnFollowUp", () => {
+    it("enforces the nest hoglet cap before fetching the parent task", async () => {
+      for (let i = 0; i < MAX_NEST_HOGLETS; i++) {
+        repo._hoglets.set(
+          `h-${i}`,
+          makeHoglet({ id: `h-${i}`, taskId: `t-${i}`, nestId: "nest-1" }),
+        );
+      }
+
+      await expect(
+        service.spawnFollowUp({
+          nestId: "nest-1",
+          parentTaskId: "parent-task-1",
+          prompt: "Address late feedback",
+          payloadRef: "pr-comment:12345",
+        }),
+      ).rejects.toThrowError("nest_hoglet_cap_reached");
+      expect(cloudTasks.getTaskWithLatestRun).not.toHaveBeenCalled();
+      expect(cloudTasks.createTask).not.toHaveBeenCalled();
+    });
+
     it("creates a follow-up hoglet and pr_dependency edge", async () => {
       cloudTasks = createMockCloudTaskClient({
         id: "child-task-1",
@@ -942,23 +1174,57 @@ describe("HogletService", () => {
         prDeps as unknown as PrDependencyRepository,
         cloudTasks,
         createMockPrGraphService(),
+        workspaceService,
       );
 
       const listener = vi.fn();
       service.on(HedgemonyEvent.HogletChanged, listener);
 
-      const child = await service.spawnFollowUp({
-        nestId: "nest-1",
-        parentTaskId: "parent-task-1",
-        prompt: "Address late feedback",
-        payloadRef: "pr-comment:12345",
-      });
+      const child = await service.spawnFollowUp(
+        {
+          nestId: "nest-1",
+          parentTaskId: "parent-task-1",
+          prompt: "Address late feedback",
+          payloadRef: "pr-comment:12345",
+        },
+        {
+          model: defaultModelForAdapter("codex"),
+          runtimeAdapter: "codex",
+          reasoningEffort: "high",
+          executionMode: "full-access",
+        },
+      );
 
       expect(cloudTasks.createTask).toHaveBeenCalledWith(
         expect.objectContaining({
           description: "Address late feedback",
           repository: "org/repo",
         }),
+      );
+      expect(cloudTasks.createTaskRun).toHaveBeenCalledWith(
+        "child-task-1",
+        expect.objectContaining({
+          environment: "cloud",
+          mode: "background",
+          runtimeAdapter: "codex",
+          model: defaultModelForAdapter("codex"),
+          reasoningEffort: "high",
+          initialPermissionMode: "full-access",
+          prAuthorshipMode: "bot",
+        }),
+      );
+      expect(workspaceService.createWorkspace).toHaveBeenCalledWith({
+        taskId: "child-task-1",
+        mainRepoPath: "",
+        folderId: "",
+        folderPath: "",
+        mode: "cloud",
+        branch: undefined,
+      });
+      expect(cloudTasks.startTaskRun).toHaveBeenCalledWith(
+        "child-task-1",
+        expect.any(String),
+        { pendingUserMessage: "Address late feedback" },
       );
       expect(child).toMatchObject({
         taskId: "child-task-1",
@@ -976,6 +1242,80 @@ describe("HogletService", () => {
         bucket: { kind: "nest", nestId: "nest-1" },
         event: { kind: "upsert", hoglet: child },
       });
+    });
+
+    it("rolls back cloud task state when follow-up workspace creation fails", async () => {
+      cloudTasks = createMockCloudTaskClient({ id: "child-task-fail" });
+      (
+        workspaceService.createWorkspace as ReturnType<typeof vi.fn>
+      ).mockRejectedValueOnce(new Error("workspace_failed"));
+      service = new HogletService(
+        repo,
+        router,
+        prDeps as unknown as PrDependencyRepository,
+        cloudTasks,
+        createMockPrGraphService(),
+        workspaceService,
+      );
+
+      await expect(
+        service.spawnFollowUp({
+          nestId: "nest-1",
+          parentTaskId: "parent-task-1",
+          prompt: "Address late feedback",
+          payloadRef: "pr-comment:12345",
+        }),
+      ).rejects.toThrowError("workspace_failed");
+      expect(repo.create).not.toHaveBeenCalled();
+      expect(prDeps._rows).toHaveLength(0);
+      expect(cloudTasks.updateTaskRun).toHaveBeenCalledWith(
+        "child-task-fail",
+        expect.any(String),
+        {
+          status: "cancelled",
+          errorMessage: "Cancelled after Hedgemony spawn failed",
+        },
+      );
+      expect(cloudTasks.deleteTask).toHaveBeenCalledWith("child-task-fail");
+    });
+
+    it("soft-deletes the sidecar and rolls back cloud state when follow-up edge insert fails", async () => {
+      cloudTasks = createMockCloudTaskClient({ id: "child-task-edge-fail" });
+      const insert = vi.fn(() => {
+        throw new Error("edge_failed");
+      });
+      prDeps.insert = insert as typeof prDeps.insert;
+      service = new HogletService(
+        repo,
+        router,
+        prDeps as unknown as PrDependencyRepository,
+        cloudTasks,
+        createMockPrGraphService(),
+        workspaceService,
+      );
+
+      await expect(
+        service.spawnFollowUp({
+          nestId: "nest-1",
+          parentTaskId: "parent-task-1",
+          prompt: "Address late feedback",
+          payloadRef: "pr-comment:12345",
+        }),
+      ).rejects.toThrowError("edge_failed");
+      const created = [...repo._hoglets.values()][0];
+      expect(created).toBeDefined();
+      expect(created?.deletedAt).toEqual(expect.any(String));
+      expect(cloudTasks.updateTaskRun).toHaveBeenCalledWith(
+        "child-task-edge-fail",
+        expect.any(String),
+        {
+          status: "cancelled",
+          errorMessage: "Cancelled after Hedgemony spawn failed",
+        },
+      );
+      expect(cloudTasks.deleteTask).toHaveBeenCalledWith(
+        "child-task-edge-fail",
+      );
     });
   });
 });
