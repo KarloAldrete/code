@@ -80,6 +80,15 @@ The map has three creation surfaces. They co-exist deliberately: the operator pi
 
 Drag-to-move on sprites is supported for nests as a faster alternative to right-click positioning. The Builder is right-click-only so its command panel doesn't get accidentally repositioned mid-drag.
 
+### Movement feel
+
+Unit motion should read as an RTS unit traversing terrain, not as a UI widget animating to a new state. Two rules:
+
+1. **Constant world-space speed.** Travel duration is `distance / speed`, so a long move takes visibly longer than a short one. Use framer-motion's imperative `animate()` over `useMotionValue`s, never a spring keyed on position — springs settle in roughly the same time regardless of distance and feel like a snap. Current values: Builder ≈ 150 px/s (`BuilderSprite.tsx`), nests ≈ 100 px/s (`NestSprite.tsx`); nests are deliberately a bit slower so they read as heavier than the Builder.
+2. **Smooth ease, no overshoot.** Use an ease-in-out cubic-bezier (`[0.4, 0, 0.2, 1]`) for nests; the Builder uses `linear` per-segment because its path is multi-waypoint and segment joins should not stutter.
+
+While moving, the unit plays its **walk** sprite animation and the **facing direction flips from the sign of `dx`**; on arrival it returns to **idle**. Static sprites mid-flight kill the RTS read.
+
 ---
 
 ## Persistence and runtime
