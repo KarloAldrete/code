@@ -23,8 +23,14 @@ const INGESTION_REFETCH_MS = 30_000;
  *  a backlog. Remaining reports are picked up on the next refetch. */
 const MAX_INGESTIONS_PER_TICK = 5;
 
+// In dev, ingest reports still in research (in_progress) and candidate state
+// alongside ready ones so the map can be exercised end-to-end without waiting
+// for the full research pipeline to land a `ready` report. Production keeps
+// the original filter so behaviour ships unchanged.
 const SIGNAL_QUERY_PARAMS = {
-  status: "needs_review" as const,
+  status: import.meta.env.DEV
+    ? ("ready,in_progress,candidate" as const)
+    : ("needs_review" as const),
   ordering: "-created_at" as const,
   limit: 50,
 };
