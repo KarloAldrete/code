@@ -27,6 +27,46 @@ export const nest = z.object({
 });
 export type Nest = z.infer<typeof nest>;
 
+export const goalDraftTranscriptMessage = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string().min(1).max(4000),
+});
+export type GoalDraftTranscriptMessage = z.infer<
+  typeof goalDraftTranscriptMessage
+>;
+
+export const goalSpecDraft = z.object({
+  name: z.string().min(1).max(120),
+  goalPrompt: z.string().min(1),
+  definitionOfDone: z.string().min(1),
+});
+export type GoalSpecDraft = z.infer<typeof goalSpecDraft>;
+
+export const goalDraftMapContext = z.object({
+  mapX: z.number().int().optional(),
+  mapY: z.number().int().optional(),
+});
+export type GoalDraftMapContext = z.infer<typeof goalDraftMapContext>;
+
+export const goalDraftRespondInput = z.object({
+  transcript: z.array(goalDraftTranscriptMessage).min(1).max(12),
+  currentDraft: goalSpecDraft.optional(),
+  mapContext: goalDraftMapContext.optional(),
+});
+export type GoalDraftRespondInput = z.infer<typeof goalDraftRespondInput>;
+
+export const goalDraftResponse = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("ask_question"),
+    question: z.string().min(1).max(500),
+  }),
+  z.object({
+    kind: z.literal("propose_spec"),
+    draft: goalSpecDraft,
+  }),
+]);
+export type GoalDraftResponse = z.infer<typeof goalDraftResponse>;
+
 export const createNestInput = z.object({
   name: z.string().min(1).max(120),
   goalPrompt: z.string().min(1),
@@ -34,6 +74,7 @@ export const createNestInput = z.object({
   mapX: z.number().int(),
   mapY: z.number().int(),
   creationMode: z.enum(["guided", "simple"]).optional(),
+  creationTranscript: z.array(goalDraftTranscriptMessage).max(16).optional(),
 });
 export type CreateNestInput = z.infer<typeof createNestInput>;
 

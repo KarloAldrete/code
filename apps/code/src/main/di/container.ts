@@ -48,6 +48,7 @@ import { FsService } from "../services/fs/service";
 import { GitService } from "../services/git/service";
 import { GitHubIntegrationService } from "../services/github-integration/service";
 import { HandoffService } from "../services/handoff/service";
+import { GoalSpecDraftService } from "../services/hedgemony/goal-spec-draft-service";
 import { HogletService } from "../services/hedgemony/hoglet-service";
 import { NestChatService } from "../services/hedgemony/nest-chat-service";
 import { NestService } from "../services/hedgemony/nest-service";
@@ -133,6 +134,7 @@ container.bind(MAIN_TOKENS.FsService).to(FsService);
 container
   .bind(MAIN_TOKENS.GitHubIntegrationService)
   .to(GitHubIntegrationService);
+container.bind(MAIN_TOKENS.GoalSpecDraftService).to(GoalSpecDraftService);
 container.bind(MAIN_TOKENS.GitService).to(GitService);
 container.bind(MAIN_TOKENS.HandoffService).to(HandoffService);
 container

@@ -3,6 +3,7 @@ import type { NestMessageRepository } from "../../db/repositories/nest-message-r
 import { MAIN_TOKENS } from "../../di/tokens";
 import type {
   CreateNestInput,
+  GoalDraftTranscriptMessage,
   ListNestChatInput,
   Nest,
   NestMessage,
@@ -24,21 +25,20 @@ export class NestChatService {
   }
 
   recordCreationContext(nest: Nest, input: CreateNestInput): void {
-    const goalLines = [
-      `Goal: ${input.goalPrompt}`,
-      input.definitionOfDone
-        ? `Definition of done: ${input.definitionOfDone}`
-        : "Definition of done: not set yet",
-    ];
+    const creationTranscript =
+      input.creationTranscript && input.creationTranscript.length > 0
+        ? input.creationTranscript
+        : buildFallbackTranscript(input);
 
     this.messages.create({
       nestId: nest.id,
       kind: "user_message",
-      body: goalLines.join("\n\n"),
+      body: formatCreationContext(input, creationTranscript),
       payloadJson: JSON.stringify({
         creationMode: input.creationMode ?? "guided",
         goalPrompt: input.goalPrompt,
         definitionOfDone: input.definitionOfDone ?? null,
+        creationTranscript,
       }),
     });
 
@@ -53,4 +53,41 @@ export class NestChatService {
       }),
     });
   }
+}
+
+function buildFallbackTranscript(
+  input: CreateNestInput,
+): GoalDraftTranscriptMessage[] {
+  const mode = input.creationMode ?? "guided";
+  return [
+    {
+      role: "user",
+      content:
+        mode === "simple"
+          ? `Created through simple form.\n\nName: ${input.name}\n\nGoal: ${input.goalPrompt}`
+          : `Created from accepted goal draft.\n\nName: ${input.name}\n\nGoal: ${input.goalPrompt}`,
+    },
+  ];
+}
+
+function formatCreationContext(
+  input: CreateNestInput,
+  transcript: GoalDraftTranscriptMessage[],
+): string {
+  const transcriptBody = transcript
+    .map((message) => {
+      const label = message.role === "user" ? "Operator" : "Goal draft";
+      return `${label}: ${message.content}`;
+    })
+    .join("\n\n");
+
+  const acceptedSpec = [
+    `Name: ${input.name}`,
+    `Goal: ${input.goalPrompt}`,
+    input.definitionOfDone
+      ? `Definition of done: ${input.definitionOfDone}`
+      : "Definition of done: not set yet",
+  ].join("\n");
+
+  return `Creation transcript\n\n${transcriptBody}\n\nAccepted spec\n\n${acceptedSpec}`;
 }

@@ -98,6 +98,11 @@ describe("NestChatService", () => {
       mapX: nest.mapX,
       mapY: nest.mapY,
       creationMode: "guided",
+      creationTranscript: [
+        { role: "user", content: "Improve checkout" },
+        { role: "assistant", content: "Which metric should improve?" },
+        { role: "user", content: "Reduce payment errors." },
+      ],
     });
 
     const messages = service.list({ nestId: nest.id });
@@ -105,9 +110,16 @@ describe("NestChatService", () => {
       "user_message",
       "audit",
     ]);
+    expect(messages[0].body).toContain("Creation transcript");
+    expect(messages[0].body).toContain("Operator: Improve checkout");
+    expect(messages[0].body).toContain(
+      "Goal draft: Which metric should improve?",
+    );
+    expect(messages[0].body).toContain("Accepted spec");
     expect(messages[0].body).toContain("Goal: Goal");
     expect(messages[0].body).toContain("Definition of done: Done");
     expect(messages[0].payloadJson).toContain('"creationMode":"guided"');
+    expect(messages[0].payloadJson).toContain('"creationTranscript"');
     expect(messages[1].body).toBe("Nest created at (5, 6).");
   });
 
@@ -125,6 +137,9 @@ describe("NestChatService", () => {
 
     expect(service.list({ nestId: nest.id })[0].body).toContain(
       "Definition of done: not set yet",
+    );
+    expect(service.list({ nestId: nest.id })[0].body).toContain(
+      "Created through simple form",
     );
   });
 });

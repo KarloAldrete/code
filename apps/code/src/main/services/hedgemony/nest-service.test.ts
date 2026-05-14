@@ -108,7 +108,13 @@ describe("NestService", () => {
 
     const nest = service.create(input);
 
-    expect(nestRepository.create).toHaveBeenCalledWith(input);
+    expect(nestRepository.create).toHaveBeenCalledWith({
+      name: input.name,
+      goalPrompt: input.goalPrompt,
+      definitionOfDone: input.definitionOfDone,
+      mapX: input.mapX,
+      mapY: input.mapY,
+    });
     expect(nestChat.recordCreationContext).toHaveBeenCalledWith(nest, input);
     expect(nest).toMatchObject({
       name: "Checkout lift",

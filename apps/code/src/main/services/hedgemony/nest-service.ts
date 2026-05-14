@@ -40,7 +40,13 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
   }
 
   create(input: CreateNestInput): Nest {
-    const created = this.nests.create(input);
+    const created = this.nests.create({
+      name: input.name,
+      goalPrompt: input.goalPrompt,
+      definitionOfDone: input.definitionOfDone ?? null,
+      mapX: input.mapX,
+      mapY: input.mapY,
+    });
     this.nestChat.recordCreationContext(created, input);
     log.info("Nest created", { id: created.id, name: created.name });
     this.emitChange(created, { kind: "status", nest: created });

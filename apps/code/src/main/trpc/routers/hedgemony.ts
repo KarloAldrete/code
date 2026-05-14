@@ -1,10 +1,13 @@
 import { container } from "../../di/container";
 import { MAIN_TOKENS } from "../../di/tokens";
+import type { GoalSpecDraftService } from "../../services/hedgemony/goal-spec-draft-service";
 import type { HogletService } from "../../services/hedgemony/hoglet-service";
 import type { NestChatService } from "../../services/hedgemony/nest-chat-service";
 import type { NestService } from "../../services/hedgemony/nest-service";
 import {
   createNestInput,
+  goalDraftRespondInput,
+  goalDraftResponse,
   HedgemonyEvent,
   hoglet,
   hogletWatchScope,
@@ -23,10 +26,18 @@ import { publicProcedure, router } from "../trpc";
 const getService = () => container.get<NestService>(MAIN_TOKENS.NestService);
 const getNestChatService = () =>
   container.get<NestChatService>(MAIN_TOKENS.NestChatService);
+const getGoalSpecDraftService = () =>
+  container.get<GoalSpecDraftService>(MAIN_TOKENS.GoalSpecDraftService);
 const getHogletService = () =>
   container.get<HogletService>(MAIN_TOKENS.HogletService);
 
 export const hedgemonyRouter = router({
+  goalDraft: router({
+    respond: publicProcedure
+      .input(goalDraftRespondInput)
+      .output(goalDraftResponse)
+      .mutation(({ input }) => getGoalSpecDraftService().respond(input)),
+  }),
   nests: router({
     list: publicProcedure
       .output(listNestsOutput)

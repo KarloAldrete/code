@@ -62,6 +62,7 @@ export const MAIN_TOKENS = Object.freeze({
   GitService: Symbol.for("Main.GitService"),
   HandoffService: Symbol.for("Main.HandoffService"),
   GitHubIntegrationService: Symbol.for("Main.GitHubIntegrationService"),
+  GoalSpecDraftService: Symbol.for("Main.GoalSpecDraftService"),
   LinearIntegrationService: Symbol.for("Main.LinearIntegrationService"),
   DeepLinkService: Symbol.for("Main.DeepLinkService"),
   NotificationService: Symbol.for("Main.NotificationService"),
