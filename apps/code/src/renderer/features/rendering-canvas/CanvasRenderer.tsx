@@ -47,6 +47,7 @@ export function CanvasRenderer({
         | { kind: "canvas:ready" }
         | { kind: "canvas:error"; message: string }
         | { kind: "canvas:api"; id: number; path: string; args: unknown[] }
+        | { kind: "canvas:copy"; text: string }
         | undefined;
       if (!msg || typeof msg !== "object") return;
 
@@ -56,6 +57,17 @@ export function CanvasRenderer({
       }
       if (msg.kind === "canvas:error") {
         onError?.(msg.message);
+        return;
+      }
+      if (msg.kind === "canvas:copy") {
+        // Sandboxed null-origin iframes can't call navigator.clipboard.writeText
+        // directly (Chromium permissions policy). Forward the request here so
+        // canvases can keep using the standard `navigator.clipboard.writeText`
+        // API — runtime.ts monkey-patches it to postMessage this kind.
+        const text = typeof msg.text === "string" ? msg.text : String(msg.text);
+        navigator.clipboard?.writeText(text).catch(() => {
+          /* host clipboard unavailable — fail silently */
+        });
         return;
       }
       if (msg.kind === "canvas:api") {

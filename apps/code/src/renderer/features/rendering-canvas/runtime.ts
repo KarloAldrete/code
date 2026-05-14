@@ -97,6 +97,22 @@ try {
   throw err;
 }
 
+// Forward clipboard writes to the host. Sandboxed null-origin iframes are
+// blocked by Chromium's permissions policy from calling navigator.clipboard
+// directly; the host (CanvasRenderer.tsx) handles the actual write on receipt
+// of a canvas:copy postMessage. This override lets canvases keep using the
+// standard \`navigator.clipboard.writeText\` API without a special helper.
+try {
+  if (navigator && navigator.clipboard) {
+    navigator.clipboard.writeText = function (text) {
+      try {
+        parent.postMessage({ kind: "canvas:copy", text: String(text ?? "") }, "*");
+      } catch (_) {}
+      return Promise.resolve();
+    };
+  }
+} catch (_) { /* navigator.clipboard may be undefined or sealed; silently skip */ }
+
 const __pending = new Map();
 let __seq = 0;
 
