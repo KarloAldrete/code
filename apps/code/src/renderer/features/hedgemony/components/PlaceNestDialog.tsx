@@ -91,11 +91,12 @@ export function PlaceNestDialog({
   const hasValidCoords =
     Number.isFinite(parsedMapX) && Number.isFinite(parsedMapY);
 
-  const canSubmit =
-    name.trim().length > 0 &&
-    goalPrompt.trim().length > 0 &&
-    hasValidCoords &&
-    (simpleMode || definitionOfDone.trim().length > 0);
+  const canSubmit = simpleMode
+    ? goalPrompt.trim().length > 0 && hasValidCoords
+    : name.trim().length > 0 &&
+      goalPrompt.trim().length > 0 &&
+      hasValidCoords &&
+      definitionOfDone.trim().length > 0;
 
   const requestDraft = async (
     nextTranscript: GoalDraftTranscriptMessage[],
@@ -178,6 +179,8 @@ export function PlaceNestDialog({
     if (!simpleMode) {
       const fallbackGoal = goalPrompt.trim() || initialGoal.trim();
       if (!goalPrompt.trim() && fallbackGoal) setGoalPrompt(fallbackGoal);
+    } else {
+      const fallbackGoal = goalPrompt.trim();
       if (!name.trim() && fallbackGoal) setName(suggestName(fallbackGoal));
     }
     setSimpleMode((value) => !value);
@@ -190,20 +193,18 @@ export function PlaceNestDialog({
     setSubmitting(true);
     setError(null);
     try {
+      const trimmedGoalPrompt = goalPrompt.trim();
+      const effectiveName = simpleMode
+        ? suggestName(trimmedGoalPrompt)
+        : name.trim();
       const creationTranscript = simpleMode
-        ? buildSimpleTranscript({
-            name: name.trim(),
-            goalPrompt: goalPrompt.trim(),
-            definitionOfDone: definitionOfDone.trim(),
-          })
+        ? buildSimpleTranscript({ goalPrompt: trimmedGoalPrompt })
         : transcript;
 
       const created = await trpcClient.hedgemony.nests.create.mutate({
-        name: name.trim(),
-        goalPrompt: goalPrompt.trim(),
-        definitionOfDone: simpleMode
-          ? definitionOfDone.trim() || null
-          : definitionOfDone.trim(),
+        name: effectiveName,
+        goalPrompt: trimmedGoalPrompt,
+        definitionOfDone: simpleMode ? null : definitionOfDone.trim(),
         mapX: Math.round(parsedMapX),
         mapY: Math.round(parsedMapY),
         creationMode: simpleMode ? "simple" : "guided",
@@ -230,13 +231,9 @@ export function PlaceNestDialog({
           <Flex direction="column" gap="3" mt="4" pr="3">
             {simpleMode ? (
               <SimpleFormFields
-                name={name}
                 goalPrompt={goalPrompt}
-                definitionOfDone={definitionOfDone}
                 disabled={submitting}
-                onNameChange={setName}
                 onGoalPromptChange={setGoalPrompt}
-                onDefinitionOfDoneChange={setDefinitionOfDone}
               />
             ) : (
               <GoalDraftFlow
@@ -463,32 +460,26 @@ function GoalDraftFlow({
 }
 
 function SimpleFormFields({
-  name,
   goalPrompt,
-  definitionOfDone,
   disabled,
-  onNameChange,
   onGoalPromptChange,
-  onDefinitionOfDoneChange,
 }: {
-  name: string;
   goalPrompt: string;
-  definitionOfDone: string;
   disabled: boolean;
-  onNameChange: (value: string) => void;
   onGoalPromptChange: (value: string) => void;
-  onDefinitionOfDoneChange: (value: string) => void;
 }) {
   return (
-    <SpecFields
-      name={name}
-      goalPrompt={goalPrompt}
-      definitionOfDone={definitionOfDone}
-      disabled={disabled}
-      onNameChange={onNameChange}
-      onGoalPromptChange={onGoalPromptChange}
-      onDefinitionOfDoneChange={onDefinitionOfDoneChange}
-    />
+    <LabeledField label="Prompt" htmlFor="nest-goal">
+      <TextArea
+        id="nest-goal"
+        placeholder="What should the hoglet work on?"
+        value={goalPrompt}
+        onChange={(e) => onGoalPromptChange(e.target.value)}
+        rows={10}
+        disabled={disabled}
+        autoFocus
+      />
+    </LabeledField>
   );
 }
 
@@ -622,22 +613,14 @@ function suggestName(goal: string): string {
 }
 
 function buildSimpleTranscript(input: {
-  name: string;
   goalPrompt: string;
-  definitionOfDone: string;
 }): GoalDraftTranscriptMessage[] {
   return [
     {
       role: "user",
-      content: [
-        "Created through simple form.",
-        "",
-        `Name: ${input.name}`,
-        `Spec: ${input.goalPrompt}`,
-        input.definitionOfDone
-          ? `Definition of done: ${input.definitionOfDone}`
-          : "Definition of done: not set yet",
-      ].join("\n"),
+      content: ["Created through simple form.", "", input.goalPrompt].join(
+        "\n",
+      ),
     },
   ];
 }
