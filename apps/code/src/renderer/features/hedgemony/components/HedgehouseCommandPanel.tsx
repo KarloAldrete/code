@@ -1,6 +1,8 @@
+import { KeyHint } from "@components/ui/KeyHint";
 import { useFunSpeak } from "@features/fun-mode/hooks/useFunSpeak";
 import { Info, Plus } from "@phosphor-icons/react";
 import { Tooltip } from "@radix-ui/themes";
+import { useHotkeys } from "react-hotkeys-hook";
 import { CommandConsole } from "./CommandConsole";
 
 interface HedgehouseCommandPanelProps {
@@ -13,6 +15,7 @@ export function HedgehouseCommandPanel({
   onClose,
 }: HedgehouseCommandPanelProps) {
   const t = useFunSpeak();
+  useHotkeys("w", onSpawnWildHog, [onSpawnWildHog]);
   return (
     <CommandConsole consoleKey="hedgehouse-command">
       <div className="flex items-stretch gap-3 px-3 py-2">
@@ -54,10 +57,11 @@ export function HedgehouseCommandPanel({
             type="button"
             onClick={onSpawnWildHog}
             className="flex h-9 items-center gap-1.5 rounded-(--radius-2) border border-(--accent-7) bg-(--accent-a3) px-3 font-medium text-(--accent-11) text-[12px] transition-colors hover:bg-(--accent-a5) hover:text-(--accent-12)"
-            title="Dispatch a one-off agent from the Hedgehouse"
+            title="Dispatch a one-off agent from the Hedgehouse (W)"
           >
             <Plus size={14} />
             {t("Spawn wild hog")}
+            <KeyHint className="ml-1">W</KeyHint>
           </button>
         </CommandConsole.Section>
 

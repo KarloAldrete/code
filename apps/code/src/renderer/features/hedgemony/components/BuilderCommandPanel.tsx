@@ -1,6 +1,8 @@
+import { KeyHint } from "@components/ui/KeyHint";
 import { useFunSpeak } from "@features/fun-mode/hooks/useFunSpeak";
 import { Info, Lightning, Plus } from "@phosphor-icons/react";
 import { Tooltip } from "@radix-ui/themes";
+import { useHotkeys } from "react-hotkeys-hook";
 import { CommandConsole } from "./CommandConsole";
 
 interface BuilderCommandPanelProps {
@@ -17,6 +19,8 @@ export function BuilderCommandPanel({
   onClose,
 }: BuilderCommandPanelProps) {
   const t = useFunSpeak();
+  useHotkeys("b", onBuildNest, [onBuildNest]);
+  useHotkeys("q", onQuickNest, [onQuickNest]);
   return (
     <CommandConsole consoleKey="builder-command">
       <div className="flex items-stretch gap-3 px-3 py-2">
@@ -57,19 +61,21 @@ export function BuilderCommandPanel({
             type="button"
             onClick={onBuildNest}
             className="flex h-9 items-center gap-1.5 rounded-(--radius-2) border border-(--accent-7) bg-(--accent-a3) px-3 font-medium text-(--accent-11) text-[12px] transition-colors hover:bg-(--accent-a5) hover:text-(--accent-12)"
-            title="Guided goal-writing flow with a clarifying question and full spec"
+            title="Guided goal-writing flow with a clarifying question and full spec (B)"
           >
             <Plus size={14} />
             {t("Build nest")}
+            <KeyHint className="ml-1">B</KeyHint>
           </button>
           <button
             type="button"
             onClick={onQuickNest}
             className="flex h-9 items-center gap-1.5 rounded-(--radius-2) border border-(--gray-6) bg-(--gray-a2) px-3 font-medium text-(--gray-12) text-[12px] transition-colors hover:bg-(--gray-a4)"
-            title="Simple form + auto-spawn one hoglet"
+            title="Simple form + auto-spawn one hoglet (Q)"
           >
             <Lightning size={14} />
             {t("Quick nest")}
+            <KeyHint className="ml-1">Q</KeyHint>
           </button>
         </CommandConsole.Section>
 

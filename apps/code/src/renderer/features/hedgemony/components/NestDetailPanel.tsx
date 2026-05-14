@@ -1,3 +1,4 @@
+import { KeyHint } from "@components/ui/KeyHint";
 import { useFunSpeak } from "@features/fun-mode/hooks/useFunSpeak";
 import type {
   Nest,
@@ -31,6 +32,7 @@ import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useEffect, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { selectNestMessages, useNestChatStore } from "../stores/nestChatStore";
 import { selectHedgehogState, useNestStore } from "../stores/nestStore";
 import { selectEdgesForNest, usePrGraphStore } from "../stores/prGraphStore";
@@ -145,6 +147,19 @@ export function NestDetailPanel({
     }
   };
 
+  useHotkeys("s", () => void handleSave(), [
+    canSave,
+    saving,
+    archiving,
+    name,
+    goalPrompt,
+    definitionOfDone,
+  ]);
+  useHotkeys("a", () => void handleArchive(), [saving, archiving]);
+  useHotkeys("r", () => {
+    if (onRelocate && !saving && !archiving) onRelocate();
+  }, [onRelocate, saving, archiving]);
+
   return (
     <CommandConsole
       consoleKey={nest.id}
@@ -169,7 +184,7 @@ export function NestDetailPanel({
         onClose={onClose}
         trailing={
           onRelocate && (
-            <Tooltip content={t("Relocate nest")} side="top">
+            <Tooltip content={`${t("Relocate nest")} (R)`} side="top">
               <IconButton
                 size="1"
                 variant="soft"
@@ -294,9 +309,11 @@ export function NestDetailPanel({
               disabled={!canSave || saving || archiving}
               loading={saving}
               size="2"
+              title="Save (S)"
             >
               <FloppyDisk size={14} />
               {t("Save")}
+              <KeyHint className="ml-1">S</KeyHint>
             </Button>
             <Button
               variant="soft"
@@ -305,9 +322,11 @@ export function NestDetailPanel({
               disabled={saving || archiving}
               loading={archiving}
               size="2"
+              title="Archive (A)"
             >
               <Archive size={14} />
               {t("Archive")}
+              <KeyHint className="ml-1">A</KeyHint>
             </Button>
           </Flex>
         </div>

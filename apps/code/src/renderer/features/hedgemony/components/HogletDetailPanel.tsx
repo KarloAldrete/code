@@ -25,6 +25,7 @@ import { useNavigationStore } from "@stores/navigationStore";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { toast } from "sonner";
 import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import {
@@ -129,6 +130,17 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
 
   const description = taskQuery.data?.description?.trim() ?? "";
 
+  useHotkeys("c", () => setChatOpen((v) => !v));
+  useHotkeys("o", () => {
+    if (taskQuery.data) handleOpenInEditor();
+  }, [taskQuery.data, handleOpenInEditor]);
+  useHotkeys("h", () => {
+    if (hasOverride) clearPosition(hoglet.id);
+  }, [hasOverride, clearPosition, hoglet.id]);
+  useHotkeys("r", () => {
+    if (!retiring) setRetireDialogOpen(true);
+  }, [retiring]);
+
   return (
     <CommandConsole
       consoleKey={hoglet.id}
@@ -158,7 +170,10 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
         trailing={
           <>
             {hasOverride && (
-              <Tooltip content="Return hoglet to its default spot" side="top">
+              <Tooltip
+                content="Return hoglet to its default spot (H)"
+                side="top"
+              >
                 <IconButton
                   size="1"
                   variant="soft"
@@ -170,7 +185,7 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
                 </IconButton>
               </Tooltip>
             )}
-            <Tooltip content="Open task in editor" side="top">
+            <Tooltip content="Open task in editor (O)" side="top">
               <IconButton
                 size="1"
                 variant="soft"
@@ -181,7 +196,7 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
                 <ArrowSquareOut size={14} />
               </IconButton>
             </Tooltip>
-            <Tooltip content="Retire hoglet" side="top">
+            <Tooltip content="Retire hoglet (R)" side="top">
               <IconButton
                 size="1"
                 variant="soft"
@@ -206,6 +221,7 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
             <button
               type="button"
               onClick={() => setChatOpen(false)}
+              title="Collapse chat (C)"
               className="flex items-center gap-1 rounded-(--radius-2) px-2 py-0.5 text-(--gray-11) text-[11px] hover:bg-(--accent-a3) hover:text-(--accent-12)"
             >
               <CaretDown size={12} />
@@ -245,7 +261,7 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
               </Text>
               <span className="flex items-center gap-1 text-(--gray-10) text-[11px] group-hover:text-(--accent-11)">
                 <ChatCircle size={12} />
-                Open chat
+                Open chat (C)
               </span>
             </div>
             {taskQuery.isLoading && !description ? (
