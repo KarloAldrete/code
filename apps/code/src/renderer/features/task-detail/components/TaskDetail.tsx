@@ -152,9 +152,11 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
             </Text>
           </Tooltip>
         )}
-        <MemoryIndicator />
-        <SaveAsScheduledTaskButton taskId={taskId} />
-        {openTargetPath && <ExternalAppsOpener targetPath={openTargetPath} />}
+        <Flex align="center" gap="1" className="shrink-0">
+          <MemoryIndicator />
+          <SaveAsScheduledTaskButton taskId={taskId} />
+          {openTargetPath && <ExternalAppsOpener targetPath={openTargetPath} />}
+        </Flex>
       </Flex>
     ),
     [
