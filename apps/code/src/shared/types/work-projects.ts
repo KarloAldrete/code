@@ -136,6 +136,14 @@ export const workProject = z.object({
   tiles: z.array(tile),
   createdAt: z.string(),
   updatedAt: z.string(),
+  /** Starter prompt to auto-fire as the first chat message when the project's
+   *  chat panel mounts. Cleared by the renderer once the chat has been kicked
+   *  off so it never replays. */
+  pendingPrompt: z.string().optional(),
+  /** Suggested next-step prompts the agent sets at the end of each turn via
+   *  the `set_next_steps` canvas tool. The renderer renders these as clickable
+   *  chips below the chat. Replaced each turn. */
+  nextSteps: z.array(z.string()).optional(),
 });
 export type WorkProject = z.infer<typeof workProject>;
 

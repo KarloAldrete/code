@@ -29,8 +29,15 @@ export const workProjectsRouter = router({
   create: publicProcedure
     .input(createProjectInput)
     .output(workProject)
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       return getService().create(input);
+    }),
+
+  clearNextSteps: publicProcedure
+    .input(z.object({ projectId: z.string() }))
+    .output(workProject.nullable())
+    .mutation(({ input }) => {
+      return getService().clearNextSteps(input.projectId);
     }),
 
   delete: publicProcedure
@@ -38,6 +45,13 @@ export const workProjectsRouter = router({
     .mutation(({ input }) => {
       getService().delete(input.projectId);
       return { ok: true };
+    }),
+
+  clearPendingPrompt: publicProcedure
+    .input(z.object({ projectId: z.string() }))
+    .output(workProject.nullable())
+    .mutation(({ input }) => {
+      return getService().clearPendingPrompt(input.projectId);
     }),
 
   addTile: publicProcedure

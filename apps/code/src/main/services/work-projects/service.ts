@@ -1,19 +1,38 @@
 import type {
   CreateProjectInput,
   NewTileInput,
+  ProjectIconId,
   Tile,
   TileSize,
   WorkProject,
   WorkProjectsEvents,
 } from "@shared/types/work-projects";
 import Store from "electron-store";
-import { injectable } from "inversify";
+import { inject, injectable } from "inversify";
+import { MAIN_TOKENS } from "../../di/tokens";
 import { getUserDataDir } from "../../utils/env";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
+import type { LlmGatewayService } from "../llm-gateway/service";
 import { SEED_PROJECTS } from "./seeds";
 
 const log = logger.scope("work-projects-service");
+
+const PROJECT_ICONS = [
+  "rocket",
+  "microphone",
+  "megaphone",
+  "lightbulb",
+  "compass",
+  "target",
+  "flask",
+] as const satisfies readonly ProjectIconId[];
+
+const AUTO_NAME_SYSTEM = `You name PostHog Code projects. Given the user's
+opening prompt, reply with ONLY a JSON object — no prose, no markdown — with
+keys: "name" (≤3 words, Title Case), "tagline" (≤8 words, sentence case, no
+trailing period), "iconId" (one of: rocket, microphone, megaphone, lightbulb,
+compass, target, flask — pick the closest match for the topic).`;
 
 interface WorkProjectsStoreSchema {
   seeded: boolean;
@@ -50,7 +69,10 @@ function defaultSizeFor(type: NewTileInput["type"]): TileSize {
 export class WorkProjectsService extends TypedEventEmitter<WorkProjectsEvents> {
   private readonly store: Store<WorkProjectsStoreSchema>;
 
-  constructor() {
+  constructor(
+    @inject(MAIN_TOKENS.LlmGatewayService)
+    private readonly llmGateway: LlmGatewayService,
+  ) {
     super();
     this.store = new Store<WorkProjectsStoreSchema>({
       name: "work-projects",
@@ -59,6 +81,55 @@ export class WorkProjectsService extends TypedEventEmitter<WorkProjectsEvents> {
     });
 
     this.ensureSeeded();
+  }
+
+  private async deriveProjectMeta(fromPrompt: string): Promise<{
+    name: string;
+    tagline: string;
+    iconId: ProjectIconId;
+  } | null> {
+    try {
+      const result = await this.llmGateway.prompt(
+        [{ role: "user", content: fromPrompt }],
+        {
+          system: AUTO_NAME_SYSTEM,
+          model: "claude-haiku-4-5",
+          maxTokens: 150,
+        },
+      );
+      const raw = result.content.trim();
+      // Tolerate accidental markdown fences.
+      const cleaned = raw
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/\s*```$/i, "")
+        .trim();
+      const start = cleaned.indexOf("{");
+      const end = cleaned.lastIndexOf("}");
+      if (start < 0 || end <= start) return null;
+      const parsed = JSON.parse(cleaned.slice(start, end + 1)) as {
+        name?: unknown;
+        tagline?: unknown;
+        iconId?: unknown;
+      };
+      const name =
+        typeof parsed.name === "string" && parsed.name.trim().length > 0
+          ? parsed.name.trim().slice(0, 48)
+          : null;
+      const tagline =
+        typeof parsed.tagline === "string" && parsed.tagline.trim().length > 0
+          ? parsed.tagline.trim().replace(/\.+$/, "").slice(0, 80)
+          : null;
+      const iconId =
+        typeof parsed.iconId === "string" &&
+        (PROJECT_ICONS as readonly string[]).includes(parsed.iconId)
+          ? (parsed.iconId as ProjectIconId)
+          : null;
+      if (!name || !tagline || !iconId) return null;
+      return { name, tagline, iconId };
+    } catch (error) {
+      log.warn("Auto-name LLM call failed", { error });
+      return null;
+    }
   }
 
   private ensureSeeded(): void {
@@ -128,12 +199,26 @@ export class WorkProjectsService extends TypedEventEmitter<WorkProjectsEvents> {
     return this.getProjects()[projectId] ?? null;
   }
 
-  create(input: CreateProjectInput): WorkProject {
+  async create(input: CreateProjectInput): Promise<WorkProject> {
     const id = newId("project");
     const now = new Date().toISOString();
-    const name = input.name?.trim() || "Untitled project";
-    const tagline = input.tagline?.trim() || "Just started";
-    const iconId = input.iconId ?? "lightbulb";
+    const trimmedPrompt = input.fromPrompt?.trim();
+
+    // Default values first; if we have a starter prompt, ask the LLM gateway
+    // for a derived name/tagline/icon and overlay them. Falls back gracefully.
+    let name = input.name?.trim() || "Untitled project";
+    let tagline = input.tagline?.trim() || "Just started";
+    let iconId: ProjectIconId = input.iconId ?? "lightbulb";
+
+    if (trimmedPrompt && !input.name && !input.tagline) {
+      const derived = await this.deriveProjectMeta(trimmedPrompt);
+      if (derived) {
+        name = derived.name;
+        tagline = derived.tagline;
+        iconId = derived.iconId;
+        log.info("Auto-named project from prompt", { id, name, iconId });
+      }
+    }
 
     const titleTile: Tile = {
       id: newId("tile"),
@@ -155,25 +240,45 @@ export class WorkProjectsService extends TypedEventEmitter<WorkProjectsEvents> {
       tiles: [titleTile],
       createdAt: now,
       updatedAt: now,
+      ...(trimmedPrompt ? { pendingPrompt: trimmedPrompt } : {}),
     };
-
-    if (input.fromPrompt?.trim()) {
-      project.tiles.push({
-        id: newId("tile"),
-        type: "note",
-        size: "md",
-        state: "live",
-        origin: "user",
-        body: input.fromPrompt.trim(),
-        tone: "yellow",
-      });
-    }
 
     const projects = { ...this.getProjects(), [id]: project };
     const order = [id, ...this.getOrder()];
     this.persist(projects, order);
     this.emitProjectChanged(id);
     return project;
+  }
+
+  setNextSteps(projectId: string, prompts: string[]): WorkProject | null {
+    return this.mutateProject(projectId, (project) => {
+      const cleaned = prompts
+        .map((p) => (typeof p === "string" ? p.trim() : ""))
+        .filter((p) => p.length > 0)
+        .slice(0, 3);
+      if (cleaned.length === 0) {
+        if (!project.nextSteps) return null;
+        const { nextSteps: _drop, ...rest } = project;
+        return rest as WorkProject;
+      }
+      return { ...project, nextSteps: cleaned };
+    });
+  }
+
+  clearNextSteps(projectId: string): WorkProject | null {
+    return this.mutateProject(projectId, (project) => {
+      if (!project.nextSteps) return null;
+      const { nextSteps: _drop, ...rest } = project;
+      return rest as WorkProject;
+    });
+  }
+
+  clearPendingPrompt(projectId: string): WorkProject | null {
+    return this.mutateProject(projectId, (project) => {
+      if (!project.pendingPrompt) return null;
+      const { pendingPrompt: _drop, ...rest } = project;
+      return rest as WorkProject;
+    });
   }
 
   delete(projectId: string): void {

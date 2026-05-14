@@ -19,17 +19,18 @@ import type {
 } from "@features/task-detail/service/service";
 import { useTasks } from "@features/tasks/hooks/useTasks";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
-import { ChatCircleText } from "@phosphor-icons/react";
+import { ChatCircleText, CircleNotch } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { get as getDi } from "@renderer/di/container";
 import { RENDERER_TOKENS } from "@renderer/di/tokens";
+import { trpcClient } from "@renderer/trpc/client";
 import type { Task } from "@shared/types";
 import type { WorkProject } from "@shared/types/work-projects";
 import { useProjectChatsStore } from "@stores/projectChatsStore";
 import { logger } from "@utils/logger";
 import { queryClient } from "@utils/queryClient";
 import { toast } from "@utils/toast";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const log = logger.scope("project-chat-panel");
 
@@ -37,56 +38,98 @@ function newChatId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `chat-${Date.now()}`;
 }
 
-function buildProjectContext(project: WorkProject): string {
+function summarizeTilesForPrompt(project: WorkProject): string {
   const lines: string[] = [];
-  lines.push(`# Project: ${project.name}`);
-  lines.push(`Tagline: ${project.tagline}`);
-  if (project.members.length > 0) {
-    lines.push(`Members: ${project.members.map((m) => m.name).join(", ")}`);
-  }
-
-  const titleTile = project.tiles.find((t) => t.type === "title");
-  if (titleTile && titleTile.type === "title") {
-    lines.push("");
-    lines.push(
-      `This project canvas is a composable bento grid of tiles. The user can ask you to read, summarise, or draft updates for any tile. Tiles you can suggest the user add (they review each suggestion as a ghost tile before it's applied to the canvas):`,
-    );
-    lines.push(
-      `- headline: a big PostHog metric with sparkline\n- insight: a linked PostHog dashboard/insight\n- file: a markdown doc embedded in the canvas\n- note: a sticky-note for thoughts\n- skill_output: the latest result of a saved skill`,
-    );
-  }
-
   for (const t of project.tiles) {
+    if (t.type === "title") continue;
     if (t.type === "headline") {
-      lines.push("");
-      lines.push(`## Headline tile · ${t.label}`);
-      lines.push(`Current value: ${t.fallbackValue} (${t.fallbackDelta})`);
-      if (t.posthogUrl) lines.push(`Source: ${t.posthogUrl}`);
+      lines.push(
+        `- headline · ${t.label}: ${t.fallbackValue} (${t.fallbackDelta})${
+          t.posthogUrl ? ` — ${t.posthogUrl}` : ""
+        }`,
+      );
     } else if (t.type === "insight") {
-      lines.push("");
-      lines.push(`## Insight tile · ${t.title}`);
-      if (t.description) lines.push(t.description);
-      lines.push(`URL: ${t.url}`);
+      lines.push(
+        `- insight · ${t.title}${t.description ? ` — ${t.description}` : ""} (${t.url})`,
+      );
     } else if (t.type === "file") {
-      lines.push("");
-      lines.push(`## File · ${t.filename}`);
-      lines.push(t.contents.slice(0, 800));
+      lines.push(`- file · ${t.filename} (${t.contents.length} chars)`);
     } else if (t.type === "skill_output") {
-      lines.push("");
-      lines.push(`## Skill output · ${t.skillName}`);
-      if (t.skillDescription) lines.push(t.skillDescription);
-      if (t.lastRunOutput) {
-        lines.push("Last run:");
-        lines.push(t.lastRunOutput);
-      }
+      lines.push(
+        `- skill output · ${t.skillName}${
+          t.skillDescription ? ` — ${t.skillDescription}` : ""
+        }`,
+      );
     } else if (t.type === "note") {
-      lines.push("");
-      lines.push(`## Note`);
-      lines.push(t.body);
+      lines.push(`- note · ${t.body.slice(0, 80)}`);
     }
   }
+  return lines.length > 0
+    ? lines.join("\n")
+    : "(no content tiles yet — the canvas is empty besides the title)";
+}
 
-  return lines.join("\n");
+/**
+ * Builds the system-prompt appendix the agent sees when running inside a
+ * PostHog Code project chat. Threaded via the `customInstructions` field on
+ * `agent.start.mutate` → `buildSystemPrompt({ append })`. Tells the agent
+ * which project it's in, what tiles already exist, what canvas tools it has,
+ * and how to drive the workflow.
+ */
+function buildProjectSystemPrompt(project: WorkProject): string {
+  return `# PostHog Code project chat — special tool environment
+
+You are running INSIDE a PostHog Code project canvas. A custom MCP server
+called \`projectCanvas\` is attached to this session. **Its tools ARE
+available** — do not search for them, do not say they aren't available, do
+not suggest alternatives. Just call them. If a tool name like
+\`mcp__projectCanvas__propose_tile_headline\` doesn't autocomplete, it's
+still callable — invoke it directly.
+
+## This project
+- id: ${project.id}
+- name: ${project.name}
+- tagline: ${project.tagline}
+
+Every canvas tool requires \`projectId\` — always pass exactly:
+\`projectId: "${project.id}"\`
+
+## Tiles already on the canvas
+${summarizeTilesForPrompt(project)}
+
+## Canvas tools (call these — they exist)
+- \`mcp__projectCanvas__propose_tile_headline\` — big metrics with a short
+  delta (e.g. signup conversion %, WAU, error rate). Arrives as a ghost
+  tile for the user to accept/reject.
+- \`mcp__projectCanvas__propose_tile_insight\` — links to a real PostHog
+  dashboard or insight URL. Use when you can point at an existing or
+  newly-saved artifact in PostHog.
+- \`mcp__projectCanvas__propose_tile_file\` — markdown writeups: findings,
+  hypotheses, briefs. Bullets > paragraphs. ≤ ~1500 chars.
+- \`mcp__projectCanvas__propose_tile_note\` — short sticky-note callouts
+  (≤ 280 chars). Don't dump prose here — that's what file tiles are for.
+- \`mcp__projectCanvas__update_project_meta\` — rename the project / change
+  the icon (rocket, microphone, megaphone, lightbulb, compass, target,
+  flask). Use sparingly.
+- \`mcp__projectCanvas__set_next_steps\` — MANDATORY at end of every turn.
+  Set 2–3 short imperative follow-up prompts (each ≤ 80 chars) for the user
+  to click. e.g. ["Segment funnel by traffic source", "Drill into email
+  confirm step", "Compare mobile vs desktop drop-off"].
+
+## How to work
+1. Use the PostHog MCP tools (\`mcp__posthog__*\`) to query real data. Don't
+   make up numbers. If you genuinely lack context, ask ONE short clarifying
+   question — otherwise just run.
+2. As findings emerge, propose tiles via the canvas tools. Propose generously
+   — every tile is a ghost the user can reject in one click.
+3. End EVERY turn by calling \`set_next_steps\`. No exceptions.
+4. Keep chat replies tight (≤ 6 sentences). The canvas holds the artifacts;
+   the chat narrates progress.
+
+## A good first turn looks like
+Query PostHog. Propose 2–3 tiles (e.g. one headline + one insight + one
+file with findings). Narrate what you found in 3–4 sentences. Call
+\`set_next_steps\`. Don't ask permission to start — just go.`;
 }
 
 function ProjectChatLanding({ project }: { project: WorkProject }) {
@@ -136,7 +179,6 @@ function ProjectChatLanding({ project }: { project: WorkProject }) {
 
       const chatId = newChatId();
       const title = `${project.name} · chat`;
-      const fullPrompt = `${buildProjectContext(project)}\n\n---\n\n${userPrompt}`;
 
       try {
         const repoPath = await resolveChatDir(chatId);
@@ -149,13 +191,15 @@ function ProjectChatLanding({ project }: { project: WorkProject }) {
             : undefined;
 
         const input: TaskCreationInput = {
-          content: fullPrompt,
+          content: userPrompt,
           taskDescription: title,
           repoPath,
           workspaceMode: "chat",
           adapter,
           model,
           reasoningLevel,
+          projectCanvasId: project.id,
+          customInstructions: buildProjectSystemPrompt(project),
         };
 
         const taskService = getDi<TaskService>(RENDERER_TOKENS.TaskService);
@@ -207,10 +251,72 @@ function ProjectChatLanding({ project }: { project: WorkProject }) {
     setEditorIsEmpty(isEmpty);
   }, []);
 
+  // Auto-fire a starter prompt set at project creation. Clear it on the server
+  // before firing so it never replays after navigation/reload; a ref guards
+  // against re-firing within the same mount if the project re-renders before
+  // the chat panel switches to ProjectChatSession.
+  const autoFiredRef = useRef(false);
+  const [isAutoFiring, setIsAutoFiring] = useState(false);
+  useEffect(() => {
+    const pending = project.pendingPrompt?.trim();
+    if (!pending || autoFiredRef.current || isSubmitting) return;
+    autoFiredRef.current = true;
+    setIsAutoFiring(true);
+    void trpcClient.workProjects.clearPendingPrompt
+      .mutate({ projectId: project.id })
+      .catch((error: unknown) => {
+        log.warn("Failed to clear pending prompt", {
+          projectId: project.id,
+          error,
+        });
+      });
+    void handleSubmit(pending).finally(() => setIsAutoFiring(false));
+  }, [project.id, project.pendingPrompt, isSubmitting, handleSubmit]);
+
   const handleSubmitClick = useCallback(() => {
     const text = editorRef.current?.getText() ?? "";
     void handleSubmit(text);
   }, [handleSubmit]);
+
+  if (isAutoFiring) {
+    return (
+      <Flex direction="column" height="100%">
+        <Flex
+          align="center"
+          gap="2"
+          px="3"
+          py="2"
+          className="shrink-0 border-(--gray-6) border-b text-(--gray-11)"
+        >
+          <ChatCircleText size={14} weight="duotone" />
+          <Text
+            as="span"
+            weight="medium"
+            className="text-(--gray-12) text-[13px]"
+          >
+            {project.name}
+          </Text>
+        </Flex>
+        <Flex
+          flexGrow="1"
+          align="center"
+          justify="center"
+          direction="column"
+          gap="2"
+          className="px-4"
+        >
+          <CircleNotch
+            size={20}
+            weight="bold"
+            className="animate-spin text-(--gray-10)"
+          />
+          <Text as="div" className="text-(--gray-11) text-[13px]">
+            Kicking off your chat…
+          </Text>
+        </Flex>
+      </Flex>
+    );
+  }
 
   return (
     <Flex direction="column" height="100%">
@@ -349,6 +455,23 @@ function ProjectChatSession({
       events.length === 0 &&
       (isPromptPending || !!task.latest_run?.id));
 
+  const handleNextStepClick = (prompt: string) => {
+    if (!isRunning || isPromptPending) {
+      log.warn("Ignoring next-step click while session not ready", {
+        projectId: project.id,
+        isRunning,
+        isPromptPending,
+      });
+      return;
+    }
+    void trpcClient.workProjects.clearNextSteps
+      .mutate({ projectId: project.id })
+      .catch((err: unknown) => {
+        log.warn("Failed to clear next steps", { err });
+      });
+    void handleSendPrompt(prompt);
+  };
+
   return (
     <Flex direction="column" height="100%">
       <Flex
@@ -367,6 +490,35 @@ function ProjectChatSession({
           {project.name}
         </Text>
       </Flex>
+      {project.nextSteps &&
+        project.nextSteps.length > 0 &&
+        !isPromptPending && (
+          <Flex
+            align="center"
+            gap="1.5"
+            px="3"
+            py="2"
+            className="scrollbar-overlay-x shrink-0 overflow-x-auto border-(--gray-6) border-b bg-(--gray-2)"
+          >
+            <Text
+              as="span"
+              className="shrink-0 text-(--gray-10) text-[10px] uppercase tracking-wide"
+            >
+              Try next
+            </Text>
+            {project.nextSteps.map((step) => (
+              <button
+                key={step}
+                type="button"
+                onClick={() => handleNextStepClick(step)}
+                className="shrink-0 cursor-pointer rounded-full border border-(--gray-5) bg-(--gray-1) px-2.5 py-0.5 text-(--gray-12) text-[11px] transition-colors hover:border-(--gray-7) hover:bg-(--gray-3)"
+                title={step}
+              >
+                {step}
+              </button>
+            ))}
+          </Flex>
+        )}
       <Box flexGrow="1" overflow="hidden">
         <SessionView
           events={events}

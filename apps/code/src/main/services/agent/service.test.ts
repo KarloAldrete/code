@@ -225,6 +225,11 @@ describe("AgentService", () => {
         get: async () => "",
         getRoot: () => "",
       } as never,
+      {
+        start: async () => {},
+        getUrl: async () => "http://127.0.0.1:0/mcp",
+        stop: async () => {},
+      } as never,
     );
   });
 

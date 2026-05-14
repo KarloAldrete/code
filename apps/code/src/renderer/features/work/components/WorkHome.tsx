@@ -45,7 +45,7 @@ export function WorkHome() {
         direction="column"
         align="center"
         gap="6"
-        className="mx-auto w-full max-w-[860px] px-6 pt-16 pb-12"
+        className="mx-auto w-full max-w-[680px] px-6 pt-16 pb-12"
       >
         <Flex
           direction="column"
