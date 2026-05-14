@@ -30,10 +30,10 @@ import { Box, Flex } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useRendererWindowFocusStore } from "@stores/rendererWindowFocusStore";
-import { useQueryClient } from "@tanstack/react-query";
+import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { logger } from "@utils/logger";
 import { toast } from "@utils/toast";
-import { memo, useCallback, useEffect, useRef } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { usePinnedTasks } from "../hooks/usePinnedTasks";
 import { useSidebarData } from "../hooks/useSidebarData";
 import { useTaskViewed } from "../hooks/useTaskViewed";
@@ -214,9 +214,27 @@ function SidebarMenuComponent() {
   const updateTask = useUpdateTask();
   const queryClient = useQueryClient();
 
+  const [minSpinActive, setMinSpinActive] = useState(false);
+  const minSpinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fetchingCount = useIsFetching({ queryKey: ["rendering-canvases"] });
+  const isRefreshSpinning = minSpinActive || fetchingCount > 0;
+
   const handleRefreshFiles = useCallback(() => {
+    if (minSpinActive || fetchingCount > 0) return;
+    if (minSpinTimerRef.current) clearTimeout(minSpinTimerRef.current);
+    setMinSpinActive(true);
+    minSpinTimerRef.current = setTimeout(() => {
+      setMinSpinActive(false);
+      minSpinTimerRef.current = null;
+    }, 2000);
     queryClient.invalidateQueries({ queryKey: ["rendering-canvases"] });
-  }, [queryClient]);
+  }, [queryClient, minSpinActive, fetchingCount]);
+
+  useEffect(() => {
+    return () => {
+      if (minSpinTimerRef.current) clearTimeout(minSpinTimerRef.current);
+    };
+  }, []);
 
   const handleArchivePrior = useCallback(
     async (taskId: string) => {
@@ -381,10 +399,15 @@ function SidebarMenuComponent() {
               <button
                 type="button"
                 onClick={handleRefreshFiles}
-                className="flex h-6 w-6 items-center justify-center rounded-(--radius-2) text-(--gray-11) hover:bg-(--gray-3) hover:text-(--gray-12)"
+                disabled={isRefreshSpinning}
+                aria-busy={isRefreshSpinning}
+                className="flex h-6 w-6 items-center justify-center rounded-(--radius-2) text-(--gray-11) hover:bg-(--gray-3) hover:text-(--gray-12) disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent disabled:hover:text-(--gray-11)"
                 aria-label="Refresh files"
               >
-                <ArrowsClockwise size={14} />
+                <ArrowsClockwise
+                  size={14}
+                  className={isRefreshSpinning ? "animate-spin" : undefined}
+                />
               </button>
             </Tooltip>
           </Flex>
