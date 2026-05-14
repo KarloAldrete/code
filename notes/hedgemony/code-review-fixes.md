@@ -7,7 +7,7 @@ Reference: [spec.md](./spec.md), [backend-integration.md](./backend-integration.
 
 ## Fix first (safety / correctness)
 
-### 1. PR comment body injected without `<untrusted_signal>` wrapping
+### 1. PR comment body injected without `<untrusted_signal>` wrapping — DONE
 
 **File:** `feedback-routing-service.ts` — `buildPrCommentPrompt()`, `buildFollowUpPrompt()`, `buildCiFailurePrompt()`
 
