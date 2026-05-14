@@ -661,15 +661,49 @@ export class PostHogAPIClient {
     for (const uuid of userUuids) {
       if (!merged.includes(uuid)) merged.push(uuid);
     }
-    if (merged.length === existingCollaborators.length) return { ok: true };
+    if (merged.length === existingCollaborators.length) {
+      log.info("addTaskCollaborators: nothing to add", {
+        taskId,
+        existingCollaborators,
+      });
+      return { ok: true };
+    }
 
-    await this.updateTask(taskId, {
-      repository_config: {
-        ...existing,
-        work_thread: true,
-        collaborators: merged,
-      },
-    } as Partial<Schemas.Task>);
+    const newRepositoryConfig = {
+      ...existing,
+      work_thread: true,
+      collaborators: merged,
+    };
+    log.info("addTaskCollaborators PATCH body", {
+      taskId,
+      existing,
+      newRepositoryConfig,
+    });
+    const patchResponse = (await this.updateTask(taskId, {
+      repository_config: newRepositoryConfig,
+    } as Partial<Schemas.Task>)) as unknown as {
+      id?: string;
+      repository_config?: unknown;
+    };
+    log.info("addTaskCollaborators PATCH response", {
+      taskId,
+      returned_repository_config: patchResponse?.repository_config,
+    });
+
+    // Verify by reading the task back — if the backend silently dropped our
+    // keys, this re-fetch will show it.
+    try {
+      const verify = (await this.getTask(taskId)) as unknown as {
+        repository_config?: unknown;
+      };
+      log.info("addTaskCollaborators GET verify", {
+        taskId,
+        repository_config: verify?.repository_config,
+      });
+    } catch (error) {
+      log.warn("addTaskCollaborators GET verify failed", { taskId, error });
+    }
+
     return { ok: true };
   }
 
