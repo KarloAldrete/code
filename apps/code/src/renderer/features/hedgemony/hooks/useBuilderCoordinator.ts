@@ -1,11 +1,5 @@
 import type { Nest } from "@main/services/hedgemony/schemas";
-import {
-  type MutableRefObject,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type BuilderAnimation,
   type BuilderSnapshot,
@@ -31,6 +25,15 @@ export interface UseBuilderCoordinatorOptions {
   nests: Nest[];
   buildAnimationMs?: number;
   initialPos?: Vec2;
+  /**
+   * Returns the builder sprite's current on-screen pixel position. The hook
+   * calls this in two places: when the obstacle set changes (so it can heal a
+   * stranded position to the nearest perimeter) and as a fallback when
+   * `startWalk` is called without an explicit `from`. Pass a function that
+   * reads from BuilderSprite's imperative handle. Returning null means the
+   * sprite isn't mounted yet — the hook will skip the heal in that case.
+   */
+  getCurrentPosition?: () => Vec2 | null;
   /** Called when a pending build is committed — either because the build
    * animation finished, or because something interrupted it. The caller is
    * expected to make the nest visible (e.g. by upserting it into a store).
@@ -41,8 +44,9 @@ export interface UseBuilderCoordinatorOptions {
 export interface BuilderCoordinator {
   /** Waypoint list the sprite walks through. */
   path: Vec2[];
-  /** Nominal position (last reached waypoint). Use visualPosRef for actual
-   * on-screen position. */
+  /** Nominal position (last reached waypoint). For the actual on-screen
+   * position, the caller should consult its own BuilderSprite imperative
+   * handle — the hook does not track visual position. */
   pos: Vec2;
   animation: BuilderAnimation;
   /** The nest queued by `startWalk(..., "build", nest)` — not yet committed
@@ -50,16 +54,14 @@ export interface BuilderCoordinator {
    * a construction-in-progress visual at the destination so the nest doesn't
    * pop into existence with no warning. */
   pendingNest: Nest | null;
-  /** Written each motion frame by BuilderSprite. Read as the start of any
-   * re-plan so the new path begins where the sprite visually is. */
-  visualPosRef: MutableRefObject<Vec2>;
-  /** Plan a path to target and start the walk. Returns the resolved goal
-   * (the goal may be snapped to an obstacle edge if the click was on a
-   * nest). Pass `buildingFor` to defer the nest sprite until the build
-   * animation completes: the location is treated as an obstacle for
+  /** Plan a path from `from` to `target` and start the walk. Returns the
+   * resolved goal (the goal may be snapped to an obstacle edge if the click
+   * was on a nest). Pass `buildingFor` to defer the nest sprite until the
+   * build animation completes: the location is treated as an obstacle for
    * pathfinding but isn't committed until then. */
   startWalk: (
     target: Vec2,
+    from: Vec2,
     onArrive: "idle" | "build",
     buildingFor?: Nest,
     extraObstacles?: Obstacle[],
@@ -92,11 +94,13 @@ export function useBuilderCoordinator({
   nests,
   buildAnimationMs,
   initialPos = DEFAULT_INITIAL_POS,
+  getCurrentPosition,
   onPendingBuildCommit,
 }: UseBuilderCoordinatorOptions): BuilderCoordinator {
-  const visualPosRef = useRef<Vec2>({ ...initialPos });
   const onPendingBuildCommitRef = useRef(onPendingBuildCommit);
   onPendingBuildCommitRef.current = onPendingBuildCommit;
+  const getCurrentPositionRef = useRef(getCurrentPosition);
+  getCurrentPositionRef.current = getCurrentPosition;
 
   // The machine is created once. React StrictMode double-invokes effects
   // but not lazy refs, so this initializer runs exactly once per mount.
@@ -125,20 +129,22 @@ export function useBuilderCoordinator({
   }, []);
 
   // Self-heal a stranded builder. Runs whenever the obstacle set (the nest
-  // list) changes: if visualPosRef has somehow landed inside an obstacle —
+  // list) changes: if the sprite has somehow landed inside an obstacle —
   // Vite Fast Refresh preserving a pre-fix motionX/Y, a nest being built
   // right on top of the builder, etc. — push it to the nearest perimeter and
   // emit a single-waypoint path so BuilderSprite snaps motionX/Y there.
   // Without this, the builder can sit visibly inside a building at rest
   // until the user manually clicks somewhere.
   useEffect(() => {
-    const safe = machineRef.current?.healAt(visualPosRef.current, nests);
-    if (safe) visualPosRef.current = safe;
+    const current = getCurrentPositionRef.current?.() ?? null;
+    if (!current) return;
+    machineRef.current?.healAt(current, nests);
   }, [nests]);
 
   const startWalk = useCallback(
     (
       target: Vec2,
+      from: Vec2,
       onArrive: "idle" | "build",
       buildingFor?: Nest,
       extraObstacles: Obstacle[] = [],
@@ -147,18 +153,12 @@ export function useBuilderCoordinator({
       if (!machine) return target;
       const result = machine.startWalk({
         target,
-        from: visualPosRef.current,
+        from,
         onArrive,
         nests,
         buildingFor,
         extraObstacles,
       });
-      if (
-        result.resolvedFrom.x !== visualPosRef.current.x ||
-        result.resolvedFrom.y !== visualPosRef.current.y
-      ) {
-        visualPosRef.current = result.resolvedFrom;
-      }
       return result.resolvedGoal;
     },
     [nests],
@@ -180,7 +180,6 @@ export function useBuilderCoordinator({
     pos,
     animation,
     pendingNest: snapshot.pendingNest,
-    visualPosRef,
     startWalk,
     handleArrive,
     handleSegmentComplete,

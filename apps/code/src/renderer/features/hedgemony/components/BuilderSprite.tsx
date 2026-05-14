@@ -5,7 +5,14 @@ import {
   motion,
   useMotionValue,
 } from "framer-motion";
-import { type MutableRefObject, useCallback, useEffect, useState } from "react";
+import {
+  forwardRef,
+  type Ref,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useState,
+} from "react";
 import { HEDGEMONY_CONFIG } from "../config";
 import { BUILDER_NAME } from "../constants/map";
 import type { BuilderAnimation } from "../hooks/useBuilderCoordinator";
@@ -35,28 +42,36 @@ const ANIMATION_FPS: Record<BuilderAnimation, number> = {
   building: HEDGEMONY_CONFIG.animation.fps.action,
 };
 
+/**
+ * Imperative read-side handle. The parent reads the sprite's current on-screen
+ * pixel position on demand (e.g. when planning the next walk or hit-testing
+ * the marquee), rather than the sprite eagerly mirroring its position into a
+ * shared ref each animation frame. Read is cheap — direct motion-value get.
+ */
+export interface BuilderSpriteHandle {
+  getCurrentPosition: () => Vec2;
+}
+
 interface BuilderSpriteProps {
   path: Vec2[];
   selected?: boolean;
   animation: BuilderAnimation;
-  /** Updated each motion frame with the sprite's actual on-screen position so
-   * the parent can re-plan from where the builder visually is, not from the
-   * last waypoint it nominally reached. */
-  positionRef?: MutableRefObject<Vec2>;
   onSelect?: () => void;
   onArrive?: () => void;
   onSegmentComplete?: (reachedIndex: number) => void;
 }
 
-export function BuilderSprite({
-  path,
-  selected,
-  animation,
-  positionRef,
-  onSelect,
-  onArrive,
-  onSegmentComplete,
-}: BuilderSpriteProps) {
+function BuilderSpriteImpl(
+  {
+    path,
+    selected,
+    animation,
+    onSelect,
+    onArrive,
+    onSegmentComplete,
+  }: BuilderSpriteProps,
+  ref: Ref<BuilderSpriteHandle>,
+) {
   const builderName = BUILDER_NAME;
   const initial = path[0] ?? { x: 0, y: 0 };
   const motionX = useMotionValue(initial.x);
@@ -73,20 +88,13 @@ export function BuilderSprite({
     getStaticObstacles,
   );
 
-  useEffect(() => {
-    if (!positionRef) return;
-    positionRef.current = { x: resolvedX.get(), y: resolvedY.get() };
-    const unsubX = resolvedX.on("change", (v) => {
-      positionRef.current = { x: v, y: positionRef.current.y };
-    });
-    const unsubY = resolvedY.on("change", (v) => {
-      positionRef.current = { x: positionRef.current.x, y: v };
-    });
-    return () => {
-      unsubX();
-      unsubY();
-    };
-  }, [resolvedX, resolvedY, positionRef]);
+  useImperativeHandle(
+    ref,
+    () => ({
+      getCurrentPosition: () => ({ x: resolvedX.get(), y: resolvedY.get() }),
+    }),
+    [resolvedX, resolvedY],
+  );
 
   useEffect(() => {
     if (path.length === 0) return;
@@ -97,8 +105,9 @@ export function BuilderSprite({
     // pre-fix build) that no longer matches what pathfinding planned for.
     // Without this snap, the first animation segment would tween from the
     // stale position to path[1], visibly cutting through whatever the agent
-    // is stuck inside. In the steady state path[0] === visualPosRef ≈
-    // motionX/Y so this is a no-op; it only fires on the desync edge cases.
+    // is stuck inside. In the steady state path[0] is the snapped position
+    // the coordinator just resolved, so this is a no-op; it only fires on
+    // the desync edge cases.
     motionX.set(path[0].x);
     motionY.set(path[0].y);
     if (path.length === 1) {
@@ -214,3 +223,5 @@ export function BuilderSprite({
     </motion.div>
   );
 }
+
+export const BuilderSprite = forwardRef(BuilderSpriteImpl);

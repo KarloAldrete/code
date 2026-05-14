@@ -50,7 +50,7 @@ import { selectNests, useNestStore } from "../stores/nestStore";
 import { useSpawnDialogStore } from "../stores/spawnDialogStore";
 import { collectHogletWorldPositions } from "../utils/hogletPositions";
 import { applyHogletVisualPositions } from "../utils/hogletVisualPositions";
-import { findPath, type Obstacle } from "../utils/pathfinding";
+import { findPath, type Obstacle, type Vec2 } from "../utils/pathfinding";
 import {
   BUILDER_OBSTACLE_RADIUS,
   HOGLET_RADIUS,
@@ -58,6 +58,7 @@ import {
   worldObstacles,
 } from "../utils/worldObstacles";
 import { BuilderCommandPanel } from "./BuilderCommandPanel";
+import type { BuilderSpriteHandle } from "./BuilderSprite";
 import { DyingHogletLayer } from "./DyingHogletLayer";
 import { DyingNestLayer } from "./DyingNestLayer";
 import { HedgehouseCommandPanel } from "./HedgehouseCommandPanel";
@@ -109,8 +110,21 @@ export function HedgemonyMapView() {
   const toggleSfxMute = useSfxStore((s) => s.toggleMute);
   const [helperOpen, setHelperOpen] = useState(false);
 
+  const builderSpriteRef = useRef<BuilderSpriteHandle | null>(null);
+  const getBuilderPosition = useCallback((): Vec2 | null => {
+    return builderSpriteRef.current?.getCurrentPosition() ?? null;
+  }, []);
+  // Resolve the builder's current pixel position via the imperative handle,
+  // falling back to a fixed point only if the sprite hasn't mounted yet —
+  // e.g. the very first render. Callers feed this into `builder.startWalk`'s
+  // `from` arg and into obstacle/hit-test calculations.
+  const builderPosOrFallback = useCallback((): Vec2 => {
+    return getBuilderPosition() ?? { x: 0, y: 160 };
+  }, [getBuilderPosition]);
+
   const builder = useBuilderCoordinator({
     nests,
+    getCurrentPosition: getBuilderPosition,
     onPendingBuildCommit: (nest) => useNestStore.getState().upsert(nest),
   });
 
@@ -386,9 +400,9 @@ export function HedgemonyMapView() {
     playSfx("select");
     playVoice("builder:select", genderForName(BUILDER_NAME));
     setSelection({ type: "builder" });
-    const pos = builder.visualPosRef.current;
+    const pos = builderPosOrFallback();
     surfaceRef.current?.centerOnPoint(pos.x, pos.y);
-  }, [builder.visualPosRef]);
+  }, [builderPosOrFallback]);
   useHotkeys("f1", selectBuilder, mapHotkeyOptions, [selectBuilder]);
 
   const selectHedgehouse = useCallback(() => {
@@ -504,7 +518,7 @@ export function HedgemonyMapView() {
           }
         }
         if (!centerPoint && saved.includeBuilder) {
-          centerPoint = builder.visualPosRef.current;
+          centerPoint = builderPosOrFallback();
         }
       } else if (saved.type === "nest") {
         const nest = nests.find((n) => n.id === saved.id);
@@ -516,7 +530,7 @@ export function HedgemonyMapView() {
         }
         centerPoint = { x: nest.mapX, y: nest.mapY };
       } else if (saved.type === "builder") {
-        centerPoint = builder.visualPosRef.current;
+        centerPoint = builderPosOrFallback();
       } else if (saved.type === "hedgehouse") {
         centerPoint = { x: HEDGEHOUSE_MAP_X, y: HEDGEHOUSE_MAP_Y };
       }
@@ -534,7 +548,7 @@ export function HedgemonyMapView() {
         surfaceRef.current?.centerOnPoint(centerPoint.x, centerPoint.y);
       }
     },
-    [nests, builder.visualPosRef, voiceGenderForHoglet],
+    [nests, builderPosOrFallback, voiceGenderForHoglet],
   );
 
   // useHotkeys can't be invoked in a loop, so unroll the nine slots. Each
@@ -656,7 +670,7 @@ export function HedgemonyMapView() {
         excludeHogletIds,
       );
       if (includeBuilder) {
-        const pos = builder.visualPosRef.current;
+        const pos = builderPosOrFallback();
         obstacles.push({
           x: pos.x,
           y: pos.y,
@@ -665,7 +679,7 @@ export function HedgemonyMapView() {
       }
       return obstacles;
     },
-    [builder.visualPosRef, collectLiveHogletPositions],
+    [builderPosOrFallback, collectLiveHogletPositions],
   );
 
   const handleMapClick = (x: number, y: number) => {
@@ -761,6 +775,7 @@ export function HedgemonyMapView() {
       if (selection.includeBuilder) {
         builder.startWalk(
           { x: targetX, y: targetY },
+          builderPosOrFallback(),
           "idle",
           undefined,
           unitObstacles({ includeBuilder: false }),
@@ -776,6 +791,7 @@ export function HedgemonyMapView() {
     playVoice("hoglet:order_move", genderForName(BUILDER_NAME));
     const resolved = builder.startWalk(
       { x: targetX, y: targetY },
+      builderPosOrFallback(),
       "idle",
       undefined,
       unitObstacles({ includeBuilder: false }),
@@ -797,7 +813,7 @@ export function HedgemonyMapView() {
 
       // Hit-test the builder at its live on-screen position so the marquee
       // catches him alongside any hoglets in the same drag.
-      const builderPos = builder.visualPosRef.current;
+      const builderPos = builderPosOrFallback();
       const builderInRect =
         builderPos.x >= minX &&
         builderPos.x <= maxX &&
@@ -831,7 +847,7 @@ export function HedgemonyMapView() {
       });
       if (hit.length > 0 || builderInRect) playSfx("select");
     },
-    [builder.visualPosRef],
+    [builderPosOrFallback],
   );
 
   const activeNest =
@@ -964,7 +980,7 @@ export function HedgemonyMapView() {
         relocatingNestId={relocatingNestId}
         builderPath={builder.path}
         builderPos={builder.pos}
-        builderPositionRef={builder.visualPosRef}
+        builderSpriteRef={builderSpriteRef}
         builderSelected={builderSelected}
         builderAnimation={builder.animation}
         pendingNest={builder.pendingNest}
@@ -1149,6 +1165,7 @@ export function HedgemonyMapView() {
           playVoice("builder:place_nest", genderForName(BUILDER_NAME));
           builder.startWalk(
             { x: created.mapX, y: created.mapY },
+            builderPosOrFallback(),
             "build",
             created,
             unitObstacles({ includeBuilder: false }),

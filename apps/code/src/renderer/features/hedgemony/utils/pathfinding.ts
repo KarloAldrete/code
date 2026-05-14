@@ -81,10 +81,10 @@ function pushOutOf(p: Vec2, infl: InflatedObstacle[]): Vec2 {
 // the result sits on (or just outside) the nearest perimeter. Used by callers
 // to self-heal a unit's resting or starting position before passing it
 // downstream: hoglet layouts call this so brood/wild positions never overlap
-// the nests they're orbiting, and useBuilderCoordinator calls it before
-// findPath so a stale visualPosRef (HMR-preserved, etc.) inside an obstacle
-// doesn't flow into the planner and become a visibly-inside-the-building
-// path[0].
+// the nests they're orbiting, and BuilderStateMachine calls it before
+// findPath so a stale `from` (HMR-preserved sprite position inside an
+// obstacle, etc.) doesn't flow into the planner and become a visibly-inside-
+// the-building path[0].
 export function snapPointOutsideObstacles(
   point: Vec2,
   obstacles: Obstacle[],

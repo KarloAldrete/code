@@ -11,7 +11,7 @@ import {
   useMotionValue,
   useMotionValueEvent,
 } from "framer-motion";
-import type { MutableRefObject, ReactNode, Ref } from "react";
+import type { ReactNode, Ref } from "react";
 import {
   forwardRef,
   useCallback,
@@ -30,7 +30,11 @@ import { clientToWorld, fitZoom, panToCenter } from "../utils/coordinates";
 import type { Vec2 } from "../utils/pathfinding";
 import { usePanCamera } from "../utils/usePanCamera";
 import { BgmControl } from "./BgmControl";
-import { type BuilderAnimation, BuilderSprite } from "./BuilderSprite";
+import {
+  type BuilderAnimation,
+  BuilderSprite,
+  type BuilderSpriteHandle,
+} from "./BuilderSprite";
 import { HedgehouseSprite } from "./HedgehouseSprite";
 import { HedgemonyMinimap } from "./HedgemonyMinimap";
 import { MapBackdrop } from "./MapBackdrop";
@@ -96,7 +100,10 @@ interface HedgemonyMapSurfaceProps {
   relocatingNestId: string | null;
   builderPath: Vec2[];
   builderPos: Vec2;
-  builderPositionRef?: MutableRefObject<Vec2>;
+  /** Imperative handle exposing the builder sprite's current on-screen
+   * position. The parent reads this when planning a new walk or hit-testing
+   * marquee selections. */
+  builderSpriteRef?: Ref<BuilderSpriteHandle>;
   builderSelected: boolean;
   builderAnimation: BuilderAnimation;
   pendingNest: Nest | null;
@@ -126,7 +133,7 @@ function HedgemonyMapSurfaceImpl(
     relocatingNestId,
     builderPath,
     builderPos,
-    builderPositionRef,
+    builderSpriteRef,
     builderSelected,
     builderAnimation,
     pendingNest,
@@ -634,10 +641,10 @@ function HedgemonyMapSurfaceImpl(
           />
         )}
         <BuilderSprite
+          ref={builderSpriteRef}
           path={builderPath}
           selected={builderSelected}
           animation={builderAnimation}
-          positionRef={builderPositionRef}
           onSelect={onBuilderSelect}
           onArrive={onBuilderArrive}
           onSegmentComplete={onBuilderSegmentComplete}

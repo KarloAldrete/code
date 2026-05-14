@@ -48,7 +48,7 @@ describe("useBuilderCoordinator", () => {
   it("transitions idle -> walking on startWalk to a reachable target", () => {
     const { result } = renderHook(() => useBuilderCoordinator({ nests: [] }));
     act(() => {
-      result.current.startWalk({ x: 500, y: 0 }, "idle");
+      result.current.startWalk({ x: 500, y: 0 }, { x: 0, y: 300 }, "idle");
     });
     expect(result.current.animation).toBe("walking");
     expect(result.current.path.length).toBeGreaterThanOrEqual(2);
@@ -57,7 +57,7 @@ describe("useBuilderCoordinator", () => {
   it("transitions walking -> idle on handleArrive when onArrive is idle", () => {
     const { result } = renderHook(() => useBuilderCoordinator({ nests: [] }));
     act(() => {
-      result.current.startWalk({ x: 200, y: 0 }, "idle");
+      result.current.startWalk({ x: 200, y: 0 }, { x: 0, y: 300 }, "idle");
     });
     act(() => {
       result.current.handleArrive();
@@ -70,7 +70,7 @@ describe("useBuilderCoordinator", () => {
       useBuilderCoordinator({ nests: [], buildAnimationMs: 1500 }),
     );
     act(() => {
-      result.current.startWalk({ x: 200, y: 0 }, "build");
+      result.current.startWalk({ x: 200, y: 0 }, { x: 0, y: 300 }, "build");
     });
     expect(result.current.animation).toBe("walking");
     act(() => {
@@ -88,7 +88,7 @@ describe("useBuilderCoordinator", () => {
       useBuilderCoordinator({ nests: [], buildAnimationMs: 1500 }),
     );
     act(() => {
-      result.current.startWalk({ x: 100, y: 0 }, "build");
+      result.current.startWalk({ x: 100, y: 0 }, { x: 0, y: 300 }, "build");
     });
     act(() => {
       result.current.handleArrive();
@@ -96,7 +96,7 @@ describe("useBuilderCoordinator", () => {
     expect(result.current.animation).toBe("building");
     act(() => {
       // Interrupt mid-building.
-      result.current.startWalk({ x: 300, y: 0 }, "idle");
+      result.current.startWalk({ x: 300, y: 0 }, { x: 100, y: 0 }, "idle");
     });
     expect(result.current.animation).toBe("walking");
     // Advancing past the original build timer should NOT trip us back to
@@ -112,7 +112,7 @@ describe("useBuilderCoordinator", () => {
       useBuilderCoordinator({ nests: [], initialPos: { x: 300, y: 300 } }),
     );
     act(() => {
-      result.current.startWalk({ x: 300, y: 300 }, "build");
+      result.current.startWalk({ x: 300, y: 300 }, { x: 300, y: 300 }, "build");
     });
     expect(result.current.animation).toBe("building");
   });
@@ -122,7 +122,7 @@ describe("useBuilderCoordinator", () => {
       useBuilderCoordinator({ nests: [], initialPos: { x: 300, y: 300 } }),
     );
     act(() => {
-      result.current.startWalk({ x: 300, y: 300 }, "idle");
+      result.current.startWalk({ x: 300, y: 300 }, { x: 300, y: 300 }, "idle");
     });
     expect(result.current.animation).toBe("idle");
   });
@@ -132,7 +132,7 @@ describe("useBuilderCoordinator", () => {
       useBuilderCoordinator({ nests: [], initialPos: { x: -500, y: 300 } }),
     );
     act(() => {
-      result.current.startWalk({ x: 400, y: 300 }, "idle");
+      result.current.startWalk({ x: 400, y: 300 }, { x: -500, y: 300 }, "idle");
     });
     const path = result.current.path;
     expect(path.length).toBeGreaterThanOrEqual(2);
@@ -151,7 +151,7 @@ describe("useBuilderCoordinator", () => {
       useBuilderCoordinator({ nests: [nest], initialPos: { x: 0, y: 300 } }),
     );
     act(() => {
-      result.current.startWalk({ x: 400, y: 300 }, "idle");
+      result.current.startWalk({ x: 400, y: 300 }, { x: 0, y: 300 }, "idle");
     });
     // Direct line passes through the obstacle, so the planner must add at
     // least one intermediate waypoint.
@@ -167,7 +167,7 @@ describe("useBuilderCoordinator", () => {
     // painted Hedgehouse footprint (raw radius 100).
     const { result } = renderHook(() => useBuilderCoordinator({ nests: [] }));
     act(() => {
-      result.current.startWalk({ x: 0, y: -300 }, "idle");
+      result.current.startWalk({ x: 0, y: -300 }, { x: 0, y: 160 }, "idle");
     });
     const path = result.current.path;
     expect(path.length).toBeGreaterThanOrEqual(2);
@@ -195,25 +195,26 @@ describe("useBuilderCoordinator", () => {
       useBuilderCoordinator({ nests: [], initialPos: { x: 0, y: 300 } }),
     );
     act(() => {
-      result.current.startWalk({ x: 400, y: 300 }, "idle", undefined, [
-        { x: 200, y: 300, radius: 24 },
-      ]);
+      result.current.startWalk(
+        { x: 400, y: 300 },
+        { x: 0, y: 300 },
+        "idle",
+        undefined,
+        [{ x: 200, y: 300, radius: 24 }],
+      );
     });
     expect(result.current.path.length).toBeGreaterThanOrEqual(3);
   });
 
-  it("self-heals a stranded visualPosRef before planning a walk", () => {
-    // Simulates Vite Fast Refresh / HMR leaving visualPosRef stuck at a
-    // position inside an obstacle. When the user clicks somewhere, the
-    // coordinator must push the builder to the perimeter BEFORE planning,
-    // so path[0] never lands inside a building. Without the heal, findPath
-    // prepends the original blocked `from` and BuilderSprite snaps the
-    // sprite visibly to inside the obstacle on the next render.
+  it("snaps a stranded `from` to the perimeter before planning a walk", () => {
+    // Simulates the caller passing a stale `from` that's inside the
+    // Hedgehouse (HMR, etc.). The state machine snaps to the nearest
+    // perimeter before invoking findPath, so path[0] is always safe.
     const { result } = renderHook(() =>
       useBuilderCoordinator({ nests: [], initialPos: { x: 50, y: -50 } }),
     );
     act(() => {
-      result.current.startWalk({ x: 400, y: -400 }, "idle");
+      result.current.startWalk({ x: 400, y: -400 }, { x: 50, y: -50 }, "idle");
     });
     const path = result.current.path;
     expect(path.length).toBeGreaterThanOrEqual(2);
@@ -228,10 +229,17 @@ describe("useBuilderCoordinator", () => {
     // If a nest is built right on top of the builder, the coordinator must
     // push the builder out of the new obstacle without waiting for the user
     // to click somewhere. Same mechanism handles HMR-preserved bad state on
-    // initial mount.
+    // initial mount. The hook reads the current pixel position via the
+    // getCurrentPosition callback — we stub it to return the builder's
+    // stranded location.
+    let currentPos = { x: 300, y: 300 };
     const { result, rerender } = renderHook(
       ({ nests }: { nests: Nest[] }) =>
-        useBuilderCoordinator({ nests, initialPos: { x: 300, y: 300 } }),
+        useBuilderCoordinator({
+          nests,
+          initialPos: { x: 300, y: 300 },
+          getCurrentPosition: () => currentPos,
+        }),
       { initialProps: { nests: [] as Nest[] } },
     );
     expect(result.current.pos).toEqual({ x: 300, y: 300 });
@@ -240,11 +248,15 @@ describe("useBuilderCoordinator", () => {
       rerender({ nests: [swallower] });
     });
     const repaired = result.current.pos;
-    // Nest painted radius is 78. Repaired position must be at least past
+    // Nest painted radius is 86 (config). Repaired position must be past
     // that footprint.
     expect(
       Math.hypot(repaired.x - swallower.mapX, repaired.y - swallower.mapY),
     ).toBeGreaterThanOrEqual(77);
+    // The hook does not write back to the caller's position source — it's
+    // the caller's job to read its sprite's current position next time. In
+    // practice BuilderSprite picks up the new path[0] and snaps motionX/Y.
+    currentPos = repaired;
   });
 
   it("handleArrive is a no-op when not walking", () => {
@@ -267,7 +279,12 @@ describe("useBuilderCoordinator", () => {
         }),
       );
       act(() => {
-        result.current.startWalk({ x: 200, y: 0 }, "build", nest);
+        result.current.startWalk(
+          { x: 200, y: 0 },
+          { x: 0, y: 300 },
+          "build",
+          nest,
+        );
       });
       act(() => {
         result.current.handleArrive();
@@ -290,11 +307,16 @@ describe("useBuilderCoordinator", () => {
         }),
       );
       act(() => {
-        result.current.startWalk({ x: 200, y: 0 }, "build", nest);
+        result.current.startWalk(
+          { x: 200, y: 0 },
+          { x: 0, y: 300 },
+          "build",
+          nest,
+        );
       });
       act(() => {
         // Interrupt with a plain move.
-        result.current.startWalk({ x: 50, y: 0 }, "idle");
+        result.current.startWalk({ x: 50, y: 0 }, { x: 0, y: 300 }, "idle");
       });
       expect(commit).toHaveBeenCalledTimes(1);
       expect(commit).toHaveBeenCalledWith(nest);
@@ -311,7 +333,12 @@ describe("useBuilderCoordinator", () => {
         }),
       );
       act(() => {
-        result.current.startWalk({ x: 200, y: 0 }, "build", nest);
+        result.current.startWalk(
+          { x: 200, y: 0 },
+          { x: 0, y: 300 },
+          "build",
+          nest,
+        );
       });
       act(() => {
         result.current.handleArrive();
@@ -333,10 +360,20 @@ describe("useBuilderCoordinator", () => {
         }),
       );
       act(() => {
-        result.current.startWalk({ x: 100, y: 0 }, "build", first);
+        result.current.startWalk(
+          { x: 100, y: 0 },
+          { x: 0, y: 300 },
+          "build",
+          first,
+        );
       });
       act(() => {
-        result.current.startWalk({ x: 300, y: 0 }, "build", second);
+        result.current.startWalk(
+          { x: 300, y: 0 },
+          { x: 0, y: 300 },
+          "build",
+          second,
+        );
       });
       expect(commit).toHaveBeenCalledTimes(1);
       expect(commit).toHaveBeenCalledWith(first);
@@ -352,7 +389,7 @@ describe("useBuilderCoordinator", () => {
         }),
       );
       act(() => {
-        result.current.startWalk({ x: 200, y: 0 }, "build");
+        result.current.startWalk({ x: 200, y: 0 }, { x: 0, y: 300 }, "build");
       });
       act(() => {
         result.current.handleArrive();
