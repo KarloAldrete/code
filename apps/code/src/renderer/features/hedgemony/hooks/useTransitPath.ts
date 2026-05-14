@@ -3,7 +3,10 @@ import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import { useHogletStore } from "../stores/hogletStore";
 import { selectNests, useNestStore } from "../stores/nestStore";
 import { collectHogletWorldPositions } from "../utils/hogletPositions";
-import { applyHogletVisualPositions } from "../utils/hogletVisualPositions";
+import {
+  applyHogletVisualPositions,
+  getHogletVisualPosition,
+} from "../utils/hogletVisualPositions";
 import { findPath, type Vec2 } from "../utils/pathfinding";
 import { hogletObstacles, worldObstacles } from "../utils/worldObstacles";
 
@@ -36,7 +39,15 @@ export function useTransitPath(
 
   const path = useMemo(() => {
     if (!enabled) return undefined;
-    const prev = prevRef.current;
+    // Plan from the sprite's live on-screen position when we have it.
+    // Falling back to prevRef (the previous target) means a mid-walk
+    // re-target would plan from where the sprite *was going*, not where it
+    // *is* — the new path[1..N] could cut straight across an obstacle that
+    // sits between the sprite's actual location and the first waypoint.
+    const live = excludeHogletId
+      ? getHogletVisualPosition(excludeHogletId)
+      : undefined;
+    const prev = live ?? prevRef.current;
     if (!prev) return undefined;
     if (prev.x === targetX && prev.y === targetY) return undefined;
     const obstacles = [

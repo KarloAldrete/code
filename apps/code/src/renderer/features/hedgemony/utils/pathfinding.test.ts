@@ -228,4 +228,52 @@ describe("findPath", () => {
 
     expect(distance(point, obstacle)).toBeGreaterThanOrEqual(122);
   });
+
+  // Regression: when an obstacle's inflated extent spills past the fixed
+  // bbox margin, A* used to silently fail and the fallback returned a
+  // single-waypoint plan. Callers then either no-op'd the move or fell
+  // back to a straight-line tween, which is what made hoglets visibly
+  // clip through nests on long detour routes.
+  it("routes around an obstacle whose inflated radius exceeds the fixed bbox margin", () => {
+    const from = { x: 0, y: -350 };
+    const to = { x: 0, y: 350 };
+    const obstacles: Obstacle[] = [{ x: 0, y: 0, radius: 300 }];
+
+    const path = findPath(from, to, obstacles, BUILDER_RADIUS);
+
+    expect(path.length).toBeGreaterThanOrEqual(3);
+    expect(path[0]).toEqual(from);
+    expect(path[path.length - 1]).toEqual(to);
+    for (let i = 0; i < path.length - 1; i++) {
+      expect(segmentClearsObstacles(path[i], path[i + 1], obstacles)).toBe(
+        true,
+      );
+    }
+    for (const p of path) {
+      expect(pointOutsideInflated(p, obstacles)).toBe(true);
+    }
+  });
+
+  // Regression: a tight corridor between two large obstacles whose
+  // inflated extents both spill past the fixed bbox margin. The detour
+  // exists only if the bbox is expanded around the obstacles themselves.
+  it("squeezes through a corridor between two wide obstacles", () => {
+    const from = { x: 0, y: -500 };
+    const to = { x: 0, y: 500 };
+    const obstacles: Obstacle[] = [
+      { x: -180, y: 0, radius: 130 },
+      { x: 180, y: 0, radius: 130 },
+    ];
+
+    const path = findPath(from, to, obstacles, BUILDER_RADIUS);
+
+    expect(path.length).toBeGreaterThanOrEqual(2);
+    expect(path[0]).toEqual(from);
+    expect(path[path.length - 1]).toEqual(to);
+    for (let i = 0; i < path.length - 1; i++) {
+      expect(segmentClearsObstacles(path[i], path[i + 1], obstacles)).toBe(
+        true,
+      );
+    }
+  });
 });

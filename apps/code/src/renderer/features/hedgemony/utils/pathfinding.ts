@@ -269,10 +269,33 @@ export function findPath(
     return escaped ? [from, escaped, goal] : [planFrom, goal];
   }
 
-  const minX = Math.min(planFrom.x, goal.x) - MARGIN;
-  const minY = Math.min(planFrom.y, goal.y) - MARGIN;
-  const maxX = Math.max(planFrom.x, goal.x) + MARGIN;
-  const maxY = Math.max(planFrom.y, goal.y) + MARGIN;
+  // The planning bbox must contain the full inflated footprint of every
+  // obstacle the path might need to detour around. With a fixed MARGIN, a
+  // wide obstacle whose center sits inside the from-to bbox can have its
+  // far side clipped — A* sees the clipped half as wall-to-wall blocked,
+  // fails to find a route, and returns a single-waypoint fallback. Callers
+  // then either no-op the move (builder/path length<2 branch) or fall back
+  // to a straight-line tween (useWalkTo when useTransitPath returns
+  // undefined), which is what made hoglets visibly clip through nests on
+  // long detour routes.
+  let minX = Math.min(planFrom.x, goal.x);
+  let minY = Math.min(planFrom.y, goal.y);
+  let maxX = Math.max(planFrom.x, goal.x);
+  let maxY = Math.max(planFrom.y, goal.y);
+  for (const o of infl) {
+    const nx = Math.max(minX, Math.min(maxX, o.x));
+    const ny = Math.max(minY, Math.min(maxY, o.y));
+    const distToCorridor = Math.hypot(o.x - nx, o.y - ny);
+    if (distToCorridor > MARGIN + o.radius) continue;
+    minX = Math.min(minX, o.x - o.radius);
+    minY = Math.min(minY, o.y - o.radius);
+    maxX = Math.max(maxX, o.x + o.radius);
+    maxY = Math.max(maxY, o.y + o.radius);
+  }
+  minX -= MARGIN;
+  minY -= MARGIN;
+  maxX += MARGIN;
+  maxY += MARGIN;
   const cols = Math.max(2, Math.ceil((maxX - minX) / CELL) + 1);
   const rows = Math.max(2, Math.ceil((maxY - minY) / CELL) + 1);
 

@@ -1,0 +1,1117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Hedgemony Collision Sandbox</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0f1115;
+    --fg: #e6e8ec;
+    --muted: #8a92a3;
+    --accent: #7cd8ff;
+    --warn: #ff5572;
+    --ok: #4ade80;
+    --grid: #1e2430;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 13px/1.4 ui-monospace, monospace; }
+  body { display: grid; grid-template-columns: 1fr 320px; gap: 8px; padding: 8px; height: 100vh; }
+  #canvasWrap { position: relative; background: #07090d; border-radius: 8px; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #side { display: flex; flex-direction: column; gap: 8px; overflow: auto; }
+  fieldset { border: 1px solid #1e2430; border-radius: 8px; padding: 8px; margin: 0; }
+  legend { padding: 0 6px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+  button { background: #1a2030; color: var(--fg); border: 1px solid #2a3346; border-radius: 6px; padding: 6px 10px; cursor: pointer; font: inherit; }
+  button:hover { background: #232b3e; }
+  button.primary { background: #234d6b; border-color: #2e6e98; }
+  label { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+  .grid { display: grid; gap: 4px; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .scen { display: flex; justify-content: space-between; align-items: center; padding: 4px 6px; border-radius: 4px; }
+  .scen.pass { background: rgba(74, 222, 128, 0.15); }
+  .scen.fail { background: rgba(255, 85, 114, 0.18); }
+  .scen.pending { background: #161c28; }
+  #log { font-size: 11px; color: var(--muted); max-height: 200px; overflow: auto; padding: 4px 6px; background: #0a0d13; border-radius: 6px; white-space: pre-wrap; }
+  .pill { display: inline-block; padding: 2px 6px; border-radius: 999px; font-size: 10px; }
+  .pill.pass { background: var(--ok); color: #052012; }
+  .pill.fail { background: var(--warn); color: #2a040c; }
+  .pill.pending { background: #2c3447; color: var(--muted); }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; font-size: 11px; }
+  .kv b { color: var(--muted); font-weight: normal; }
+  #summary { font-size: 12px; padding: 6px; border-radius: 6px; background: #161c28; }
+</style>
+</head>
+<body>
+<div id="canvasWrap"><canvas id="cv"></canvas></div>
+<div id="side">
+
+<fieldset>
+  <legend>scenarios</legend>
+  <div class="grid" id="scenList"></div>
+  <div class="row" style="margin-top:8px">
+    <button class="primary" id="runAll">Run all</button>
+    <button id="stopSim">Stop</button>
+  </div>
+  <div id="summary" style="margin-top:8px">No runs yet.</div>
+</fieldset>
+
+<fieldset>
+  <legend>mode</legend>
+  <div class="grid">
+    <label><input type="radio" name="mode" value="current" checked /> Current (production parity)</label>
+    <label><input type="radio" name="mode" value="fixed" /> Fixed (separation + replan)</label>
+  </div>
+</fieldset>
+
+<fieldset>
+  <legend>debug overlays</legend>
+  <div class="grid">
+    <label><input type="checkbox" id="dbgInflate" checked /> Inflated obstacles (per agent radius)</label>
+    <label><input type="checkbox" id="dbgPaths" checked /> Path waypoints</label>
+    <label><input type="checkbox" id="dbgRadii" checked /> Unit radii</label>
+    <label><input type="checkbox" id="dbgOverlap" checked /> Flash on overlap</label>
+    <label><input type="checkbox" id="dbgVel" /> Velocity vectors</label>
+  </div>
+</fieldset>
+
+<fieldset>
+  <legend>live state</legend>
+  <div class="kv" id="stats"></div>
+</fieldset>
+
+<fieldset>
+  <legend>log</legend>
+  <div id="log"></div>
+</fieldset>
+
+</div>
+
+<script type="module">
+// ==========================================================================
+// VENDORED PATHFINDING — ported from
+// apps/code/src/renderer/features/hedgemony/utils/pathfinding.ts
+// Keep this in lockstep with the production file. Any algorithmic change
+// here must be mirrored in the .ts source (or vice versa).
+// ==========================================================================
+
+const DEFAULT_AGENT_RADIUS = 36;
+const CELL = 32;
+const MARGIN = 256;
+const EPS = 0.5;
+const SQRT2 = Math.SQRT2;
+const OCTILE_DIAG_COST = SQRT2 - 1;
+const SNAP_MAX_ITERATIONS = 8;
+const MAX_ASTAR_ITERATION_MULTIPLIER = 4;
+const MAX_ASTAR_ITERATIONS = 200_000;
+
+function inflate(obstacles, agentRadius) {
+  return obstacles.map((o) => {
+    const radius = o.radius + agentRadius;
+    return { x: o.x, y: o.y, radius, r2: radius * radius };
+  });
+}
+function pointBlocked(p, infl) {
+  for (const o of infl) {
+    const dx = p.x - o.x, dy = p.y - o.y;
+    if (dx * dx + dy * dy < o.r2) return true;
+  }
+  return false;
+}
+function segmentClear(a, b, infl) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const segLenSq = dx * dx + dy * dy;
+  for (const o of infl) {
+    if (segLenSq === 0) {
+      const cx = o.x - a.x, cy = o.y - a.y;
+      if (cx * cx + cy * cy < o.r2) return false;
+      continue;
+    }
+    let t = ((o.x - a.x) * dx + (o.y - a.y) * dy) / segLenSq;
+    if (t < 0) t = 0; else if (t > 1) t = 1;
+    const px = a.x + t * dx - o.x;
+    const py = a.y + t * dy - o.y;
+    if (px * px + py * py < o.r2) return false;
+  }
+  return true;
+}
+function pushOutOf(p, infl) {
+  let current = p;
+  for (let i = 0; i < SNAP_MAX_ITERATIONS; i++) {
+    let pushed = false;
+    for (const o of infl) {
+      const dx = current.x - o.x, dy = current.y - o.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < o.r2) {
+        const d = Math.sqrt(d2);
+        if (d === 0) current = { x: o.x + o.radius + EPS, y: o.y };
+        else {
+          const t = o.radius + EPS;
+          current = { x: o.x + (dx / d) * t, y: o.y + (dy / d) * t };
+        }
+        pushed = true;
+      }
+    }
+    if (!pushed) return current;
+  }
+  return current;
+}
+function snapPointOutsideObstacles(point, obstacles, agentRadius = DEFAULT_AGENT_RADIUS) {
+  return pushOutOf(point, inflate(obstacles, agentRadius));
+}
+function nearestFreePointOnLine(from, to, infl) {
+  const dx = from.x - to.x, dy = from.y - to.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist === 0) return pushOutOf(from, infl);
+  const steps = Math.max(1, Math.ceil(dist / (CELL / 4)));
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const c = { x: to.x + dx * t, y: to.y + dy * t };
+    if (!pointBlocked(c, infl)) return c;
+  }
+  return from;
+}
+function snapGoal(from, to, obstacles, agentRadius = DEFAULT_AGENT_RADIUS) {
+  const infl = inflate(obstacles, agentRadius);
+  if (!pointBlocked(to, infl)) return to;
+  return nearestFreePointOnLine(from, to, infl);
+}
+function firstFreePointTowards(from, to, infl) {
+  if (!pointBlocked(from, infl)) return from;
+  const pushed = pushOutOf(from, infl);
+  if (!pointBlocked(pushed, infl)) return pushed;
+  const goalAngle = Math.atan2(to.y - from.y, to.x - from.x);
+  for (let r = CELL; r < 4096; r += CELL) {
+    for (let step = 0; step < 16; step++) {
+      const theta = goalAngle + step * (Math.PI / 8);
+      const c = { x: from.x + Math.cos(theta) * r, y: from.y + Math.sin(theta) * r };
+      if (!pointBlocked(c, infl)) return c;
+    }
+  }
+  return null;
+}
+class MinHeap {
+  constructor() { this.data = []; }
+  size() { return this.data.length; }
+  push(e) { this.data.push(e); this._up(this.data.length - 1); }
+  pop() {
+    if (this.data.length === 0) return undefined;
+    const top = this.data[0];
+    const last = this.data.pop();
+    if (this.data.length > 0) { this.data[0] = last; this._down(0); }
+    return top;
+  }
+  _up(i) {
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (this.data[i].f < this.data[p].f) { [this.data[i], this.data[p]] = [this.data[p], this.data[i]]; i = p; } else return;
+    }
+  }
+  _down(i) {
+    const n = this.data.length;
+    while (true) {
+      const l = i * 2 + 1, r = l + 1; let s = i;
+      if (l < n && this.data[l].f < this.data[s].f) s = l;
+      if (r < n && this.data[r].f < this.data[s].f) s = r;
+      if (s === i) return;
+      [this.data[i], this.data[s]] = [this.data[s], this.data[i]]; i = s;
+    }
+  }
+}
+function octileHeuristic(dCol, dRow) {
+  const ax = Math.abs(dCol), ay = Math.abs(dRow);
+  return Math.max(ax, ay) + OCTILE_DIAG_COST * Math.min(ax, ay);
+}
+function stringPull(path, infl) {
+  if (path.length <= 2) return path;
+  const result = [path[0]];
+  let i = 0;
+  while (i < path.length - 1) {
+    let j = path.length - 1;
+    while (j > i + 1 && !segmentClear(path[i], path[j], infl)) j--;
+    result.push(path[j]);
+    i = j;
+  }
+  return result;
+}
+function findPath(from, to, obstacles, agentRadius = DEFAULT_AGENT_RADIUS) {
+  const infl = inflate(obstacles, agentRadius);
+  const escaped = pointBlocked(from, infl) ? firstFreePointTowards(from, to, infl) : null;
+  const planFrom = escaped ?? from;
+  const goal = pointBlocked(to, infl) ? nearestFreePointOnLine(planFrom, to, infl) : to;
+  if (segmentClear(planFrom, goal, infl)) return escaped ? [from, escaped, goal] : [planFrom, goal];
+
+  // The planning bbox must contain the full inflated footprint of every
+  // obstacle the path might need to detour around. With a fixed MARGIN, an
+  // obstacle whose center is inside the from-to bbox but whose radius spills
+  // past MARGIN gets clipped — A* sees the clipped half as wall-to-wall
+  // blocked and silently falls back to a single-waypoint plan, which the
+  // caller treats as either "stay put" or "walk a straight line through the
+  // obstacle." This was the underlying cause of hoglets visibly clipping
+  // through nests on long detour routes.
+  let minX = Math.min(planFrom.x, goal.x);
+  let minY = Math.min(planFrom.y, goal.y);
+  let maxX = Math.max(planFrom.x, goal.x);
+  let maxY = Math.max(planFrom.y, goal.y);
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  for (const o of infl) {
+    const nx = clamp(o.x, minX, maxX);
+    const ny = clamp(o.y, minY, maxY);
+    const distToCorridor = Math.hypot(o.x - nx, o.y - ny);
+    // Skip obstacles too far away to plausibly influence the route.
+    if (distToCorridor > MARGIN + o.radius) continue;
+    minX = Math.min(minX, o.x - o.radius);
+    minY = Math.min(minY, o.y - o.radius);
+    maxX = Math.max(maxX, o.x + o.radius);
+    maxY = Math.max(maxY, o.y + o.radius);
+  }
+  minX -= MARGIN; minY -= MARGIN;
+  maxX += MARGIN; maxY += MARGIN;
+  const cols = Math.max(2, Math.ceil((maxX - minX) / CELL) + 1);
+  const rows = Math.max(2, Math.ceil((maxY - minY) / CELL) + 1);
+  const cellCenter = (c, r) => ({ x: minX + c * CELL, y: minY + r * CELL });
+  const toGrid = (p) => {
+    let c = Math.round((p.x - minX) / CELL), r = Math.round((p.y - minY) / CELL);
+    if (c < 0) c = 0; else if (c >= cols) c = cols - 1;
+    if (r < 0) r = 0; else if (r >= rows) r = rows - 1;
+    return { col: c, row: r };
+  };
+  const start = toGrid(planFrom), target = toGrid(goal);
+  const blockedCache = new Map();
+  const isBlocked = (c, r) => {
+    const k = r * cols + c;
+    const cached = blockedCache.get(k);
+    if (cached !== undefined) return cached;
+    const b = pointBlocked(cellCenter(c, r), infl);
+    blockedCache.set(k, b);
+    return b;
+  };
+  const gScore = new Map(), cameFrom = new Map(), closed = new Set(), open = new MinHeap();
+  const startKey = start.row * cols + start.col;
+  const targetKey = target.row * cols + target.col;
+  gScore.set(startKey, 0);
+  open.push({ col: start.col, row: start.row, f: octileHeuristic(target.col - start.col, target.row - start.row) });
+  const NB = [
+    { dc: 1, dr: 0, cost: 1, diag: false }, { dc: -1, dr: 0, cost: 1, diag: false },
+    { dc: 0, dr: 1, cost: 1, diag: false }, { dc: 0, dr: -1, cost: 1, diag: false },
+    { dc: 1, dr: 1, cost: SQRT2, diag: true }, { dc: 1, dr: -1, cost: SQRT2, diag: true },
+    { dc: -1, dr: 1, cost: SQRT2, diag: true }, { dc: -1, dr: -1, cost: SQRT2, diag: true },
+  ];
+  let found = false, iter = 0;
+  const maxIter = Math.min(cols * rows * MAX_ASTAR_ITERATION_MULTIPLIER, MAX_ASTAR_ITERATIONS);
+  while (open.size() > 0 && iter < maxIter) {
+    iter++;
+    const cur = open.pop(); if (!cur) break;
+    const curKey = cur.row * cols + cur.col;
+    if (closed.has(curKey)) continue;
+    closed.add(curKey);
+    if (curKey === targetKey) { found = true; break; }
+    const cg = gScore.get(curKey) ?? Infinity;
+    for (const n of NB) {
+      const nc = cur.col + n.dc, nr = cur.row + n.dr;
+      if (nc < 0 || nc >= cols || nr < 0 || nr >= rows) continue;
+      const nk = nr * cols + nc;
+      if (closed.has(nk)) continue;
+      const isStart = nk === startKey, isTarget = nk === targetKey;
+      if (!isStart && !isTarget && isBlocked(nc, nr)) continue;
+      if (n.diag) {
+        const sideA = cur.row * cols + (cur.col + n.dc);
+        const sideB = (cur.row + n.dr) * cols + cur.col;
+        if ((sideA !== startKey && sideA !== targetKey && isBlocked(cur.col + n.dc, cur.row)) ||
+            (sideB !== startKey && sideB !== targetKey && isBlocked(cur.col, cur.row + n.dr))) continue;
+      }
+      const tg = cg + n.cost;
+      const pg = gScore.get(nk) ?? Infinity;
+      if (tg < pg) {
+        gScore.set(nk, tg); cameFrom.set(nk, curKey);
+        open.push({ col: nc, row: nr, f: tg + octileHeuristic(target.col - nc, target.row - nr) });
+      }
+    }
+  }
+  if (!found) {
+    const fb = nearestFreePointOnLine(planFrom, goal, infl);
+    return escaped ? [from, fb] : [fb];
+  }
+  const gp = []; let ck = targetKey;
+  while (ck !== undefined) {
+    const c = ck % cols, r = (ck - c) / cols;
+    gp.push(cellCenter(c, r));
+    ck = cameFrom.get(ck);
+  }
+  gp.reverse();
+  if (gp.length === 0) {
+    const fb = nearestFreePointOnLine(planFrom, goal, infl);
+    return escaped ? [from, fb] : [fb];
+  }
+  gp[0] = planFrom; gp[gp.length - 1] = goal;
+  const pulled = stringPull(gp, infl);
+  return escaped ? [from, ...pulled] : pulled;
+}
+
+// ==========================================================================
+// HEDGEMONY MAP CONSTANTS — kept in lockstep with worldObstacles.ts / map.ts
+// ==========================================================================
+
+const HEDGEHOUSE_X = 0;
+const HEDGEHOUSE_Y = 0;
+const HEDGEHOUSE_RADIUS = 100;
+const NEST_RADIUS = 86;
+const HOGLET_RADIUS = 44;
+const BUILDER_RADIUS = 36;
+const HOGLET_SPEED = 120; // px/s, per useWalkTo.ts
+const BUILDER_SPEED = 150; // px/s, per spec.md
+const OBSTACLE_CLEARANCE = 28;
+const SEPARATION_FORCE_PX = 320; // velocity correction when "fixed" mode is on
+const REPLAN_INTERVAL_MS = 120;   // dynamic replan cadence in fixed mode
+
+function worldObstacles(nests) {
+  const obs = nests.map((n) => ({ x: n.x, y: n.y, radius: NEST_RADIUS, kind: "nest", id: n.id }));
+  obs.push({ x: HEDGEHOUSE_X, y: HEDGEHOUSE_Y, radius: HEDGEHOUSE_RADIUS, kind: "hedgehouse" });
+  return obs;
+}
+function hogletObstacles(units, excludeIds = new Set()) {
+  return units
+    .filter((u) => u.kind === "hoglet" && !excludeIds.has(u.id))
+    .map((u) => ({ x: u.x, y: u.y, radius: HOGLET_RADIUS, kind: "hoglet", id: u.id }));
+}
+function builderObstacle(builder) {
+  return { x: builder.x, y: builder.y, radius: BUILDER_RADIUS, kind: "builder", id: builder.id };
+}
+
+// ==========================================================================
+// SIMULATION
+//
+// World coords: (0,0) is map origin (Hedgehouse). Positive Y is "down" in
+// hedgemony screen coords, so the canvas transform mirrors that.
+//
+// Units have a planned path (list of waypoints starting near current pos).
+// Each frame we integrate position along the current segment at unit speed.
+// In "fixed" mode we additionally apply per-frame separation correction and
+// periodically replan against fresh obstacle snapshots.
+// ==========================================================================
+
+const state = {
+  units: [], // { id, kind: 'hoglet'|'builder', x, y, vx, vy, radius, speed, path: Vec2[], segIdx, target, lastReplanMs, color, name }
+  nests: [], // { id, x, y, color, name }
+  mode: "current", // 'current' | 'fixed'
+  running: false,
+  timeMs: 0,
+  overlapEvents: [], // { t, aId, bId, severity }
+  log: [],
+};
+window.__sandbox = state;
+
+let _uid = 1;
+const nextId = () => `u${_uid++}`;
+
+function spawnHoglet(x, y, opts = {}) {
+  const u = {
+    id: opts.id ?? nextId(),
+    kind: "hoglet",
+    x, y, vx: 0, vy: 0,
+    radius: HOGLET_RADIUS,
+    speed: opts.speed ?? HOGLET_SPEED,
+    path: [{ x, y }],
+    segIdx: 0,
+    target: { x, y },
+    lastReplanMs: 0,
+    color: opts.color ?? "#ffcc66",
+    name: opts.name ?? "",
+  };
+  state.units.push(u);
+  return u;
+}
+function spawnBuilder(x, y, opts = {}) {
+  const u = {
+    id: opts.id ?? "builder",
+    kind: "builder",
+    x, y, vx: 0, vy: 0,
+    radius: BUILDER_RADIUS,
+    speed: opts.speed ?? BUILDER_SPEED,
+    path: [{ x, y }],
+    segIdx: 0,
+    target: { x, y },
+    lastReplanMs: 0,
+    color: opts.color ?? "#9be29b",
+    name: opts.name ?? "Builder",
+  };
+  state.units.push(u);
+  return u;
+}
+function spawnNest(x, y, opts = {}) {
+  const n = { id: opts.id ?? `nest-${state.nests.length + 1}`, x, y, color: opts.color ?? "#c08adb", name: opts.name ?? "" };
+  state.nests.push(n);
+  return n;
+}
+function clearWorld() {
+  state.units = [];
+  state.nests = [];
+  state.overlapEvents = [];
+  state.timeMs = 0;
+}
+
+// Build the obstacle list a given unit should plan against. Each unit
+// excludes itself; if the unit is a hoglet, the builder counts as a solid
+// obstacle and so do other hoglets.
+function planObstaclesFor(unit) {
+  const obs = worldObstacles(state.nests);
+  for (const u of state.units) {
+    if (u.id === unit.id) continue;
+    if (u.kind === "hoglet") obs.push({ x: u.x, y: u.y, radius: HOGLET_RADIUS, kind: "hoglet", id: u.id });
+    else if (u.kind === "builder") obs.push({ x: u.x, y: u.y, radius: BUILDER_RADIUS, kind: "builder", id: u.id });
+  }
+  return obs;
+}
+
+function orderUnit(unit, target) {
+  const obstacles = planObstaclesFor(unit);
+  const from = { x: unit.x, y: unit.y };
+  const safeFrom = snapPointOutsideObstacles(from, obstacles, unit.radius);
+  if (safeFrom.x !== from.x || safeFrom.y !== from.y) {
+    unit.x = safeFrom.x; unit.y = safeFrom.y;
+  }
+  const snapped = snapGoal(safeFrom, target, obstacles, unit.radius);
+  const plan = findPath(safeFrom, snapped, obstacles, unit.radius);
+  // Preserve the originally-commanded target. Replanning will pass this
+  // back through snapGoal each tick, so transient blockers (a hoglet
+  // crossing our path right at the goal) don't permanently shrink our
+  // destination to wherever we happen to be standing.
+  unit.commandedTarget = { x: target.x, y: target.y };
+  unit.target = snapped;
+  unit.path = plan.length >= 1 ? plan : [safeFrom];
+  unit.segIdx = 0;
+  unit.lastReplanMs = state.timeMs;
+}
+
+// Per-frame motion. Moves the unit toward its next waypoint at `speed`.
+// In fixed mode, also adds a separation velocity correction so units don't
+// barge through each other when paths intersect mid-walk.
+function tickUnit(unit, dtMs) {
+  const dt = dtMs / 1000;
+  // 1) advance along path
+  if (unit.path.length >= 2 && unit.segIdx < unit.path.length - 1) {
+    const next = unit.path[unit.segIdx + 1];
+    const dx = next.x - unit.x, dy = next.y - unit.y;
+    const dist = Math.hypot(dx, dy);
+    const step = unit.speed * dt;
+    if (dist <= step + 0.1) {
+      unit.x = next.x; unit.y = next.y;
+      unit.segIdx++;
+      unit.vx = 0; unit.vy = 0;
+    } else {
+      const ux = dx / dist, uy = dy / dist;
+      unit.x += ux * step;
+      unit.y += uy * step;
+      unit.vx = ux * unit.speed;
+      unit.vy = uy * unit.speed;
+    }
+  } else {
+    unit.vx = 0; unit.vy = 0;
+  }
+
+  // 2) fixed-mode corrections
+  if (state.mode === "fixed") {
+    applySeparation(unit, dt);
+    applyObstaclePushOut(unit);
+  }
+}
+
+// Boids-style separation against other units. Pushes the unit outward when
+// it's within (myR + theirR) of another unit. Strength scales with overlap
+// depth so deep overlaps correct fast, near-touches barely shift.
+//
+// Head-on collisions are pathological: the separation vector aligns with
+// both units' velocity, so the force only slows them — they never deflect.
+// We break the symmetry deterministically: if the push is near-parallel to
+// either unit's velocity, add a tangential component whose sign is fixed by
+// comparing unit ids (so both units consistently pick the SAME passing side
+// and slide past each other). Without this, head-on traffic deadlocks.
+function applySeparation(unit, dt) {
+  let pushX = 0, pushY = 0;
+  for (const other of state.units) {
+    if (other.id === unit.id) continue;
+    const dx = unit.x - other.x, dy = unit.y - other.y;
+    const minDist = unit.radius + other.radius;
+    const d2 = dx * dx + dy * dy;
+    if (d2 >= minDist * minDist || d2 === 0) {
+      if (d2 === 0) { pushX += (Math.random() - 0.5); pushY += (Math.random() - 0.5); }
+      continue;
+    }
+    const d = Math.sqrt(d2);
+    const overlap = minDist - d;
+    const strength = overlap / minDist; // 0..1
+    let ux = dx / d, uy = dy / d;
+
+    // Head-on tie-break: if our motion vector points at the other unit
+    // (push direction is anti-parallel to our velocity), the push won't
+    // deflect us. Mix in a tangential component so we slide past instead
+    // of stalemating. Sign is deterministic per id pair so both units pick
+    // the SAME passing side.
+    const speed = Math.hypot(unit.vx, unit.vy);
+    if (speed > 1) {
+      const vUx = unit.vx / speed, vUy = unit.vy / speed;
+      // alignment: -1 = push opposes motion (head-on), +1 = push aids motion
+      const dot = ux * vUx + uy * vUy;
+      if (dot < -0.5) {
+        const sign = unit.id < other.id ? 1 : -1;
+        const tx = -vUy * sign;
+        const ty = vUx * sign;
+        // blend ~70% tangential when fully head-on, 0 when oblique
+        const t = Math.min(1, -dot * 2 - 1);
+        ux = ux * (1 - 0.7 * t) + tx * (0.7 * t);
+        uy = uy * (1 - 0.7 * t) + ty * (0.7 * t);
+        const norm = Math.hypot(ux, uy) || 1;
+        ux /= norm; uy /= norm;
+      }
+    }
+
+    pushX += ux * strength;
+    pushY += uy * strength;
+  }
+  unit.x += pushX * SEPARATION_FORCE_PX * dt;
+  unit.y += pushY * SEPARATION_FORCE_PX * dt;
+}
+
+// Hard guarantee: a unit never sits inside a static obstacle's inflated
+// radius. Run after separation in case separation pushed the unit into a
+// nest while resolving an inter-unit overlap.
+function applyObstaclePushOut(unit) {
+  const staticObs = worldObstacles(state.nests);
+  const fixed = snapPointOutsideObstacles({ x: unit.x, y: unit.y }, staticObs, unit.radius);
+  unit.x = fixed.x; unit.y = fixed.y;
+}
+
+// Replan when blocked. In fixed mode, every REPLAN_INTERVAL_MS we check
+// whether the remaining path is still clear against the current obstacle
+// snapshot. If not, we replan from the current visual position.
+function maybeReplan(unit) {
+  if (state.mode !== "fixed") return;
+  if (state.timeMs - unit.lastReplanMs < REPLAN_INTERVAL_MS) return;
+  if (unit.segIdx >= unit.path.length - 1) return;
+  const obstacles = planObstaclesFor(unit);
+  const infl = inflate(obstacles, unit.radius);
+  let clear = true;
+  for (let i = unit.segIdx; i < unit.path.length - 1; i++) {
+    if (!segmentClear(unit.path[i], unit.path[i + 1], infl)) { clear = false; break; }
+  }
+  if (clear) return;
+  // Replan from current pos toward the ORIGINAL commanded target — never
+  // toward the snapped target, otherwise transient blockers cause the goal
+  // to creep inward each replan until the unit stops short.
+  orderUnit(unit, unit.commandedTarget ?? unit.target);
+  log(`replan ${unit.id} -> path len ${unit.path.length}`);
+}
+
+// Track overlap events for assertions / red flashes.
+function recordOverlaps() {
+  for (let i = 0; i < state.units.length; i++) {
+    const a = state.units[i];
+    for (let j = i + 1; j < state.units.length; j++) {
+      const b = state.units[j];
+      const dx = a.x - b.x, dy = a.y - b.y;
+      const minD = a.radius + b.radius;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < minD * minD - 1) {
+        state.overlapEvents.push({ t: state.timeMs, aId: a.id, bId: b.id, depth: minD - Math.sqrt(d2) });
+      }
+    }
+    // unit vs static obstacle
+    const staticObs = worldObstacles(state.nests);
+    const infl = inflate(staticObs, a.radius);
+    if (pointBlocked({ x: a.x, y: a.y }, infl)) {
+      state.overlapEvents.push({ t: state.timeMs, aId: a.id, bId: "obstacle", depth: 1 });
+    }
+  }
+}
+
+// ==========================================================================
+// RENDER
+// ==========================================================================
+
+const canvas = document.getElementById("cv");
+const ctx = canvas.getContext("2d");
+const cam = { x: 0, y: 0, scale: 1 };
+
+function resizeCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  const r = canvas.parentElement.getBoundingClientRect();
+  canvas.width = Math.floor(r.width * dpr);
+  canvas.height = Math.floor(r.height * dpr);
+  canvas.style.width = `${r.width}px`;
+  canvas.style.height = `${r.height}px`;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+new ResizeObserver(resizeCanvas).observe(canvas.parentElement);
+resizeCanvas();
+
+function worldToScreen(x, y) {
+  const rect = canvas.getBoundingClientRect();
+  return { x: rect.width / 2 + (x - cam.x) * cam.scale, y: rect.height / 2 + (y - cam.y) * cam.scale };
+}
+function ringW(x, y, r, style) {
+  const s = worldToScreen(x, y);
+  ctx.beginPath();
+  ctx.arc(s.x, s.y, r * cam.scale, 0, Math.PI * 2);
+  if (style.fillStyle) { ctx.fillStyle = style.fillStyle; ctx.fill(); }
+  if (style.strokeStyle) { ctx.strokeStyle = style.strokeStyle; ctx.lineWidth = style.lineWidth ?? 1; ctx.stroke(); }
+}
+
+function getCheckbox(id) { return document.getElementById(id).checked; }
+
+function render() {
+  const rect = canvas.getBoundingClientRect();
+  ctx.clearRect(0, 0, rect.width, rect.height);
+
+  // grid
+  ctx.strokeStyle = "#1a1f2a";
+  ctx.lineWidth = 1;
+  const step = 50 * cam.scale;
+  const ox = (rect.width / 2 - cam.x * cam.scale) % step;
+  const oy = (rect.height / 2 - cam.y * cam.scale) % step;
+  for (let x = ox; x < rect.width; x += step) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, rect.height); ctx.stroke();
+  }
+  for (let y = oy; y < rect.height; y += step) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(rect.width, y); ctx.stroke();
+  }
+  // origin crosshair
+  const origin = worldToScreen(0, 0);
+  ctx.strokeStyle = "#2a3346";
+  ctx.beginPath(); ctx.moveTo(origin.x - 12, origin.y); ctx.lineTo(origin.x + 12, origin.y); ctx.moveTo(origin.x, origin.y - 12); ctx.lineTo(origin.x, origin.y + 12); ctx.stroke();
+
+  // hedgehouse
+  ringW(HEDGEHOUSE_X, HEDGEHOUSE_Y, HEDGEHOUSE_RADIUS, { fillStyle: "rgba(180, 120, 50, 0.18)", strokeStyle: "rgba(255, 200, 100, 0.6)", lineWidth: 1.5, fill: true, stroke: true });
+  // nests
+  for (const n of state.nests) {
+    ringW(n.x, n.y, NEST_RADIUS, { fillStyle: "rgba(192, 138, 219, 0.18)", strokeStyle: "rgba(192, 138, 219, 0.7)", lineWidth: 1.5, fill: true, stroke: true });
+    const s = worldToScreen(n.x, n.y);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.7)"; ctx.font = "10px ui-monospace";
+    ctx.textAlign = "center"; ctx.fillText(n.name || n.id, s.x, s.y + 3);
+  }
+
+  // inflated obstacle rings (per unit radius)
+  if (getCheckbox("dbgInflate")) {
+    // Use builder radius for one tone, hoglet radius for another
+    const drawInflate = (radius, color) => {
+      const obs = worldObstacles(state.nests);
+      for (const o of obs) {
+        ringW(o.x, o.y, o.radius + radius, { strokeStyle: color, lineWidth: 1, stroke: true });
+      }
+    };
+    drawInflate(HOGLET_RADIUS, "rgba(255, 200, 100, 0.18)");
+    drawInflate(BUILDER_RADIUS, "rgba(155, 226, 155, 0.18)");
+  }
+
+  // paths
+  if (getCheckbox("dbgPaths")) {
+    for (const u of state.units) {
+      if (u.path.length < 2) continue;
+      ctx.strokeStyle = u.color + "aa"; ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      const start = worldToScreen(u.path[0].x, u.path[0].y);
+      ctx.moveTo(start.x, start.y);
+      for (let i = 1; i < u.path.length; i++) {
+        const w = worldToScreen(u.path[i].x, u.path[i].y);
+        ctx.lineTo(w.x, w.y);
+      }
+      ctx.stroke();
+      for (let i = 0; i < u.path.length; i++) {
+        const w = worldToScreen(u.path[i].x, u.path[i].y);
+        ctx.fillStyle = u.color + (i === u.segIdx ? "ff" : "55");
+        ctx.beginPath(); ctx.arc(w.x, w.y, 2.5, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
+
+  // units
+  for (const u of state.units) {
+    const s = worldToScreen(u.x, u.y);
+    if (getCheckbox("dbgRadii")) {
+      ctx.strokeStyle = u.color + "66"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(s.x, s.y, u.radius * cam.scale, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.fillStyle = u.color;
+    ctx.beginPath(); ctx.arc(s.x, s.y, 6, 0, Math.PI * 2); ctx.fill();
+    if (u.name) {
+      ctx.fillStyle = "#fff"; ctx.font = "10px ui-monospace"; ctx.textAlign = "center";
+      ctx.fillText(u.name, s.x, s.y - 10);
+    }
+    if (getCheckbox("dbgVel") && (u.vx || u.vy)) {
+      ctx.strokeStyle = "#7cd8ff"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(s.x, s.y);
+      ctx.lineTo(s.x + u.vx * 0.2, s.y + u.vy * 0.2); ctx.stroke();
+    }
+  }
+
+  // overlap flash
+  if (getCheckbox("dbgOverlap")) {
+    const recent = state.overlapEvents.filter((e) => state.timeMs - e.t < 200);
+    for (const e of recent) {
+      const a = state.units.find((u) => u.id === e.aId);
+      if (!a) continue;
+      const s = worldToScreen(a.x, a.y);
+      ctx.strokeStyle = "rgba(255, 85, 114, 0.8)"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(s.x, s.y, (a.radius + 4) * cam.scale, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+
+  // stats
+  const stats = document.getElementById("stats");
+  if (stats) {
+    stats.innerHTML = "";
+    const add = (k, v) => { const el = document.createElement("div"); el.innerHTML = `<b>${k}</b>`; stats.appendChild(el); const el2 = document.createElement("div"); el2.textContent = v; stats.appendChild(el2); };
+    add("mode", state.mode);
+    add("units", state.units.length);
+    add("nests", state.nests.length);
+    add("time", `${(state.timeMs / 1000).toFixed(2)}s`);
+    add("overlaps", state.overlapEvents.length);
+    const recentOverlap = state.overlapEvents.filter((e) => state.timeMs - e.t < 500).length;
+    add("overlap (last .5s)", recentOverlap);
+  }
+}
+
+// ==========================================================================
+// SIMULATION LOOP
+// ==========================================================================
+
+// Advance the simulation by `dt` ms. Separated from rAF so tests can drive
+// the world deterministically (and at full speed) even when the browser
+// tab is backgrounded — Chrome aggressively throttles rAF in background
+// tabs to ~1fps, which would make headless test runs hang for minutes.
+function stepSimulation(dt) {
+  if (!state.running) return;
+  state.timeMs += dt;
+  for (const u of state.units) {
+    maybeReplan(u);
+    tickUnit(u, dt);
+  }
+  if (state.mode === "fixed") resolveUnitOverlaps();
+  recordOverlaps();
+}
+
+// Final pairwise push-out: after path advancement + soft separation, this
+// guarantees no two units are inside each other's radius. Iterative; runs
+// up to a small bounded number of passes per frame. Mirrors the logic in
+// resolveHogletLayoutCollisions but applied to live in-flight units.
+function resolveUnitOverlaps() {
+  const MAX_PASSES = 4;
+  for (let pass = 0; pass < MAX_PASSES; pass++) {
+    let moved = false;
+    for (let i = 0; i < state.units.length; i++) {
+      const a = state.units[i];
+      for (let j = i + 1; j < state.units.length; j++) {
+        const b = state.units[j];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const minDist = a.radius + b.radius;
+        let d = Math.hypot(dx, dy);
+        let ux, uy;
+        if (d < 0.001) {
+          // Stacked: pick a deterministic direction from id pair so the
+          // resolution is stable across frames instead of jittering with
+          // each Math.random call.
+          const seed = (a.id + b.id).split("").reduce((s, c) => (s * 31 + c.charCodeAt(0)) | 0, 0);
+          const ang = (seed % 360) * Math.PI / 180;
+          ux = Math.cos(ang); uy = Math.sin(ang); d = 0;
+        } else {
+          ux = dx / d; uy = dy / d;
+        }
+        if (d >= minDist) continue;
+        const push = (minDist - d) / 2 + 0.01;
+        a.x -= ux * push; a.y -= uy * push;
+        b.x += ux * push; b.y += uy * push;
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+  // After unit-vs-unit resolution, re-snap each out of static obstacles in
+  // case we pushed someone into a wall.
+  const staticObs = worldObstacles(state.nests);
+  for (const u of state.units) {
+    const fixed = snapPointOutsideObstacles({ x: u.x, y: u.y }, staticObs, u.radius);
+    u.x = fixed.x; u.y = fixed.y;
+  }
+}
+state.stepSimulation = stepSimulation;
+
+let lastFrameT = 0;
+function frame(t) {
+  if (!lastFrameT) lastFrameT = t;
+  const dt = Math.min(50, t - lastFrameT);
+  lastFrameT = t;
+  // rAF advances the sim when we're driven by real time. Tests opt out by
+  // setting state.headless = true and stepping the sim themselves.
+  if (state.running && !state.headless) stepSimulation(dt);
+  render();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ==========================================================================
+// LOGGING
+// ==========================================================================
+
+function log(s) {
+  const t = (state.timeMs / 1000).toFixed(2);
+  const line = `[${t}] ${s}`;
+  state.log.push(line);
+  const el = document.getElementById("log");
+  if (el) {
+    el.textContent = state.log.slice(-100).join("\n");
+    el.scrollTop = el.scrollHeight;
+  }
+  console.log(line);
+}
+window.__sandboxLog = log;
+
+// ==========================================================================
+// SCENARIOS
+//
+// Each scenario sets up a world and then runs for a target duration. The
+// assertion runs continuously: NO sustained overlap (>1 frame) is allowed.
+// A scenario passes iff `overlapEvents.length === 0` at the end AND every
+// unit reached or got within 8 px of its commanded target.
+// ==========================================================================
+
+const SCENARIOS = [
+  {
+    id: "walk-through-nest",
+    title: "Hoglet routes around a nest",
+    description: "Single hoglet asked to walk straight across. A nest sits on the line. Path must go around.",
+    durationMs: 7000,
+    setup() {
+      clearWorld();
+      const nest = spawnNest(0, 0, { id: "n-mid", name: "mid" });
+      // Hedgehouse is at (0,0) — move nest off so it's a distinct obstacle.
+      nest.x = 0; nest.y = -250;
+      const h = spawnHoglet(-300, -250, { color: "#ffcc66", name: "A" });
+      orderUnit(h, { x: 300, y: -250 });
+    },
+    assert() {
+      const h = state.units[0];
+      const reached = Math.hypot(h.x - 300, h.y - -250) < 12;
+      return { reached, overlaps: state.overlapEvents.length };
+    },
+  },
+  {
+    id: "walk-through-hedgehouse",
+    title: "Hoglet routes around the Hedgehouse",
+    description: "Single hoglet walks from left to right; Hedgehouse at origin is on the line.",
+    durationMs: 8000,
+    setup() {
+      clearWorld();
+      const h = spawnHoglet(-300, 0, { color: "#ffcc66", name: "A" });
+      orderUnit(h, { x: 300, y: 0 });
+    },
+    assert() {
+      const h = state.units[0];
+      const reached = Math.hypot(h.x - 300, h.y) < 12;
+      return { reached, overlaps: state.overlapEvents.length };
+    },
+  },
+  {
+    id: "two-hoglets-converge",
+    title: "Two hoglets toward same point (no overlap)",
+    description: "Two hoglets ordered to the same point from opposite sides. They must not overlap.",
+    durationMs: 6500,
+    setup() {
+      clearWorld();
+      const a = spawnHoglet(-300, 250, { color: "#ffcc66", name: "A" });
+      const b = spawnHoglet(300, 250, { color: "#66ccff", name: "B" });
+      orderUnit(a, { x: 0, y: 250 });
+      orderUnit(b, { x: 0, y: 250 });
+    },
+    assert() {
+      const a = state.units[0], b = state.units[1];
+      const reachedA = Math.hypot(a.x, a.y - 250) < 80;
+      const reachedB = Math.hypot(b.x, b.y - 250) < 80;
+      return { reached: reachedA && reachedB, overlaps: state.overlapEvents.length };
+    },
+  },
+  {
+    id: "head-on-meet",
+    title: "Hoglets walk through each other (head-on)",
+    description: "A walks left→right, B walks right→left, on the same y. Without correction they pass through each other.",
+    durationMs: 7000,
+    setup() {
+      clearWorld();
+      const a = spawnHoglet(-300, 400, { color: "#ffcc66", name: "A" });
+      const b = spawnHoglet(300, 400, { color: "#66ccff", name: "B" });
+      orderUnit(a, { x: 300, y: 400 });
+      orderUnit(b, { x: -300, y: 400 });
+    },
+    assert() {
+      const a = state.units[0], b = state.units[1];
+      const reachedA = Math.hypot(a.x - 300, a.y - 400) < 30;
+      const reachedB = Math.hypot(b.x + 300, b.y - 400) < 30;
+      return { reached: reachedA && reachedB, overlaps: state.overlapEvents.length };
+    },
+  },
+  {
+    id: "corner-squeeze",
+    title: "Squeeze between two nests",
+    description: "Two nests placed so the gap is just under 2*(nestR+hogletR) — hoglet should fit through if path is correct.",
+    durationMs: 9000,
+    setup() {
+      clearWorld();
+      // Hedgehouse is at origin radius 100; need to keep nests outside.
+      spawnNest(-150, -260, { id: "left" });
+      spawnNest(150, -260, { id: "right" });
+      const h = spawnHoglet(0, -500, { color: "#ffcc66", name: "A" });
+      orderUnit(h, { x: 0, y: 220 });
+    },
+    assert() {
+      const h = state.units[0];
+      const reached = Math.hypot(h.x, h.y - 220) < 30;
+      return { reached, overlaps: state.overlapEvents.length };
+    },
+  },
+  {
+    id: "builder-blocked-by-hoglet",
+    title: "Builder walks past a stationary hoglet",
+    description: "Builder ordered to (300, 200); a stationary hoglet sits directly in the way.",
+    durationMs: 6500,
+    setup() {
+      clearWorld();
+      spawnBuilder(-300, 200, { name: "B" });
+      const h = spawnHoglet(0, 200, { color: "#ff8866", name: "block" });
+      // hoglet is idle, builder must route around
+      const b = state.units.find((u) => u.kind === "builder");
+      orderUnit(b, { x: 300, y: 200 });
+    },
+    assert() {
+      const b = state.units.find((u) => u.kind === "builder");
+      const reached = Math.hypot(b.x - 300, b.y - 200) < 20;
+      return { reached, overlaps: state.overlapEvents.length };
+    },
+  },
+  {
+    id: "click-inside-nest",
+    title: "Click inside a nest snaps to perimeter",
+    description: "Order hoglet to a point inside a nest. Goal should snap to the nest perimeter, no overlap.",
+    durationMs: 6000,
+    setup() {
+      clearWorld();
+      spawnNest(200, 200, { id: "n" });
+      const h = spawnHoglet(-200, 200, { color: "#ffcc66", name: "A" });
+      orderUnit(h, { x: 200, y: 200 }); // straight inside nest
+    },
+    assert() {
+      const h = state.units[0];
+      // unit should NOT be inside the nest; should be at or just outside its perimeter
+      const distFromNest = Math.hypot(h.x - 200, h.y - 200);
+      const reached = distFromNest >= NEST_RADIUS + HOGLET_RADIUS - 4;
+      return { reached, overlaps: state.overlapEvents.length };
+    },
+  },
+  {
+    id: "dense-brood",
+    title: "Eight hoglets around a small nest (no rest overlap)",
+    description: "Eight hoglets ordered to ring positions around one nest. None should overlap each other or the nest.",
+    durationMs: 8500,
+    setup() {
+      clearWorld();
+      spawnNest(0, 400, { id: "n", name: "n" });
+      const BROOD_R = NEST_RADIUS + HOGLET_RADIUS + OBSTACLE_CLEARANCE;
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const h = spawnHoglet(0 + Math.cos(a) * 600, 400 + Math.sin(a) * 600, { color: "#ffcc66", name: `${i}` });
+        orderUnit(h, { x: Math.cos(a) * BROOD_R, y: 400 + Math.sin(a) * BROOD_R });
+      }
+    },
+    assert() {
+      let allReached = true;
+      for (const u of state.units) {
+        if (Math.hypot(u.x - u.target.x, u.y - u.target.y) > 25) allReached = false;
+      }
+      return { reached: allReached, overlaps: state.overlapEvents.length };
+    },
+  },
+];
+
+// ==========================================================================
+// SCENARIO RUNNER
+// ==========================================================================
+
+const results = new Map(); // id -> 'pass' | 'fail' | 'pending'
+
+function renderScenarioList() {
+  const list = document.getElementById("scenList");
+  list.innerHTML = "";
+  for (const s of SCENARIOS) {
+    const row = document.createElement("div");
+    const r = results.get(s.id) || "pending";
+    row.className = `scen ${r}`;
+    row.innerHTML = `<div><b>${s.title}</b><div style="font-size:11px;color:var(--muted)">${s.description}</div></div>`;
+    const right = document.createElement("div");
+    right.style.display = "flex"; right.style.flexDirection = "column"; right.style.gap = "4px"; right.style.alignItems = "flex-end";
+    const pill = document.createElement("span"); pill.className = `pill ${r}`; pill.textContent = r;
+    const btn = document.createElement("button"); btn.textContent = "run"; btn.onclick = () => runScenario(s);
+    right.append(pill, btn);
+    row.appendChild(right);
+    list.appendChild(row);
+  }
+  const passes = Array.from(results.values()).filter((v) => v === "pass").length;
+  const fails = Array.from(results.values()).filter((v) => v === "fail").length;
+  const summary = document.getElementById("summary");
+  summary.textContent = `${passes} / ${SCENARIOS.length} passing — ${fails} failing — mode: ${state.mode}`;
+}
+
+function runScenario(s) {
+  log(`> SCENARIO ${s.id} (mode=${state.mode})`);
+  s.setup();
+  state.running = true;
+  state.headless = true;
+  state.timeMs = 0;
+  state.overlapEvents = [];
+  // Run the entire scenario synchronously at fixed 16ms steps. We don't
+  // yield to the event loop — background-tab throttling pushes setTimeout
+  // to a 1-second minimum, which would turn a 7-second sim into a 7-minute
+  // wait under Chrome MCP. The whole sweep takes ~few hundred ms of CPU.
+  const STEP = 16;
+  while (state.timeMs < s.durationMs && state.running) {
+    stepSimulation(STEP);
+  }
+  state.running = false;
+  state.headless = false;
+  const r = s.assert();
+  const ok = r.reached && r.overlaps === 0;
+  results.set(s.id, ok ? "pass" : "fail");
+  log(`< ${s.id}: ${ok ? "PASS" : "FAIL"} reached=${r.reached} overlaps=${r.overlaps}`);
+  renderScenarioList();
+  return { id: s.id, pass: ok, reached: r.reached, overlaps: r.overlaps };
+}
+
+function runAll() {
+  results.clear();
+  renderScenarioList();
+  const out = [];
+  for (const s of SCENARIOS) {
+    out.push(runScenario(s));
+  }
+  log(`= ALL DONE: ${out.filter((r) => r.pass).length}/${out.length} passing`);
+  window.__sandboxLastRun = out;
+  return out;
+}
+
+document.getElementById("runAll").addEventListener("click", runAll);
+document.getElementById("stopSim").addEventListener("click", () => { state.running = false; log("stopped"); });
+document.querySelectorAll('input[name=mode]').forEach((el) => {
+  el.addEventListener("change", () => { state.mode = el.value; log(`mode -> ${state.mode}`); renderScenarioList(); });
+});
+
+renderScenarioList();
+log("ready");
+
+// Expose for Chrome MCP
+window.__sandbox.runAll = runAll;
+window.__sandbox.runScenario = (id) => {
+  const s = SCENARIOS.find((s) => s.id === id);
+  return s ? runScenario(s) : null;
+};
+window.__sandbox.setMode = (m) => { state.mode = m; document.querySelector(`input[name=mode][value=${m}]`).checked = true; log(`mode -> ${m}`); renderScenarioList(); };
+window.__sandbox.scenarios = SCENARIOS.map((s) => ({ id: s.id, title: s.title }));
+window.__sandbox.results = results;
+</script>
+</body>
+</html>
