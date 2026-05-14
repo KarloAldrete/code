@@ -39,6 +39,7 @@ export interface PromptInputProps {
   enableBashMode?: boolean;
   enableCommands?: boolean;
   // toolbar slots
+  connectorsSlot?: React.ReactNode;
   modelSelector?: React.ReactElement | null | false;
   reasoningSelector?: React.ReactElement | null | false;
   historyButton?: React.ReactNode;
@@ -79,6 +80,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       allowBypassPermissions = false,
       enableBashMode = false,
       enableCommands = true,
+      connectorsSlot,
       modelSelector,
       reasoningSelector,
       historyButton,
@@ -309,6 +311,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
               onAttachFiles={onAttachFiles}
               onInsertChip={insertChip}
             />
+            {connectorsSlot}
             {modeOption && onModeChange && (
               <ModeSelector
                 modeOption={modeOption}

@@ -8,7 +8,9 @@ import { useProjects } from "@features/projects/hooks/useProjects";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
 import {
   ArrowSquareOut,
+  ChartLine,
   Check,
+  Code,
   DiscordLogo,
   FolderSimple,
   Gear,
@@ -21,6 +23,7 @@ import {
 import { Box, Dialog, Flex, Text } from "@radix-ui/themes";
 import { trpcClient } from "@renderer/trpc/client";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
+import { useAppModeStore } from "@stores/appModeStore";
 import { EXTERNAL_LINKS } from "@utils/links";
 import { isMac } from "@utils/platform";
 import { useState } from "react";
@@ -101,6 +104,14 @@ export function ProjectSwitcher() {
     setPopoverOpen(false);
   };
 
+  const appMode = useAppModeStore((s) => s.mode);
+  const toggleAppMode = useAppModeStore((s) => s.toggleMode);
+
+  const handleToggleMode = () => {
+    toggleAppMode();
+    setPopoverOpen(false);
+  };
+
   const handleLogout = () => {
     setPopoverOpen(false);
     logoutMutation.mutate();
@@ -174,6 +185,17 @@ export function ProjectSwitcher() {
               </DropdownMenuItem>
 
               <DropdownMenuSeparator />
+
+              <DropdownMenuItem onClick={handleToggleMode}>
+                {appMode === "code" ? (
+                  <ChartLine size={14} className="text-gray-11" />
+                ) : (
+                  <Code size={14} className="text-gray-11" />
+                )}
+                {appMode === "code"
+                  ? "Switch to New Design"
+                  : "Switch to Current Design"}
+              </DropdownMenuItem>
 
               <DropdownMenuItem onClick={handleDiscord}>
                 <DiscordLogo size={14} className="text-gray-11" />

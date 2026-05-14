@@ -70,7 +70,14 @@ interface ViewState {
     | "command-center"
     | "skills"
     | "mcp-servers"
-    | "setup";
+    | "setup"
+    | "feed"
+    | "research"
+    | "build"
+    | "activity"
+    | "apps"
+    | "home"
+    | "code";
   data?: Task;
 }
 

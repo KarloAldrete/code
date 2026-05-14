@@ -783,6 +783,69 @@ export class PostHogAPIClient {
     return data as Schemas.Team;
   }
 
+  async listFeatureFlags(opts?: {
+    limit?: number;
+    active?: "true" | "false" | "STALE";
+  }) {
+    const projectId = String(await this.getTeamId());
+    return this.api.get("/api/projects/{project_id}/feature_flags/", {
+      path: { project_id: projectId },
+      query: {
+        limit: opts?.limit ?? 100,
+        ...(opts?.active ? { active: opts.active } : {}),
+      },
+    });
+  }
+
+  async listSurveys(opts?: { limit?: number }) {
+    const projectId = String(await this.getTeamId());
+    return this.api.get("/api/projects/{project_id}/surveys/", {
+      path: { project_id: projectId },
+      query: { limit: opts?.limit ?? 100 },
+    });
+  }
+
+  async listExperiments(opts?: { limit?: number }) {
+    const projectId = String(await this.getTeamId());
+    return this.api.get("/api/projects/{project_id}/experiments/", {
+      path: { project_id: projectId },
+      query: { limit: opts?.limit ?? 100 },
+    });
+  }
+
+  async listEvents(opts?: { limit?: number; event?: string; after?: string }) {
+    const projectId = String(await this.getTeamId());
+    const query: Record<string, string | number> = {
+      limit: opts?.limit ?? 50,
+    };
+    if (opts?.event) query.event = opts.event;
+    if (opts?.after) query.after = opts.after;
+    return this.api.get("/api/projects/{project_id}/events/", {
+      path: { project_id: projectId },
+      query,
+    });
+  }
+
+  async listSessionRecordings(opts?: { limit?: number }) {
+    const projectId = String(await this.getTeamId());
+    return this.api.get("/api/projects/{project_id}/session_recordings/", {
+      path: { project_id: projectId },
+      query: { limit: opts?.limit ?? 50 },
+    });
+  }
+
+  async listPersons(opts?: { limit?: number; search?: string }) {
+    const projectId = String(await this.getTeamId());
+    const query: Record<string, string | number> = {
+      limit: opts?.limit ?? 50,
+    };
+    if (opts?.search) query.search = opts.search;
+    return this.api.get("/api/projects/{project_id}/persons/", {
+      path: { project_id: projectId },
+      query,
+    });
+  }
+
   async listSignalSourceConfigs(
     projectId: number,
   ): Promise<SignalSourceConfig[]> {

@@ -2,19 +2,28 @@ import { HeaderRow } from "@components/HeaderRow";
 import { HedgehogMode } from "@components/HedgehogMode";
 import { KeyboardShortcutsSheet } from "@components/KeyboardShortcutsSheet";
 import { SpaceSwitcher } from "@components/SpaceSwitcher";
-
+import { ActivityView } from "@features/activity/components/ActivityView";
+import { AnalysisSearchModal } from "@features/analysis-search/components/AnalysisSearchModal";
+import { useAnalysisSearchStore } from "@features/analysis-search/store";
+import { AppsView } from "@features/apps/components/AppsView";
 import { ArchivedTasksView } from "@features/archive/components/ArchivedTasksView";
 import { UsageLimitModal } from "@features/billing/components/UsageLimitModal";
 import { useUsageLimitDetection } from "@features/billing/hooks/useUsageLimitDetection";
+import { BuildView } from "@features/build/components/BuildView";
 import { CanvasInput } from "@features/canvas/components/CanvasInput";
 import { CommandMenu } from "@features/command/components/CommandMenu";
 import { CommandCenterView } from "@features/command-center/components/CommandCenterView";
+import { Copilot } from "@features/copilot/components/Copilot";
+import { FeedView } from "@features/feed/components/FeedView";
+import { CodeTasksPanel } from "@features/home/components/CodeTasksPanel";
+import { HomeView } from "@features/home/components/HomeView";
 import { InboxView } from "@features/inbox/components/InboxView";
 import { useInboxDeepLink } from "@features/inbox/hooks/useInboxDeepLink";
 import { McpServersView } from "@features/mcp-servers/components/McpServersView";
 import { CanvasChatPanel } from "@features/rendering-canvas/CanvasChatPanel";
 import { useCanvasChatStore } from "@features/rendering-canvas/canvasChatStore";
 import { RenderingCanvas } from "@features/rendering-canvas/RenderingCanvas";
+import { ResearchView } from "@features/research/components/ResearchView";
 import { FolderSettingsView } from "@features/settings/components/FolderSettingsView";
 import { SettingsDialog } from "@features/settings/components/SettingsDialog";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
@@ -33,6 +42,7 @@ import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useIntegrations } from "@hooks/useIntegrations";
 import { Box, Flex } from "@radix-ui/themes";
 import { BILLING_FLAG } from "@shared/constants";
+import { useAppModeStore } from "@stores/appModeStore";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useShortcutsSheetStore } from "@stores/shortcutsSheetStore";
@@ -61,6 +71,7 @@ export function MainLayout() {
   } = useShortcutsSheetStore();
   const { data: tasks } = useTasks();
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
+  const appMode = useAppModeStore((s) => s.mode);
 
   // Space switcher data
   const sidebarData = useSidebarData({ activeView: view });
@@ -98,9 +109,14 @@ export function MainLayout() {
     return () => clearTimeout(timer);
   }, [isFirstTaskTourDone, settingsOpen, startTour]);
 
+  const toggleAnalysisSearch = useAnalysisSearchStore((s) => s.toggle);
   const handleToggleCommandMenu = useCallback(() => {
+    if (appMode === "analysis") {
+      toggleAnalysisSearch();
+      return;
+    }
     toggleCommandMenu();
-  }, [toggleCommandMenu]);
+  }, [appMode, toggleAnalysisSearch, toggleCommandMenu]);
 
   return (
     <Flex direction="column" height="100vh">
@@ -109,43 +125,81 @@ export function MainLayout() {
         <MainSidebar />
 
         <Box flexGrow="1" overflow="hidden">
-          {view.type === "task-input" && (
-            <TaskInput
-              initialPrompt={view.initialPrompt}
-              initialPromptKey={view.taskInputRequestId}
-              initialCloudRepository={
-                view.initialCloudRepository ?? taskInputCloudRepository
-              }
-              reportAssociation={
-                view.reportAssociation ?? taskInputReportAssociation
-              }
-            />
+          {appMode === "analysis" ? (
+            view.type === "feed" ? (
+              <FeedView />
+            ) : view.type === "research" ? (
+              <ResearchView />
+            ) : view.type === "build" ? (
+              <BuildView />
+            ) : view.type === "activity" ? (
+              <ActivityView />
+            ) : view.type === "apps" ? (
+              <AppsView />
+            ) : view.type === "home" ? (
+              <HomeView />
+            ) : view.type === "code" ? (
+              <Flex direction="row" className="h-full w-full">
+                <Box flexGrow="1" overflow="hidden">
+                  <TaskInput
+                    initialPrompt={view.initialPrompt}
+                    initialPromptKey={view.taskInputRequestId}
+                    initialCloudRepository={
+                      view.initialCloudRepository ?? taskInputCloudRepository
+                    }
+                    reportAssociation={
+                      view.reportAssociation ?? taskInputReportAssociation
+                    }
+                  />
+                </Box>
+                <CodeTasksPanel />
+              </Flex>
+            ) : view.type === "task-detail" && view.data ? (
+              <TaskDetail key={view.data.id} task={view.data} />
+            ) : (
+              <Box className="h-full w-full" />
+            )
+          ) : (
+            <>
+              {view.type === "task-input" && (
+                <TaskInput
+                  initialPrompt={view.initialPrompt}
+                  initialPromptKey={view.taskInputRequestId}
+                  initialCloudRepository={
+                    view.initialCloudRepository ?? taskInputCloudRepository
+                  }
+                  reportAssociation={
+                    view.reportAssociation ?? taskInputReportAssociation
+                  }
+                />
+              )}
+
+              {view.type === "task-detail" && view.data && (
+                <TaskDetail key={view.data.id} task={view.data} />
+              )}
+
+              {view.type === "canvas-input" && view.canvasId && (
+                <CanvasInputView canvasId={view.canvasId} />
+              )}
+
+              {view.type === "canvas-new" && view.canvasId && (
+                <CanvasInput canvasId={view.canvasId} />
+              )}
+
+              {view.type === "folder-settings" && <FolderSettingsView />}
+
+              {view.type === "inbox" && <InboxView />}
+
+              {view.type === "archived" && <ArchivedTasksView />}
+
+              {view.type === "command-center" && <CommandCenterView />}
+
+              {view.type === "skills" && <SkillsView />}
+
+              {view.type === "mcp-servers" && <McpServersView />}
+              {view.type === "setup" && <SetupView />}
+            </>
           )}
-
-          {view.type === "task-detail" && view.data && (
-            <TaskDetail key={view.data.id} task={view.data} />
-          )}
-
-          {view.type === "canvas-input" && view.canvasId && (
-            <CanvasInputView canvasId={view.canvasId} />
-          )}
-
-          {view.type === "canvas-new" && view.canvasId && (
-            <CanvasInput canvasId={view.canvasId} />
-          )}
-
-          {view.type === "folder-settings" && <FolderSettingsView />}
-
-          {view.type === "inbox" && <InboxView />}
-
-          {view.type === "archived" && <ArchivedTasksView />}
-
-          {view.type === "command-center" && <CommandCenterView />}
-
-          {view.type === "skills" && <SkillsView />}
-
-          {view.type === "mcp-servers" && <McpServersView />}
-          {view.type === "setup" && <SetupView />}
         </Box>
       </Flex>
 
@@ -158,6 +212,7 @@ export function MainLayout() {
         onNewTask={navigateToTaskInput}
       />
       <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
+      <AnalysisSearchModal />
       <KeyboardShortcutsSheet
         open={shortcutsSheetOpen}
         onOpenChange={(open) => (open ? null : closeShortcutsSheet())}
@@ -170,6 +225,7 @@ export function MainLayout() {
       <TourOverlay />
       {billingEnabled && <UsageLimitModal />}
       <HedgehogMode />
+      {appMode === "analysis" && <Copilot />}
     </Flex>
   );
 }

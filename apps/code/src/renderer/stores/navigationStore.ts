@@ -23,7 +23,14 @@ type ViewType =
   | "command-center"
   | "skills"
   | "mcp-servers"
-  | "setup";
+  | "setup"
+  | "feed"
+  | "research"
+  | "build"
+  | "activity"
+  | "apps"
+  | "home"
+  | "code";
 
 export interface TaskInputReportAssociation {
   reportId: string;
@@ -69,6 +76,13 @@ interface NavigationStore {
   navigateToSkills: () => void;
   navigateToMcpServers: () => void;
   navigateToSetup: () => void;
+  navigateToFeed: () => void;
+  navigateToResearch: () => void;
+  navigateToBuild: () => void;
+  navigateToActivity: () => void;
+  navigateToApps: () => void;
+  navigateToHome: () => void;
+  navigateToCode: () => void;
   goBack: () => void;
   goForward: () => void;
   canGoBack: () => boolean;
@@ -306,6 +320,34 @@ export const useNavigationStore = create<NavigationStore>()(
 
         navigateToSetup: () => {
           navigate({ type: "setup" });
+        },
+
+        navigateToFeed: () => {
+          navigate({ type: "feed" });
+        },
+
+        navigateToResearch: () => {
+          navigate({ type: "research" });
+        },
+
+        navigateToBuild: () => {
+          navigate({ type: "build" });
+        },
+
+        navigateToActivity: () => {
+          navigate({ type: "activity" });
+        },
+
+        navigateToApps: () => {
+          navigate({ type: "apps" });
+        },
+
+        navigateToHome: () => {
+          navigate({ type: "home" });
+        },
+
+        navigateToCode: () => {
+          navigate({ type: "code" });
         },
 
         goBack: () => {
