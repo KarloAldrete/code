@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FloatingBackButton } from "@/components/FloatingBackButton";
 import { getTask, runTaskInCloud } from "@/features/tasks/api";
 import { FloatingTaskHeader } from "@/features/tasks/components/FloatingTaskHeader";
+import { PrStatusBadge } from "@/features/tasks/components/PrStatusBadge";
 import { TaskSessionView } from "@/features/tasks/components/TaskSessionView";
 import { buildCloudPromptBlocks } from "@/features/tasks/composer/attachments/buildCloudPrompt";
 import { serializeCloudPrompt } from "@/features/tasks/composer/attachments/cloudPrompt";
@@ -342,6 +343,7 @@ export default function TaskDetailScreen() {
   // Stale detection for local tasks: if no new S3 data arrives for 30s
   // while the agent is supposedly working, the desktop may be offline.
   const isLocal = task?.latest_run?.environment === "local";
+  const prUrl = task?.latest_run?.output?.pr_url as string | undefined;
   const [isStale, setIsStale] = useState(false);
   useEffect(() => {
     if (!isLocal || !session?.isPromptPending) {
@@ -436,7 +438,9 @@ export default function TaskDetailScreen() {
         title={loading ? "Loading..." : task?.title || "Task"}
         subtitle={task?.repository ?? undefined}
         rightSlot={
-          isLocal ? (
+          prUrl ? (
+            <PrStatusBadge prUrl={prUrl} />
+          ) : isLocal ? (
             <Pressable
               onPress={() =>
                 ActionSheetIOS.showActionSheetWithOptions(
