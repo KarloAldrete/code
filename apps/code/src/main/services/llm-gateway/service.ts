@@ -1,3 +1,4 @@
+import { DEFAULT_GATEWAY_MODEL } from "@posthog/agent/gateway-models";
 import {
   getGatewayInvalidatePlanCacheUrl,
   getGatewayUsageUrl,
@@ -11,6 +12,7 @@ import {
   type AnthropicErrorResponse,
   type AnthropicMessagesRequest,
   type AnthropicMessagesResponse,
+  type LlmGatewayEffortLevel,
   type LlmMessage,
   type PromptOutput,
   type UsageOutput,
@@ -44,9 +46,17 @@ export class LlmGatewayService {
       system?: string;
       maxTokens?: number;
       model?: string;
+      betas?: string[];
+      effort?: LlmGatewayEffortLevel;
     } = {},
   ): Promise<PromptOutput> {
-    const { system, maxTokens, model = "claude-haiku-4-5" } = options;
+    const {
+      system,
+      maxTokens,
+      model = DEFAULT_GATEWAY_MODEL,
+      betas,
+      effort,
+    } = options;
 
     const auth = await this.authService.getValidAccessToken();
     const gatewayUrl = getLlmGatewayUrl(auth.apiHost);
@@ -66,10 +76,23 @@ export class LlmGatewayService {
       requestBody.system = system;
     }
 
+    if (effort) {
+      requestBody.output_config = { effort };
+    }
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (betas?.length) {
+      headers["anthropic-beta"] = betas.join(",");
+    }
+
     log.debug("Sending request to LLM gateway", {
       url: messagesUrl,
       model,
       messageCount: messages.length,
+      betas,
+      effort,
     });
 
     const response = await this.authService.authenticatedFetch(
@@ -77,9 +100,7 @@ export class LlmGatewayService {
       messagesUrl,
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify(requestBody),
       },
     );

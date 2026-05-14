@@ -1,3 +1,4 @@
+import { DEFAULT_GATEWAY_MODEL } from "@posthog/agent/gateway-models";
 import { z } from "zod";
 
 export const llmMessageSchema = z.object({
@@ -7,11 +8,16 @@ export const llmMessageSchema = z.object({
 
 export type LlmMessage = z.infer<typeof llmMessageSchema>;
 
+export const llmGatewayEffortLevel = z.enum(["low", "medium", "high", "max"]);
+export type LlmGatewayEffortLevel = z.infer<typeof llmGatewayEffortLevel>;
+
 export const promptInput = z.object({
   system: z.string().optional(),
   messages: z.array(llmMessageSchema),
   maxTokens: z.number().optional(),
-  model: z.string().default("claude-haiku-4-5"),
+  model: z.string().default(DEFAULT_GATEWAY_MODEL),
+  betas: z.array(z.string().min(1)).optional(),
+  effort: llmGatewayEffortLevel.optional(),
 });
 
 export type PromptInput = z.infer<typeof promptInput>;
@@ -34,6 +40,9 @@ export interface AnthropicMessagesRequest {
   max_tokens?: number;
   system?: string;
   stream?: boolean;
+  output_config?: {
+    effort?: LlmGatewayEffortLevel;
+  };
 }
 
 export interface AnthropicMessagesResponse {

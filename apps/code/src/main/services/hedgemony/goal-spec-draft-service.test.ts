@@ -15,6 +15,11 @@ import type { LlmGatewayService } from "../llm-gateway/service";
 import { GoalSpecDraftService } from "./goal-spec-draft-service";
 import { SPEC_DRIVEN_DEVELOPMENT_METHOD } from "./spec-driven-development";
 
+const GOAL_DRAFT_MODEL = "claude-opus-4-6";
+const GOAL_DRAFT_BETAS = ["context-1m-2025-08-07"];
+const GOAL_DRAFT_EFFORT = "max";
+const GOAL_DRAFT_MAX_TOKENS = 128_000;
+
 function createMockLlmGateway() {
   return {
     prompt: vi.fn(),
@@ -38,7 +43,7 @@ describe("GoalSpecDraftService", () => {
         kind: "ask_question",
         question: "Which metric should improve?",
       }),
-      model: "claude-haiku-4-5",
+      model: GOAL_DRAFT_MODEL,
       stopReason: "end_turn",
       usage: { inputTokens: 10, outputTokens: 5 },
     });
@@ -61,7 +66,10 @@ describe("GoalSpecDraftService", () => {
         }),
       ],
       expect.objectContaining({
-        maxTokens: 1400,
+        maxTokens: GOAL_DRAFT_MAX_TOKENS,
+        model: GOAL_DRAFT_MODEL,
+        betas: GOAL_DRAFT_BETAS,
+        effort: GOAL_DRAFT_EFFORT,
         system: expect.stringContaining(SPEC_DRIVEN_DEVELOPMENT_METHOD),
       }),
     );
@@ -108,7 +116,7 @@ describe("GoalSpecDraftService", () => {
             "Payment-error rate is lower and the checkout runbook is updated.",
         },
       })}\n\`\`\``,
-      model: "claude-haiku-4-5",
+      model: GOAL_DRAFT_MODEL,
       stopReason: "end_turn",
       usage: { inputTokens: 10, outputTokens: 20 },
     });
@@ -174,7 +182,7 @@ describe("GoalSpecDraftService", () => {
           definitionOfDone: "Checkout is better.",
         },
       }),
-      model: "claude-haiku-4-5",
+      model: GOAL_DRAFT_MODEL,
       stopReason: "end_turn",
       usage: { inputTokens: 10, outputTokens: 20 },
     });
@@ -195,7 +203,7 @@ describe("GoalSpecDraftService", () => {
     llmGateway.prompt
       .mockResolvedValueOnce({
         content: "Sure — here you go!",
-        model: "claude-haiku-4-5",
+        model: GOAL_DRAFT_MODEL,
         stopReason: "end_turn",
         usage: { inputTokens: 10, outputTokens: 5 },
       })
@@ -204,7 +212,7 @@ describe("GoalSpecDraftService", () => {
           kind: "ask_question",
           question: "Which metric should improve?",
         }),
-        model: "claude-haiku-4-5",
+        model: GOAL_DRAFT_MODEL,
         stopReason: "end_turn",
         usage: { inputTokens: 10, outputTokens: 5 },
       });
@@ -227,6 +235,12 @@ describe("GoalSpecDraftService", () => {
     });
     expect(retryCall[0][2].role).toBe("user");
     expect(retryCall[0][2].content).toContain("not valid JSON");
+    expect(retryCall[1]).toMatchObject({
+      maxTokens: GOAL_DRAFT_MAX_TOKENS,
+      model: GOAL_DRAFT_MODEL,
+      betas: GOAL_DRAFT_BETAS,
+      effort: GOAL_DRAFT_EFFORT,
+    });
   });
 
   it("turns repo exploration requests into discovery-first specs instead of looping questions back", async () => {
@@ -236,7 +250,7 @@ describe("GoalSpecDraftService", () => {
         question:
           "Based on the repo structure you reviewed, what are the key technical constraints or dependencies we need to work around?",
       }),
-      model: "claude-haiku-4-5",
+      model: GOAL_DRAFT_MODEL,
       stopReason: "end_turn",
       usage: { inputTokens: 10, outputTokens: 20 },
     });
@@ -309,7 +323,7 @@ describe("GoalSpecDraftService", () => {
   it("throws a friendlier error when both attempts fail to parse", async () => {
     llmGateway.prompt.mockResolvedValue({
       content: "I cannot do that",
-      model: "claude-haiku-4-5",
+      model: GOAL_DRAFT_MODEL,
       stopReason: "end_turn",
       usage: { inputTokens: 10, outputTokens: 20 },
     });

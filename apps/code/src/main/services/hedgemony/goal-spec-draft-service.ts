@@ -20,6 +20,11 @@ import {
 
 const log = logger.scope("goal-spec-draft-service");
 
+const GOAL_DRAFT_MODEL = "claude-opus-4-6";
+const GOAL_DRAFT_BETAS = ["context-1m-2025-08-07"];
+const GOAL_DRAFT_EFFORT = "max";
+const GOAL_DRAFT_MAX_TOKENS = 128_000;
+
 const SYSTEM_PROMPT = `You help a PostHog Code operator write a Hedgemony nest goal before the nest exists.
 
 Return JSON only, with exactly one of these shapes:
@@ -75,7 +80,10 @@ export class GoalSpecDraftService {
 
     const firstResponse = await this.llmGateway.prompt(messages, {
       system: SYSTEM_PROMPT,
-      maxTokens: 1400,
+      maxTokens: GOAL_DRAFT_MAX_TOKENS,
+      model: GOAL_DRAFT_MODEL,
+      betas: GOAL_DRAFT_BETAS,
+      effort: GOAL_DRAFT_EFFORT,
     });
 
     const firstAttempt = tryParseResponse(firstResponse.content);
@@ -92,7 +100,13 @@ export class GoalSpecDraftService {
           { role: "assistant", content: firstResponse.content },
           { role: "user", content: JSON_ONLY_REMINDER },
         ],
-        { system: SYSTEM_PROMPT, maxTokens: 1400 },
+        {
+          system: SYSTEM_PROMPT,
+          maxTokens: GOAL_DRAFT_MAX_TOKENS,
+          model: GOAL_DRAFT_MODEL,
+          betas: GOAL_DRAFT_BETAS,
+          effort: GOAL_DRAFT_EFFORT,
+        },
       );
       const secondAttempt = tryParseResponse(retryResponse.content);
       if (!secondAttempt.ok) {
