@@ -3,8 +3,16 @@ import {
   type CanvasApiResolver,
   CanvasRenderer,
 } from "@features/rendering-canvas/CanvasRenderer";
+import { useCanvasChatStore } from "@features/rendering-canvas/canvasChatStore";
 import { useExportCanvasPdf } from "@features/rendering-canvas/useExportCanvasPdf";
-import { FilePdf } from "@phosphor-icons/react";
+import { ChatCircle, DotsThree } from "@phosphor-icons/react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  Button as QuillButton,
+} from "@posthog/quill";
 import { Button, Flex } from "@radix-ui/themes";
 import type { PostHogAPIClient } from "@renderer/api/posthogClient";
 import { useQuery } from "@tanstack/react-query";
@@ -28,6 +36,8 @@ export function RenderingCanvas({
     queryFn: () => client.getRenderingCanvas(canvasId),
   });
   const { exportPdf, isExporting } = useExportCanvasPdf();
+  const chatOpen = useCanvasChatStore((s) => s.open);
+  const toggleChat = useCanvasChatStore((s) => s.toggle);
 
   if (isLoading) {
     return (
@@ -53,16 +63,39 @@ export function RenderingCanvas({
         className="shrink-0 border-(--gray-5) border-b px-3 py-2"
       >
         <span className="text-(--gray-12) text-sm">{data.name}</span>
-        <Button
-          size="1"
-          variant="soft"
-          onClick={() => exportPdf({ name: data.name })}
-          disabled={isExporting}
-          aria-label="Export canvas as PDF"
-        >
-          <FilePdf weight="regular" />
-          {isExporting ? "Exporting…" : "Export PDF"}
-        </Button>
+        <Flex align="center" gap="1">
+          <Button
+            size="1"
+            variant={chatOpen ? "solid" : "soft"}
+            onClick={toggleChat}
+            aria-label="Toggle chat panel"
+            aria-pressed={chatOpen}
+          >
+            <ChatCircle weight="regular" />
+            Chat
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <QuillButton
+                  size="icon-sm"
+                  aria-label="Canvas options"
+                  className="rounded-xs"
+                >
+                  <DotsThree size={16} weight="bold" />
+                </QuillButton>
+              }
+            />
+            <DropdownMenuContent align="end" side="bottom" sideOffset={6}>
+              <DropdownMenuItem
+                onClick={() => exportPdf({ name: data.name })}
+                disabled={isExporting}
+              >
+                {isExporting ? "Exporting…" : "Export PDF"}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </Flex>
       </Flex>
       <Flex direction="column" className="min-h-0 flex-1">
         <CanvasRenderer

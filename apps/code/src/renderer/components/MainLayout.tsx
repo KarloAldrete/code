@@ -12,7 +12,8 @@ import { CommandCenterView } from "@features/command-center/components/CommandCe
 import { InboxView } from "@features/inbox/components/InboxView";
 import { useInboxDeepLink } from "@features/inbox/hooks/useInboxDeepLink";
 import { McpServersView } from "@features/mcp-servers/components/McpServersView";
-import { CanvasChatBox } from "@features/rendering-canvas/CanvasChatBox";
+import { CanvasChatPanel } from "@features/rendering-canvas/CanvasChatPanel";
+import { useCanvasChatStore } from "@features/rendering-canvas/canvasChatStore";
 import { RenderingCanvas } from "@features/rendering-canvas/RenderingCanvas";
 import { FolderSettingsView } from "@features/settings/components/FolderSettingsView";
 import { SettingsDialog } from "@features/settings/components/SettingsDialog";
@@ -126,12 +127,7 @@ export function MainLayout() {
           )}
 
           {view.type === "canvas-input" && view.canvasId && (
-            <Flex direction="column" height="100%">
-              <Box flexGrow="1" overflow="hidden">
-                <RenderingCanvas canvasId={view.canvasId} className="h-full" />
-              </Box>
-              <CanvasChatBox canvasId={view.canvasId} />
-            </Flex>
+            <CanvasInputView canvasId={view.canvasId} />
           )}
 
           {view.type === "canvas-new" && view.canvasId && (
@@ -174,6 +170,22 @@ export function MainLayout() {
       <TourOverlay />
       {billingEnabled && <UsageLimitModal />}
       <HedgehogMode />
+    </Flex>
+  );
+}
+
+function CanvasInputView({ canvasId }: { canvasId: string }) {
+  const chatOpen = useCanvasChatStore((s) => s.open);
+  return (
+    <Flex height="100%">
+      <Box flexGrow="1" overflow="hidden">
+        <RenderingCanvas canvasId={canvasId} className="h-full" />
+      </Box>
+      {chatOpen && (
+        <Box className="h-full w-[400px] min-w-[300px] shrink-0 border-(--gray-5) border-l">
+          <CanvasChatPanel canvasId={canvasId} />
+        </Box>
+      )}
     </Flex>
   );
 }
