@@ -3,7 +3,11 @@ import { ArrowCounterClockwise } from "@phosphor-icons/react";
 import { AnimatePresence, motion, useMotionValue } from "framer-motion";
 import type { ReactNode } from "react";
 import { useRef, useState } from "react";
-import { useHedgemonyViewStore } from "../stores/hedgemonyViewStore";
+import {
+  HEDGEMONY_ZOOM_MAX,
+  HEDGEMONY_ZOOM_MIN,
+  useHedgemonyViewStore,
+} from "../stores/hedgemonyViewStore";
 import { BgmControl } from "./BgmControl";
 import { type BuilderAnimation, BuilderSprite } from "./BuilderSprite";
 import { NestSprite } from "./NestSprite";
@@ -11,6 +15,7 @@ import { NestSprite } from "./NestSprite";
 const ZOOM_WHEEL_STEP = 0.0015;
 const CLICK_DRAG_THRESHOLD_PX = 4;
 const GHOST_SIZE = 96;
+const FIT_PADDING_PX = 360;
 
 export interface MoveMarker {
   id: number;
@@ -18,9 +23,19 @@ export interface MoveMarker {
   y: number;
 }
 
+export interface CommandPath {
+  id: number;
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+  kind: "move" | "relocate" | "build";
+}
+
 interface HedgemonyMapSurfaceProps {
   nests: Nest[];
   selectedNestId: string | null;
+  relocatingNestId: string | null;
   builderX: number;
   builderY: number;
   builderSelected: boolean;
@@ -28,6 +43,7 @@ interface HedgemonyMapSurfaceProps {
   builderFacing: "left" | "right";
   buildMode: boolean;
   moveMarker: MoveMarker | null;
+  commandPath: CommandPath | null;
   children?: ReactNode;
   overlay?: ReactNode;
   /** Left-click on empty map at world coords. */
@@ -42,6 +58,7 @@ interface HedgemonyMapSurfaceProps {
 export function HedgemonyMapSurface({
   nests,
   selectedNestId,
+  relocatingNestId,
   builderX,
   builderY,
   builderSelected,
@@ -49,6 +66,7 @@ export function HedgemonyMapSurface({
   builderFacing,
   buildMode,
   moveMarker,
+  commandPath,
   children,
   overlay,
   onMapClick,
@@ -70,10 +88,72 @@ export function HedgemonyMapSurface({
 
   const outerRef = useRef<HTMLDivElement>(null);
   const pointerDown = useRef<{ x: number; y: number } | null>(null);
-  const [buildPointer, setBuildPointer] = useState<{
+  const [placementPointer, setPlacementPointer] = useState<{
     x: number;
     y: number;
   } | null>(null);
+  const selectedNest =
+    selectedNestId !== null
+      ? (nests.find((nest) => nest.id === selectedNestId) ?? null)
+      : null;
+  const relocatingNest =
+    relocatingNestId !== null
+      ? (nests.find((nest) => nest.id === relocatingNestId) ?? null)
+      : null;
+  const placementMode = buildMode || relocatingNest !== null;
+
+  const applyView = (nextPanX: number, nextPanY: number, nextZoom = zoom) => {
+    x.set(nextPanX);
+    y.set(nextPanY);
+    setPan(nextPanX, nextPanY);
+    setZoom(nextZoom);
+  };
+
+  const centerOnWorldPoint = (worldX: number, worldY: number) => {
+    applyView(-worldX * zoom, -worldY * zoom);
+  };
+
+  const fitToContents = () => {
+    const rect = outerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const points =
+      nests.length > 0
+        ? nests.map((nest) => ({ x: nest.mapX, y: nest.mapY }))
+        : [{ x: builderX, y: builderY }];
+    if (nests.length > 0) points.push({ x: builderX, y: builderY });
+
+    const minX = Math.min(...points.map((point) => point.x));
+    const maxX = Math.max(...points.map((point) => point.x));
+    const minY = Math.min(...points.map((point) => point.y));
+    const maxY = Math.max(...points.map((point) => point.y));
+    const contentWidth = Math.max(1, maxX - minX + FIT_PADDING_PX);
+    const contentHeight = Math.max(1, maxY - minY + FIT_PADDING_PX);
+    const nextZoom = Math.min(
+      HEDGEMONY_ZOOM_MAX,
+      Math.max(
+        HEDGEMONY_ZOOM_MIN,
+        Math.min(rect.width / contentWidth, rect.height / contentHeight, 1.25),
+      ),
+    );
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    applyView(-centerX * nextZoom, -centerY * nextZoom, nextZoom);
+  };
+
+  const centerSelected = () => {
+    if (selectedNest) {
+      centerOnWorldPoint(selectedNest.mapX, selectedNest.mapY);
+      return;
+    }
+    if (builderSelected) centerOnWorldPoint(builderX, builderY);
+  };
+
+  const handleResetView = () => {
+    x.set(0);
+    y.set(0);
+    resetView();
+  };
 
   const toWorldCoords = (clientX: number, clientY: number) => {
     const rect = outerRef.current?.getBoundingClientRect();
@@ -102,7 +182,12 @@ export function HedgemonyMapSurface({
     pointerDown.current = null;
     if (event.button !== 0) return;
     if (!start || !onMapClick) return;
-    if ((event.target as HTMLElement).closest("[data-hedgemony-nest]")) return;
+    if (
+      (event.target as HTMLElement).closest("[data-hedgemony-nest]") &&
+      !placementMode
+    ) {
+      return;
+    }
 
     const dx = event.clientX - start.x;
     const dy = event.clientY - start.y;
@@ -114,18 +199,23 @@ export function HedgemonyMapSurface({
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!buildMode) return;
+    if (!placementMode) return;
     const world = toWorldCoords(event.clientX, event.clientY);
-    if (world) setBuildPointer(world);
+    if (world) setPlacementPointer(world);
   };
 
   const handlePointerLeave = () => {
-    setBuildPointer(null);
+    setPlacementPointer(null);
   };
 
   const handleContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
-    if ((event.target as HTMLElement).closest("[data-hedgemony-nest]")) return;
+    if (
+      (event.target as HTMLElement).closest("[data-hedgemony-nest]") &&
+      !placementMode
+    ) {
+      return;
+    }
     const world = toWorldCoords(event.clientX, event.clientY);
     if (!world) return;
     onMapRightClick?.(world.x, world.y);
@@ -136,7 +226,9 @@ export function HedgemonyMapSurface({
     <div
       ref={outerRef}
       className={`relative h-full w-full select-none overflow-hidden ${
-        buildMode ? "cursor-crosshair" : "cursor-grab active:cursor-grabbing"
+        placementMode
+          ? "cursor-crosshair"
+          : "cursor-grab active:cursor-grabbing"
       }`}
       onWheel={handleWheel}
       onPointerDown={handlePointerDown}
@@ -146,26 +238,47 @@ export function HedgemonyMapSurface({
       onContextMenu={handleContextMenu}
     >
       <motion.div
-        drag={!buildMode}
+        drag={!placementMode}
         dragMomentum={false}
         style={{ x, y, scale: zoom }}
         initial={{ x: initial.current.x, y: initial.current.y }}
         onDragEnd={() => setPan(x.get(), y.get())}
         className="absolute inset-0 origin-center"
       >
-        <div
-          className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 h-[4000px] w-[4000px]"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle, var(--gray-5) 1px, transparent 1px)",
-            backgroundSize: "24px 24px",
-          }}
-        />
+        <MapBackdrop />
+        <AnimatePresence>
+          {commandPath && (
+            <motion.svg
+              key={commandPath.id}
+              aria-hidden="true"
+              className="pointer-events-none absolute top-1/2 left-1/2 overflow-visible"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+            >
+              <motion.line
+                x1={commandPath.fromX}
+                y1={commandPath.fromY}
+                x2={commandPath.toX}
+                y2={commandPath.toY}
+                stroke="var(--accent-9)"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeDasharray="8 8"
+                initial={{ pathLength: 0 }}
+                animate={{ pathLength: 1 }}
+                transition={{ duration: 0.28, ease: "easeOut" }}
+              />
+            </motion.svg>
+          )}
+        </AnimatePresence>
         {nests.map((nest) => (
           <NestSprite
             key={nest.id}
             nest={nest}
             selected={nest.id === selectedNestId}
+            dimmed={nest.id === relocatingNestId}
             onSelect={onNestSelect}
           />
         ))}
@@ -178,17 +291,23 @@ export function HedgemonyMapSurface({
           onSelect={onBuilderSelect}
           onArrive={onBuilderArrive}
         />
-        {buildMode && buildPointer && (
+        {placementMode && placementPointer && (
           <div
             className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2"
             style={{
-              transform: `translate(calc(-50% + ${buildPointer.x}px), calc(-50% + ${buildPointer.y}px))`,
+              transform: `translate(calc(-50% + ${placementPointer.x}px), calc(-50% + ${placementPointer.y}px))`,
             }}
           >
             <div
-              className="rounded-full border-(--accent-9) border-2 border-dashed bg-(--accent-3)/30"
+              className="rounded-full border-(--accent-9) border-2 border-dashed bg-(--accent-3)/30 shadow-lg"
               style={{ width: GHOST_SIZE, height: GHOST_SIZE }}
-            />
+            >
+              {relocatingNest && (
+                <div className="flex h-full w-full items-center justify-center px-3 text-center font-medium text-(--accent-11) text-[11px] leading-tight">
+                  Move {relocatingNest.name}
+                </div>
+              )}
+            </div>
           </div>
         )}
         <AnimatePresence>
@@ -221,7 +340,24 @@ export function HedgemonyMapSurface({
         <BgmControl />
         <button
           type="button"
-          onClick={resetView}
+          onClick={fitToContents}
+          className="flex h-7 items-center gap-1 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2) px-2 text-(--gray-11) text-[12px] transition-colors hover:bg-(--gray-3) hover:text-(--gray-12)"
+          title="Fit all nests"
+        >
+          Fit
+        </button>
+        <button
+          type="button"
+          onClick={centerSelected}
+          disabled={!selectedNest && !builderSelected}
+          className="flex h-7 items-center gap-1 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2) px-2 text-(--gray-11) text-[12px] transition-colors hover:bg-(--gray-3) hover:text-(--gray-12) disabled:cursor-not-allowed disabled:opacity-50"
+          title="Center selected"
+        >
+          Center
+        </button>
+        <button
+          type="button"
+          onClick={handleResetView}
           className="flex h-7 items-center gap-1 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2) px-2 text-(--gray-11) text-[12px] transition-colors hover:bg-(--gray-3) hover:text-(--gray-12)"
           title="Reset view"
         >
@@ -238,6 +374,119 @@ export function HedgemonyMapSurface({
           Click to place a nest · Esc / right-click to cancel
         </div>
       )}
+      {relocatingNest && (
+        <div className="-translate-x-1/2 pointer-events-none absolute top-3 left-1/2 rounded-(--radius-2) border border-(--accent-7) bg-(--accent-3) px-3 py-1 font-medium text-(--accent-11) text-[12px] shadow-sm">
+          Click a new home for {relocatingNest.name} · Esc / right-click to
+          cancel
+        </div>
+      )}
+      {!placementMode && builderSelected && (
+        <div className="-translate-x-1/2 pointer-events-none absolute top-3 left-1/2 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2) px-3 py-1 text-(--gray-11) text-[12px] shadow-sm">
+          Right-click the map to move the builder
+        </div>
+      )}
+      {!placementMode && selectedNest && (
+        <div className="-translate-x-1/2 pointer-events-none absolute top-3 left-1/2 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2) px-3 py-1 text-(--gray-11) text-[12px] shadow-sm">
+          Use Relocate in the panel to move this nest
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MapBackdrop() {
+  return (
+    <div
+      className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 h-[4000px] w-[4000px] overflow-hidden"
+      style={{
+        backgroundColor: "var(--gray-1)",
+        backgroundImage: [
+          "radial-gradient(circle at 48% 46%, var(--accent-a3) 0%, transparent 26%)",
+          "radial-gradient(circle at 28% 68%, var(--gray-a4) 0%, transparent 22%)",
+          "radial-gradient(circle at 72% 28%, var(--gray-a3) 0%, transparent 24%)",
+          "linear-gradient(135deg, transparent 0%, var(--gray-a2) 45%, transparent 46%, transparent 54%, var(--gray-a2) 55%, transparent 100%)",
+          "radial-gradient(circle, var(--gray-5) 1px, transparent 1px)",
+        ].join(", "),
+        backgroundSize:
+          "1800px 1300px, 1500px 1100px, 1500px 1100px, 520px 520px, 24px 24px",
+        backgroundPosition: "center, center, center, center, center",
+      }}
+    >
+      <MapZone
+        x={0}
+        y={0}
+        width={1900}
+        height={1280}
+        label="Active nests"
+        description="goal territory"
+        variant="primary"
+      />
+      <MapZone
+        x={-1220}
+        y={860}
+        width={880}
+        height={520}
+        label="Wilds"
+        description="ad-hoc hoglets"
+        variant="muted"
+      />
+      <MapZone
+        x={1180}
+        y={-820}
+        width={900}
+        height={540}
+        label="Signal staging"
+        description="unrouted signal work"
+        variant="muted"
+      />
+      <div
+        className="-translate-x-1/2 -translate-y-1/2 absolute top-1/2 left-1/2 h-[2px] w-[2100px] rotate-[-18deg] rounded-full bg-(--accent-a4)"
+        style={{ transform: "translate(-50%, -50%) rotate(-18deg)" }}
+      />
+      <div
+        className="-translate-x-1/2 -translate-y-1/2 absolute top-1/2 left-1/2 h-[2px] w-[1900px] rotate-[28deg] rounded-full bg-(--gray-a4)"
+        style={{ transform: "translate(-50%, -50%) rotate(28deg)" }}
+      />
+    </div>
+  );
+}
+
+function MapZone({
+  x,
+  y,
+  width,
+  height,
+  label,
+  description,
+  variant,
+}: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  label: string;
+  description: string;
+  variant: "primary" | "muted";
+}) {
+  return (
+    <div
+      className={`-translate-x-1/2 -translate-y-1/2 absolute top-1/2 left-1/2 rounded-[48px] border ${
+        variant === "primary"
+          ? "border-(--accent-a5) bg-(--accent-a2)"
+          : "border-(--gray-a5) bg-(--gray-a2)"
+      }`}
+      style={{
+        width,
+        height,
+        transform: `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`,
+      }}
+    >
+      <div className="absolute top-5 left-6 rounded-(--radius-2) border border-(--gray-a4) bg-(--gray-a2) px-2 py-1 text-(--gray-10) shadow-sm backdrop-blur-sm">
+        <div className="font-medium text-(--gray-11) text-[12px] uppercase tracking-[0.16em]">
+          {label}
+        </div>
+        <div className="mt-0.5 text-[11px]">{description}</div>
+      </div>
     </div>
   );
 }

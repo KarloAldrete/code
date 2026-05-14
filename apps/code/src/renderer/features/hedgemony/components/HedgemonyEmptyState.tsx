@@ -1,7 +1,13 @@
 import { Flex, Text } from "@radix-ui/themes";
 import explorerHog from "@renderer/assets/images/hedgehogs/explorer-hog.png";
 
-export function HedgemonyEmptyState() {
+interface HedgemonyEmptyStateProps {
+  onBuildFirstNest?: () => void;
+}
+
+export function HedgemonyEmptyState({
+  onBuildFirstNest,
+}: HedgemonyEmptyStateProps) {
   return (
     <Flex
       direction="column"
@@ -28,6 +34,15 @@ export function HedgemonyEmptyState() {
           Create a nest to define a goal. Hoglets will gather around it to do
           the work.
         </Text>
+        {onBuildFirstNest && (
+          <button
+            type="button"
+            onClick={onBuildFirstNest}
+            className="pointer-events-auto mt-4 rounded-(--radius-2) border border-(--accent-7) bg-(--accent-3) px-3 py-1.5 font-medium text-(--accent-11) text-[12px] shadow-sm transition-colors hover:bg-(--accent-4) hover:text-(--accent-12)"
+          >
+            Build first nest
+          </button>
+        )}
       </Flex>
     </Flex>
   );

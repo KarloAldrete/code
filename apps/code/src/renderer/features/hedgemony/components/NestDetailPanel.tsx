@@ -20,9 +20,14 @@ const log = logger.scope("nest-detail-panel");
 interface NestDetailPanelProps {
   nest: Nest;
   onClose: () => void;
+  onRelocate?: () => void;
 }
 
-export function NestDetailPanel({ nest, onClose }: NestDetailPanelProps) {
+export function NestDetailPanel({
+  nest,
+  onClose,
+  onRelocate,
+}: NestDetailPanelProps) {
   const [name, setName] = useState(nest.name);
   const [goalPrompt, setGoalPrompt] = useState(nest.goalPrompt);
   const [definitionOfDone, setDefinitionOfDone] = useState(
@@ -157,6 +162,16 @@ export function NestDetailPanel({ nest, onClose }: NestDetailPanelProps) {
               <FloppyDisk size={14} />
               Save
             </Button>
+            {onRelocate && (
+              <Button
+                variant="soft"
+                color="gray"
+                onClick={onRelocate}
+                disabled={saving || archiving}
+              >
+                Relocate
+              </Button>
+            )}
             <Button
               variant="soft"
               color="red"

@@ -9,16 +9,36 @@ const SELECTION_RING_SIZE = SPRITE_SIZE + 22;
 interface NestSpriteProps {
   nest: Nest;
   selected?: boolean;
+  dimmed?: boolean;
   onSelect?: (nest: Nest) => void;
 }
 
-export function NestSprite({ nest, selected, onSelect }: NestSpriteProps) {
+function territoryBackground(nest: Nest): string {
+  if (nest.health !== "ok") {
+    return "radial-gradient(circle, rgba(251, 146, 60, 0.22) 0%, rgba(251, 146, 60, 0.1) 42%, transparent 72%)";
+  }
+  if (nest.status === "needs_attention") {
+    return "radial-gradient(circle, rgba(248, 113, 113, 0.22) 0%, rgba(248, 113, 113, 0.1) 42%, transparent 72%)";
+  }
+  if (nest.status === "dormant") {
+    return "radial-gradient(circle, rgba(148, 163, 184, 0.18) 0%, rgba(148, 163, 184, 0.08) 42%, transparent 72%)";
+  }
+  return "radial-gradient(circle, rgba(251, 146, 60, 0.18) 0%, rgba(251, 146, 60, 0.08) 42%, transparent 72%)";
+}
+
+export function NestSprite({
+  nest,
+  selected,
+  dimmed,
+  onSelect,
+}: NestSpriteProps) {
   return (
     <motion.div
       className="absolute top-1/2 left-1/2"
       initial={false}
       animate={{ x: nest.mapX, y: nest.mapY }}
       transition={{ type: "spring", damping: 26, stiffness: 180, mass: 0.7 }}
+      style={{ opacity: dimmed ? 0.42 : 1 }}
     >
       <Tooltip content={nest.goalPrompt} side="bottom">
         <motion.button
@@ -35,6 +55,14 @@ export function NestSprite({ nest, selected, onSelect }: NestSpriteProps) {
           }}
         >
           <div className="relative">
+            <div
+              className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 rounded-full"
+              style={{
+                width: selected ? 260 : 220,
+                height: selected ? 260 : 220,
+                background: territoryBackground(nest),
+              }}
+            />
             {selected && (
               <motion.span
                 className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 rounded-full border-(--accent-9) border-2"
