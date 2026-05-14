@@ -30,6 +30,8 @@ export const sessionConfigSchema = z.object({
   additionalDirectories: z.array(z.string()).optional(),
   /** Permission mode to use for the session (e.g. "default", "acceptEdits", "plan", "bypassPermissions") */
   permissionMode: z.string().optional(),
+  /** When set, this session is a project chat — attach the Project Canvas MCP. */
+  projectCanvasId: z.string().optional(),
 });
 
 export type SessionConfig = z.infer<typeof sessionConfigSchema>;
@@ -47,10 +49,12 @@ export const startSessionInput = z.object({
   runMode: z.enum(["local", "cloud"]).optional(),
   adapter: z.enum(["claude", "codex"]).optional(),
   additionalDirectories: z.array(z.string()).optional(),
-  customInstructions: z.string().max(2000).optional(),
+  customInstructions: z.string().max(16000).optional(),
   effort: effortLevelSchema.optional(),
   model: z.string().optional(),
   jsonSchema: z.record(z.string(), z.unknown()).nullish(),
+  /** When set, this session is a project chat — attach the Project Canvas MCP. */
+  projectCanvasId: z.string().optional(),
 });
 
 export type StartSessionInput = z.infer<typeof startSessionInput>;
@@ -172,9 +176,11 @@ export const reconnectSessionInput = z.object({
   /** Additional directories Claude can access beyond cwd (for worktree support) */
   additionalDirectories: z.array(z.string()).optional(),
   permissionMode: z.string().optional(),
-  customInstructions: z.string().max(2000).optional(),
+  customInstructions: z.string().max(16000).optional(),
   effort: effortLevelSchema.optional(),
   jsonSchema: z.record(z.string(), z.unknown()).nullish(),
+  /** When set, this session is a project chat — attach the Project Canvas MCP. */
+  projectCanvasId: z.string().optional(),
 });
 
 export type ReconnectSessionInput = z.infer<typeof reconnectSessionInput>;

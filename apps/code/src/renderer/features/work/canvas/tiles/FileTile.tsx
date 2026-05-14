@@ -2,15 +2,17 @@ import { FileText } from "@phosphor-icons/react";
 import { Box } from "@radix-ui/themes";
 import type {
   FileTile as FileTileType,
-  TileSize,
+  GridSize,
 } from "@shared/types/work-projects";
 import { useCallback, useEffect, useState } from "react";
 import { TileFrame } from "../TileFrame";
 
 interface FileTileProps {
   tile: FileTileType;
+  currentGridSize: GridSize;
   onRemove?: () => void;
-  onResize?: (size: TileSize) => void;
+  onResizeGrid?: (size: GridSize) => void;
+  onResizePreview?: (size: GridSize | null) => void;
   onApplyPending?: () => void;
   onRejectPending?: () => void;
   onUpdate?: (patch: { filename?: string; contents?: string }) => void;
@@ -18,8 +20,10 @@ interface FileTileProps {
 
 export function FileTile({
   tile,
+  currentGridSize,
   onRemove,
-  onResize,
+  onResizeGrid,
+  onResizePreview,
   onApplyPending,
   onRejectPending,
   onUpdate,
@@ -63,19 +67,21 @@ export function FileTile({
           className="block max-w-[180px] truncate rounded-(--radius-2) bg-transparent px-1.5 py-0.5 text-right font-mono text-(--gray-11) text-[11px] outline-none hover:bg-(--gray-3) focus:bg-(--gray-3) focus:text-(--gray-12)"
         />
       }
+      currentGridSize={currentGridSize}
       onRemove={onRemove}
-      onResize={onResize}
+      onResizeGrid={onResizeGrid}
+      onResizePreview={onResizePreview}
       onApplyPending={onApplyPending}
       onRejectPending={onRejectPending}
     >
-      <Box className="h-full">
+      <Box className="flex h-full min-h-0 flex-col">
         <textarea
           value={contents}
           onChange={(e) => setContents(e.target.value)}
           onBlur={commitContents}
           readOnly={!onUpdate}
           placeholder="# New file"
-          className="block h-full min-h-[120px] w-full resize-none bg-transparent px-3 py-2 font-mono text-(--gray-12) text-[12px] leading-relaxed outline-none placeholder:text-(--gray-9)"
+          className="block min-h-0 w-full flex-1 resize-none bg-transparent px-3 py-2 font-mono text-(--gray-12) text-[12px] leading-relaxed outline-none placeholder:text-(--gray-9)"
         />
       </Box>
     </TileFrame>

@@ -56,6 +56,7 @@ import { NotificationService } from "../services/notification/service";
 import { OAuthService } from "../services/oauth/service";
 import { PosthogPluginService } from "../services/posthog-plugin/service";
 import { ProcessTrackingService } from "../services/process-tracking/service";
+import { ProjectCanvasMcpService } from "../services/project-canvas-mcp/service";
 import { ProvisioningService } from "../services/provisioning/service";
 import { settingsStore } from "../services/settingsStore";
 import { ShellService } from "../services/shell/service";
@@ -145,6 +146,7 @@ container.bind(MAIN_TOKENS.InboxLinkService).to(InboxLinkService);
 container.bind(MAIN_TOKENS.WatcherRegistryService).to(WatcherRegistryService);
 container.bind(MAIN_TOKENS.WorkspaceService).to(WorkspaceService);
 container.bind(MAIN_TOKENS.WorkProjectsService).to(WorkProjectsService);
+container.bind(MAIN_TOKENS.ProjectCanvasMcpService).to(ProjectCanvasMcpService);
 container.bind(MAIN_TOKENS.MemoryService).to(MemoryService);
 
 container.bind(MAIN_TOKENS.SettingsStore).toConstantValue(settingsStore);

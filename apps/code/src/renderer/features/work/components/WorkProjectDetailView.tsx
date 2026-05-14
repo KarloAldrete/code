@@ -1,10 +1,10 @@
 import { Box, Flex, Text } from "@radix-ui/themes";
-import { trpcClient } from "@renderer/trpc/client";
 import { useNavigationStore } from "@stores/navigationStore";
-import { toast } from "@utils/toast";
 import { useCallback, useRef, useState } from "react";
 import { ProjectCanvas } from "../canvas/ProjectCanvas";
 import { useProjectCanvas } from "../canvas/useProjectCanvas";
+import { useDeleteProjectWithUndo } from "../hooks/useDeleteProjectWithUndo";
+import { usePinProject } from "../hooks/usePinProject";
 import { ProjectChatPanel } from "./ProjectChatPanel";
 import { ProjectHeader } from "./ProjectHeader";
 
@@ -23,13 +23,14 @@ export function WorkProjectDetailView() {
     isLoading,
     addTile,
     removeTile,
-    resizeTile,
+    resizeTileGrid,
     moveTile,
     applyPending,
     rejectPending,
     updateTitleTile,
     updateNoteTile,
     updateFileTile,
+    updateChecklistItems,
   } = useProjectCanvas(projectId);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -72,18 +73,21 @@ export function WorkProjectDetailView() {
     [panelWidth],
   );
 
+  const deleteWithUndo = useDeleteProjectWithUndo();
   const handleDelete = useCallback(async () => {
-    if (!projectId) return;
-    try {
-      await trpcClient.workProjects.delete.mutate({ projectId });
-      toast.success("Project deleted");
-      navigateToWorkProjects();
-    } catch (error) {
-      const description =
-        error instanceof Error ? error.message : "Unknown error";
-      toast.error("Could not delete project", { description });
-    }
-  }, [projectId, navigateToWorkProjects]);
+    if (!project) return;
+    navigateToWorkProjects();
+    await deleteWithUndo(project);
+  }, [project, deleteWithUndo, navigateToWorkProjects]);
+
+  const pinProject = usePinProject();
+  const handleTogglePin = useCallback(
+    async (pinned: boolean) => {
+      if (!projectId) return;
+      await pinProject(projectId, pinned);
+    },
+    [projectId, pinProject],
+  );
 
   if (!projectId || (!project && !isLoading)) {
     return (
@@ -121,6 +125,7 @@ export function WorkProjectDetailView() {
             onBack={navigateToWorkProjects}
             onUpdateTitle={updateTitleTile}
             onDelete={handleDelete}
+            onTogglePin={handleTogglePin}
           />
           <Box className="min-h-0 flex-1">
             <ProjectCanvas
@@ -133,8 +138,8 @@ export function WorkProjectDetailView() {
               onRemoveTile={async (tileId) => {
                 await removeTile(tileId);
               }}
-              onResizeTile={async (tileId, size) => {
-                await resizeTile(tileId, size);
+              onResizeTileGrid={async (tileId, size) => {
+                await resizeTileGrid(tileId, size);
               }}
               onMoveTile={async (tileId, toIndex) => {
                 await moveTile(tileId, toIndex);
@@ -153,6 +158,9 @@ export function WorkProjectDetailView() {
               }}
               onUpdateFileTile={async (tileId, patch) => {
                 await updateFileTile(tileId, patch);
+              }}
+              onUpdateChecklistItems={async (tileId, items) => {
+                await updateChecklistItems(tileId, items);
               }}
             />
           </Box>

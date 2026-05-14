@@ -216,6 +216,12 @@ export interface ConnectParams {
   model?: string;
   reasoningLevel?: string;
   isChat?: boolean;
+  /** When set, the agent gets the Project Canvas MCP attached and the
+   *  customInstructions describing this project. */
+  projectCanvasId?: string;
+  /** Optional system-prompt appendix. Overrides the user's settings-level
+   *  customInstructions for this session. */
+  customInstructions?: string;
 }
 
 // --- Singleton Service Instance ---
@@ -340,6 +346,8 @@ export class SessionService {
       model,
       reasoningLevel,
       isChat,
+      projectCanvasId,
+      customInstructions,
     } = params;
     const { id: taskId, latest_run: latestRun } = task;
     const taskTitle = task.title || task.description || "Task";
@@ -449,6 +457,8 @@ export class SessionService {
           adapter,
           model,
           reasoningLevel,
+          projectCanvasId,
+          customInstructions,
         );
       }
     } catch (error) {
@@ -889,6 +899,8 @@ export class SessionService {
     adapter?: "claude" | "codex",
     model?: string,
     reasoningLevel?: string,
+    projectCanvasId?: string,
+    customInstructionsOverride?: string,
   ): Promise<void> {
     const { client } = auth;
     if (!client) {
@@ -900,8 +912,10 @@ export class SessionService {
       throw new Error("Failed to create task run. Please try again.");
     }
 
-    const { customInstructions: startCustomInstructions } =
+    const { customInstructions: settingsCustomInstructions } =
       useSettingsStore.getState();
+    const effectiveCustomInstructions =
+      customInstructionsOverride ?? settingsCustomInstructions ?? undefined;
     const preferredModel = model ?? DEFAULT_GATEWAY_MODEL;
     const result = await trpcClient.agent.start.mutate({
       taskId,
@@ -911,11 +925,12 @@ export class SessionService {
       projectId: auth.projectId,
       permissionMode: executionMode,
       adapter,
-      customInstructions: startCustomInstructions || undefined,
+      customInstructions: effectiveCustomInstructions || undefined,
       effort: effortLevelSchema.safeParse(reasoningLevel).success
         ? (reasoningLevel as EffortLevel)
         : undefined,
       model: preferredModel,
+      projectCanvasId,
     });
 
     const session = this.createBaseSession(taskRun.id, taskId, taskTitle);

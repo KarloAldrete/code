@@ -67,6 +67,12 @@ export interface TaskCreationInput {
    * via the existing JSON field, without backend changes.
    */
   repositoryConfig?: Record<string, unknown>;
+  /** When set, this task is a project chat — the agent gets the Project
+   *  Canvas MCP attached and the customInstructions describing the project. */
+  projectCanvasId?: string;
+  /** Optional system-prompt appendix passed to the agent. Used by project
+   *  chats to brief the agent on the canvas, available tools, and workflow. */
+  customInstructions?: string;
 }
 
 export interface TaskCreationOutput {
@@ -334,6 +340,10 @@ export class TaskCreationSaga extends Saga<
           if (input.model) connectParams.model = input.model;
           if (input.reasoningLevel)
             connectParams.reasoningLevel = input.reasoningLevel;
+          if (input.projectCanvasId)
+            connectParams.projectCanvasId = input.projectCanvasId;
+          if (input.customInstructions)
+            connectParams.customInstructions = input.customInstructions;
 
           getSessionService().connectToTask(connectParams);
           return { taskId: task.id };

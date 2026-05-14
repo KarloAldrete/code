@@ -54,6 +54,7 @@ import type { McpAppsService } from "../mcp-apps/service";
 import type { MemoryService } from "../memory/service";
 import type { PosthogPluginService } from "../posthog-plugin/service";
 import type { ProcessTrackingService } from "../process-tracking/service";
+import type { ProjectCanvasMcpService } from "../project-canvas-mcp/service";
 import type { SleepService } from "../sleep/service";
 import type { AgentAuthAdapter, McpToolInstallations } from "./auth-adapter";
 import { discoverExternalPlugins } from "./discover-plugins";
@@ -227,6 +228,8 @@ interface SessionConfig {
   model?: string;
   /** JSON Schema for structured task output — when set, the agent gets a create_output tool */
   jsonSchema?: Record<string, unknown> | null;
+  /** When set, attach the in-process Project Canvas MCP to this session. */
+  projectCanvasId?: string;
 }
 
 interface ManagedSession {
@@ -308,6 +311,8 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     private readonly storagePaths: IStoragePaths,
     @inject(MAIN_TOKENS.MemoryService)
     private readonly memoryService: MemoryService,
+    @inject(MAIN_TOKENS.ProjectCanvasMcpService)
+    private readonly projectCanvasMcp: ProjectCanvasMcpService,
   ) {
     super();
     this.processTracking = processTracking;
@@ -693,6 +698,37 @@ When creating pull requests, add the following footer at the end of the PR descr
         toolApprovals,
         toolInstallations,
       } = await this.agentAuthAdapter.buildMcpServers(credentials);
+
+      // Attach the in-process Project Canvas MCP when this session is bound
+      // to a project canvas (project chats use this; coding tasks don't).
+      if (config.projectCanvasId) {
+        try {
+          const canvasUrl = await this.projectCanvasMcp.getUrl();
+          mcpServers.push({
+            name: "projectCanvas",
+            type: "http",
+            url: canvasUrl,
+            headers: [],
+          });
+          log.info("Attached project canvas MCP to session", {
+            taskId,
+            taskRunId,
+            projectCanvasId: config.projectCanvasId,
+            canvasUrl,
+            mcpServerCount: mcpServers.length,
+          });
+        } catch (err) {
+          log.error("Failed to attach project canvas MCP", {
+            err,
+            projectCanvasId: config.projectCanvasId,
+          });
+        }
+      } else {
+        log.debug("Session has no projectCanvasId — skipping canvas MCP", {
+          taskId,
+          taskRunId,
+        });
+      }
 
       // Store server configs for lazy MCP connections — actual connections
       // are created on-demand when UI resources are first requested.
@@ -1538,6 +1574,8 @@ For git operations while detached:
       effort: "effort" in params ? params.effort : undefined,
       model: "model" in params ? params.model : undefined,
       jsonSchema: "jsonSchema" in params ? params.jsonSchema : undefined,
+      projectCanvasId:
+        "projectCanvasId" in params ? params.projectCanvasId : undefined,
     };
   }
 

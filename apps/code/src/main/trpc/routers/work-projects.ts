@@ -1,5 +1,6 @@
 import {
   createProjectInput,
+  gridSize,
   newTileInput,
   projectIconId,
   tileSize,
@@ -9,10 +10,32 @@ import { z } from "zod";
 import { container } from "../../di/container";
 import { MAIN_TOKENS } from "../../di/tokens";
 import type { WorkProjectsService } from "../../services/work-projects/service";
+import {
+  getTemplateById,
+  PROJECT_TEMPLATES,
+} from "../../services/work-projects/templates";
 import { publicProcedure, router } from "../trpc";
 
 const getService = () =>
   container.get<WorkProjectsService>(MAIN_TOKENS.WorkProjectsService);
+
+const templateCategory = z.enum([
+  "growth",
+  "engineering",
+  "product",
+  "ops",
+  "research",
+]);
+
+const projectTemplateSummary = z.object({
+  id: z.string(),
+  name: z.string(),
+  tagline: z.string(),
+  iconId: projectIconId,
+  category: templateCategory,
+  description: z.string(),
+  tileCount: z.number().int().nonnegative(),
+});
 
 export const workProjectsRouter = router({
   list: publicProcedure.output(z.array(workProject)).query(() => {
@@ -29,8 +52,15 @@ export const workProjectsRouter = router({
   create: publicProcedure
     .input(createProjectInput)
     .output(workProject)
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       return getService().create(input);
+    }),
+
+  clearNextSteps: publicProcedure
+    .input(z.object({ projectId: z.string() }))
+    .output(workProject.nullable())
+    .mutation(({ input }) => {
+      return getService().clearNextSteps(input.projectId);
     }),
 
   delete: publicProcedure
@@ -38,6 +68,79 @@ export const workProjectsRouter = router({
     .mutation(({ input }) => {
       getService().delete(input.projectId);
       return { ok: true };
+    }),
+
+  softDelete: publicProcedure
+    .input(z.object({ projectId: z.string() }))
+    .output(workProject.nullable())
+    .mutation(({ input }) => {
+      return getService().softDelete(input.projectId);
+    }),
+
+  undoDelete: publicProcedure
+    .input(z.object({ projectId: z.string() }))
+    .output(workProject.nullable())
+    .mutation(({ input }) => {
+      return getService().undoDelete(input.projectId);
+    }),
+
+  commitDelete: publicProcedure
+    .input(z.object({ projectId: z.string() }))
+    .mutation(({ input }) => {
+      getService().commitDelete(input.projectId);
+      return { ok: true };
+    }),
+
+  pin: publicProcedure
+    .input(z.object({ projectId: z.string() }))
+    .output(workProject.nullable())
+    .mutation(({ input }) => {
+      return getService().pinProject(input.projectId);
+    }),
+
+  unpin: publicProcedure
+    .input(z.object({ projectId: z.string() }))
+    .output(workProject.nullable())
+    .mutation(({ input }) => {
+      return getService().unpinProject(input.projectId);
+    }),
+
+  listTemplates: publicProcedure
+    .output(z.array(projectTemplateSummary))
+    .query(() => {
+      return PROJECT_TEMPLATES.map((t) => ({
+        id: t.id,
+        name: t.name,
+        tagline: t.tagline,
+        iconId: t.iconId,
+        category: t.category,
+        description: t.description,
+        tileCount: t.tiles.length,
+      }));
+    }),
+
+  createFromTemplate: publicProcedure
+    .input(z.object({ templateId: z.string() }))
+    .output(workProject)
+    .mutation(({ input }) => {
+      const template = getTemplateById(input.templateId);
+      if (!template) {
+        throw new Error(`Unknown template: ${input.templateId}`);
+      }
+      return getService().createFromTemplate({
+        name: template.name,
+        tagline: template.tagline,
+        iconId: template.iconId,
+        tiles: template.tiles,
+        openingPrompt: template.openingPrompt,
+      });
+    }),
+
+  clearPendingPrompt: publicProcedure
+    .input(z.object({ projectId: z.string() }))
+    .output(workProject.nullable())
+    .mutation(({ input }) => {
+      return getService().clearPendingPrompt(input.projectId);
     }),
 
   addTile: publicProcedure
@@ -78,6 +181,45 @@ export const workProjectsRouter = router({
         input.projectId,
         input.tileId,
         input.size,
+      );
+    }),
+
+  resizeTileGrid: publicProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        tileId: z.string(),
+        gridSize,
+      }),
+    )
+    .output(workProject.nullable())
+    .mutation(({ input }) => {
+      return getService().updateTileGridSize(
+        input.projectId,
+        input.tileId,
+        input.gridSize,
+      );
+    }),
+
+  updateChecklistTile: publicProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        tileId: z.string(),
+        items: z.array(
+          z.object({
+            text: z.string(),
+            done: z.boolean(),
+          }),
+        ),
+      }),
+    )
+    .output(workProject.nullable())
+    .mutation(({ input }) => {
+      return getService().updateChecklistTile(
+        input.projectId,
+        input.tileId,
+        input.items,
       );
     }),
 

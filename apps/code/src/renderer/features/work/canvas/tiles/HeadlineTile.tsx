@@ -2,10 +2,11 @@ import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import { ArrowSquareOut, GaugeIcon } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import type {
+  GridSize,
   HeadlineTile as HeadlineTileType,
-  TileSize,
 } from "@shared/types/work-projects";
 import { openUrlInBrowser } from "@utils/browser";
+import { memo } from "react";
 import { TileFrame } from "../TileFrame";
 
 interface TrendsResult {
@@ -94,16 +95,20 @@ function SparklineBars({
 
 interface HeadlineTileProps {
   tile: HeadlineTileType;
+  currentGridSize: GridSize;
   onRemove?: () => void;
-  onResize?: (size: TileSize) => void;
+  onResizeGrid?: (size: GridSize) => void;
+  onResizePreview?: (size: GridSize | null) => void;
   onApplyPending?: () => void;
   onRejectPending?: () => void;
 }
 
-export function HeadlineTile({
+function HeadlineTileImpl({
   tile,
+  currentGridSize,
   onRemove,
-  onResize,
+  onResizeGrid,
+  onResizePreview,
   onApplyPending,
   onRejectPending,
 }: HeadlineTileProps) {
@@ -172,8 +177,10 @@ export function HeadlineTile({
           </button>
         ) : undefined
       }
+      currentGridSize={currentGridSize}
       onRemove={onRemove}
-      onResize={onResize}
+      onResizeGrid={onResizeGrid}
+      onResizePreview={onResizePreview}
       onApplyPending={onApplyPending}
       onRejectPending={onRejectPending}
     >
@@ -214,3 +221,11 @@ export function HeadlineTile({
     </TileFrame>
   );
 }
+
+// Headline tile fires a PostHog query — memoize so we don't refetch on every
+// unrelated parent re-render. Compare by tile identity + state; callbacks may
+// change identity but the tile content is what drives the expensive work.
+export const HeadlineTile = memo(
+  HeadlineTileImpl,
+  (prev, next) => prev.tile === next.tile,
+);
