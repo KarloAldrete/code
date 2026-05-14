@@ -3,6 +3,8 @@ import { useMemo } from "react";
 
 const WORLD = 4000;
 const HALF = WORLD / 2;
+const GROUND = 16000;
+const GROUND_HALF = GROUND / 2;
 
 interface ZoneSpec {
   id: string;
@@ -191,13 +193,13 @@ export function MapBackdrop({ nests }: { nests: Nest[] }) {
 
   return (
     <div
-      className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 overflow-hidden"
-      style={{ width: WORLD, height: WORLD }}
+      className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2"
+      style={{ width: GROUND, height: GROUND }}
     >
       <svg
-        width={WORLD}
-        height={WORLD}
-        viewBox={`${-HALF} ${-HALF} ${WORLD} ${WORLD}`}
+        width={GROUND}
+        height={GROUND}
+        viewBox={`${-GROUND_HALF} ${-GROUND_HALF} ${GROUND} ${GROUND}`}
         xmlns="http://www.w3.org/2000/svg"
         aria-hidden="true"
         className="block"
@@ -270,10 +272,12 @@ export function MapBackdrop({ nests }: { nests: Nest[] }) {
             <stop offset="55%" stopColor="#a8c587" stopOpacity="0.18" />
             <stop offset="100%" stopColor="#3a6638" stopOpacity="0" />
           </radialGradient>
-          {/* Soft outer vignette to focus attention */}
-          <radialGradient id="hm-vignette" cx="50%" cy="50%" r="70%">
-            <stop offset="60%" stopColor="#000" stopOpacity="0" />
-            <stop offset="100%" stopColor="#0f1b10" stopOpacity="0.55" />
+          {/* Soft outer vignette to focus attention — scaled to keep darkening near the content boundary */}
+          <radialGradient id="hm-vignette" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="#000" stopOpacity="0" />
+            <stop offset="16%" stopColor="#000" stopOpacity="0" />
+            <stop offset="28%" stopColor="#0f1b10" stopOpacity="0.55" />
+            <stop offset="100%" stopColor="#0f1b10" stopOpacity="0.7" />
           </radialGradient>
           {/* Active-nests territory tint */}
           <radialGradient id="hm-zone-primary" cx="50%" cy="50%" r="55%">
@@ -615,13 +619,19 @@ export function MapBackdrop({ nests }: { nests: Nest[] }) {
           </g>
         </defs>
 
-        {/* === GROUND LAYERS === */}
-        <rect x={-HALF} y={-HALF} width={WORLD} height={WORLD} fill="#436c41" />
+        {/* === GROUND LAYERS (fill the full extended area) === */}
         <rect
-          x={-HALF}
-          y={-HALF}
-          width={WORLD}
-          height={WORLD}
+          x={-GROUND_HALF}
+          y={-GROUND_HALF}
+          width={GROUND}
+          height={GROUND}
+          fill="#436c41"
+        />
+        <rect
+          x={-GROUND_HALF}
+          y={-GROUND_HALF}
+          width={GROUND}
+          height={GROUND}
           fill="url(#hm-forest-pattern)"
           opacity="0.85"
         />
@@ -633,10 +643,10 @@ export function MapBackdrop({ nests }: { nests: Nest[] }) {
           fill="url(#hm-meadow)"
         />
         <rect
-          x={-HALF}
-          y={-HALF}
-          width={WORLD}
-          height={WORLD}
+          x={-GROUND_HALF}
+          y={-GROUND_HALF}
+          width={GROUND}
+          height={GROUND}
           fill="url(#hm-grass-pattern)"
           opacity="0.45"
         />
@@ -670,12 +680,12 @@ export function MapBackdrop({ nests }: { nests: Nest[] }) {
           />
         ))}
 
-        {/* === VIGNETTE === */}
+        {/* === VIGNETTE (covers full ground so edges stay dark) === */}
         <rect
-          x={-HALF}
-          y={-HALF}
-          width={WORLD}
-          height={WORLD}
+          x={-GROUND_HALF}
+          y={-GROUND_HALF}
+          width={GROUND}
+          height={GROUND}
           fill="url(#hm-vignette)"
         />
       </svg>
