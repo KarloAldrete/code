@@ -299,6 +299,12 @@ export function PlaceNestDialog({
           </Flex>
         </ScrollArea>
 
+        {!simpleMode && drafting && (
+          <div className="mt-3">
+            <DraftingStatus />
+          </div>
+        )}
+
         <Flex gap="2" mt="4" justify="end">
           <Dialog.Close>
             <Button
@@ -360,8 +366,10 @@ function GoalDraftFlow({
   const disabled = drafting || submitting;
   const latestMessage = transcript.at(-1);
   const isAnsweringQuestion =
-    latestMessage?.role === "assistant" &&
-    !latestMessage.content.startsWith("Proposed spec");
+    latestMessage?.kind === "question" ||
+    (latestMessage?.role === "assistant" &&
+      !draft &&
+      latestMessage.kind !== "spec_proposal");
 
   return (
     <>
@@ -401,8 +409,6 @@ function GoalDraftFlow({
       ) : (
         <Transcript transcript={transcript} />
       )}
-
-      {drafting && <DraftingStatus />}
 
       {draft && (
         <>
@@ -648,7 +654,11 @@ function Transcript({
             }
           >
             <Text size="1" color="gray" weight="medium" className="block">
-              {message.role === "user" ? "Operator" : "Goal draft"}
+              {message.role === "user"
+                ? "Operator"
+                : message.kind === "spec_proposal"
+                  ? "Spec draft"
+                  : "Goal draft"}
             </Text>
             <Text as="p" size="2" className="whitespace-pre-wrap">
               {message.content}

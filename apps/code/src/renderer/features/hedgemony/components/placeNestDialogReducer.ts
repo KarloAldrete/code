@@ -125,7 +125,7 @@ export function placeNestDialogReducer(
         lastDraftAttempt: null,
         transcript: [
           ...action.transcript,
-          { role: "assistant", content: action.question },
+          { role: "assistant", kind: "question", content: action.question },
         ],
       };
 
@@ -143,6 +143,7 @@ export function placeNestDialogReducer(
           ...action.transcript,
           {
             role: "assistant",
+            kind: "spec_proposal",
             content: formatDraftForTranscript(action.draft),
           },
         ],
@@ -166,11 +167,8 @@ export function suggestName(goal: string): string {
 
 export function formatDraftForTranscript(draft: GoalSpecDraft): string {
   return [
-    "Proposed spec",
-    "",
-    `Name: ${draft.name}`,
-    `Summary: ${draft.summary}`,
-    `Spec:\n${draft.goalPrompt}`,
+    `Proposed a spec: ${draft.name}`,
+    draft.summary,
     `Definition of done: ${draft.definitionOfDone}`,
   ].join("\n");
 }

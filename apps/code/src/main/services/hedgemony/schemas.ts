@@ -30,6 +30,7 @@ export type Nest = z.infer<typeof nest>;
 export const goalDraftTranscriptMessage = z.object({
   role: z.enum(["user", "assistant"]),
   content: z.string().min(1).max(4000),
+  kind: z.enum(["message", "question", "spec_proposal"]).optional(),
 });
 export type GoalDraftTranscriptMessage = z.infer<
   typeof goalDraftTranscriptMessage

@@ -121,7 +121,11 @@ describe("placeNestDialogReducer", () => {
     expect(next.lastDraftAttempt).toBeNull();
     expect(next.transcript).toEqual([
       { role: "user", content: "hi" },
-      { role: "assistant", content: "What does done look like?" },
+      {
+        role: "assistant",
+        kind: "question",
+        content: "What does done look like?",
+      },
     ]);
   });
 
@@ -138,8 +142,13 @@ describe("placeNestDialogReducer", () => {
     expect(next.definitionOfDone).toBe(draft.definitionOfDone);
     expect(next.transcript[1]).toEqual({
       role: "assistant",
+      kind: "spec_proposal",
       content: formatDraftForTranscript(draft),
     });
+    expect(next.transcript[1].content).toContain(
+      "Proposed a spec: Improve checkout",
+    );
+    expect(next.transcript[1].content).not.toContain("## Summary");
   });
 
   it("records draft failure and lets the user retry", () => {

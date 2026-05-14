@@ -24,6 +24,7 @@ const GOAL_DRAFT_MODEL = "claude-opus-4-6";
 const GOAL_DRAFT_BETAS = ["context-1m-2025-08-07"];
 const GOAL_DRAFT_EFFORT = "max";
 const GOAL_DRAFT_MAX_TOKENS = 128_000;
+const MAX_DRAFT_QUESTION_LENGTH = 500;
 
 const SYSTEM_PROMPT = `You help a PostHog Code operator write a Hedgemony nest goal before the nest exists.
 
@@ -36,7 +37,7 @@ Rules:
 - Treat this as planning mode: clarify goals, scope, assumptions, risks, and completion signals before proposing or revising the spec. Do not move into implementation.
 - Planning method: ${SPEC_DRIVEN_DEVELOPMENT_METHOD}. You must apply the method directly from this prompt; there is no skill loader in this LLM-gateway flow.
 - ${SPEC_DRIVEN_GOAL_DESIGN_GUIDANCE}
-- Ask one concise clarifying question when the transcript does not yet explain the desired outcome, useful scope/context, and how the operator will know the goal is done.
+- Ask one concise clarifying question under ${MAX_DRAFT_QUESTION_LENGTH} characters when the transcript does not yet explain the desired outcome, useful scope/context, and how the operator will know the goal is done.
 - If the operator asks you to clone, inspect, read, or explore a repo/codebase, never imply you did it and never ask the operator to report what you found. This drafting flow cannot inspect repos. Treat repo discovery as work the future nest must perform, and include it as discovery-first requirements when the desired outcome is otherwise clear.
 - Prefer proposing a spec once the operator has answered at least one clarifying question or the initial prompt is already specific.
 - Keep the name under 120 characters.
@@ -76,8 +77,7 @@ export class GoalSpecDraftService {
   ) {}
 
   async respond(input: GoalDraftRespondInput): Promise<GoalDraftResponse> {
-    const userPrompt = this.buildPrompt(input);
-    const messages: LlmMessage[] = [{ role: "user", content: userPrompt }];
+    const messages = this.buildMessages(input);
 
     const firstResponse = await this.llmGateway.prompt(messages, {
       system: SYSTEM_PROMPT,
@@ -146,14 +146,38 @@ export class GoalSpecDraftService {
     return normalized;
   }
 
-  private buildPrompt(input: GoalDraftRespondInput): string {
-    const transcript = input.transcript
-      .slice(-12)
-      .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
-      .join("\n\n");
-    const currentDraft = input.currentDraft
-      ? `\n\nCurrent editable draft:\n${formatDraft(input.currentDraft)}`
-      : "";
+  private buildMessages(input: GoalDraftRespondInput): LlmMessage[] {
+    const transcript = input.transcript.slice(-12);
+    const messages = transcript.map(({ role, content }) => ({
+      role,
+      content,
+    }));
+    const framing = this.buildConversationFraming(input);
+
+    if (messages.length === 0) {
+      return [{ role: "user", content: framing }];
+    }
+
+    if (messages[0].role === "user") {
+      messages[0] = {
+        ...messages[0],
+        content: `${framing}\n\nOperator message:\n${messages[0].content}`,
+      };
+    } else {
+      messages.unshift({ role: "user", content: framing });
+    }
+
+    if (input.currentDraft) {
+      appendToLatestUserMessage(
+        messages,
+        `\n\nCurrent editable draft:\n${formatDraft(input.currentDraft)}`,
+      );
+    }
+
+    return messages;
+  }
+
+  private buildConversationFraming(input: GoalDraftRespondInput): string {
     const mapContext =
       input.mapContext?.mapX !== undefined &&
       input.mapContext?.mapY !== undefined
@@ -178,8 +202,7 @@ Return structured spec fields. The app will render goalPrompt from those fields 
 - assumptions or open questions
 - measurable success criteria
 
-Transcript:
-${transcript}${currentDraft}${mapContext}${repoToolBoundary}`;
+The following messages are the live conversation. Keep continuity with the operator's prior answers and your own clarifying questions.${mapContext}${repoToolBoundary}`;
   }
 
   private needsInitialClarification(
@@ -246,6 +269,23 @@ type ParseResult =
   | { ok: true; value: GoalDraftResponse }
   | { ok: false; error: Error };
 
+function appendToLatestUserMessage(
+  messages: LlmMessage[],
+  appendix: string,
+): void {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === "user") {
+      messages[index] = {
+        ...messages[index],
+        content: `${messages[index].content}${appendix}`,
+      };
+      return;
+    }
+  }
+
+  messages.push({ role: "user", content: appendix.trimStart() });
+}
+
 function tryParseResponse(content: string): ParseResult {
   try {
     const raw = extractJsonObject(content);
@@ -253,7 +293,10 @@ function tryParseResponse(content: string): ParseResult {
     if (parsed.kind === "ask_question") {
       return {
         ok: true,
-        value: { kind: "ask_question", question: parsed.question.trim() },
+        value: {
+          kind: "ask_question",
+          question: normalizeQuestion(parsed.question),
+        },
       };
     }
     const draft = parsed.draft;
@@ -270,6 +313,15 @@ function tryParseResponse(content: string): ParseResult {
       error: error instanceof Error ? error : new Error(String(error)),
     };
   }
+}
+
+function normalizeQuestion(question: string): string {
+  const trimmed = question.trim();
+  if (trimmed.length <= MAX_DRAFT_QUESTION_LENGTH) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, MAX_DRAFT_QUESTION_LENGTH - 3).trimEnd()}...`;
 }
 
 function extractJsonObject(content: string): string {

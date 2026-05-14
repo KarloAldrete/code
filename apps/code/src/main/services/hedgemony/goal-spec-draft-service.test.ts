@@ -81,6 +81,36 @@ describe("GoalSpecDraftService", () => {
     );
   });
 
+  it("keeps clarifying questions inside the renderer schema limit", async () => {
+    const longQuestion = `Which parts of this workflow should the hedgehog treat as in scope, what should stay out of scope, what validation evidence would make the goal clearly done, which repositories should be inspected first, what existing behavior must remain unchanged, and are there any operator preferences around implementation approach, release shape, testing commands, or follow-up handoff notes that should be captured before the nest starts planning the actual implementation work? ${"x".repeat(200)}`;
+
+    llmGateway.prompt.mockResolvedValue({
+      content: JSON.stringify({
+        kind: "ask_question",
+        question: longQuestion,
+      }),
+      model: GOAL_DRAFT_MODEL,
+      stopReason: "end_turn",
+      usage: { inputTokens: 10, outputTokens: 5 },
+    });
+
+    const response = await service.respond({
+      transcript: [
+        {
+          role: "user",
+          content:
+            "Improve checkout conversion with clear scope boundaries, success evidence, and validation steps.",
+        },
+      ],
+    });
+
+    expect(response.kind).toBe("ask_question");
+    if (response.kind === "ask_question") {
+      expect(response.question).toHaveLength(500);
+      expect(response.question.endsWith("...")).toBe(true);
+    }
+  });
+
   it("returns an editable draft spec when enough context exists", async () => {
     llmGateway.prompt.mockResolvedValue({
       content: `Here you go:\n\n\`\`\`json\n${JSON.stringify({
@@ -159,6 +189,91 @@ describe("GoalSpecDraftService", () => {
         "SC-001: Payment-error rate is lower",
       );
     }
+
+    const messages = llmGateway.prompt.mock.calls[0][0];
+    expect(messages).toMatchObject([
+      {
+        role: "user",
+        content: expect.stringContaining("Operator message:\nImprove checkout"),
+      },
+      { role: "assistant", content: "Which metric should improve?" },
+      {
+        role: "user",
+        content: expect.stringContaining("Reduce payment errors"),
+      },
+    ]);
+    expect(messages[0].content).toContain("Return structured spec fields");
+    expect(messages[0].content).not.toContain("ASSISTANT:");
+  });
+
+  it("sends the current editable draft with the latest user turn", async () => {
+    llmGateway.prompt.mockResolvedValue({
+      content: JSON.stringify({
+        kind: "ask_question",
+        question: "Should the edited runbook requirement stay in scope?",
+      }),
+      model: GOAL_DRAFT_MODEL,
+      stopReason: "end_turn",
+      usage: { inputTokens: 10, outputTokens: 5 },
+    });
+
+    await service.respond({
+      transcript: [
+        { role: "user", content: "Improve checkout" },
+        {
+          role: "assistant",
+          kind: "spec_proposal",
+          content: "Proposed a spec: Checkout lift",
+        },
+        {
+          role: "user",
+          content: "Keep the runbook update in the plan.",
+        },
+      ],
+      currentDraft: {
+        name: "Checkout lift",
+        summary:
+          "Reduce checkout payment errors so more customers complete purchase.",
+        primaryScenario:
+          "A customer reaches payment and gets through checkout cleanly.",
+        userStories: [
+          {
+            priority: "P1",
+            story:
+              "As an operator, I want payment-error causes surfaced so that we can remove checkout blockers.",
+            acceptanceScenarios: [
+              "Given checkout events are available, when failures are analyzed, then the top causes are named.",
+            ],
+          },
+        ],
+        requirements: [
+          {
+            id: "FR-001",
+            text: "The nest must keep the runbook update in scope.",
+          },
+        ],
+        keyEntities: ["Checkout session: the customer attempt to pay"],
+        assumptions: ["Existing checkout analytics are available."],
+        successCriteria: [
+          {
+            id: "SC-001",
+            text: "Payment-error rate is lower on the validation dashboard.",
+          },
+        ],
+        goalPrompt: "## Summary\nEdited checkout markdown",
+        definitionOfDone:
+          "Payment-error rate is lower and the checkout runbook is updated.",
+      },
+    });
+
+    const messages = llmGateway.prompt.mock.calls[0][0];
+    expect(messages).toHaveLength(3);
+    expect(messages[2]).toMatchObject({
+      role: "user",
+      content: expect.stringContaining("Current editable draft:"),
+    });
+    expect(messages[2].content).toContain("Edited checkout markdown");
+    expect(messages[1].content).not.toContain("Current editable draft:");
   });
 
   it("forces one clarification for an under-specified initial prompt", async () => {
