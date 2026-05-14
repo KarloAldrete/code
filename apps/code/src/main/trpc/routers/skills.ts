@@ -22,6 +22,10 @@ const getTeamSkillsService = () =>
   container.get<TeamSkillsService>(MAIN_TOKENS.TeamSkillsService);
 
 export const skillsRouter = router({
+  refreshTeam: publicProcedure.mutation(async () => {
+    await getTeamSkillsService().sync();
+  }),
+
   list: publicProcedure.output(listSkillsOutput).query(async () => {
     const pluginPath = getPluginService().getPluginPath();
     const folders = await getFoldersService().getFolders();

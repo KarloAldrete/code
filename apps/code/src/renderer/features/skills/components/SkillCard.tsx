@@ -27,6 +27,14 @@ export const SOURCE_CONFIG: Record<
   },
 };
 
+export const SOURCE_ORDER: SkillSource[] = [
+  "team",
+  "user",
+  "marketplace",
+  "repo",
+  "bundled",
+];
+
 interface SkillCardProps {
   skill: SkillInfo;
   isSelected: boolean;

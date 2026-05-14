@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import os from "node:os";
+import type { INotifier } from "@posthog/platform/notifier";
 import { app, BrowserWindow } from "electron";
 import log from "electron-log/main";
 import "./utils/logger";
@@ -202,6 +203,7 @@ app.whenReady().then(async () => {
   ensureClaudeConfigDir();
   registerMcpSandboxProtocol();
   createWindow();
+  container.get<INotifier>(MAIN_TOKENS.Notifier).playStartupAnimation();
   await initializeServices();
   initializeDeepLinks();
 });

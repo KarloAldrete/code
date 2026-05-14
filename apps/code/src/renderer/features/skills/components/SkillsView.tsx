@@ -1,31 +1,73 @@
 import { ResizableSidebar } from "@components/ResizableSidebar";
 import { useSetHeaderContent } from "@hooks/useSetHeaderContent";
-import { Lightbulb, MagnifyingGlass } from "@phosphor-icons/react";
-import { Box, Flex, ScrollArea, Text, TextField } from "@radix-ui/themes";
+import {
+  ArrowClockwise,
+  Lightbulb,
+  MagnifyingGlass,
+} from "@phosphor-icons/react";
+import {
+  Box,
+  Flex,
+  IconButton,
+  ScrollArea,
+  Text,
+  TextField,
+} from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
 import type { SkillInfo, SkillSource } from "@shared/types/skills";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { useSkillsSidebarStore } from "../stores/skillsSidebarStore";
-import { SkillSection, SOURCE_CONFIG } from "./SkillCard";
+import { SkillSection, SOURCE_CONFIG, SOURCE_ORDER } from "./SkillCard";
 import { SkillDetailPanel } from "./SkillDetailPanel";
-
-const SOURCE_ORDER: SkillSource[] = [
-  "team",
-  "user",
-  "marketplace",
-  "repo",
-  "bundled",
-];
+import { SourceFilterChips } from "./SourceFilterChips";
 
 export function SkillsView() {
   const trpcReact = useTRPC();
+  const queryClient = useQueryClient();
   const { data: skills = [], isLoading } = useQuery(
     trpcReact.skills.list.queryOptions(undefined, { staleTime: 30_000 }),
   );
 
+  const refreshTeamMutation = useMutation(
+    trpcReact.skills.refreshTeam.mutationOptions({
+      onSuccess: () => {
+        void queryClient.invalidateQueries(trpcReact.skills.list.queryFilter());
+      },
+      onError: (err) => {
+        toast.error("Failed to refresh team skills", {
+          description: err.message,
+        });
+      },
+    }),
+  );
+
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [sourceFilter, setSourceFilter] = useState<Set<SkillSource>>(
+    () => new Set(),
+  );
+
+  const toggleSource = useCallback((source: SkillSource) => {
+    setSourceFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(source)) {
+        next.delete(source);
+      } else {
+        next.add(source);
+      }
+      return next;
+    });
+  }, []);
+
+  const availableSources = useMemo(() => {
+    const present = new Set<SkillSource>();
+    for (const skill of skills) {
+      present.add(skill.source);
+    }
+    return SOURCE_ORDER.filter((s) => present.has(s));
+  }, [skills]);
 
   const {
     width: sidebarWidth,
@@ -54,6 +96,9 @@ export function SkillsView() {
     }
     const query = searchQuery.trim().toLowerCase();
     for (const skill of skills) {
+      if (sourceFilter.size > 0 && !sourceFilter.has(skill.source)) {
+        continue;
+      }
       if (
         query &&
         !skill.name.toLowerCase().includes(query) &&
@@ -67,7 +112,7 @@ export function SkillsView() {
       }
     }
     return map;
-  }, [skills, searchQuery]);
+  }, [skills, searchQuery, sourceFilter]);
 
   const headerContent = useMemo(
     () => (
@@ -95,19 +140,46 @@ export function SkillsView() {
             className="scroll-area-constrain-width h-full"
           >
             <Box px="4" py="3">
-              <Box pb="3">
-                <TextField.Root
+              <Flex pb="2" gap="2" align="center">
+                <Box className="flex-1">
+                  <TextField.Root
+                    size="2"
+                    placeholder="Search skills..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="text-[13px]"
+                  >
+                    <TextField.Slot>
+                      <MagnifyingGlass size={14} />
+                    </TextField.Slot>
+                  </TextField.Root>
+                </Box>
+                <IconButton
                   size="2"
-                  placeholder="Search skills..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="text-[13px]"
+                  variant="soft"
+                  color="gray"
+                  disabled={refreshTeamMutation.isPending}
+                  onClick={() => refreshTeamMutation.mutate()}
+                  title="Refresh team skills"
+                  aria-label="Refresh team skills"
                 >
-                  <TextField.Slot>
-                    <MagnifyingGlass size={14} />
-                  </TextField.Slot>
-                </TextField.Root>
-              </Box>
+                  <ArrowClockwise
+                    size={14}
+                    className={
+                      refreshTeamMutation.isPending ? "animate-spin" : ""
+                    }
+                  />
+                </IconButton>
+              </Flex>
+              {availableSources.length > 0 && (
+                <Box pb="3">
+                  <SourceFilterChips
+                    available={availableSources}
+                    selected={sourceFilter}
+                    onToggle={toggleSource}
+                  />
+                </Box>
+              )}
               {skills.length === 0 && !isLoading ? (
                 <Flex
                   align="center"

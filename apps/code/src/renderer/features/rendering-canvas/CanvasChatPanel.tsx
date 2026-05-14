@@ -1,31 +1,38 @@
-import { DotPatternBackground } from "@components/DotPatternBackground";
 import { useFolders } from "@features/folders/hooks/useFolders";
 import { PromptInput } from "@features/message-editor/components/PromptInput";
 import { useDraftStore } from "@features/message-editor/stores/draftStore";
 import type { EditorHandle } from "@features/message-editor/types";
-import { useCanvasChatStore } from "@features/rendering-canvas/canvasChatStore";
+import {
+  useCanvasActiveTask,
+  useCanvasChatStore,
+} from "@features/rendering-canvas/canvasChatStore";
 import { getCurrentModeFromConfigOptions } from "@features/sessions/stores/sessionStore";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
+import { TaskLogsPanel } from "@features/task-detail/components/TaskLogsPanel";
 import { usePreviewConfig } from "@features/task-detail/hooks/usePreviewConfig";
 import { useTaskCreation } from "@features/task-detail/hooks/useTaskCreation";
 import { useConnectivity } from "@hooks/useConnectivity";
 import { useUserRepositoryIntegration } from "@hooks/useIntegrations";
-import { Button, Flex, Heading, Text } from "@radix-ui/themes";
+import { PlusCircle, X } from "@phosphor-icons/react";
+import { Box, Flex, IconButton } from "@radix-ui/themes";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
-import { useNavigationStore } from "@stores/navigationStore";
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-interface CanvasInputProps {
+interface CanvasChatPanelProps {
   canvasId: string;
 }
 
-export function CanvasInput({ canvasId }: CanvasInputProps) {
+export function CanvasChatPanel({ canvasId }: CanvasChatPanelProps) {
   const editorRef = useRef<EditorHandle>(null);
-  const sessionId = `canvas-input:${canvasId}`;
+  const sessionId = `canvas-chat:${canvasId}`;
+  const close = useCanvasChatStore((s) => s.close);
+  const setActiveTask = useCanvasChatStore((s) => s.setActiveTask);
+  const clearActiveTask = useCanvasChatStore((s) => s.clearActiveTask);
+  const activeTask = useCanvasActiveTask(canvasId);
+  const { isOnline } = useConnectivity();
   const trpcReact = useTRPC();
   const { folders } = useFolders();
-  const { isOnline } = useConnectivity();
 
   const {
     lastUsedWorkspaceMode,
@@ -113,19 +120,9 @@ export function CanvasInput({ canvasId }: CanvasInputProps) {
     reasoningLevel: currentReasoningLevel,
     environmentId,
     onTaskCreated: (task) => {
-      useCanvasChatStore.getState().setActiveTask(canvasId, task);
-      useCanvasChatStore.getState().setOpen(true);
-      useNavigationStore.getState().navigateToCanvasInput(canvasId);
+      setActiveTask(canvasId, task);
     },
   });
-
-  const handleGuess = useCallback(() => {
-    const prompt = "Generate a canvas based on existing PostHog data";
-    editorRef.current?.setContent(prompt);
-    setTimeout(() => {
-      handleSubmit();
-    }, 0);
-  }, [handleSubmit]);
 
   // Populate skills/commands for `/` mentions
   useEffect(() => {
@@ -144,62 +141,72 @@ export function CanvasInput({ canvasId }: CanvasInputProps) {
   }, [sessionId]);
 
   return (
-    <Flex
-      align="center"
-      justify="center"
-      height="100%"
-      className="relative px-4"
-    >
-      <DotPatternBackground className="h-[100.333%]" />
+    <Flex direction="column" height="100%">
       <Flex
-        direction="column"
-        gap="3"
-        className="relative z-[1] w-full max-w-[600px]"
+        align="center"
+        justify="between"
+        className="shrink-0 border-(--gray-5) border-b px-3 py-2"
       >
-        <Flex direction="column" gap="1">
-          <Heading size="4" className="text-(--gray-12)">
-            Create a canvas
-          </Heading>
-          <Text size="2" color="gray">
-            Use AI to generate a view of PostHog data — charts, related flags,
-            experiments, and more.
-          </Text>
-        </Flex>
-
-        <PromptInput
-          ref={editorRef}
-          sessionId={sessionId}
-          placeholder="What should this canvas show?"
-          editorHeight="large"
-          autoFocus
-          clearOnSubmit={false}
-          disabled={isCreatingTask}
-          isLoading={isCreatingTask || isPreviewLoading}
-          submitDisabledExternal={!canSubmit || isCreatingTask || !isOnline}
-          repoPath={
-            workspaceMode === "cloud" ? null : selectedDirectory || null
-          }
-          allowBypassPermissions={allowBypassPermissions}
-          enableCommands
-          enableBashMode={false}
-          onEmptyChange={setEditorIsEmpty}
-          onSubmitClick={handleSubmit}
-          onSubmit={() => {
-            if (canSubmit) handleSubmit();
-          }}
-        />
-
-        <Flex justify="end">
-          <Button
-            variant="soft"
-            size="2"
-            onClick={handleGuess}
-            disabled={isCreatingTask || !isOnline}
+        <span className="text-(--gray-12) text-sm">Chat</span>
+        <Flex align="center" gap="1">
+          {activeTask && (
+            <IconButton
+              size="1"
+              variant="ghost"
+              color="gray"
+              onClick={() => clearActiveTask(canvasId)}
+              aria-label="Start new chat"
+              title="Start new chat"
+            >
+              <PlusCircle size={14} />
+            </IconButton>
+          )}
+          <IconButton
+            size="1"
+            variant="ghost"
+            color="gray"
+            onClick={close}
+            aria-label="Close chat panel"
           >
-            Guess what to show
-          </Button>
+            <X size={14} />
+          </IconButton>
         </Flex>
       </Flex>
+      {activeTask ? (
+        <Box className="min-h-0 flex-1 overflow-hidden">
+          <TaskLogsPanel taskId={activeTask.id} task={activeTask} />
+        </Box>
+      ) : (
+        <>
+          <Box className="min-h-0 flex-1 overflow-y-auto p-3">
+            <span className="text-(--gray-10) text-xs">
+              Ask about this canvas or kick off a coding task…
+            </span>
+          </Box>
+          <Box className="shrink-0 border-(--gray-4) border-t p-2">
+            <PromptInput
+              ref={editorRef}
+              sessionId={sessionId}
+              placeholder="What do you want to ship?"
+              disabled={isCreatingTask}
+              isLoading={isCreatingTask || isPreviewLoading}
+              clearOnSubmit={false}
+              submitDisabledExternal={!canSubmit || isCreatingTask || !isOnline}
+              repoPath={
+                workspaceMode === "cloud" ? null : selectedDirectory || null
+              }
+              allowBypassPermissions={allowBypassPermissions}
+              enableCommands
+              enableBashMode={false}
+              onEmptyChange={setEditorIsEmpty}
+              onSubmitClick={handleSubmit}
+              onSubmit={() => {
+                if (canSubmit) handleSubmit();
+              }}
+            />
+          </Box>
+        </>
+      )}
     </Flex>
   );
 }

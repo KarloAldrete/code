@@ -10,4 +10,5 @@ export interface INotifier {
   notify(options: NotifyOptions): void;
   setUnreadIndicator(on: boolean): void;
   requestAttention(): void;
+  playStartupAnimation(): void;
 }
