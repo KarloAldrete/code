@@ -130,16 +130,14 @@ export function SpawnHogletDialog({ open, onClose }: SpawnHogletDialogProps) {
         maxWidth="480px"
         size="2"
         onPointerDownOutside={(e) => {
-          if (
-            (e.target as HTMLElement | null)?.closest("[data-quill-portal]")
-          ) {
+          const target = e.detail.originalEvent.target as HTMLElement | null;
+          if (target?.closest("[data-quill-portal]")) {
             e.preventDefault();
           }
         }}
         onInteractOutside={(e) => {
-          if (
-            (e.target as HTMLElement | null)?.closest("[data-quill-portal]")
-          ) {
+          const target = e.detail.originalEvent.target as HTMLElement | null;
+          if (target?.closest("[data-quill-portal]")) {
             e.preventDefault();
           }
         }}
