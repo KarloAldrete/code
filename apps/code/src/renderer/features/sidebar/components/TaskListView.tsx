@@ -37,6 +37,7 @@ interface TaskListViewProps {
   flatTasks: TaskData[];
   groupedTasks: TaskGroup[];
   activeTaskId: string | null;
+  highlightedTaskIds: ReadonlySet<string>;
   editingTaskId: string | null;
   onTaskClick: (taskId: string) => void;
   onTaskDoubleClick: (taskId: string) => void;
@@ -232,6 +233,7 @@ export function TaskListView({
   flatTasks,
   groupedTasks,
   activeTaskId,
+  highlightedTaskIds,
   editingTaskId,
   onTaskClick,
   onTaskDoubleClick,
@@ -303,7 +305,9 @@ export function TaskListView({
             <TaskRow
               key={task.id}
               task={task}
-              isActive={activeTaskId === task.id}
+              isActive={
+                activeTaskId === task.id || highlightedTaskIds.has(task.id)
+              }
               isEditing={editingTaskId === task.id}
               onClick={() => onTaskClick(task.id)}
               onDoubleClick={() => onTaskDoubleClick(task.id)}
@@ -406,7 +410,10 @@ export function TaskListView({
                       <TaskRow
                         key={task.id}
                         task={task}
-                        isActive={activeTaskId === task.id}
+                        isActive={
+                          activeTaskId === task.id ||
+                          highlightedTaskIds.has(task.id)
+                        }
                         isEditing={editingTaskId === task.id}
                         onClick={() => onTaskClick(task.id)}
                         onDoubleClick={() => onTaskDoubleClick(task.id)}
@@ -438,7 +445,9 @@ export function TaskListView({
                 <TaskRow
                   key={task.id}
                   task={task}
-                  isActive={activeTaskId === task.id}
+                  isActive={
+                    activeTaskId === task.id || highlightedTaskIds.has(task.id)
+                  }
                   isEditing={editingTaskId === task.id}
                   onClick={() => onTaskClick(task.id)}
                   onDoubleClick={() => onTaskDoubleClick(task.id)}

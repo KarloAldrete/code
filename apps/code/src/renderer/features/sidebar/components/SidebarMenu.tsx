@@ -1,5 +1,7 @@
 import { DotsCircleSpinner } from "@components/DotsCircleSpinner";
 import { useCommandCenterStore } from "@features/command-center/stores/commandCenterStore";
+import { useHedgemonySelectionStore } from "@features/hedgemony/stores/hedgemonySelectionStore";
+import { useHogletStore } from "@features/hedgemony/stores/hogletStore";
 import { useInboxReports } from "@features/inbox/hooks/useInboxReports";
 import { isReportUpForReview } from "@features/inbox/utils/filterReports";
 import {
@@ -24,7 +26,7 @@ import { useRendererWindowFocusStore } from "@stores/rendererWindowFocusStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { logger } from "@utils/logger";
 import { toast } from "@utils/toast";
-import { memo, useCallback, useEffect, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import { usePinnedTasks } from "../hooks/usePinnedTasks";
 import { useSidebarData } from "../hooks/useSidebarData";
 import { useTaskViewed } from "../hooks/useTaskViewed";
@@ -99,6 +101,25 @@ function SidebarMenuComponent() {
   const commandCenterActiveCount = commandCenterCells.filter(
     (taskId) => taskId != null && taskMap.has(taskId),
   ).length;
+
+  // Tasks whose hoglet is selected on the Hedgemony map. These get the same
+  // highlight as the currently navigated task so the player can see at a
+  // glance which sidebar row corresponds to the unit they just picked.
+  const selectedHogletIds = useHedgemonySelectionStore(
+    (s) => s.selectedHogletIds,
+  );
+  const hogletBuckets = useHogletStore((s) => s.byBucket);
+  const highlightedTaskIds = useMemo(() => {
+    if (selectedHogletIds.length === 0) return new Set<string>();
+    const wanted = new Set(selectedHogletIds);
+    const taskIds = new Set<string>();
+    for (const bucket of Object.values(hogletBuckets)) {
+      for (const hoglet of bucket) {
+        if (wanted.has(hoglet.id)) taskIds.add(hoglet.taskId);
+      }
+    }
+    return taskIds;
+  }, [selectedHogletIds, hogletBuckets]);
 
   const previousTaskIdRef = useRef<string | null>(null);
 
@@ -361,6 +382,7 @@ function SidebarMenuComponent() {
               flatTasks={sidebarData.flatTasks}
               groupedTasks={sidebarData.groupedTasks}
               activeTaskId={sidebarData.activeTaskId}
+              highlightedTaskIds={highlightedTaskIds}
               editingTaskId={editingTaskId}
               onTaskClick={handleTaskClick}
               onTaskDoubleClick={handleTaskDoubleClick}

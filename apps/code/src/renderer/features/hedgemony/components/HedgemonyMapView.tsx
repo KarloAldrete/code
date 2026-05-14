@@ -29,6 +29,7 @@ import {
   type ControlGroupSlot,
   useControlGroupStore,
 } from "../stores/controlGroupStore";
+import { useHedgemonySelectionStore } from "../stores/hedgemonySelectionStore";
 import {
   type BookmarkSlot,
   useHedgemonyViewStore,
@@ -135,6 +136,21 @@ export function HedgemonyMapView() {
       if (moveMarkerTimerRef.current) {
         clearTimeout(moveMarkerTimerRef.current);
       }
+    };
+  }, []);
+
+  // Mirror the hoglet portion of the local selection out to a small global
+  // store so the sidebar's task list can highlight tasks linked to selected
+  // hoglets. Clearing on unmount keeps the sidebar in sync when the map view
+  // tears down (e.g. user navigates away from the command center).
+  useEffect(() => {
+    const ids = selection?.type === "hoglets" ? selection.ids : [];
+    useHedgemonySelectionStore.getState().setSelectedHogletIds(ids);
+  }, [selection]);
+
+  useEffect(() => {
+    return () => {
+      useHedgemonySelectionStore.getState().clear();
     };
   }, []);
 
