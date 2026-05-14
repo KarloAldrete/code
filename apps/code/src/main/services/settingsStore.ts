@@ -11,7 +11,10 @@ interface SettingsSchema {
   autoSuspendEnabled: boolean;
   maxActiveWorktrees: number;
   autoSuspendAfterDays: number;
+  hedgemonyMaxTicksPerHour: number;
 }
+
+export const HEDGEMONY_MAX_TICKS_PER_HOUR_DEFAULT = 60;
 
 function getDefaultWorktreeLocation(): string {
   const isDev = isDevBuild();
@@ -84,6 +87,12 @@ const schema = {
     minimum: 1,
     maximum: 365,
   },
+  hedgemonyMaxTicksPerHour: {
+    type: "number" as const,
+    default: HEDGEMONY_MAX_TICKS_PER_HOUR_DEFAULT,
+    minimum: 1,
+    maximum: 600,
+  },
 };
 
 export const settingsStore = new Store<SettingsSchema>({
@@ -96,6 +105,7 @@ export const settingsStore = new Store<SettingsSchema>({
     autoSuspendEnabled: true,
     maxActiveWorktrees: 5,
     autoSuspendAfterDays: 7,
+    hedgemonyMaxTicksPerHour: HEDGEMONY_MAX_TICKS_PER_HOUR_DEFAULT,
   },
 });
 
@@ -165,4 +175,15 @@ export function getAutoSuspendAfterDays(): number {
 
 export function setAutoSuspendAfterDays(value: number): void {
   settingsStore.set("autoSuspendAfterDays", value);
+}
+
+export function getHedgemonyMaxTicksPerHour(): number {
+  return settingsStore.get(
+    "hedgemonyMaxTicksPerHour",
+    HEDGEMONY_MAX_TICKS_PER_HOUR_DEFAULT,
+  );
+}
+
+export function setHedgemonyMaxTicksPerHour(value: number): void {
+  settingsStore.set("hedgemonyMaxTicksPerHour", value);
 }

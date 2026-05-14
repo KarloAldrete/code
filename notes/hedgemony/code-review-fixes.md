@@ -67,7 +67,7 @@ cancels the task run if a subsequent step fails.
 
 ## Fix next (spec compliance)
 
-### 5. Missing hourly tick cap
+### 5. Missing hourly tick cap — DONE
 
 **File:** `hedgehog-tick-service.ts`
 

@@ -241,6 +241,21 @@ export const hedgemonyPrDependencies = sqliteTable(
   ],
 );
 
+export const hedgemonyTickLog = sqliteTable(
+  "hedgemony_tick_log",
+  {
+    id: id(),
+    nestId: text()
+      .notNull()
+      .references(() => hedgemonyNests.id, { onDelete: "cascade" }),
+    tickedAt: text().notNull().default(sql`(CURRENT_TIMESTAMP)`),
+    outcome: text({
+      enum: ["completed", "errored", "aborted", "capped"],
+    }).notNull(),
+  },
+  (t) => [index("hedgemony_tick_log_window_idx").on(t.nestId, t.tickedAt)],
+);
+
 export const authPreferences = sqliteTable(
   "auth_preferences",
   {

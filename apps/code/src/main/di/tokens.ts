@@ -40,6 +40,7 @@ export const MAIN_TOKENS = Object.freeze({
   HedgehogStateRepository: Symbol.for("Main.HedgehogStateRepository"),
   FeedbackEventRepository: Symbol.for("Main.FeedbackEventRepository"),
   PrDependencyRepository: Symbol.for("Main.PrDependencyRepository"),
+  TickLogRepository: Symbol.for("Main.TickLogRepository"),
 
   // Services
   AgentAuthAdapter: Symbol.for("Main.AgentAuthAdapter"),

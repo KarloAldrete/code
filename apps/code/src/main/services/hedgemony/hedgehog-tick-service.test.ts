@@ -58,6 +58,8 @@ import type {
   Repository,
   RepositoryRepository,
 } from "../../db/repositories/repository-repository";
+import type { TickLogRepository } from "../../db/repositories/tick-log-repository";
+import { createMockTickLogRepository } from "../../db/repositories/tick-log-repository.mock";
 import type { GitService } from "../git/service";
 import type {
   AnthropicToolUseBlock,
@@ -157,6 +159,7 @@ interface Mocks {
   git: GitService;
   feedbackRouting: FeedbackRoutingService;
   repositoryRepo: RepositoryRepository;
+  tickLog: ReturnType<typeof createMockTickLogRepository>;
   emittedNestChanged: HedgemonyEvents["nest-changed"][];
 }
 
@@ -348,6 +351,8 @@ function setupMocks(input: {
     findAll: vi.fn(() => input.availableRepositories ?? []),
   } as unknown as RepositoryRepository;
 
+  const tickLog = createMockTickLogRepository();
+
   return {
     llm,
     nestService,
@@ -360,6 +365,7 @@ function setupMocks(input: {
     git,
     feedbackRouting,
     repositoryRepo,
+    tickLog,
     emittedNestChanged,
   };
 }
@@ -377,6 +383,7 @@ function buildService(mocks: Mocks): HedgehogTickService {
     mocks.git,
     mocks.feedbackRouting,
     mocks.repositoryRepo,
+    mocks.tickLog as unknown as TickLogRepository,
   );
 }
 
@@ -384,6 +391,67 @@ describe("HedgehogTickService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (readUserTaskPreferences as ReturnType<typeof vi.fn>).mockReturnValue({});
+  });
+
+  it("caps ticks at 60 per nest per hour and writes a capped log row", async () => {
+    const mocks = setupMocks({
+      promptResponse: makePromptWithToolsResponse([
+        {
+          id: "tool-1",
+          name: "write_audit_entry",
+          input: { summary: "noop" },
+        },
+      ]),
+    });
+    // Pre-populate the log with 60 recent ticks for nest-1.
+    const recent = new Date(Date.now() - 30 * 60_000).toISOString();
+    for (let i = 0; i < 60; i++) {
+      mocks.tickLog._logs.push({
+        id: `pre-${i}`,
+        nestId: "nest-1",
+        tickedAt: recent,
+        outcome: "completed",
+      });
+    }
+    const service = buildService(mocks);
+
+    await service.tick("nest-1", "test_cap");
+
+    expect(mocks.llm.promptWithTools).not.toHaveBeenCalled();
+    const cappedCount = mocks.tickLog._logs.filter(
+      (l) => l.outcome === "capped",
+    ).length;
+    expect(cappedCount).toBe(1);
+    const auditBodies = (
+      mocks.nestChat.recordHedgehogMessage as ReturnType<typeof vi.fn>
+    ).mock.calls
+      .map(([args]) => args)
+      .filter((m) => m.kind === "audit")
+      .map((m) => m.body as string);
+    expect(auditBodies.some((b) => b.includes("Hedgehog tick capped"))).toBe(
+      true,
+    );
+  });
+
+  it("writes a completed tick log row when a tick finishes normally", async () => {
+    const mocks = setupMocks({
+      promptResponse: makePromptWithToolsResponse([
+        {
+          id: "tool-1",
+          name: "write_audit_entry",
+          input: { summary: "ok" },
+        },
+      ]),
+    });
+    const service = buildService(mocks);
+
+    await service.tick("nest-1", "test");
+
+    expect(mocks.tickLog._logs).toHaveLength(1);
+    expect(mocks.tickLog._logs[0]).toMatchObject({
+      nestId: "nest-1",
+      outcome: "completed",
+    });
   });
 
   it("tick with no hoglets writes audit and ends idle", async () => {

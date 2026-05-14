@@ -4,11 +4,16 @@ import { normalizeRepoKey } from "../../../shared/utils/repo";
 import type { HedgehogStateRepository } from "../../db/repositories/hedgehog-state-repository";
 import type { PrDependencyRepository } from "../../db/repositories/pr-dependency-repository";
 import type { RepositoryRepository } from "../../db/repositories/repository-repository";
+import type {
+  TickLogRepository,
+  TickOutcome,
+} from "../../db/repositories/tick-log-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import type { GitService } from "../git/service";
 import type { PromptWithToolsOutput } from "../llm-gateway/schemas";
 import type { LlmGatewayService } from "../llm-gateway/service";
+import { getHedgemonyMaxTicksPerHour } from "../settingsStore";
 import type { CloudTaskClient } from "./cloud-task-client";
 import type { FeedbackRoutingService } from "./feedback-routing-service";
 import { HEDGEHOG_HANDLERS } from "./hedgehog-handlers/registry";
@@ -57,6 +62,7 @@ const SCHEDULER_POLL_INTERVAL_MS = 60_000;
 const HEDGEHOG_MODEL = DEFAULT_HOGLET_MODEL;
 const HEDGEHOG_EFFORT = "max";
 const MAX_TOKENS = 4_000;
+const TICK_WINDOW_MS = 60 * 60_000;
 
 function getHeartbeatIntervalMs(): number {
   const envOverride = process.env.HEDGEMONY_HEARTBEAT_INTERVAL_MS;
@@ -117,6 +123,8 @@ export class HedgehogTickService {
     private readonly feedbackRouting: FeedbackRoutingService,
     @inject(MAIN_TOKENS.RepositoryRepository)
     private readonly repositoryRepo: RepositoryRepository,
+    @inject(MAIN_TOKENS.TickLogRepository)
+    private readonly tickLog: TickLogRepository,
   ) {}
 
   /**
@@ -280,6 +288,34 @@ export class HedgehogTickService {
       return;
     }
 
+    // Enforce the hourly cap before doing any work. The window is the last
+    // hour from now; `capped` rows count too so a flood of capped attempts
+    // self-quenches.
+    const cap = getHedgemonyMaxTicksPerHour();
+    const windowStart = new Date(Date.now() - TICK_WINDOW_MS).toISOString();
+    const recentTicks = this.tickLog.countSince(nestId, windowStart);
+    if (recentTicks >= cap) {
+      this.tickLog.insert({ nestId, outcome: "capped" });
+      log.warn("hedgehog tick capped", {
+        nestId,
+        reason,
+        cap,
+        recentTicks,
+      });
+      this.writeNestMessage(nestId, {
+        kind: "audit",
+        body: `Hedgehog tick capped: ${recentTicks} ticks already in the last hour (cap=${cap}).`,
+        visibility: "summary",
+        payloadJson: {
+          type: "tick_capped",
+          tickReason: reason,
+          cap,
+          recentTicks,
+        },
+      });
+      return;
+    }
+
     // Move state → ticking, emit so the glow turns on.
     this.stateRepo.upsert({ nestId, state: "ticking" });
     this.nestService.emitHedgehogTick(nestId, {
@@ -290,10 +326,14 @@ export class HedgehogTickService {
     const newScratchpadEntries: ScratchpadEntry[] = [];
     const budget = new TickBudget();
     const deps = this.buildHandlerDeps();
+    let outcome: TickOutcome = "completed";
 
     try {
       const context = await this.buildContext(nest, budget);
-      if (abortSignal?.aborted) return;
+      if (abortSignal?.aborted) {
+        outcome = "aborted";
+        return;
+      }
       const recentChat = this.nestChat.list({ nestId, detail: false });
       const repositoryContext = this.deriveRepositoryContext(
         recentChat,
@@ -327,12 +367,18 @@ export class HedgehogTickService {
           signal: abortSignal,
         },
       );
-      if (abortSignal?.aborted) return;
+      if (abortSignal?.aborted) {
+        outcome = "aborted";
+        return;
+      }
 
       newScratchpadEntries.push(...this.summariseLlmResponse(reason, response));
 
       for (const block of response.toolUseBlocks) {
-        if (abortSignal?.aborted) return;
+        if (abortSignal?.aborted) {
+          outcome = "aborted";
+          return;
+        }
         const handler = HEDGEHOG_HANDLERS.get(
           block.name as Parameters<typeof HEDGEHOG_HANDLERS.get>[0],
         );
@@ -370,8 +416,10 @@ export class HedgehogTickService {
     } catch (error) {
       if (abortSignal?.aborted || isAbortError(error)) {
         log.debug("tick aborted", { nestId, reason });
+        outcome = "aborted";
         return;
       }
+      outcome = "errored";
       log.error("tick body errored", { nestId, reason, error });
       newScratchpadEntries.push({
         ts: new Date().toISOString(),
@@ -385,6 +433,15 @@ export class HedgehogTickService {
         payloadJson: { tickReason: reason, type: "tick_error" },
       });
     } finally {
+      try {
+        this.tickLog.insert({ nestId, outcome });
+      } catch (logError) {
+        log.warn("failed to insert tick log row", {
+          nestId,
+          outcome,
+          error: stringifyError(logError),
+        });
+      }
       if (!abortSignal?.aborted) {
         const scratchpad = this.loadScratchpad(nestId);
         const nextScratchpad = appendScratchpad(
