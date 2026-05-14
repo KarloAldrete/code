@@ -2,7 +2,7 @@ import type { Nest } from "@main/services/hedgemony/schemas";
 import { ArrowCounterClockwise } from "@phosphor-icons/react";
 import { AnimatePresence, motion, useMotionValue } from "framer-motion";
 import type { MutableRefObject, ReactNode } from "react";
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   HEDGEMONY_ZOOM_MAX,
   HEDGEMONY_ZOOM_MIN,
@@ -10,13 +10,14 @@ import {
 } from "../stores/hedgemonyViewStore";
 import { clientToWorld, fitZoom, panToCenter } from "../utils/coordinates";
 import type { Vec2 } from "../utils/pathfinding";
+import { usePanCamera } from "../utils/usePanCamera";
 import { BgmControl } from "./BgmControl";
 import { type BuilderAnimation, BuilderSprite } from "./BuilderSprite";
 import { MapBackdrop } from "./MapBackdrop";
 import { NestSprite } from "./NestSprite";
 
 const ZOOM_WHEEL_STEP = 0.0015;
-const CLICK_DRAG_THRESHOLD_PX = 4;
+const CLICK_MOVE_THRESHOLD_PX = 4;
 const GHOST_SIZE = 96;
 const FIT_PADDING_PX = 360;
 
@@ -78,10 +79,18 @@ export function HedgemonyMapSurface({
 
   const x = useMotionValue(panX);
   const y = useMotionValue(panY);
-  const initial = useRef({ x: panX, y: panY });
 
   const outerRef = useRef<HTMLDivElement>(null);
   const pointerDown = useRef<{ x: number; y: number } | null>(null);
+
+  const commitPan = useCallback(
+    (nextX: number, nextY: number) => {
+      setPan(nextX, nextY);
+    },
+    [setPan],
+  );
+
+  usePanCamera({ containerRef: outerRef, panX: x, panY: y, onCommit: commitPan });
   const [placementPointer, setPlacementPointer] = useState<{
     x: number;
     y: number;
@@ -181,7 +190,7 @@ export function HedgemonyMapSurface({
 
     const dx = event.clientX - start.x;
     const dy = event.clientY - start.y;
-    if (Math.hypot(dx, dy) > CLICK_DRAG_THRESHOLD_PX) return;
+    if (Math.hypot(dx, dy) > CLICK_MOVE_THRESHOLD_PX) return;
 
     const world = toWorldCoords(event.clientX, event.clientY);
     if (!world) return;
@@ -216,9 +225,7 @@ export function HedgemonyMapSurface({
     <div
       ref={outerRef}
       className={`relative h-full w-full select-none overflow-hidden ${
-        placementMode
-          ? "cursor-crosshair"
-          : "cursor-grab active:cursor-grabbing"
+        placementMode ? "cursor-crosshair" : "cursor-default"
       }`}
       onWheel={handleWheel}
       onPointerDown={handlePointerDown}
@@ -228,11 +235,7 @@ export function HedgemonyMapSurface({
       onContextMenu={handleContextMenu}
     >
       <motion.div
-        drag={!placementMode}
-        dragMomentum={false}
         style={{ x, y, scale: zoom }}
-        initial={{ x: initial.current.x, y: initial.current.y }}
-        onDragEnd={() => setPan(x.get(), y.get())}
         className="absolute inset-0 origin-center"
       >
         <MapBackdrop nests={nests} />
