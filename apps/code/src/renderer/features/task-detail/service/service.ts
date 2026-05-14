@@ -10,6 +10,7 @@ import {
   TaskCreationSaga,
 } from "@renderer/sagas/task/task-creation";
 import { trpc } from "@renderer/trpc";
+import type { Task } from "@shared/types";
 import { logger } from "@utils/logger";
 import { queryClient } from "@utils/queryClient";
 import { injectable } from "inversify";
@@ -62,6 +63,7 @@ export class TaskService {
       onTaskReady: onTaskReady
         ? (output) => {
             this.optimisticallyUpdateWorkspaceCache(output);
+            this.optimisticallyAddTaskToListCache(output);
             this.updateStoresOnSuccess(output, input);
             void queryClient.invalidateQueries(
               trpc.workspace.getAll.pathFilter(),
@@ -76,6 +78,7 @@ export class TaskService {
 
     if (result.success) {
       this.optimisticallyUpdateWorkspaceCache(result.data);
+      this.optimisticallyAddTaskToListCache(result.data);
       if (!onTaskReady) {
         this.updateStoresOnSuccess(result.data, input);
       }
@@ -173,6 +176,22 @@ export class TaskService {
     queryClient.setQueriesData<Record<string, Workspace>>(
       trpc.workspace.getAll.pathFilter(),
       (old) => ({ ...old, [output.task.id]: workspace }),
+    );
+  }
+
+  /**
+   * Inject the freshly created task into every populated tasks-list cache, so
+   * views that read `useTasks()` (e.g. WorkTaskDetailView) can render the new
+   * task immediately instead of waiting for the next 30s poll.
+   */
+  private optimisticallyAddTaskToListCache(output: TaskCreationOutput): void {
+    queryClient.setQueriesData<Task[]>(
+      { queryKey: ["tasks", "list"] },
+      (old) => {
+        if (!old) return old;
+        if (old.some((t) => t.id === output.task.id)) return old;
+        return [output.task, ...old];
+      },
     );
   }
 

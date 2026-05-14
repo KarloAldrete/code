@@ -23,11 +23,10 @@ import { useNavigationStore } from "@stores/navigationStore";
 import { formatRelativeTimeLong } from "@utils/time";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useOpenLastRun } from "../hooks/useOpenLastRun";
+import { useFireScheduledTask } from "../hooks/useLocalScheduleRunner";
 import {
   useCreateScheduledTask,
   useDeleteScheduledTask,
-  useRunScheduledTaskNow,
   useScheduledTasks,
   useUpdateScheduledTask,
 } from "../hooks/useScheduledTasks";
@@ -150,8 +149,9 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
   const createScheduledTask = useCreateScheduledTask();
   const updateScheduledTask = useUpdateScheduledTask();
   const deleteScheduledTask = useDeleteScheduledTask();
-  const runScheduledTaskNow = useRunScheduledTaskNow();
-  const { openLastRun, isOpening } = useOpenLastRun();
+  const fireScheduledTask = useFireScheduledTask();
+  const navigateToWorkTask = useNavigationStore((s) => s.navigateToWorkTask);
+  const [isRunningNow, setIsRunningNow] = useState(false);
 
   const isEditing = editingId !== null && existing !== null;
   const isSaving =
@@ -280,16 +280,16 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
 
   const handleRunNow = async () => {
     if (!isEditing) return;
+    setIsRunningNow(true);
     try {
-      const updated = await runScheduledTaskNow.mutateAsync(existing.id);
-      toast.success("Running now");
-      if (updated.last_task_id) {
-        await openLastRun(updated.last_task_id, updated.last_task_run_id);
-      }
+      const fired = await fireScheduledTask(existing, { navigate: true });
+      if (fired) toast.success("Running now");
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to run scheduled task",
       );
+    } finally {
+      setIsRunningNow(false);
     }
   };
 
@@ -319,7 +319,7 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
                 variant="soft"
                 color="gray"
                 onClick={handleRunNow}
-                loading={runScheduledTaskNow.isPending}
+                loading={isRunningNow}
               >
                 <Play size={14} />
                 Run now
@@ -443,13 +443,10 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
                     <Button
                       size="2"
                       variant="soft"
-                      onClick={() =>
-                        openLastRun(
-                          existing.last_task_id ?? "",
-                          existing.last_task_run_id,
-                        )
-                      }
-                      loading={isOpening}
+                      onClick={() => {
+                        if (existing.last_task_id)
+                          navigateToWorkTask(existing.last_task_id);
+                      }}
                     >
                       <ArrowSquareOut size={14} />
                       Open task

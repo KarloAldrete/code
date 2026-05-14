@@ -27,6 +27,7 @@ import { TourOverlay } from "@features/tour/components/TourOverlay";
 import { useTourStore } from "@features/tour/stores/tourStore";
 import { createFirstTaskTour } from "@features/tour/tours/createFirstTaskTour";
 import { WorkView } from "@features/work/components/WorkView";
+import { useLocalScheduleRunner } from "@features/work/hooks/useLocalScheduleRunner";
 import {
   useWorkspaces,
   workspaceApi,
@@ -92,6 +93,7 @@ export function MainLayout() {
   useIntegrations();
   useTaskDeepLink();
   useInboxDeepLink();
+  useLocalScheduleRunner();
 
   useEffect(() => {
     if (tasks) {
