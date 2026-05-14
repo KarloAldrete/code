@@ -28,6 +28,7 @@ import { selectHogletById, useHogletStore } from "../stores/hogletStore";
 import { selectNests, useNestStore } from "../stores/nestStore";
 import { useSpawnDialogStore } from "../stores/spawnDialogStore";
 import { collectHogletWorldPositions } from "../utils/hogletPositions";
+import { type Obstacle, snapGoal } from "../utils/pathfinding";
 import { BuilderCommandPanel } from "./BuilderCommandPanel";
 import { HedgehouseCommandPanel } from "./HedgehouseCommandPanel";
 import { HedgemonyHoldingPanel } from "./HedgemonyHoldingPanel";
@@ -47,6 +48,12 @@ import { SpawnHogletPanel } from "./SpawnHogletPanel";
 import { WildHogletFlock } from "./WildHogletFlock";
 
 const log = logger.scope("hedgemony-map-view");
+
+// Match builder's collision radius for nests so hoglets stop at the same
+// perimeter the builder treats as solid. Hoglet sprite is 40px wide, so 20
+// keeps them from clipping into the nest sprite while not over-reserving space.
+const HOGLET_RADIUS = 20;
+const HOGLET_NEST_OBSTACLE_RADIUS = 56;
 
 type Selection =
   | { type: "nest"; id: string }
@@ -316,28 +323,60 @@ export function HedgemonyMapView() {
 
     if (selection.type === "hoglets") {
       const positionStore = useHogletPositionStore.getState();
+      const obstacles: Obstacle[] = nests.map((nest) => ({
+        x: nest.mapX,
+        y: nest.mapY,
+        radius: HOGLET_NEST_OBSTACLE_RADIUS,
+      }));
+      // Resolve each hoglet's landing point against its current position so the
+      // snap pushes it to the side of the nest it's approaching from rather
+      // than radially. Read positions once via the same helper box-select uses
+      // so the "current" position matches what's rendered.
+      const positionsNow = collectHogletWorldPositions(
+        nests,
+        useHogletStore.getState().byBucket,
+        positionStore.positions,
+      );
+      const currentById = new Map(
+        positionsNow.map((p) => [p.hogletId, { x: p.x, y: p.y }]),
+      );
       // Multi-select formation: pack them in a small ring around the target so
       // they don't all stack on a single pixel. Single-select just snaps to
       // the exact click point.
-      if (selection.ids.length === 1) {
-        positionStore.setPosition(selection.ids[0], targetX, targetY);
-      } else {
-        const radius = 28 + selection.ids.length * 4;
-        selection.ids.forEach((id, i) => {
-          const angle = (2 * Math.PI * i) / selection.ids.length;
-          positionStore.setPosition(
-            id,
-            targetX + Math.cos(angle) * radius,
-            targetY + Math.sin(angle) * radius,
-          );
-        });
+      const desired: { id: string; x: number; y: number }[] =
+        selection.ids.length === 1
+          ? [{ id: selection.ids[0], x: targetX, y: targetY }]
+          : selection.ids.map((id, i) => {
+              const ringRadius = 28 + selection.ids.length * 4;
+              const angle = (2 * Math.PI * i) / selection.ids.length;
+              return {
+                id,
+                x: targetX + Math.cos(angle) * ringRadius,
+                y: targetY + Math.sin(angle) * ringRadius,
+              };
+            });
+      let resolvedX = targetX;
+      let resolvedY = targetY;
+      for (const slot of desired) {
+        const from = currentById.get(slot.id) ?? { x: slot.x, y: slot.y };
+        const snapped = snapGoal(
+          from,
+          { x: slot.x, y: slot.y },
+          obstacles,
+          HOGLET_RADIUS,
+        );
+        positionStore.setPosition(slot.id, snapped.x, snapped.y);
+        if (selection.ids.length === 1) {
+          resolvedX = Math.round(snapped.x);
+          resolvedY = Math.round(snapped.y);
+        }
       }
       if (selection.includeBuilder) {
         builder.startWalk({ x: targetX, y: targetY }, "idle");
       }
       playSfx("order");
       playVoice("hoglet:order_move");
-      flashMoveMarker(targetX, targetY);
+      flashMoveMarker(resolvedX, resolvedY);
       return;
     }
 

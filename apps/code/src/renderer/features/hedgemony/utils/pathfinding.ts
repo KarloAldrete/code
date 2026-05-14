@@ -1,7 +1,7 @@
 export type Vec2 = { x: number; y: number };
 export type Obstacle = { x: number; y: number; radius: number };
 
-const BUILDER_RADIUS = 36;
+const DEFAULT_AGENT_RADIUS = 36;
 const CELL = 32;
 const MARGIN = 256;
 const EPS = 0.5;
@@ -11,9 +11,12 @@ const SNAP_MAX_ITERATIONS = 8;
 
 type InflatedObstacle = { x: number; y: number; r2: number; radius: number };
 
-function inflate(obstacles: Obstacle[]): InflatedObstacle[] {
+function inflate(
+  obstacles: Obstacle[],
+  agentRadius: number,
+): InflatedObstacle[] {
   return obstacles.map((o) => {
-    const radius = o.radius + BUILDER_RADIUS;
+    const radius = o.radius + agentRadius;
     return { x: o.x, y: o.y, radius, r2: radius * radius };
   });
 }
@@ -97,8 +100,13 @@ function nearestFreePointOnLine(
   return from;
 }
 
-export function snapGoal(from: Vec2, to: Vec2, obstacles: Obstacle[]): Vec2 {
-  const infl = inflate(obstacles);
+export function snapGoal(
+  from: Vec2,
+  to: Vec2,
+  obstacles: Obstacle[],
+  agentRadius: number = DEFAULT_AGENT_RADIUS,
+): Vec2 {
+  const infl = inflate(obstacles, agentRadius);
   if (!pointBlocked(to, infl)) return to;
   return nearestFreePointOnLine(from, to, infl);
 }
@@ -184,8 +192,13 @@ function stringPull(path: Vec2[], infl: InflatedObstacle[]): Vec2[] {
   return result;
 }
 
-export function findPath(from: Vec2, to: Vec2, obstacles: Obstacle[]): Vec2[] {
-  const infl = inflate(obstacles);
+export function findPath(
+  from: Vec2,
+  to: Vec2,
+  obstacles: Obstacle[],
+  agentRadius: number = DEFAULT_AGENT_RADIUS,
+): Vec2[] {
+  const infl = inflate(obstacles, agentRadius);
   const goal = pointBlocked(to, infl)
     ? nearestFreePointOnLine(from, to, infl)
     : to;
