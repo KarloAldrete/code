@@ -45,7 +45,7 @@ module.exports = {
       },
       fontFamily: {
         sans: ["Open Runde"],
-        mono: ["JetBrains Mono"],
+        mono: ["Open Runde"],
       },
     },
   },
