@@ -6,6 +6,8 @@ import { selectNests, useNestStore } from "../stores/nestStore";
 import { collectHogletWorldPositions } from "../utils/hogletPositions";
 import { applyHogletVisualPositions } from "../utils/hogletVisualPositions";
 import type { Vec2 } from "../utils/pathfinding";
+import { scatterProps } from "./mapBackdrop/scatter";
+import type { PropType } from "./mapBackdrop/zones";
 
 const WORLD_HALF = 1600;
 const WORLD_MIN = -WORLD_HALF;
@@ -32,6 +34,18 @@ function nestDotColor(nest: Nest): string {
   return "var(--amber-9)";
 }
 
+const PROP_DOT: Record<PropType, { fill: string; r: number }> = {
+  oak: { fill: "#2a4f30", r: 1.2 },
+  pine: { fill: "#1f3a26", r: 1.0 },
+  bush: { fill: "#3a6638", r: 0.7 },
+  bushLg: { fill: "#3a6638", r: 0.9 },
+  boulder: { fill: "#75766d", r: 0.8 },
+  boulderLg: { fill: "#75766d", r: 1.0 },
+  stump: { fill: "#6f4d2e", r: 0.6 },
+  wildflower: { fill: "#f3c84a", r: 0.5 },
+  mushroom: { fill: "#c93b2e", r: 0.5 },
+};
+
 function worldToMinimap(wx: number, wy: number, width: number, height: number) {
   return {
     x: ((wx - WORLD_MIN) / WORLD_SIZE) * width,
@@ -54,6 +68,8 @@ export function HedgemonyMinimap({
   const byBucket = useHogletStore((s) => s.byBucket);
   const positionOverrides = useHogletPositionStore((s) => s.positions);
   const nestsForPositions = useNestStore(selectNests);
+
+  const props = useMemo(() => scatterProps(nests), [nests]);
 
   const hogletPositions = useMemo(
     () =>
@@ -113,7 +129,112 @@ export function HedgemonyMinimap({
         onClick={handleClick}
       >
         <title>World minimap</title>
-        <rect x={0} y={0} width={width} height={height} fill="var(--gray-3)" />
+        <defs>
+          <radialGradient id="mm-meadow">
+            <stop offset="0%" stopColor="#5a8f4a" />
+            <stop offset="100%" stopColor="#436c41" />
+          </radialGradient>
+          <radialGradient id="mm-zone-primary">
+            <stop offset="0%" stopColor="#6aad55" stopOpacity={0.35} />
+            <stop offset="100%" stopColor="#6aad55" stopOpacity={0} />
+          </radialGradient>
+          <radialGradient id="mm-zone-muted">
+            <stop offset="0%" stopColor="#3d5e3a" stopOpacity={0.4} />
+            <stop offset="100%" stopColor="#3d5e3a" stopOpacity={0} />
+          </radialGradient>
+          <radialGradient id="mm-vignette">
+            <stop offset="60%" stopColor="black" stopOpacity={0} />
+            <stop offset="100%" stopColor="black" stopOpacity={0.4} />
+          </radialGradient>
+        </defs>
+        {/* Ground base */}
+        <rect x={0} y={0} width={width} height={height} fill="#436c41" />
+        {/* Meadow center */}
+        {(() => {
+          const c = worldToMinimap(0, 0, width, height);
+          const rx = (950 / WORLD_SIZE) * width;
+          const ry = (640 / WORLD_SIZE) * height;
+          return (
+            <ellipse cx={c.x} cy={c.y} rx={rx} ry={ry} fill="url(#mm-meadow)" />
+          );
+        })()}
+        {/* Zone: Wilds */}
+        {(() => {
+          const c = worldToMinimap(-1220, 860, width, height);
+          const rx = (440 / WORLD_SIZE) * width;
+          const ry = (260 / WORLD_SIZE) * height;
+          return (
+            <ellipse
+              cx={c.x}
+              cy={c.y}
+              rx={rx}
+              ry={ry}
+              fill="url(#mm-zone-muted)"
+            />
+          );
+        })()}
+        {/* Zone: Signal staging */}
+        {(() => {
+          const c = worldToMinimap(1180, -820, width, height);
+          const rx = (450 / WORLD_SIZE) * width;
+          const ry = (270 / WORLD_SIZE) * height;
+          return (
+            <ellipse
+              cx={c.x}
+              cy={c.y}
+              rx={rx}
+              ry={ry}
+              fill="url(#mm-zone-muted)"
+            />
+          );
+        })()}
+        {/* Scattered props (trees, bushes, boulders) */}
+        {props.map((p) => {
+          const pt = worldToMinimap(p.x, p.y, width, height);
+          const dot = PROP_DOT[p.type];
+          return (
+            <circle
+              key={`${p.type}-${Math.round(p.x)}-${Math.round(p.y)}`}
+              cx={pt.x}
+              cy={pt.y}
+              r={dot.r}
+              fill={dot.fill}
+              opacity={0.7}
+            />
+          );
+        })}
+        {/* Hedgehouse */}
+        {(() => {
+          const hh = worldToMinimap(0, 0, width, height);
+          return (
+            <g>
+              <rect
+                x={hh.x - 3.5}
+                y={hh.y - 3}
+                width={7}
+                height={6}
+                rx={1}
+                fill="#d4a574"
+                stroke="#8b6244"
+                strokeWidth={0.5}
+              />
+              <polygon
+                points={`${hh.x - 4.5},${hh.y - 3} ${hh.x},${hh.y - 6} ${hh.x + 4.5},${hh.y - 3}`}
+                fill="#8b4432"
+                stroke="#6b3222"
+                strokeWidth={0.4}
+              />
+            </g>
+          );
+        })()}
+        {/* Vignette overlay */}
+        <rect
+          x={0}
+          y={0}
+          width={width}
+          height={height}
+          fill="url(#mm-vignette)"
+        />
         {hogletPositions.map((hp) => {
           const point = worldToMinimap(hp.x, hp.y, width, height);
           return (
