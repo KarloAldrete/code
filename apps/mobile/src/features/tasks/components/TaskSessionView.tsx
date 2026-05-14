@@ -385,22 +385,58 @@ function processNewEvents(
   return { messages: state.lastSnapshot, plan: state.plan };
 }
 
+const THOUGHT_COLLAPSED_LINE_COUNT = 5;
+
 function CollapsedThought({ content }: { content: string }) {
   const themeColors = useThemeColors();
   const [expanded, setExpanded] = useState(false);
+  const [showAllLines, setShowAllLines] = useState(false);
+
+  const hasContent = content.trim().length > 0;
+  const contentLines = content.split("\n");
+  const isLineCollapsible =
+    hasContent && contentLines.length > THOUGHT_COLLAPSED_LINE_COUNT;
+  const hiddenLineCount = contentLines.length - THOUGHT_COLLAPSED_LINE_COUNT;
+  const displayedContent =
+    showAllLines || !isLineCollapsible
+      ? content
+      : contentLines.slice(0, THOUGHT_COLLAPSED_LINE_COUNT).join("\n");
 
   return (
-    <Pressable onPress={() => setExpanded(!expanded)} className="px-4 py-0.5">
-      <View className="flex-row items-center gap-2">
-        <Brain size={12} color={themeColors.gray[8]} />
-        <Text className="font-mono text-[12px] text-gray-8">Thought</Text>
-      </View>
-      {expanded && (
-        <Text className="mt-1 ml-5 font-mono text-[11px] text-gray-8 leading-4">
-          {content}
-        </Text>
+    <View className="px-4 py-0.5">
+      <Pressable
+        onPress={() => {
+          if (!hasContent) return;
+          setExpanded((v) => !v);
+          if (!expanded) setShowAllLines(false);
+        }}
+        className="flex-row items-center gap-2"
+      >
+        <Brain size={12} color={themeColors.gray[11]} />
+        <Text className="text-[13px] text-gray-11">Thinking</Text>
+      </Pressable>
+      {expanded && hasContent && (
+        <View className="mt-1 ml-5 overflow-hidden rounded-lg border border-gray-6 px-3 py-2">
+          <Text
+            className="font-mono text-[12px] text-gray-11 leading-4"
+            selectable
+          >
+            {displayedContent}
+          </Text>
+          {isLineCollapsible && !showAllLines && (
+            <Pressable
+              onPress={() => setShowAllLines(true)}
+              className="mt-1 self-start"
+              hitSlop={6}
+            >
+              <Text className="text-[12px] text-gray-10">
+                +{hiddenLineCount} more lines
+              </Text>
+            </Pressable>
+          )}
+        </View>
       )}
-    </Pressable>
+    </View>
   );
 }
 
