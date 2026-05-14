@@ -249,6 +249,7 @@ export function HedgemonyMapView() {
         builderPositionRef={builder.visualPosRef}
         builderSelected={builderSelected}
         builderAnimation={builder.animation}
+        pendingNest={builder.pendingNest}
         buildMode={buildMode}
         moveMarker={moveMarker}
         onMapClick={handleMapClick}

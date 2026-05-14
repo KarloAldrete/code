@@ -43,6 +43,11 @@ export interface BuilderCoordinator {
    * on-screen position. */
   pos: Vec2;
   animation: BuilderAnimation;
+  /** The nest queued by `startWalk(..., "build", nest)` — not yet committed
+   * to the nest store, but the location is known. Surfaces use it to render
+   * a construction-in-progress visual at the destination so the nest doesn't
+   * pop into existence with no warning. */
+  pendingNest: Nest | null;
   /** Written each motion frame by BuilderSprite. Read as the start of any
    * re-plan so the new path begins where the sprite visually is. */
   visualPosRef: MutableRefObject<Vec2>;
@@ -80,7 +85,15 @@ export function useBuilderCoordinator({
   const [state, setState] = useState<BuilderState>({ kind: "idle" });
   const buildingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const visualPosRef = useRef<Vec2>({ ...initialPos });
+  // Ref + state mirror: internal logic needs synchronous reads inside the same
+  // `startWalk` call, while consumers need re-renders when the pending nest
+  // changes (to show/hide the construction site).
   const pendingBuildRef = useRef<Nest | null>(null);
+  const [pendingNest, setPendingNest] = useState<Nest | null>(null);
+  const setPending = useCallback((next: Nest | null) => {
+    pendingBuildRef.current = next;
+    setPendingNest(next);
+  }, []);
   const onPendingBuildCommitRef = useRef(onPendingBuildCommit);
   onPendingBuildCommitRef.current = onPendingBuildCommit;
 
@@ -93,9 +106,9 @@ export function useBuilderCoordinator({
   const commitPendingBuild = useCallback(() => {
     const pending = pendingBuildRef.current;
     if (!pending) return;
-    pendingBuildRef.current = null;
+    setPending(null);
     onPendingBuildCommitRef.current?.(pending);
-  }, []);
+  }, [setPending]);
 
   const enterBuilding = useCallback(() => {
     if (buildingTimerRef.current) clearTimeout(buildingTimerRef.current);
@@ -124,7 +137,7 @@ export function useBuilderCoordinator({
         ) {
           commitPendingBuild();
         }
-        pendingBuildRef.current = buildingFor;
+        setPending(buildingFor);
       }
       const from = visualPosRef.current;
       const dxFromTarget = target.x - from.x;
@@ -169,7 +182,7 @@ export function useBuilderCoordinator({
       setState({ kind: "walking", onArrive });
       return resolvedGoal;
     },
-    [nests, nestObstacleRadius, enterBuilding, commitPendingBuild],
+    [nests, nestObstacleRadius, enterBuilding, commitPendingBuild, setPending],
   );
 
   const handleArrive = useCallback(() => {
@@ -200,6 +213,7 @@ export function useBuilderCoordinator({
     path,
     pos,
     animation,
+    pendingNest,
     visualPosRef,
     startWalk,
     handleArrive,

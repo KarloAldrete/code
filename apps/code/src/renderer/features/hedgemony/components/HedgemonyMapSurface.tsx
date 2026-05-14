@@ -14,7 +14,10 @@ import { usePanCamera } from "../utils/usePanCamera";
 import { BgmControl } from "./BgmControl";
 import { type BuilderAnimation, BuilderSprite } from "./BuilderSprite";
 import { MapBackdrop } from "./MapBackdrop";
+import { NestConstructionSite } from "./NestConstructionSite";
 import { NestSprite } from "./NestSprite";
+
+const BUILD_ANIMATION_MS = 1500;
 
 const ZOOM_WHEEL_STEP = 0.0015;
 const CLICK_MOVE_THRESHOLD_PX = 4;
@@ -36,6 +39,7 @@ interface HedgemonyMapSurfaceProps {
   builderPositionRef?: MutableRefObject<Vec2>;
   builderSelected: boolean;
   builderAnimation: BuilderAnimation;
+  pendingNest: Nest | null;
   buildMode: boolean;
   moveMarker: MoveMarker | null;
   children?: ReactNode;
@@ -58,6 +62,7 @@ export function HedgemonyMapSurface({
   builderPositionRef,
   builderSelected,
   builderAnimation,
+  pendingNest,
   buildMode,
   moveMarker,
   children,
@@ -251,6 +256,14 @@ export function HedgemonyMapSurface({
             onSelect={onNestSelect}
           />
         ))}
+        {pendingNest && builderAnimation === "building" && (
+          <NestConstructionSite
+            key={pendingNest.id}
+            mapX={pendingNest.mapX}
+            mapY={pendingNest.mapY}
+            durationMs={BUILD_ANIMATION_MS}
+          />
+        )}
         <BuilderSprite
           path={builderPath}
           selected={builderSelected}
