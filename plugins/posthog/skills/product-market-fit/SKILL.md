@@ -73,12 +73,20 @@ LIMIT 10
 If the result is unambiguous, confirm it with the user ("Looks like your signup event is `user signed up` — does that sound right?"). If unclear, ask them directly.
 
 **4. Ideal Customer Profile (ICP)** (required for ICP retention comparison)
-Ask the user to describe their ideal customer in plain language. Examples:
+
+Before asking, check whether the user has a saved ICP at `~/.posthog-work-skills/icp.md`:
+
+- **If the file exists**, read it. Show the user the `summary` field from the YAML frontmatter in one short message and ask in one short line: *"I'll use your saved ICP to build the ICP Users cohort. Override for this run?"* Accept one of:
+  - *Use saved* (default) — use the saved ICP description as-is for the mapping step below.
+  - *Override with new description* — accept a new free-text description for this run only. Do **not** rewrite the saved file (point them at `/define-icp` if they want to update it permanently).
+- **If the file does not exist**, ask the user to describe their ideal customer in plain language, and surface a one-line pointer: *"Tip: run `/define-icp` first to save your ICP once and reuse it across skills."*
+
+Examples of a good plain-language description:
 - "B2B SaaS companies, 10–200 employees, engineering or product teams"
 - "Solo founders building consumer apps"
 - "Enterprise retail companies using Salesforce"
 
-Once they describe it, use `execute-sql` to discover what person properties exist in PostHog that might map to that description:
+Once you have the ICP description (saved or fresh), use `execute-sql` to discover what person properties exist in PostHog that might map to that description:
 ```sql
 SELECT key, count() AS cnt
 FROM person_distinct_ids
@@ -395,6 +403,58 @@ Suggest: "Would you like me to set up a monthly PMF status report? I can schedul
 | WAU trend (12w) | Declining | Flat | Growing |
 
 These are directional, not absolute. A B2B tool with 30 power users and 80% "very disappointed" has stronger PMF than a consumer app with 10,000 users at 15%.
+
+---
+
+## Evaluation
+
+After completing whichever mode the user picked, offer them a quick rating so we can improve this skill over time. This step is **optional** — if the user dismisses the selector, end the turn normally and do **not** send an event.
+
+1. Say one short line — *"One last thing — quick rating? You can add notes on your selection, or skip."* — then call the `AskUserQuestion` tool with **exactly one** question:
+   - `question`: `"How useful was this?"`
+   - `header`: `"Rating"`
+   - `multiSelect`: `false`
+   - `options` (in this order):
+     1. label `"Very useful (4)"`, description `"Solved the problem end-to-end."`
+     2. label `"Useful (3)"`, description `"Mostly helpful, minor gaps."`
+     3. label `"OK (2)"`, description `"Some value but notable issues."`
+     4. label `"Not useful (1)"`, description `"Did not help."`
+
+   Do **not** add a "Skip" option — the UI provides one automatically.
+
+2. Read the response:
+   - If the user picked a chip, map the label to a rating: `"Very useful (4)" → 4`, `"Useful (3)" → 3`, `"OK (2)" → 2`, `"Not useful (1)" → 1`. Pull optional free-text feedback from `annotations["How useful was this?"].notes` (empty string if absent).
+   - If the user picked "Other", treat the typed text as feedback. If it contains a number 1–4, use that as the rating; otherwise treat the response as feedback-only and **do not** send an event.
+   - If the user dismissed the selector / skipped, end the turn normally and do **not** send an event.
+
+3. If a rating was captured, fire a `work_skill_rated` event on PostHog project 2 by running this curl via the Bash tool (fill in `<rating>`, `<feedback>`, `<mode>`, `<artifacts>`, `<input_summary>`):
+
+   ```bash
+   curl -s -X POST https://us.i.posthog.com/i/v0/e/ \
+     -H 'Content-Type: application/json' \
+     -d '{
+       "api_key": "sTMFPsFhdP1Ssg",
+       "event": "work_skill_rated",
+       "distinct_id": "<operator-email-or-work-skills-anonymous>",
+       "properties": {
+         "skill_name": "product-market-fit",
+         "rating": <rating>,
+         "rating_scale": "1-4",
+         "feedback": "<feedback>",
+         "mode": "<mode>",
+         "artifacts_created": <artifacts>,
+         "input_summary": "<input_summary>"
+       }
+     }'
+   ```
+
+   - `distinct_id`: the operator email from the active-environment system reminder if available; otherwise `"work-skills-anonymous"`.
+   - `mode`: exactly one of `"create_survey"` (Mode 1), `"create_dashboard"` (Mode 2), `"check_status"` (Mode 3), `"identify_interviewees"` (Mode 4) — match the path the user actually took.
+   - `artifacts_created`: array of `"<type>:<id>"` strings for any PostHog survey, dashboard, or cohort created during this run (e.g. `["survey:12","dashboard:34"]`). Use `[]` if none.
+   - `input_summary`: one-sentence summary of what the user originally asked for (e.g. `"Set up PMF survey for paid users, US-prod"`).
+4. Confirm to the user with one short line, e.g. *"Thanks — logged your 3/4 rating."*
+
+If the curl call returns a non-2xx response, mention it briefly in one line and move on. Do not retry.
 
 ---
 

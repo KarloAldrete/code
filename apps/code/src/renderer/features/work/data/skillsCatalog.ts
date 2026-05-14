@@ -1,9 +1,13 @@
 import {
+  ChartBar,
   ChatsTeardrop,
+  Crosshair,
   Crown,
+  Handshake,
   type IconProps,
   Target,
   Trophy,
+  Warning,
 } from "@phosphor-icons/react";
 import type { ComponentType } from "react";
 
@@ -60,6 +64,28 @@ export const SKILLS_CATALOG: CatalogSkill[] = [
       "Use the product-market-fit skill to help me measure and track product-market fit for our product. Start by walking me through the gather-context step.",
     tags: ["product", "customer"],
     icon: Target,
+    defaultActive: true,
+  },
+  {
+    id: "define-icp",
+    scope: "user",
+    title: "Define your ICP",
+    description:
+      "Capture your Ideal Customer Profile once — other skills reuse it automatically.",
+    outcome:
+      "A saved ICP file other Work skills (customer-review, product-market-fit) pick up without asking.",
+    steps: [
+      "Check whether you already have a saved ICP",
+      "Walk you through company shape, buyer, use case, and disqualifiers",
+      "Save the result to ~/.posthog-work-skills/icp.md",
+      "Tell you which other skills will pick it up automatically",
+    ],
+    needs: [],
+    estimatedTime: "3–5 min",
+    prompt:
+      "Use the define-icp skill to capture (or update) my Ideal Customer Profile. Walk me through the steps.",
+    tags: ["growth", "sales"],
+    icon: Crosshair,
     defaultActive: true,
   },
   {
@@ -126,6 +152,72 @@ export const SKILLS_CATALOG: CatalogSkill[] = [
       "Use the important-slack-threads skill to give me a Slack roundup from the last 7 days. Ask me which channels to scan.",
     tags: ["reporting"],
     icon: ChatsTeardrop,
+    defaultActive: false,
+  },
+  {
+    id: "customer-review",
+    scope: "user",
+    title: "Customer review",
+    description:
+      "Pull a paste-ready 360 on a single customer before a renewal call or QBR.",
+    outcome:
+      "A full brief on one customer — identity, engagement, support, revenue, sessions, ICP fit.",
+    steps: [
+      "Ask which customer you want to review",
+      "Pull engagement, revenue, surveys/feedback, and recent sessions from PostHog",
+      "Rank the most interesting recent sessions",
+      "Score them against your saved ICP",
+    ],
+    needs: ["PostHog account connected"],
+    estimatedTime: "2–4 min",
+    prompt:
+      "Use the customer-review skill to put together a deep brief on one of our customers. Ask me which one.",
+    tags: ["customer", "sales"],
+    icon: Handshake,
+    defaultActive: false,
+  },
+  {
+    id: "churn-risk",
+    scope: "user",
+    title: "Churn risk watchlist",
+    description:
+      "Find paying customers whose usage has slipped, scored and ranked by revenue at risk.",
+    outcome:
+      "A ranked watchlist of at-risk accounts with churn scores and dollars-at-risk.",
+    steps: [
+      "Confirm your valuable events and revenue source",
+      "Compare the last 30 days vs the prior 30 days per customer",
+      "Score every paying customer and rank by both churn score and $-at-risk",
+      "Flag false positives and biggest absolute exposures",
+    ],
+    needs: ["PostHog account connected"],
+    estimatedTime: "2–4 min",
+    prompt:
+      "Use the churn-risk skill to find paying customers at risk of churn. Walk me through the gather-context step first.",
+    tags: ["customer", "reporting"],
+    icon: Warning,
+    defaultActive: false,
+  },
+  {
+    id: "board-metrics-pack",
+    scope: "user",
+    title: "Board metrics pack",
+    description:
+      "Generate a board-ready monthly pack — MRR, ARR, NRR, GRR, MRR movement, concentration.",
+    outcome:
+      "A Markdown pack you can paste straight into a monthly memo or board pre-read.",
+    steps: [
+      "Confirm the reporting period and revenue source",
+      "Compute headline numbers, MRR movement, NRR/GRR, and concentration",
+      "Overlay a PostHog-only 'quiet revenue' section (paying but not using)",
+      "Render the pack in a single paste-ready Markdown block",
+    ],
+    needs: ["PostHog account connected"],
+    estimatedTime: "3–5 min",
+    prompt:
+      "Use the board-metrics-pack skill to build my monthly board metrics pack. Walk me through the gather-context step first.",
+    tags: ["reporting", "customer"],
+    icon: ChartBar,
     defaultActive: false,
   },
 ];

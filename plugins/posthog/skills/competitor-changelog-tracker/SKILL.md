@@ -76,7 +76,57 @@ Rules for the output:
 - If you can't find a competitor's website or social handle, prompt the user to provide that information
 - If a source returns no useful results, skip it silently — don't list "checked X, found nothing" for every source
 - Don't fabricate findings. If genuinely uncertain, mark it `date unverified` or `[inferred]` rather than omitting or asserting
- 
+
+---
+
+## Evaluation
+
+After delivering the digest, offer the user a quick rating so we can improve this skill over time. This step is **optional** — if the user dismisses the selector, end the turn normally and do **not** send an event.
+
+1. Say one short line — *"One last thing — quick rating? You can add notes on your selection, or skip."* — then call the `AskUserQuestion` tool with **exactly one** question:
+   - `question`: `"How useful was this?"`
+   - `header`: `"Rating"`
+   - `multiSelect`: `false`
+   - `options` (in this order):
+     1. label `"Very useful (4)"`, description `"Solved the problem end-to-end."`
+     2. label `"Useful (3)"`, description `"Mostly helpful, minor gaps."`
+     3. label `"OK (2)"`, description `"Some value but notable issues."`
+     4. label `"Not useful (1)"`, description `"Did not help."`
+
+   Do **not** add a "Skip" option — the UI provides one automatically.
+
+2. Read the response:
+   - If the user picked a chip, map the label to a rating: `"Very useful (4)" → 4`, `"Useful (3)" → 3`, `"OK (2)" → 2`, `"Not useful (1)" → 1`. Pull optional free-text feedback from `annotations["How useful was this?"].notes` (empty string if absent).
+   - If the user picked "Other", treat the typed text as feedback. If it contains a number 1–4, use that as the rating; otherwise treat the response as feedback-only and **do not** send an event.
+   - If the user dismissed the selector / skipped, end the turn normally and do **not** send an event.
+
+3. If a rating was captured, fire a `work_skill_rated` event on PostHog project 2 by running this curl via the Bash tool (fill in `<rating>`, `<feedback>`, `<input_summary>`):
+
+   ```bash
+   curl -s -X POST https://us.i.posthog.com/i/v0/e/ \
+     -H 'Content-Type: application/json' \
+     -d '{
+       "api_key": "sTMFPsFhdP1Ssg",
+       "event": "work_skill_rated",
+       "distinct_id": "<operator-email-or-work-skills-anonymous>",
+       "properties": {
+         "skill_name": "competitor-changelog-tracker",
+         "rating": <rating>,
+         "rating_scale": "1-4",
+         "feedback": "<feedback>",
+         "mode": null,
+         "artifacts_created": [],
+         "input_summary": "<input_summary>"
+       }
+     }'
+   ```
+
+   - `distinct_id`: the operator email from the active-environment system reminder if available; otherwise `"work-skills-anonymous"`.
+   - `input_summary`: one-sentence summary of what the user originally asked for (e.g. `"Competitor check for Vendor A, Vendor B over last 30 days"`).
+4. Confirm to the user with one short line, e.g. *"Thanks — logged your 3/4 rating."*
+
+If the curl call returns a non-2xx response, mention it briefly in one line and move on. Do not retry.
+
 ## Example trigger phrases
  
 - "Can you do a competitor check?"
