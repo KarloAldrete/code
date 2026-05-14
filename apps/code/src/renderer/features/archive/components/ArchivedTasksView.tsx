@@ -1,5 +1,6 @@
 import { DotsCircleSpinner } from "@components/DotsCircleSpinner";
 import { Tooltip } from "@components/ui/Tooltip";
+import { useChatStore } from "@features/chat/stores/chatStore";
 import { useTasks } from "@features/tasks/hooks/useTasks";
 import { useSetHeaderContent } from "@hooks/useSetHeaderContent";
 import type { WorkspaceMode } from "@main/services/workspace/schemas";
@@ -484,6 +485,9 @@ export function ArchivedTasksView() {
     trpcReact.archive.list.queryOptions(),
   );
   const { data: tasks = [], isLoading: isLoadingTasks } = useTasks();
+  const archivedChats = useChatStore((s) => s.archivedChats);
+  const unarchiveChat = useChatStore((s) => s.unarchiveChat);
+  const deleteArchivedChat = useChatStore((s) => s.deleteArchivedChat);
   const queryClient = useQueryClient();
 
   useSetHeaderContent(
@@ -495,11 +499,26 @@ export function ArchivedTasksView() {
 
   const items = useMemo(() => {
     const taskMap = new Map(tasks.map((t) => [t.id, t]));
-    return archivedTasks.map((archived) => ({
+    const fromTasks = archivedTasks.map((archived) => ({
       archived,
       task: taskMap.get(archived.taskId) ?? null,
     }));
-  }, [archivedTasks, tasks]);
+    const fromChats = Object.entries(archivedChats).map(
+      ([taskId, { archivedAt }]) => ({
+        archived: {
+          taskId,
+          archivedAt,
+          folderId: "",
+          mode: "chat" as const,
+          worktreeName: null,
+          branchName: null,
+          checkpointId: null,
+        },
+        task: taskMap.get(taskId) ?? null,
+      }),
+    );
+    return [...fromTasks, ...fromChats];
+  }, [archivedTasks, tasks, archivedChats]);
 
   const isLoading = isLoadingArchived || isLoadingTasks;
 
@@ -513,6 +532,13 @@ export function ArchivedTasksView() {
   const handleUnarchive = async (taskId: string) => {
     const item = items.find((i) => i.archived.taskId === taskId);
     const task = item?.task;
+    const isChat = item?.archived.mode === "chat";
+
+    if (isChat) {
+      unarchiveChat(taskId);
+      toast.success("Chat unarchived");
+      return;
+    }
 
     try {
       await trpcClient.archive.unarchive.mutate({ taskId });
@@ -540,6 +566,13 @@ export function ArchivedTasksView() {
   };
 
   const executeDelete = async (taskId: string) => {
+    const item = items.find((i) => i.archived.taskId === taskId);
+    if (item?.archived.mode === "chat") {
+      deleteArchivedChat(taskId);
+      toast.success("Chat deleted");
+      return;
+    }
+
     try {
       await trpcClient.archive.delete.mutate({ taskId });
       await invalidateArchiveQueries();

@@ -239,9 +239,24 @@ export const useNavigationStore = create<NavigationStore>()(
           }),
         chatView: "home",
         activeChatId: null,
-        navigateToChatHome: () => set({ chatView: "home", activeChatId: null }),
+        navigateToChatHome: () =>
+          set((state) => ({
+            chatView: "home",
+            activeChatId: null,
+            view:
+              state.view.type === "archived"
+                ? { type: "task-input" }
+                : state.view,
+          })),
         navigateToChatConversation: (chatId: string) =>
-          set({ chatView: "conversation", activeChatId: chatId }),
+          set((state) => ({
+            chatView: "conversation",
+            activeChatId: chatId,
+            view:
+              state.view.type === "archived"
+                ? { type: "task-input" }
+                : state.view,
+          })),
         workGeneratePendingPrompt: undefined,
         navigateToWorkGenerateWithPrompt: (prompt: string) =>
           set({

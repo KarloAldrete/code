@@ -11,6 +11,9 @@ import type {
   ArchivedTaskAction,
   ArchivedTaskContextMenuInput,
   ArchivedTaskContextMenuResult,
+  ChatAction,
+  ChatContextMenuInput,
+  ChatContextMenuResult,
   ConfirmDeleteArchivedTaskInput,
   ConfirmDeleteArchivedTaskResult,
   ConfirmDeleteTaskInput,
@@ -157,6 +160,14 @@ export class ContextMenuService {
           },
         },
       ),
+    ]);
+  }
+
+  async showChatContextMenu(
+    _input: ChatContextMenuInput,
+  ): Promise<ChatContextMenuResult> {
+    return this.showMenu<ChatAction>([
+      this.item("Archive chat", { type: "archive" }),
     ]);
   }
 

@@ -1,6 +1,7 @@
 import { useArchivedTaskIds } from "@features/archive/hooks/useArchivedTaskIds";
 import { SidebarUsageBar } from "@features/billing/components/SidebarUsageBar";
 import { ChatSidebarMenu } from "@features/chat/components/ChatSidebarMenu";
+import { useChatStore } from "@features/chat/stores/chatStore";
 import { ModeSwitcher } from "@features/mode-switcher/components/ModeSwitcher";
 import { WorkSidebarMenu } from "@features/work/components/WorkSidebarMenu";
 import { ArchiveIcon } from "@phosphor-icons/react";
@@ -13,12 +14,18 @@ import { UpdateBanner } from "./UpdateBanner";
 
 export const SidebarContent: React.FC = () => {
   const archivedTaskIds = useArchivedTaskIds();
+  const archivedChatCount = useChatStore(
+    (s) => Object.keys(s.archivedChats).length,
+  );
   const navigateToArchived = useNavigationStore(
     (state) => state.navigateToArchived,
   );
   const mode = useNavigationStore((state) => state.mode);
   const isCodeMode = mode === "code";
   const isChatMode = mode === "chat";
+  const showArchivedEntry =
+    (isCodeMode && archivedTaskIds.size > 0) ||
+    (isChatMode && archivedChatCount > 0);
 
   return (
     <Flex direction="column" height="100%">
@@ -34,7 +41,7 @@ export const SidebarContent: React.FC = () => {
       </Box>
       <UpdateBanner />
       <SidebarUsageBar />
-      {isCodeMode && archivedTaskIds.size > 0 && (
+      {showArchivedEntry && (
         <Box className="shrink-0 border-gray-6 border-t">
           <button
             type="button"

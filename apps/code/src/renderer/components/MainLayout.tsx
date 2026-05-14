@@ -111,7 +111,11 @@ export function MainLayout() {
 
         <Box flexGrow="1" overflow="hidden">
           {isChatMode ? (
-            <ChatView />
+            view.type === "archived" ? (
+              <ArchivedTasksView />
+            ) : (
+              <ChatView />
+            )
           ) : isCodeMode ? (
             <>
               {view.type === "task-input" && (

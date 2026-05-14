@@ -4,7 +4,7 @@ export const archivedTaskSchema = z.object({
   taskId: z.string(),
   archivedAt: z.string(),
   folderId: z.string(),
-  mode: z.enum(["worktree", "local", "cloud"]),
+  mode: z.enum(["worktree", "local", "cloud", "chat"]),
   worktreeName: z.string().nullable(),
   branchName: z.string().nullable(),
   checkpointId: z.string().nullable(),

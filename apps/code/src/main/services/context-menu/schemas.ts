@@ -14,6 +14,10 @@ export const archivedTaskContextMenuInput = z.object({
   taskTitle: z.string(),
 });
 
+export const chatContextMenuInput = z.object({
+  chatTitle: z.string(),
+});
+
 export const folderContextMenuInput = z.object({
   folderName: z.string(),
   folderPath: z.string().optional(),
@@ -50,6 +54,10 @@ const archivedTaskAction = z.discriminatedUnion("type", [
   z.object({ type: z.literal("delete") }),
 ]);
 
+const chatAction = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("archive") }),
+]);
+
 const folderAction = z.discriminatedUnion("type", [
   z.object({ type: z.literal("remove") }),
   z.object({ type: z.literal("external-app"), action: externalAppAction }),
@@ -75,6 +83,9 @@ export const taskContextMenuOutput = z.object({
 export const archivedTaskContextMenuOutput = z.object({
   action: archivedTaskAction.nullable(),
 });
+export const chatContextMenuOutput = z.object({
+  action: chatAction.nullable(),
+});
 export const folderContextMenuOutput = z.object({
   action: folderAction.nullable(),
 });
@@ -90,6 +101,7 @@ export type TaskContextMenuInput = z.infer<typeof taskContextMenuInput>;
 export type ArchivedTaskContextMenuInput = z.infer<
   typeof archivedTaskContextMenuInput
 >;
+export type ChatContextMenuInput = z.infer<typeof chatContextMenuInput>;
 export type FolderContextMenuInput = z.infer<typeof folderContextMenuInput>;
 export type TabContextMenuInput = z.infer<typeof tabContextMenuInput>;
 export type FileContextMenuInput = z.infer<typeof fileContextMenuInput>;
@@ -97,6 +109,7 @@ export type FileContextMenuInput = z.infer<typeof fileContextMenuInput>;
 export type ExternalAppAction = z.infer<typeof externalAppAction>;
 export type TaskAction = z.infer<typeof taskAction>;
 export type ArchivedTaskAction = z.infer<typeof archivedTaskAction>;
+export type ChatAction = z.infer<typeof chatAction>;
 export type FolderAction = z.infer<typeof folderAction>;
 export type TabAction = z.infer<typeof tabAction>;
 export type FileAction = z.infer<typeof fileAction>;
@@ -147,6 +160,7 @@ export type TaskContextMenuResult = z.infer<typeof taskContextMenuOutput>;
 export type ArchivedTaskContextMenuResult = z.infer<
   typeof archivedTaskContextMenuOutput
 >;
+export type ChatContextMenuResult = z.infer<typeof chatContextMenuOutput>;
 export type FolderContextMenuResult = z.infer<typeof folderContextMenuOutput>;
 export type TabContextMenuResult = z.infer<typeof tabContextMenuOutput>;
 export type FileContextMenuResult = z.infer<typeof fileContextMenuOutput>;
