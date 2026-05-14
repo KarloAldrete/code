@@ -118,7 +118,10 @@ export function useBuilderCoordinator({
       if (onArrive !== "build") commitPendingBuild();
       // Queue the new pending build (committing any prior one first).
       if (buildingFor) {
-        if (pendingBuildRef.current && pendingBuildRef.current !== buildingFor) {
+        if (
+          pendingBuildRef.current &&
+          pendingBuildRef.current !== buildingFor
+        ) {
           commitPendingBuild();
         }
         pendingBuildRef.current = buildingFor;

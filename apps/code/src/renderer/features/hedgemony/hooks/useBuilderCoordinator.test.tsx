@@ -153,4 +153,113 @@ describe("useBuilderCoordinator", () => {
     });
     expect(result.current.animation).toBe("idle");
   });
+
+  describe("deferred build (onPendingBuildCommit)", () => {
+    it("commits the pending nest after the build animation completes", () => {
+      const commit = vi.fn();
+      const nest = makeNest({ id: "pending-1", mapX: 200, mapY: 0 });
+      const { result } = renderHook(() =>
+        useBuilderCoordinator({
+          nests: [],
+          buildAnimationMs: 1500,
+          onPendingBuildCommit: commit,
+        }),
+      );
+      act(() => {
+        result.current.startWalk({ x: 200, y: 0 }, "build", nest);
+      });
+      act(() => {
+        result.current.handleArrive();
+      });
+      expect(commit).not.toHaveBeenCalled();
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+      expect(commit).toHaveBeenCalledTimes(1);
+      expect(commit).toHaveBeenCalledWith(nest);
+    });
+
+    it("commits the pending nest if a non-build walk interrupts mid-flight", () => {
+      const commit = vi.fn();
+      const nest = makeNest({ id: "pending-2", mapX: 200, mapY: 0 });
+      const { result } = renderHook(() =>
+        useBuilderCoordinator({
+          nests: [],
+          onPendingBuildCommit: commit,
+        }),
+      );
+      act(() => {
+        result.current.startWalk({ x: 200, y: 0 }, "build", nest);
+      });
+      act(() => {
+        // Interrupt with a plain move.
+        result.current.startWalk({ x: 50, y: 0 }, "idle");
+      });
+      expect(commit).toHaveBeenCalledTimes(1);
+      expect(commit).toHaveBeenCalledWith(nest);
+    });
+
+    it("does not double-commit when handleArrive then timer both fire", () => {
+      const commit = vi.fn();
+      const nest = makeNest({ id: "pending-3", mapX: 200, mapY: 0 });
+      const { result } = renderHook(() =>
+        useBuilderCoordinator({
+          nests: [],
+          buildAnimationMs: 1500,
+          onPendingBuildCommit: commit,
+        }),
+      );
+      act(() => {
+        result.current.startWalk({ x: 200, y: 0 }, "build", nest);
+      });
+      act(() => {
+        result.current.handleArrive();
+      });
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+      expect(commit).toHaveBeenCalledTimes(1);
+    });
+
+    it("queueing a second pending build commits the first one immediately", () => {
+      const commit = vi.fn();
+      const first = makeNest({ id: "first", mapX: 100, mapY: 0 });
+      const second = makeNest({ id: "second", mapX: 300, mapY: 0 });
+      const { result } = renderHook(() =>
+        useBuilderCoordinator({
+          nests: [],
+          onPendingBuildCommit: commit,
+        }),
+      );
+      act(() => {
+        result.current.startWalk({ x: 100, y: 0 }, "build", first);
+      });
+      act(() => {
+        result.current.startWalk({ x: 300, y: 0 }, "build", second);
+      });
+      expect(commit).toHaveBeenCalledTimes(1);
+      expect(commit).toHaveBeenCalledWith(first);
+    });
+
+    it("does not commit when no pending build is queued", () => {
+      const commit = vi.fn();
+      const { result } = renderHook(() =>
+        useBuilderCoordinator({
+          nests: [],
+          buildAnimationMs: 1500,
+          onPendingBuildCommit: commit,
+        }),
+      );
+      act(() => {
+        result.current.startWalk({ x: 200, y: 0 }, "build");
+      });
+      act(() => {
+        result.current.handleArrive();
+      });
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+      expect(commit).not.toHaveBeenCalled();
+    });
+  });
 });
