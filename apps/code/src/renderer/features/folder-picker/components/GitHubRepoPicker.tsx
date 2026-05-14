@@ -35,6 +35,7 @@ interface GitHubRepoPickerProps {
   onSearchQueryChange?: (value: string) => void;
   hasMore?: boolean;
   onLoadMore?: () => void;
+  side?: "top" | "right" | "bottom" | "left";
 }
 
 export function GitHubRepoPicker({
@@ -54,6 +55,7 @@ export function GitHubRepoPicker({
   onSearchQueryChange,
   hasMore: controlledHasMore,
   onLoadMore,
+  side = "bottom",
 }: GitHubRepoPickerProps) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
@@ -176,7 +178,7 @@ export function GitHubRepoPicker({
       />
       <ComboboxContent
         anchor={anchor ?? triggerRef}
-        side="bottom"
+        side={side}
         sideOffset={6}
         className="min-w-[280px]"
       >

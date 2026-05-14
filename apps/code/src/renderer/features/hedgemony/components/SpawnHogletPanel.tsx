@@ -198,6 +198,7 @@ export function SpawnHogletPanel({ onClose }: SpawnHogletPanelProps) {
             onLoadMore={loadMoreCloudRepositories}
             placeholder="Select repository..."
             size="2"
+            side="top"
             disabled={submitting}
           />
         </div>
