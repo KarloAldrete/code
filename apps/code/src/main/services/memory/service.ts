@@ -118,7 +118,10 @@ export class MemoryService extends TypedEventEmitter<MemoryServiceEvents> {
       relativePaths.map(async (rel): Promise<MemoryEntry | null> => {
         try {
           const abs = path.join(root, rel);
-          const content = await fs.readFile(abs, "utf-8");
+          const [content, stat] = await Promise.all([
+            fs.readFile(abs, "utf-8"),
+            fs.stat(abs),
+          ]);
           const fm = parseMemoryFrontmatter(content);
           const name = fm.name || path.basename(rel, ".md").replace(/-/g, " ");
           const entry: MemoryEntry = {
@@ -127,6 +130,7 @@ export class MemoryService extends TypedEventEmitter<MemoryServiceEvents> {
             name,
             description: fm.description,
             type: fm.type,
+            mtimeMs: stat.mtimeMs,
           };
           if (fm.sync) entry.sync = fm.sync;
           return entry;
@@ -170,6 +174,21 @@ export class MemoryService extends TypedEventEmitter<MemoryServiceEvents> {
   async delete(relativePath: string): Promise<void> {
     const abs = this.resolve(relativePath);
     await fs.unlink(abs);
+  }
+
+  async clearAll(): Promise<void> {
+    const root = this.getRoot();
+    const files = await listMemoryFiles(root);
+    await Promise.all(
+      files.map(async (rel) => {
+        try {
+          await fs.unlink(path.join(root, rel));
+        } catch {
+          // ignore missing files
+        }
+      }),
+    );
+    await this.ensureDir();
   }
 
   async getGraph(): Promise<MemoryGraph> {

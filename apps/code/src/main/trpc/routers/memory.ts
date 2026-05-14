@@ -31,6 +31,8 @@ export const memoryRouter = router({
     .input(z.object({ relativePath: z.string() }))
     .mutation(({ input }) => getService().delete(input.relativePath)),
 
+  clearAll: publicProcedure.mutation(() => getService().clearAll()),
+
   getGraph: publicProcedure.query(() => getService().getGraph()),
 
   getRoot: publicProcedure.query(() => getService().getRoot()),

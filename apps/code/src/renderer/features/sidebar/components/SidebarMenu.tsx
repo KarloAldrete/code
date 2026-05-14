@@ -32,7 +32,6 @@ import { useSidebarStore } from "../stores/sidebarStore";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { InboxItem, NewTaskItem } from "./items/HomeItem";
 import { McpServersItem } from "./items/McpServersItem";
-import { MemoryItem } from "./items/MemoryItem";
 import { SetupItem } from "./items/SetupItem";
 import { SkillsItem } from "./items/SkillsItem";
 import { SidebarItem } from "./SidebarItem";
@@ -46,7 +45,6 @@ function SidebarMenuComponent() {
     navigateToInbox,
     navigateToCommandCenter,
     navigateToSkills,
-    navigateToMemory,
     navigateToMcpServers,
     navigateToSetup,
   } = useNavigationStore();
@@ -136,10 +134,6 @@ function SidebarMenuComponent() {
 
   const handleSkillsClick = () => {
     navigateToSkills();
-  };
-
-  const handleMemoryClick = () => {
-    navigateToMemory();
   };
 
   const handleMcpServersClick = () => {
@@ -334,13 +328,6 @@ function SidebarMenuComponent() {
             <SkillsItem
               isActive={sidebarData.isSkillsActive}
               onClick={handleSkillsClick}
-            />
-          </Box>
-
-          <Box>
-            <MemoryItem
-              isActive={sidebarData.isMemoryActive}
-              onClick={handleMemoryClick}
             />
           </Box>
 

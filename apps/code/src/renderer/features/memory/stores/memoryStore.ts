@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-type MemoryTab = "library" | "graph" | "settings";
+type MemoryTab = "home" | "files" | "settings";
 
 interface MemoryStoreState {
   selectedPath: string | null;
@@ -22,7 +22,7 @@ type MemoryStore = MemoryStoreState & MemoryStoreActions;
 export const useMemoryStore = create<MemoryStore>()((set) => ({
   selectedPath: null,
   editMode: false,
-  activeTab: "library",
+  activeTab: "home",
   recentlyTouched: new Set(),
 
   selectEntry: (path) => set({ selectedPath: path, editMode: false }),

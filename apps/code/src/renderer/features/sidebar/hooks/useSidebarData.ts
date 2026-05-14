@@ -46,7 +46,6 @@ export interface SidebarData {
   isInboxActive: boolean;
   isCommandCenterActive: boolean;
   isSkillsActive: boolean;
-  isMemoryActive: boolean;
   isMcpServersActive: boolean;
   isSetupActive: boolean;
   isLoading: boolean;
@@ -68,7 +67,6 @@ interface ViewState {
     | "archived"
     | "command-center"
     | "skills"
-    | "memory"
     | "mcp-servers"
     | "setup";
   data?: Task;
@@ -189,7 +187,6 @@ export function useSidebarData({
   const isInboxActive = activeView.type === "inbox";
   const isCommandCenterActive = activeView.type === "command-center";
   const isSkillsActive = activeView.type === "skills";
-  const isMemoryActive = activeView.type === "memory";
   const isMcpServersActive = activeView.type === "mcp-servers";
   const isSetupActive = activeView.type === "setup";
 
@@ -311,7 +308,6 @@ export function useSidebarData({
     isInboxActive,
     isCommandCenterActive,
     isSkillsActive,
-    isMemoryActive,
     isMcpServersActive,
     isSetupActive,
     isLoading,

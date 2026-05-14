@@ -24,6 +24,8 @@ export interface MemoryEntry {
   name: string;
   description: string;
   type: MemoryType;
+  /** File modification time in ms since epoch. */
+  mtimeMs: number;
   sync?: { source: string; cron: string };
 }
 
