@@ -27,7 +27,7 @@ export const HEDGEHOG_TOOLS: AnthropicToolDefinition[] = [
         repository: {
           type: "string",
           description:
-            "Repository slug (e.g. 'org/repo') the hoglet should work in. Required unless the nest has a primary_repository or there is exactly one entry in available_repositories — in those cases the dispatcher fills it for you. Must match an entry in available_repositories.",
+            "Repository slug (e.g. 'org/repo') the hoglet should work in. Required unless the nest has a primary_repository or there is exactly one entry in known_repositories — in those cases the dispatcher fills it for you. Must be a repo from known_repositories or one previously granted via request_repository_access.",
         },
       },
       required: ["prompt"],
@@ -114,6 +114,27 @@ export const HEDGEHOG_TOOLS: AnthropicToolDefinition[] = [
     },
   },
   {
+    name: "request_repository_access",
+    description:
+      "Request access to a GitHub repository not already in known_repositories. The dispatcher validates that the operator's GitHub integration can reach the repo. If confirmed, the repo becomes available for spawn_hoglet calls in this nest. Use when the goal requires a repo that wasn't part of the original nest configuration.",
+    input_schema: {
+      type: "object",
+      properties: {
+        repository: {
+          type: "string",
+          description:
+            "Repository slug (e.g. 'org/repo') to request access to.",
+        },
+        reason: {
+          type: "string",
+          description:
+            "Why this repo is needed for the nest's goal. Surfaced to the operator in the audit log.",
+        },
+      },
+      required: ["repository", "reason"],
+    },
+  },
+  {
     name: "link_pr_dependency",
     description:
       "Declare that one hoglet's PR is stacked on top of another's. Use when child_task's branch was branched off parent_task's branch, so a merged parent should trigger a rebase on the child. Idempotent — calling twice with the same pair is harmless.",
@@ -187,6 +208,7 @@ export type HedgehogToolName =
   | "kill_hoglet"
   | "message_hoglet"
   | "write_audit_entry"
+  | "request_repository_access"
   | "link_pr_dependency"
   | "unlink_pr_dependency"
   | "rebase_child";
@@ -232,11 +254,19 @@ export const rebaseChildArgs = z.object({
   prompt: z.string().trim().min(1).max(2000).optional(),
 });
 
+export const requestRepositoryAccessArgs = z.object({
+  repository: z.string().trim().min(1),
+  reason: z.string().trim().min(1).max(2000),
+});
+
 export type SpawnHogletArgs = z.infer<typeof spawnHogletArgs>;
 export type RaiseHogletArgs = z.infer<typeof raiseHogletArgs>;
 export type KillHogletArgs = z.infer<typeof killHogletArgs>;
 export type MessageHogletArgs = z.infer<typeof messageHogletArgs>;
 export type WriteAuditEntryArgs = z.infer<typeof writeAuditEntryArgs>;
+export type RequestRepositoryAccessArgs = z.infer<
+  typeof requestRepositoryAccessArgs
+>;
 export type LinkPrDependencyArgs = z.infer<typeof linkPrDependencyArgs>;
 export type UnlinkPrDependencyArgs = z.infer<typeof unlinkPrDependencyArgs>;
 export type RebaseChildArgs = z.infer<typeof rebaseChildArgs>;

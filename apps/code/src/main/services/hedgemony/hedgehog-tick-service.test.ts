@@ -1062,7 +1062,7 @@ describe("HedgehogTickService", () => {
     ).toBe(true);
   });
 
-  it("surfaces available_repositories from the repository repo in the user prompt", async () => {
+  it("surfaces known_repositories from the repository repo in the user prompt", async () => {
     const mocks = setupMocks({
       nest: makeNest({ primaryRepository: null }),
       availableRepositories: [
@@ -1080,7 +1080,7 @@ describe("HedgehogTickService", () => {
     const prompt = (mocks.llm.promptWithTools as ReturnType<typeof vi.fn>).mock
       .calls[0][0][0].content;
     expect(prompt).toContain(
-      "available_repositories: posthog/posthog, posthog/posthog-js",
+      "known_repositories: posthog/posthog, posthog/posthog-js",
     );
   });
 

@@ -336,12 +336,10 @@ export class HedgehogTickService {
       }
       const recentChat = this.nestChat.list({ nestId, detail: false });
       const repositoryContext = this.deriveRepositoryContext(
+        nest,
         recentChat,
         context.hoglets,
       );
-      if (!repositoryContext.primaryRepository && nest.primaryRepository) {
-        repositoryContext.primaryRepository = nest.primaryRepository;
-      }
       const tickContext = { ...context, repositoryContext };
       const scratchpad = this.loadScratchpad(nestId);
       const userPrompt = buildUserPrompt({
@@ -546,6 +544,7 @@ export class HedgehogTickService {
   }
 
   private deriveRepositoryContext(
+    nest: Nest,
     recentChat: NestMessage[],
     hoglets: HogletWithState[],
   ): {
@@ -554,6 +553,7 @@ export class HedgehogTickService {
     availableRepositories: string[];
   } {
     const repositories = new Set<string>();
+    const grantedRepositories = new Set<string>();
     let primaryRepository: string | null = null;
 
     const addRepository = (value: unknown): void => {
@@ -568,6 +568,21 @@ export class HedgehogTickService {
     };
 
     for (const message of recentChat) {
+      if (message.payloadJson) {
+        try {
+          const raw = JSON.parse(message.payloadJson) as Record<
+            string,
+            unknown
+          >;
+          if (
+            raw.type === "repository_access_granted" &&
+            typeof raw.repository === "string"
+          ) {
+            grantedRepositories.add(raw.repository.trim());
+          }
+        } catch {}
+      }
+
       const payload = parseNestChatCreationBootstrapPayload(
         message.payloadJson,
       );
@@ -586,14 +601,24 @@ export class HedgehogTickService {
 
     for (const entry of hoglets) addRepository(entry.repository);
 
+    if (!primaryRepository && nest.primaryRepository) {
+      primaryRepository = nest.primaryRepository;
+    }
+
     const list = [...repositories];
     if (!primaryRepository && list.length === 1) {
       primaryRepository = list[0] ?? null;
     }
+
+    const available = new Set(this.listAvailableRepositorySlugs());
+    for (const repo of repositories) available.add(repo);
+    for (const repo of grantedRepositories) available.add(repo);
+    if (nest.primaryRepository) available.add(nest.primaryRepository);
+
     return {
       repositories: list,
       primaryRepository,
-      availableRepositories: this.listAvailableRepositorySlugs(),
+      availableRepositories: [...available].sort(),
     };
   }
 

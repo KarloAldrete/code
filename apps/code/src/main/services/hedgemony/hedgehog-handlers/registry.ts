@@ -4,6 +4,7 @@ import { linkPrDependencyHandler } from "./link-pr-dependency-handler";
 import { messageHogletHandler } from "./message-hoglet-handler";
 import { raiseHogletHandler } from "./raise-hoglet-handler";
 import { rebaseChildHandler } from "./rebase-child-handler";
+import { requestRepositoryAccessHandler } from "./request-repository-access-handler";
 import { spawnHogletHandler } from "./spawn-hoglet-handler";
 import type { HedgehogToolHandler } from "./types";
 import { unlinkPrDependencyHandler } from "./unlink-pr-dependency-handler";
@@ -15,6 +16,7 @@ const handlerList: readonly HedgehogToolHandler[] = [
   killHogletHandler,
   messageHogletHandler,
   writeAuditEntryHandler,
+  requestRepositoryAccessHandler,
   linkPrDependencyHandler,
   unlinkPrDependencyHandler,
   rebaseChildHandler,
