@@ -21,7 +21,7 @@ function copyFor(cloudStatus: TaskRunStatus | null): {
     case "in_progress":
       return {
         heading: "Building the nest…",
-        subtitle: "Starting the sandbox and connecting to your cloud runner.",
+        subtitle: "Weaving twigs into a cozy sandbox.",
       };
     default:
       return {
@@ -31,63 +31,100 @@ function copyFor(cloudStatus: TaskRunStatus | null): {
   }
 }
 
-// Each twig: where it starts (off-center, up high), where it lands
-// (settled into the pile), and how it rotates between the two. Staggered
-// delays make twigs drop one after another instead of all at once.
-const TWIGS: Array<CSSProperties & Record<string, string | number>> = [
+type TwigStyle = CSSProperties & Record<string, string | number>;
+
+// Foundation twigs are always visible — they form the base bowl shape of the
+// nest so the user reads "nest" immediately, not "empty stage". Layered back
+// (zIndex 0) → middle (1) → front (2) with the back/front rows slightly wider.
+const FOUNDATION_TWIGS: TwigStyle[] = [
   {
-    "--twig-x-from": "-40px",
-    "--twig-x-to": "-20px",
-    "--twig-rot-from": "-30deg",
-    "--twig-rot-to": "-18deg",
+    "--twig-x": "-44px",
+    "--twig-y": "-16px",
+    "--twig-rot": "-14deg",
     width: "60px",
-    bottom: "2px",
-    animationDelay: "0s",
+    zIndex: 0,
   },
   {
-    "--twig-x-from": "30px",
-    "--twig-x-to": "18px",
-    "--twig-rot-from": "25deg",
-    "--twig-rot-to": "14deg",
-    width: "58px",
-    bottom: "4px",
-    animationDelay: "0.5s",
+    "--twig-x": "32px",
+    "--twig-y": "-14px",
+    "--twig-rot": "16deg",
+    width: "62px",
+    zIndex: 0,
   },
   {
-    "--twig-x-from": "-10px",
-    "--twig-x-to": "0px",
-    "--twig-rot-from": "10deg",
-    "--twig-rot-to": "-4deg",
+    "--twig-x": "-10px",
+    "--twig-y": "-20px",
+    "--twig-rot": "-4deg",
+    width: "54px",
+    zIndex: 0,
+  },
+  {
+    "--twig-x": "-32px",
+    "--twig-y": "-6px",
+    "--twig-rot": "8deg",
+    width: "56px",
+    zIndex: 1,
+  },
+  {
+    "--twig-x": "22px",
+    "--twig-y": "-4px",
+    "--twig-rot": "-10deg",
     width: "52px",
-    bottom: "8px",
-    animationDelay: "1s",
+    zIndex: 1,
   },
   {
-    "--twig-x-from": "20px",
-    "--twig-x-to": "-12px",
-    "--twig-rot-from": "-15deg",
-    "--twig-rot-to": "8deg",
-    width: "46px",
-    bottom: "12px",
-    animationDelay: "1.5s",
+    "--twig-x": "-2px",
+    "--twig-y": "0px",
+    "--twig-rot": "2deg",
+    width: "72px",
+    zIndex: 2,
+  },
+];
+
+// Active twigs cycle in every 0.8s (one per "beat" of the hedgehog's
+// placement gesture). Each has a from-position (above, rotated) and a
+// to-position (its slot in the nest). Animation duration is 3.2s with 4
+// staggered delays so all 4 share a synchronized loop.
+const ACTIVE_TWIGS: TwigStyle[] = [
+  {
+    "--twig-x": "-24px",
+    "--twig-y": "-12px",
+    "--twig-rot": "-22deg",
+    "--twig-x-from": "-10px",
+    "--twig-rot-from": "-60deg",
+    width: "48px",
+    animationDelay: "0s",
+    zIndex: 2,
   },
   {
-    "--twig-x-from": "-25px",
-    "--twig-x-to": "10px",
-    "--twig-rot-from": "20deg",
-    "--twig-rot-to": "-10deg",
-    width: "44px",
-    bottom: "16px",
-    animationDelay: "2s",
+    "--twig-x": "26px",
+    "--twig-y": "-10px",
+    "--twig-rot": "18deg",
+    "--twig-x-from": "10px",
+    "--twig-rot-from": "60deg",
+    width: "50px",
+    animationDelay: "0.8s",
+    zIndex: 2,
   },
   {
+    "--twig-x": "0px",
+    "--twig-y": "-18px",
+    "--twig-rot": "-2deg",
     "--twig-x-from": "0px",
-    "--twig-x-to": "-2px",
-    "--twig-rot-from": "0deg",
-    "--twig-rot-to": "2deg",
-    width: "38px",
-    bottom: "20px",
-    animationDelay: "2.5s",
+    "--twig-rot-from": "20deg",
+    width: "46px",
+    animationDelay: "1.6s",
+    zIndex: 1,
+  },
+  {
+    "--twig-x": "-14px",
+    "--twig-y": "-2px",
+    "--twig-rot": "10deg",
+    "--twig-x-from": "-4px",
+    "--twig-rot-from": "-40deg",
+    width: "44px",
+    animationDelay: "2.4s",
+    zIndex: 2,
   },
 ];
 
@@ -104,22 +141,44 @@ export function CloudInitializingView({
       gap="5"
       className="absolute inset-0 bg-background"
     >
-      <div className="relative h-[200px] w-[200px]">
-        <div className="absolute inset-x-0 bottom-[36px] flex justify-center">
-          <div className="nest-builder-bob">
-            <img src={builderHog} alt="" className="block w-[140px]" />
+      <div className="relative h-[220px] w-[260px]">
+        <div className="absolute inset-x-0 bottom-[44px] flex justify-center">
+          <div className="nest-builder-work">
+            <img src={builderHog} alt="" className="block w-[130px]" />
           </div>
         </div>
-        <div className="absolute inset-x-0 bottom-0 h-[32px]">
-          {TWIGS.map((style) => (
+
+        <div className="absolute inset-x-0 bottom-0 h-[56px]">
+          <div className="absolute inset-x-[28%] bottom-1 h-2 rounded-full bg-(--gray-a4) blur-[3px]" />
+
+          {FOUNDATION_TWIGS.map((style) => (
             <div
-              key={String(style.animationDelay)}
-              className="nest-twig"
+              key={`f-${style["--twig-x"]}-${style["--twig-y"]}`}
+              className="nest-twig nest-twig-static"
               style={style}
             />
           ))}
+          {ACTIVE_TWIGS.map((style) => {
+            const key = String(style.animationDelay);
+            return (
+              <div key={`active-${key}`}>
+                <div className="nest-twig nest-twig-active" style={style} />
+                <div
+                  className="nest-puff"
+                  style={
+                    {
+                      "--twig-x": style["--twig-x"],
+                      "--twig-y": style["--twig-y"],
+                      animationDelay: style.animationDelay,
+                    } as CSSProperties
+                  }
+                />
+              </div>
+            );
+          })}
         </div>
       </div>
+
       <Flex direction="column" align="center" gap="2">
         <Flex align="center" gap="2">
           <Spinner size={16} className="animate-spin text-gray-9" />

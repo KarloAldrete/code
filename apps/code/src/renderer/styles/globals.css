@@ -306,55 +306,136 @@
   animation: zen-float 3.5s ease-in-out infinite;
 }
 
-/* Nest construction animation for cloud initializing view */
-@keyframes nest-builder-bob {
+/* Nest construction animation for cloud initializing view.
+ *
+ * Visual model (RTS-style construction):
+ *   1. A foundation of always-visible twigs forms a recognizable nest shape
+ *      from frame zero — so the user immediately reads "nest", not "empty".
+ *   2. Active twigs cycle in from above on a 3.2s loop, each one synced to
+ *      a beat of the hedgehog's placement gesture (4 beats per cycle).
+ *   3. The hedgehog leans forward and tilts on each beat, looking like it
+ *      is placing the twig that lands at the same moment.
+ *   4. A dust puff blooms at each landing point as feedback.
+ */
+
+@keyframes nest-builder-work {
   0%,
+  25%,
+  50%,
+  75%,
   100% {
-    transform: translateY(0) rotate(-2deg);
+    transform: translateY(0) rotate(0deg);
   }
-  50% {
-    transform: translateY(-4px) rotate(2deg);
+  6%,
+  31%,
+  56%,
+  81% {
+    transform: translateY(2px) rotate(7deg);
+  }
+  14%,
+  39%,
+  64%,
+  89% {
+    transform: translateY(-1px) rotate(-3deg);
   }
 }
 
-.nest-builder-bob {
-  animation: nest-builder-bob 0.9s ease-in-out infinite;
-  transform-origin: center bottom;
-}
-
-@keyframes nest-twig-drop {
-  0% {
-    transform: translate(var(--twig-x-from, 0), -90px)
-      rotate(var(--twig-rot-from, 0deg));
-    opacity: 0;
-  }
-  10% {
-    opacity: 1;
-  }
-  35%,
-  85% {
-    transform: translate(var(--twig-x-to, 0), 0)
-      rotate(var(--twig-rot-to, 0deg));
-    opacity: 1;
-  }
-  100% {
-    transform: translate(var(--twig-x-to, 0), 0)
-      rotate(var(--twig-rot-to, 0deg));
-    opacity: 0;
-  }
+.nest-builder-work {
+  animation: nest-builder-work 3.2s ease-in-out infinite;
+  transform-origin: 50% 90%;
 }
 
 .nest-twig {
   position: absolute;
   bottom: 0;
   left: 50%;
-  width: 56px;
-  height: 6px;
-  margin-left: -28px;
-  border-radius: 3px;
-  background: linear-gradient(180deg, #a07248 0%, #6b4a2b 100%);
-  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.2);
-  animation: nest-twig-drop 4s ease-in infinite;
+  width: 50px;
+  height: 7px;
+  margin-left: -25px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #b88458 0%, #6f4a2a 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+    0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+/* Foundation twigs sit at their final position permanently. */
+.nest-twig-static {
+  transform: translate(var(--twig-x, 0px), var(--twig-y, 0px))
+    rotate(var(--twig-rot, 0deg));
+}
+
+/* Active twigs: appear at the top, fall into place, hold, fade, restart. */
+@keyframes nest-twig-place {
+  0% {
+    transform: translate(var(--twig-x-from, 0px), -70px)
+      rotate(var(--twig-rot-from, 0deg));
+    opacity: 0;
+  }
+  4% {
+    transform: translate(var(--twig-x-from, 0px), -70px)
+      rotate(var(--twig-rot-from, 0deg));
+    opacity: 1;
+  }
+  22% {
+    transform: translate(var(--twig-x, 0px), var(--twig-y, 0px))
+      rotate(var(--twig-rot, 0deg));
+    opacity: 1;
+  }
+  90% {
+    transform: translate(var(--twig-x, 0px), var(--twig-y, 0px))
+      rotate(var(--twig-rot, 0deg));
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--twig-x, 0px), var(--twig-y, 0px))
+      rotate(var(--twig-rot, 0deg));
+    opacity: 0;
+  }
+}
+
+.nest-twig-active {
+  animation: nest-twig-place 3.2s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+}
+
+/* Dust puff at the landing spot, timed to the twig's landing frame. */
+@keyframes nest-puff {
+  0%,
+  18% {
+    transform: translate(var(--twig-x, 0px), var(--twig-y, 0px)) scale(0.2);
+    opacity: 0;
+  }
+  24% {
+    transform: translate(var(--twig-x, 0px), var(--twig-y, 0px)) scale(0.9);
+    opacity: 0.6;
+  }
+  40% {
+    transform: translate(var(--twig-x, 0px), calc(var(--twig-y, 0px) - 8px))
+      scale(1.6);
+    opacity: 0;
+  }
+  100% {
+    transform: translate(var(--twig-x, 0px), var(--twig-y, 0px)) scale(0.2);
+    opacity: 0;
+  }
+}
+
+.nest-puff {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(184, 132, 88, 0.55) 0%,
+    rgba(184, 132, 88, 0) 70%
+  );
+  animation: nest-puff 3.2s ease-out infinite;
+  pointer-events: none;
 }
 
 /* Pulse animation for generating indicator */
