@@ -118,6 +118,8 @@ function buildEnvironment(): Record<string, string> {
     CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1",
     // Route to AWS Bedrock as a fallback when Anthropic returns 5xx
     ANTHROPIC_CUSTOM_HEADERS: customHeaders,
+    // Fail fast on expired/missing git credentials instead of hanging
+    GIT_TERMINAL_PROMPT: "0",
   };
 }
 
