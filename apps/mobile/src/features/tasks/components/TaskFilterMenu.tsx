@@ -1,7 +1,7 @@
 import { Text } from "@components/text";
-import { CircleIcon, FunnelSimple } from "phosphor-react-native";
+import { Check, FunnelSimple } from "phosphor-react-native";
 import { useState } from "react";
-import { Modal, Pressable, View } from "react-native";
+import { Modal, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useUserQuery } from "@/features/auth";
 import { useThemeColors } from "@/lib/theme";
@@ -11,60 +11,40 @@ import {
   useTaskStore,
 } from "../stores/taskStore";
 
-interface MenuSectionProps {
-  title: string;
-  children: React.ReactNode;
-}
-
-function MenuSection({ title, children }: MenuSectionProps) {
-  return (
-    <View className="px-1 py-2">
-      <Text
-        className="px-3 pb-1.5 font-medium text-[11px] text-gray-10 uppercase"
-        style={{ letterSpacing: 0.5 }}
-      >
-        {title}
-      </Text>
-      {children}
-    </View>
-  );
-}
-
-interface RadioRowProps {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-}
-
-function RadioRow({ label, selected, onPress }: RadioRowProps) {
-  const themeColors = useThemeColors();
-  return (
-    <Pressable
-      onPress={onPress}
-      className={`flex-row items-center gap-2.5 rounded-md px-2.5 py-2 ${
-        selected ? "bg-gray-3" : "active:bg-gray-2"
-      }`}
-    >
-      <View className="h-5 w-5 items-center justify-center">
-        {selected ? (
-          <View className="h-4 w-4 items-center justify-center rounded-full bg-accent-9">
-            <View className="h-1.5 w-1.5 rounded-full bg-accent-contrast" />
-          </View>
-        ) : (
-          <CircleIcon size={16} color={themeColors.gray[8]} />
-        )}
-      </View>
-      <Text className="flex-1 text-[14px] text-gray-12">{label}</Text>
-    </Pressable>
-  );
-}
-
 interface TaskFilterMenuProps {
   open: boolean;
   onClose: () => void;
 }
 
+function SectionHeader({ title }: { title: string }) {
+  return (
+    <Text className="mb-1 font-semibold text-[12px] text-gray-10 uppercase tracking-wide">
+      {title}
+    </Text>
+  );
+}
+
+interface OptionRowProps {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+}
+
+function OptionRow({ label, selected, onPress }: OptionRowProps) {
+  const themeColors = useThemeColors();
+  return (
+    <Pressable
+      onPress={onPress}
+      className="flex-row items-center justify-between rounded-md px-2 py-2.5 active:bg-gray-3"
+    >
+      <Text className="text-[14px] text-gray-12">{label}</Text>
+      {selected && <Check size={16} color={themeColors.gray[12]} />}
+    </Pressable>
+  );
+}
+
 export function TaskFilterMenu({ open, onClose }: TaskFilterMenuProps) {
+  const insets = useSafeAreaInsets();
   const organizeMode = useTaskStore((s) => s.organizeMode);
   const setOrganizeMode = useTaskStore((s) => s.setOrganizeMode);
   const sortMode = useTaskStore((s) => s.sortMode);
@@ -73,7 +53,6 @@ export function TaskFilterMenu({ open, onClose }: TaskFilterMenuProps) {
   const setShowInternal = useTaskStore((s) => s.setShowInternal);
   const { data: userData } = useUserQuery();
   const isStaff = userData?.is_staff === true;
-  const insets = useSafeAreaInsets();
 
   const pickOrganize = (mode: OrganizeMode) => {
     setOrganizeMode(mode);
@@ -85,73 +64,83 @@ export function TaskFilterMenu({ open, onClose }: TaskFilterMenuProps) {
   return (
     <Modal
       visible={open}
-      transparent
-      animationType="fade"
+      animationType="slide"
+      presentationStyle="pageSheet"
       onRequestClose={onClose}
-      statusBarTranslucent
     >
-      {/* Backdrop dismisses the menu */}
-      <Pressable className="flex-1" onPress={onClose}>
-        {/* noop onPress so taps inside the menu don't bubble to the backdrop */}
-        <Pressable
-          onPress={() => {}}
-          className="absolute right-3 w-64 overflow-hidden rounded-xl border border-gray-6 bg-background"
-          style={{
-            top: insets.top + 64,
-            shadowColor: "#000",
-            shadowOpacity: 0.12,
-            shadowRadius: 16,
-            shadowOffset: { width: 0, height: 4 },
-            elevation: 8,
+      <View
+        className="flex-1 bg-background"
+        style={{ paddingTop: insets.top + 8 }}
+      >
+        {/* Header */}
+        <View className="flex-row items-center justify-between border-gray-6 border-b px-4 pb-3">
+          <Text className="font-semibold text-[18px] text-gray-12">
+            Filter & Sort
+          </Text>
+          <Pressable onPress={onClose}>
+            <Text className="font-semibold text-[14px] text-accent-9">
+              Done
+            </Text>
+          </Pressable>
+        </View>
+
+        <ScrollView
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 16,
+            paddingBottom: insets.bottom + 40,
           }}
         >
-          <MenuSection title="Organize">
-            <RadioRow
+          {/* Organize */}
+          <SectionHeader title="Organize" />
+          <View className="mb-5">
+            <OptionRow
               label="By project"
               selected={organizeMode === "by-project"}
               onPress={() => pickOrganize("by-project")}
             />
-            <RadioRow
+            <OptionRow
               label="Chronological list"
               selected={organizeMode === "chronological"}
               onPress={() => pickOrganize("chronological")}
             />
-          </MenuSection>
+          </View>
 
-          <View className="mx-3 border-gray-6 border-t" />
-
-          <MenuSection title="Sort by">
-            <RadioRow
+          {/* Sort by */}
+          <SectionHeader title="Sort by" />
+          <View className="mb-5">
+            <OptionRow
               label="Created"
               selected={sortMode === "created"}
               onPress={() => pickSort("created")}
             />
-            <RadioRow
+            <OptionRow
               label="Updated"
               selected={sortMode === "updated"}
               onPress={() => pickSort("updated")}
             />
-          </MenuSection>
+          </View>
 
+          {/* Task visibility (staff only) */}
           {isStaff ? (
             <>
-              <View className="mx-3 border-gray-6 border-t" />
-              <MenuSection title="Task visibility">
-                <RadioRow
+              <SectionHeader title="Task visibility" />
+              <View className="mb-5">
+                <OptionRow
                   label="External"
                   selected={!showInternal}
                   onPress={() => setShowInternal(false)}
                 />
-                <RadioRow
+                <OptionRow
                   label="Internal"
                   selected={showInternal}
                   onPress={() => setShowInternal(true)}
                 />
-              </MenuSection>
+              </View>
             </>
           ) : null}
-        </Pressable>
-      </Pressable>
+        </ScrollView>
+      </View>
     </Modal>
   );
 }
