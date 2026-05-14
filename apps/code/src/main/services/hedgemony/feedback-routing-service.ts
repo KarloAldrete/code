@@ -122,13 +122,23 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
   }
 
   /**
-   * Records the routing outcome after the renderer-side injection or
-   * follow-up spawn completes. Writes the dedupe row and an audit-row in
-   * the originating nest's chat so the activity feed shows it. Idempotent
-   * on the dedupe index.
+   * Records the final routing outcome after the renderer-side injection or
+   * follow-up spawn completes. Promotes the previously-reserved `pending`
+   * row to the final outcome (or inserts one if reservation was skipped)
+   * and writes a nest-chat audit row the first time the outcome flips out
+   * of `pending`. Idempotent — repeat calls just overwrite the outcome
+   * without duplicating the audit message.
    */
   recordRoutedOutcome(input: RecordRoutedFeedbackInput): FeedbackEvent {
-    const { row, inserted } = this.feedbackRepo.insertIgnoreOnDuplicate({
+    const previous = this.feedbackRepo.findByDedupeKey({
+      hogletTaskId: input.hogletTaskId,
+      source: input.source,
+      payloadHash: input.payloadHash,
+    });
+    const wasAlreadyFinalised =
+      previous !== null && previous.routedOutcome !== "pending";
+
+    const { row } = this.feedbackRepo.setOutcome({
       nestId: input.nestId,
       hogletTaskId: input.hogletTaskId,
       source: input.source,
@@ -138,7 +148,7 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
       trustTier: input.trustTier ?? "external",
     });
 
-    if (inserted && input.nestId) {
+    if (!wasAlreadyFinalised && input.nestId) {
       const summary = describeRoutedFeedback(input);
       const message = this.nestChat.recordHedgehogMessage({
         nestId: input.nestId,
@@ -165,17 +175,8 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
     const payloadHash = sha256(
       `${payloadRef}:${input.hogletId}:${input.prompt}`,
     );
-    if (
-      this.feedbackRepo.findByDedupeKey({
-        hogletTaskId: input.taskId,
-        source: "hedgehog",
-        payloadHash,
-      })
-    ) {
-      return;
-    }
 
-    this.emitInject({
+    this.tryEmitInject({
       taskId: input.taskId,
       hogletId: input.hogletId,
       nestId: input.nestId,
@@ -290,16 +291,6 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
       const payloadRef = `pr-comment:${comment.id}`;
       const payloadHash = sha256(`${comment.id}:${comment.body}`);
 
-      if (
-        this.feedbackRepo.findByDedupeKey({
-          hogletTaskId: hoglet.taskId,
-          source: "pr_review",
-          payloadHash,
-        })
-      ) {
-        continue;
-      }
-
       const prompt = buildPrCommentPrompt(
         comment.path,
         line,
@@ -313,7 +304,7 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
         comment.body,
       );
 
-      this.emitInject({
+      this.tryEmitInject({
         taskId: hoglet.taskId,
         hogletId: hoglet.id,
         nestId: hoglet.nestId,
@@ -353,16 +344,6 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
         `${check.id}:${check.conclusion}:${check.completedAt ?? ""}`,
       );
 
-      if (
-        this.feedbackRepo.findByDedupeKey({
-          hogletTaskId: hoglet.taskId,
-          source: "ci",
-          payloadHash,
-        })
-      ) {
-        continue;
-      }
-
       const prompt = buildCiFailurePrompt(
         check.name,
         check.conclusion,
@@ -374,7 +355,7 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
         `See ${check.htmlUrl}`,
       );
 
-      this.emitInject({
+      this.tryEmitInject({
         taskId: hoglet.taskId,
         hogletId: hoglet.id,
         nestId: hoglet.nestId,
@@ -386,6 +367,27 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
         fallbackPrompt,
       });
     }
+  }
+
+  /**
+   * Reserves a `pending` dedupe row in sqlite, then emits the inject event
+   * (or queues it for the renderer subscriber). The reservation closes the
+   * check-then-emit race: a second poll cycle that lands before
+   * `recordRoutedOutcome` runs still sees the pending row and skips
+   * re-emitting. Returns `false` if the slot was already reserved.
+   */
+  private tryEmitInject(payload: InjectPromptEventPayload): boolean {
+    const { reserved } = this.feedbackRepo.tryReservePending({
+      nestId: payload.nestId,
+      hogletTaskId: payload.taskId,
+      source: payload.source,
+      payloadHash: payload.payloadHash,
+      payloadRef: payload.payloadRef,
+      trustTier: "external",
+    });
+    if (!reserved) return false;
+    this.emitInject(payload);
+    return true;
   }
 
   private emitInject(payload: InjectPromptEventPayload): void {

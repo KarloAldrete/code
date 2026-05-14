@@ -11,6 +11,14 @@ export interface MockFeedbackEventRepository {
     inserted: boolean;
     row: FeedbackEvent;
   };
+  setOutcome(data: InsertFeedbackEventData): {
+    inserted: boolean;
+    row: FeedbackEvent;
+  };
+  tryReservePending(data: Omit<InsertFeedbackEventData, "routedOutcome">): {
+    reserved: boolean;
+    row: FeedbackEvent;
+  };
   listForNest(nestId: string, limit: number): FeedbackEvent[];
 }
 
@@ -27,31 +35,62 @@ export function createMockFeedbackEventRepository(): MockFeedbackEventRepository
     return found ? { ...found } : null;
   };
 
+  const insertIgnoreOnDuplicate = (
+    data: InsertFeedbackEventData,
+  ): { inserted: boolean; row: FeedbackEvent } => {
+    const existing = findByDedupeKey({
+      hogletTaskId: data.hogletTaskId,
+      source: data.source,
+      payloadHash: data.payloadHash,
+    });
+    if (existing) {
+      return { inserted: false, row: existing };
+    }
+    const row: FeedbackEvent = {
+      id: crypto.randomUUID(),
+      nestId: data.nestId,
+      hogletTaskId: data.hogletTaskId,
+      source: data.source,
+      payloadHash: data.payloadHash,
+      payloadRef: data.payloadRef,
+      trustTier: data.trustTier ?? "external",
+      routedOutcome: data.routedOutcome,
+      injectedAt: new Date().toISOString(),
+    };
+    events.push(row);
+    return { inserted: true, row: { ...row } };
+  };
+
   return {
     _events: events,
     findByDedupeKey,
-    insertIgnoreOnDuplicate: (data) => {
-      const existing = findByDedupeKey({
-        hogletTaskId: data.hogletTaskId,
-        source: data.source,
-        payloadHash: data.payloadHash,
-      });
-      if (existing) {
-        return { inserted: false, row: existing };
+    insertIgnoreOnDuplicate,
+    setOutcome: (data) => {
+      const idx = events.findIndex(
+        (e) =>
+          e.hogletTaskId === data.hogletTaskId &&
+          e.source === data.source &&
+          e.payloadHash === data.payloadHash,
+      );
+      if (idx >= 0) {
+        const next: FeedbackEvent = {
+          ...events[idx],
+          routedOutcome: data.routedOutcome,
+          nestId: data.nestId,
+          payloadRef: data.payloadRef,
+          trustTier: data.trustTier ?? events[idx].trustTier,
+        };
+        events[idx] = next;
+        return { inserted: false, row: { ...next } };
       }
-      const row: FeedbackEvent = {
-        id: crypto.randomUUID(),
-        nestId: data.nestId,
-        hogletTaskId: data.hogletTaskId,
-        source: data.source,
-        payloadHash: data.payloadHash,
-        payloadRef: data.payloadRef,
-        trustTier: data.trustTier ?? "external",
-        routedOutcome: data.routedOutcome,
-        injectedAt: new Date().toISOString(),
-      };
-      events.push(row);
-      return { inserted: true, row: { ...row } };
+      return insertIgnoreOnDuplicate(data);
+    },
+    tryReservePending: (data) => {
+      const { inserted, row } = insertIgnoreOnDuplicate({
+        ...data,
+        routedOutcome: "pending",
+      });
+      return { reserved: inserted, row };
     },
     listForNest: (nestId, limit) =>
       events

@@ -8,7 +8,11 @@ export type FeedbackEvent = typeof hedgemonyFeedbackEvents.$inferSelect;
 export type NewFeedbackEvent = typeof hedgemonyFeedbackEvents.$inferInsert;
 
 export type FeedbackEventSource = "pr_review" | "ci" | "issue" | "hedgehog";
-export type FeedbackEventOutcome = "injected" | "follow_up_spawned" | "failed";
+export type FeedbackEventOutcome =
+  | "pending"
+  | "injected"
+  | "follow_up_spawned"
+  | "failed";
 export type FeedbackTrustTier = "operator" | "internal" | "external";
 
 export interface InsertFeedbackEventData {
@@ -53,6 +57,64 @@ export class FeedbackEventRepository {
         .where(byDedupeKey(key))
         .get() ?? null
     );
+  }
+
+  /**
+   * Finalises the outcome for a previously-reserved pending row. If no row
+   * exists for the dedupe key (e.g. caller skipped `tryReservePending`),
+   * inserts a fresh row with the supplied outcome.
+   */
+  setOutcome(data: InsertFeedbackEventData): {
+    inserted: boolean;
+    row: FeedbackEvent;
+  } {
+    const existing = this.findByDedupeKey({
+      hogletTaskId: data.hogletTaskId,
+      source: data.source,
+      payloadHash: data.payloadHash,
+    });
+    if (existing) {
+      this.db
+        .update(hedgemonyFeedbackEvents)
+        .set({
+          routedOutcome: data.routedOutcome,
+          nestId: data.nestId,
+          payloadRef: data.payloadRef,
+          trustTier: data.trustTier ?? existing.trustTier,
+        })
+        .where(byDedupeKey(data))
+        .run();
+      const updated = this.findByDedupeKey({
+        hogletTaskId: data.hogletTaskId,
+        source: data.source,
+        payloadHash: data.payloadHash,
+      });
+      if (!updated) {
+        throw new Error(
+          `Feedback event vanished after update for ${data.payloadRef}`,
+        );
+      }
+      return { inserted: false, row: updated };
+    }
+    return this.insertIgnoreOnDuplicate(data);
+  }
+
+  /**
+   * Atomic reservation: inserts a `pending` row keyed on (hogletTaskId,
+   * source, payloadHash). Returns `reserved: true` on the first call,
+   * `reserved: false` if a row already existed (caller should skip emit).
+   * The pending row makes the dedup check race-free even between the
+   * router emitting an event and the renderer recording the final outcome.
+   */
+  tryReservePending(data: Omit<InsertFeedbackEventData, "routedOutcome">): {
+    reserved: boolean;
+    row: FeedbackEvent;
+  } {
+    const { inserted, row } = this.insertIgnoreOnDuplicate({
+      ...data,
+      routedOutcome: "pending",
+    });
+    return { reserved: inserted, row };
   }
 
   insertIgnoreOnDuplicate(data: InsertFeedbackEventData): {

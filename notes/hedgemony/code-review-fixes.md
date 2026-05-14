@@ -81,7 +81,7 @@ but no hourly count check gates tick execution.
 If >= 60, no-op and write a row with `outcome = capped`. Expose the cap value
 via `settingsStore` per the spec.
 
-### 6. Feedback routing dedup has a check-then-emit race
+### 6. Feedback routing dedup has a check-then-emit race — DONE
 
 **File:** `feedback-routing-service.ts` (~line 282-316)
 

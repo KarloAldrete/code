@@ -250,6 +250,61 @@ describe("FeedbackRoutingService", () => {
     expect(received).toHaveLength(1);
   });
 
+  it("does not re-emit between emit and recordRoutedOutcome (race window)", async () => {
+    const hoglet = makeHoglet({ taskId: "task-1", nestId: "nest-1" });
+    const hoglets = createMockHogletService([hoglet]);
+    const git = createMockGitService({
+      reviewComments: [
+        {
+          id: 1001,
+          body: "fix the off-by-one",
+          path: "src/foo.ts",
+          line: 42,
+          original_line: null,
+          side: "RIGHT",
+          start_line: null,
+          start_side: null,
+          diff_hunk: "",
+          user: { login: "alice", avatar_url: "" },
+          created_at: "",
+          updated_at: "",
+          subject_type: "line",
+        },
+      ],
+    });
+    const cloudTasks = createMockCloudTaskClient(
+      "https://github.com/org/repo/pull/7",
+    );
+    const service = new FeedbackRoutingService(
+      hoglets,
+      nests,
+      git,
+      cloudTasks,
+      feedbackRepo as unknown as FeedbackEventRepository,
+      nestChat,
+    );
+
+    const received: InjectPromptEventPayload[] = [];
+    service.on(FeedbackRoutingEvent.InjectPrompt, (e) => {
+      received.push(e);
+    });
+
+    await service.runPoll();
+    expect(received).toHaveLength(1);
+    // Renderer has NOT yet called recordRoutedOutcome — the dedupe row is
+    // still in `pending`. A second poll must still skip the duplicate.
+    expect(feedbackRepo._events[0].routedOutcome).toBe("pending");
+
+    (
+      service as unknown as {
+        lastPolledAt: Map<string, number>;
+      }
+    ).lastPolledAt.clear();
+
+    await service.runPoll();
+    expect(received).toHaveLength(1);
+  });
+
   it("emits CI failure events only for failing conclusions", async () => {
     const hoglet = makeHoglet({ taskId: "task-1", nestId: "nest-1" });
     const hoglets = createMockHogletService([hoglet]);

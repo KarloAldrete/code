@@ -576,12 +576,29 @@ export const feedbackEventSource = z.enum([
 ]);
 export type FeedbackEventSource = z.infer<typeof feedbackEventSource>;
 
+/**
+ * The outcome value stored on a `hedgemony_feedback_event` row. `pending` is
+ * the reservation state the router writes before emitting; once the renderer
+ * records the routing outcome it flips to one of the terminal values.
+ */
 export const feedbackEventOutcome = z.enum([
+  "pending",
   "injected",
   "follow_up_spawned",
   "failed",
 ]);
 export type FeedbackEventOutcome = z.infer<typeof feedbackEventOutcome>;
+
+/**
+ * Outcomes the renderer is allowed to commit via `recordRoutedOutcome`.
+ * Excludes `pending`, which is router-internal.
+ */
+export const recordedFeedbackOutcome = z.enum([
+  "injected",
+  "follow_up_spawned",
+  "failed",
+]);
+export type RecordedFeedbackOutcome = z.infer<typeof recordedFeedbackOutcome>;
 
 export const feedbackTrustTier = z.enum(["operator", "internal", "external"]);
 export type FeedbackTrustTier = z.infer<typeof feedbackTrustTier>;
@@ -618,7 +635,7 @@ export const recordRoutedFeedbackInput = z.object({
   source: feedbackEventSource,
   payloadHash: z.string(),
   payloadRef: z.string(),
-  routedOutcome: feedbackEventOutcome,
+  routedOutcome: recordedFeedbackOutcome,
   trustTier: feedbackTrustTier.optional(),
 });
 export type RecordRoutedFeedbackInput = z.infer<

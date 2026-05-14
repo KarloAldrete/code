@@ -201,7 +201,7 @@ export const hedgemonyFeedbackEvents = sqliteTable(
       .notNull()
       .default("external"),
     routedOutcome: text({
-      enum: ["injected", "follow_up_spawned", "failed"],
+      enum: ["pending", "injected", "follow_up_spawned", "failed"],
     }).notNull(),
     injectedAt: text().notNull().default(sql`(CURRENT_TIMESTAMP)`),
   },
