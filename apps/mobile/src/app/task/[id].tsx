@@ -7,6 +7,7 @@ import {
   ActionSheetIOS,
   ActivityIndicator,
   Alert,
+  Platform,
   Pressable,
   View,
 } from "react-native";
@@ -452,7 +453,7 @@ export default function TaskDetailScreen() {
         {showAutomationContext && automationContextLabel && (
           <View
             className="absolute inset-x-3 z-10 rounded-lg border border-accent-6 bg-accent-2 px-3 py-2"
-            style={{ top: insets.top + 56 }}
+            style={{ top: (Platform.OS === "ios" ? 6 : insets.top) + 52 }}
           >
             <Text className="text-accent-11 text-xs">
               {automationName
@@ -483,7 +484,9 @@ export default function TaskDetailScreen() {
           contentContainerStyle={{
             paddingTop: 8,
             paddingBottom:
-              insets.top + 72 + (showAutomationContext ? 44 : 0),
+              (Platform.OS === "ios" ? 6 : insets.top) +
+              60 +
+              (showAutomationContext ? 44 : 0),
           }}
         />
 

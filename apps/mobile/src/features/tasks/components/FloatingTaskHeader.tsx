@@ -3,7 +3,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { CaretLeft } from "phosphor-react-native";
 import type { ReactNode } from "react";
-import { Pressable, View } from "react-native";
+import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { toRgba, useThemeColors } from "@/lib/theme";
 
@@ -33,9 +33,14 @@ export function FloatingTaskHeader({
     if (router.canGoBack()) router.back();
   };
 
+  // iOS modals already provide their own top chrome (drag handle / rounded
+  // corners), so insets.top over-counts the space. Use a minimal fixed value
+  // on iOS and fall back to the real inset on Android.
+  const topInset = Platform.OS === "ios" ? 6 : insets.top;
+
   // Fade height extends past the row so content scrolling up behind the title
   // softens out instead of slamming into a hard edge.
-  const fadeHeight = insets.top + 88;
+  const fadeHeight = topInset + 52;
 
   return (
     <View
@@ -56,7 +61,7 @@ export function FloatingTaskHeader({
 
       <View
         className="flex-row items-center px-3"
-        style={{ paddingTop: insets.top + 6, paddingBottom: 8 }}
+        style={{ paddingTop: topInset, paddingBottom: 4 }}
       >
         <Pressable
           onPress={handleBack}
