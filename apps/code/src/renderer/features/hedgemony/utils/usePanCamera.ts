@@ -1,12 +1,12 @@
 import type { MotionValue } from "framer-motion";
 import { type RefObject, useEffect, useRef } from "react";
 import { HEDGEMONY_CONFIG } from "../config";
+import { sceneTicker } from "../runtime/SceneTicker";
 
 const EDGE_ZONE_PX = 36;
 const BASE_SPEED_PX_PER_SEC = HEDGEMONY_CONFIG.speeds.panCamera;
 const BOOST_MULTIPLIER = 2.2;
 const COMMIT_DEBOUNCE_MS = 200;
-const MAX_FRAME_DT_S = 0.05;
 
 const ARROW_LEFT = new Set(["ArrowLeft"]);
 const ARROW_RIGHT = new Set(["ArrowRight"]);
@@ -73,8 +73,8 @@ export function usePanCamera({
     let boost = false;
     let pointerLocal: { x: number; y: number } | null = null;
     let pointerInside = false;
-    let lastTs: number | null = null;
-    let rafId = 0;
+    let tickerUnsubscribe: (() => void) | null = null;
+    let firstFrameSinceStart = false;
     let commitTimer: ReturnType<typeof setTimeout> | null = null;
 
     // Cache the edge-pan exclusion zones so we don't re-query the DOM each
@@ -117,23 +117,20 @@ export function usePanCamera({
     };
 
     const stopLoop = () => {
-      if (rafId !== 0) {
-        cancelAnimationFrame(rafId);
-        rafId = 0;
+      if (tickerUnsubscribe !== null) {
+        tickerUnsubscribe();
+        tickerUnsubscribe = null;
       }
-      lastTs = null;
     };
 
-    const startLoop = () => {
-      if (rafId !== 0) return;
-      lastTs = null;
-      rafId = requestAnimationFrame(tick);
-    };
-
-    const tick = (ts: number) => {
-      const dt =
-        lastTs === null ? 0 : Math.min(MAX_FRAME_DT_S, (ts - lastTs) / 1000);
-      lastTs = ts;
+    const tick = (deltaMs: number) => {
+      // Skip the first frame after (re)subscribing — matches the prior rAF
+      // implementation which always seeded lastTs=null on startLoop and so
+      // produced dt=0 for the first frame. If we trusted the ticker's dt
+      // here, a freshly-subscribed loop would apply a real-time delta on
+      // frame 0 against zero key input integration.
+      const dt = firstFrameSinceStart ? 0 : deltaMs / 1000;
+      firstFrameSinceStart = false;
 
       let dx = 0;
       let dy = 0;
@@ -198,17 +195,21 @@ export function usePanCamera({
         panX.set(panX.get() + dx * speed * dt);
         panY.set(panY.get() + dy * speed * dt);
         scheduleCommit();
-        rafId = requestAnimationFrame(tick);
         return;
       }
 
-      // No movement this frame. Stop the loop unless something might still
-      // trigger panning next frame — held pan keys, or cursor near an edge.
-      if (pressed.size > 0 || isPointerNearEdge()) {
-        rafId = requestAnimationFrame(tick);
-        return;
+      // No movement this frame. Unsubscribe from the ticker unless something
+      // might still trigger panning next frame — held pan keys, or cursor
+      // near an edge.
+      if (pressed.size === 0 && !isPointerNearEdge()) {
+        stopLoop();
       }
-      stopLoop();
+    };
+
+    const startLoop = () => {
+      if (tickerUnsubscribe !== null) return;
+      firstFrameSinceStart = true;
+      tickerUnsubscribe = sceneTicker.on(tick);
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
