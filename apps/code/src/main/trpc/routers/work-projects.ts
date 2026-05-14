@@ -322,15 +322,22 @@ export const workProjectsRouter = router({
       z.object({
         projectId: z.string(),
         tileId: z.string(),
-        filename: z.string().optional(),
-        contents: z.string().optional(),
+        title: z.string().optional(),
+        items: z
+          .array(
+            z.object({
+              path: z.string().min(1),
+              addedAt: z.string(),
+            }),
+          )
+          .optional(),
       }),
     )
     .output(workProject.nullable())
     .mutation(({ input }) => {
       return getService().updateFileTile(input.projectId, input.tileId, {
-        filename: input.filename,
-        contents: input.contents,
+        title: input.title,
+        items: input.items,
       });
     }),
 
@@ -345,6 +352,8 @@ export const workProjectsRouter = router({
           .object({
             posthogProjectId: z.number(),
             body: z.record(z.string(), z.unknown()),
+            insightShortId: z.string().optional(),
+            shareToken: z.string().optional(),
           })
           .optional(),
         posthogUrl: z.string().optional(),

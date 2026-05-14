@@ -33,10 +33,10 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
       "Audit a signup-to-activation funnel, surface the leakiest steps, and propose hypotheses for each.",
     tiles: [
       {
-        type: "file",
+        type: "note",
         size: "md",
-        filename: "hypotheses.md",
-        contents: `# Funnel drop-off hypotheses\n\nThe agent will replace this with the actual leaks it finds and 2 concrete hypotheses for each.\n\n## Step → Step (pending)\n- Hypothesis 1: …\n- Hypothesis 2: …\n`,
+        body: `# Funnel drop-off hypotheses\n\nThe agent will replace this with the actual leaks it finds and 2 concrete hypotheses for each.\n\n## Step → Step (pending)\n- Hypothesis 1: …\n- Hypothesis 2: …\n`,
+        tone: "neutral",
       },
       {
         type: "note",
@@ -58,10 +58,10 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
       "A weekly briefing: top product events, behavior shifts, anything that looks like a regression.",
     tiles: [
       {
-        type: "file",
+        type: "note",
         size: "md",
-        filename: "brief.md",
-        contents: `# Monday brief\n\n**Week:** (filled in by the agent)\n\n## Highlights\n- …\n\n## Watchlist\n- …\n\n## Regressions\n- …\n`,
+        body: `# Monday brief\n\n**Week:** (filled in by the agent)\n\n## Highlights\n- …\n\n## Watchlist\n- …\n\n## Regressions\n- …\n`,
+        tone: "neutral",
       },
     ],
     openingPrompt:
@@ -77,10 +77,10 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
       "Pick three representative replays — one happy path, one friction moment, one outlier — and summarize each.",
     tiles: [
       {
-        type: "file",
+        type: "note",
         size: "lg",
-        filename: "digest.md",
-        contents: `# Replay digest\n\n## Happy path\n_(agent will summarize a replay here)_\n\n## Friction\n_(agent will summarize a replay here)_\n\n## Outlier\n_(agent will summarize a replay here)_\n`,
+        body: `# Replay digest\n\n## Happy path\n_(agent will summarize a replay here)_\n\n## Friction\n_(agent will summarize a replay here)_\n\n## Outlier\n_(agent will summarize a replay here)_\n`,
+        tone: "neutral",
       },
     ],
     openingPrompt:
@@ -96,10 +96,10 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
       "Audit feature flags — find the stale, fully rolled out, or unused ones safe to clean up.",
     tiles: [
       {
-        type: "file",
+        type: "note",
         size: "lg",
-        filename: "flags-to-remove.md",
-        contents: `# Flag cleanup candidates\n\n| Flag key | Reason | Action |\n| --- | --- | --- |\n| _agent will fill_ | _agent will fill_ | _agent will fill_ |\n`,
+        body: `# Flag cleanup candidates\n\n| Flag key | Reason | Action |\n| --- | --- | --- |\n| _agent will fill_ | _agent will fill_ | _agent will fill_ |\n`,
+        tone: "neutral",
       },
     ],
     openingPrompt:
@@ -115,10 +115,10 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
       "Synthesize what customers said in tickets, interviews, and recent feedback into themes.",
     tiles: [
       {
-        type: "file",
+        type: "note",
         size: "lg",
-        filename: "themes.md",
-        contents: `# Voice of customer · themes\n\n## Theme 1\n_evidence_\n\n## Theme 2\n_evidence_\n\n## Theme 3\n_evidence_\n`,
+        body: `# Voice of customer · themes\n\n## Theme 1\n_evidence_\n\n## Theme 2\n_evidence_\n\n## Theme 3\n_evidence_\n`,
+        tone: "neutral",
       },
     ],
     openingPrompt:
@@ -134,10 +134,10 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
       "Set up a growth experiment: pick the metric, write the hypothesis, scope the variant.",
     tiles: [
       {
-        type: "file",
+        type: "note",
         size: "md",
-        filename: "hypothesis.md",
-        contents: `# Hypothesis\n\n**We believe** that …\n\n**For** _(user segment)_…\n\n**Will result in** _(measurable metric)_…\n\n**We'll know it worked when** …\n`,
+        body: `# Hypothesis\n\n**We believe** that …\n\n**For** _(user segment)_…\n\n**Will result in** _(measurable metric)_…\n\n**We'll know it worked when** …\n`,
+        tone: "neutral",
       },
       {
         type: "note",
@@ -159,10 +159,10 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
       "Pull together a launch plan: the message, the rollout, the success metric, the comms.",
     tiles: [
       {
-        type: "file",
+        type: "note",
         size: "lg",
-        filename: "launch.md",
-        contents: `# Launch plan\n\n## What we're shipping\n_…_\n\n## Audience & message\n_…_\n\n## Rollout\n- [ ] internal\n- [ ] beta\n- [ ] GA\n\n## Success metric\n_…_\n\n## Comms\n- [ ] blog\n- [ ] changelog\n- [ ] social\n`,
+        body: `# Launch plan\n\n## What we're shipping\n_…_\n\n## Audience & message\n_…_\n\n## Rollout\n- [ ] internal\n- [ ] beta\n- [ ] GA\n\n## Success metric\n_…_\n\n## Comms\n- [ ] blog\n- [ ] changelog\n- [ ] social\n`,
+        tone: "neutral",
       },
     ],
     openingPrompt:
@@ -178,10 +178,10 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
       "Diagnose onboarding: time-to-first-value, drop-off steps, friction signals.",
     tiles: [
       {
-        type: "file",
+        type: "note",
         size: "lg",
-        filename: "onboarding-findings.md",
-        contents: `# Onboarding review · findings\n\n## Time to first value\n_…_\n\n## Drop-off step\n_…_\n\n## Friction signals\n_…_\n\n## Recommendations\n- _…_\n`,
+        body: `# Onboarding review · findings\n\n## Time to first value\n_…_\n\n## Drop-off step\n_…_\n\n## Friction signals\n_…_\n\n## Recommendations\n- _…_\n`,
+        tone: "neutral",
       },
     ],
     openingPrompt:
@@ -205,10 +205,10 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
         fallbackSparkline: [0, 0, 0, 0, 0, 0, 0],
       },
       {
-        type: "file",
+        type: "note",
         size: "md",
-        filename: "analysis.md",
-        contents: `# Feature usage analysis\n\n**Feature:** _(agent will fill)_\n\n## Adoption\n_…_\n\n## Repeat use\n_…_\n\n## Top user segments\n_…_\n\n## Stickiness (DAU/WAU)\n_…_\n`,
+        body: `# Feature usage analysis\n\n**Feature:** _(agent will fill)_\n\n## Adoption\n_…_\n\n## Repeat use\n_…_\n\n## Top user segments\n_…_\n\n## Stickiness (DAU/WAU)\n_…_\n`,
+        tone: "neutral",
       },
       {
         type: "artifact",
@@ -253,10 +253,10 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
         },
       },
       {
-        type: "file",
+        type: "note",
         size: "md",
-        filename: "themes.md",
-        contents: `# Content themes\n\n## Channels\n- _…_\n\n## Cadence\n_…_\n\n## Theme 1\n_…_\n\n## Theme 2\n_…_\n\n## Theme 3\n_…_\n`,
+        body: `# Content themes\n\n## Channels\n- _…_\n\n## Cadence\n_…_\n\n## Theme 1\n_…_\n\n## Theme 2\n_…_\n\n## Theme 3\n_…_\n`,
+        tone: "neutral",
       },
       {
         type: "note",
@@ -305,10 +305,10 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
         },
       },
       {
-        type: "file",
+        type: "note",
         size: "md",
-        filename: "sprint.md",
-        contents: `# Sprint plan\n\n**Dates:** _(agent will fill)_\n\n## Goals\n_…_\n\n## Scope\n- _…_\n\n## Risks\n- _…_\n\n## Out of scope\n- _…_\n`,
+        body: `# Sprint plan\n\n**Dates:** _(agent will fill)_\n\n## Goals\n_…_\n\n## Scope\n- _…_\n\n## Risks\n- _…_\n\n## Out of scope\n- _…_\n`,
+        tone: "neutral",
       },
       {
         type: "note",
@@ -338,10 +338,10 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
         fallbackSparkline: [0, 0, 0, 0, 0, 0, 0],
       },
       {
-        type: "file",
+        type: "note",
         size: "md",
-        filename: "findings.md",
-        contents: `# Onboarding diagnostic\n\n## Time to first value\n_…_\n\n## Biggest drop-off step\n_…_\n\n## Friction signals\n_…_\n\n## Recommendations\n- _…_\n`,
+        body: `# Onboarding diagnostic\n\n## Time to first value\n_…_\n\n## Biggest drop-off step\n_…_\n\n## Friction signals\n_…_\n\n## Recommendations\n- _…_\n`,
+        tone: "neutral",
       },
       {
         type: "artifact",
@@ -379,10 +379,10 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
         fallbackSparkline: [0, 0, 0, 0, 0, 0, 0],
       },
       {
-        type: "file",
+        type: "note",
         size: "lg",
-        filename: "retention-findings.md",
-        contents: `# Retention deep-dive\n\n## Curves\n- D1: _…_\n- D7: _…_\n- D30: _…_\n\n## Cohorts\n_…_\n\n## Strongest driver\n_…_\n\n## Recommendations\n- _…_\n`,
+        body: `# Retention deep-dive\n\n## Curves\n- D1: _…_\n- D7: _…_\n- D30: _…_\n\n## Cohorts\n_…_\n\n## Strongest driver\n_…_\n\n## Recommendations\n- _…_\n`,
+        tone: "neutral",
       },
       {
         type: "note",
@@ -411,10 +411,10 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
           "Sets up or reads PMF surveys, scores them against the 40% threshold, surfaces users worth interviewing.",
       },
       {
-        type: "file",
+        type: "note",
         size: "md",
-        filename: "pmf-action-plan.md",
-        contents: `# PMF action plan\n\n**Current score:** _(agent will fill)_\n\n## What's working\n_…_\n\n## What to fix\n_…_\n\n## Next actions\n1. _…_\n2. _…_\n3. _…_\n`,
+        body: `# PMF action plan\n\n**Current score:** _(agent will fill)_\n\n## What's working\n_…_\n\n## What to fix\n_…_\n\n## Next actions\n1. _…_\n2. _…_\n3. _…_\n`,
+        tone: "neutral",
       },
       {
         type: "note",
@@ -443,10 +443,10 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
           "Scans competitor changelogs, blogs, and release notes for recent changes.",
       },
       {
-        type: "file",
+        type: "note",
         size: "md",
-        filename: "digest.md",
-        contents: `# Competitor digest\n\n**Week of:** _(agent will fill)_\n\n## Notable changes\n- _…_\n\n## Implications for us\n- _…_\n\n## Top takeaway\n_…_\n`,
+        body: `# Competitor digest\n\n**Week of:** _(agent will fill)_\n\n## Notable changes\n- _…_\n\n## Implications for us\n- _…_\n\n## Top takeaway\n_…_\n`,
+        tone: "neutral",
       },
       {
         type: "note",
@@ -475,10 +475,10 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
           "Scores users by frequency, depth, value actions, feature breadth — saves the top group as a cohort.",
       },
       {
-        type: "file",
+        type: "note",
         size: "md",
-        filename: "interview-prep.md",
-        contents: `# Interview prep\n\n## Who\n_(agent will list top 5–10 candidates with one-line context each)_\n\n## Why these users\n_…_\n\n## Questions\n1. _…_\n2. _…_\n3. _…_\n`,
+        body: `# Interview prep\n\n## Who\n_(agent will list top 5–10 candidates with one-line context each)_\n\n## Why these users\n_…_\n\n## Questions\n1. _…_\n2. _…_\n3. _…_\n`,
+        tone: "neutral",
       },
       {
         type: "artifact",
@@ -515,10 +515,10 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
           "Scans Slack for long, controversial, or unresolved threads from the last 7 days.",
       },
       {
-        type: "file",
+        type: "note",
         size: "md",
-        filename: "digest.md",
-        contents: `# Weekly Slack digest\n\n**Week of:** _(agent will fill)_\n\n## Important threads\n- _…_\n\n## Unresolved\n- _…_\n\n## Decisions made\n- _…_\n`,
+        body: `# Weekly Slack digest\n\n**Week of:** _(agent will fill)_\n\n## Important threads\n- _…_\n\n## Unresolved\n- _…_\n\n## Decisions made\n- _…_\n`,
+        tone: "neutral",
       },
       {
         type: "note",
@@ -555,10 +555,10 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
         },
       },
       {
-        type: "file",
+        type: "note",
         size: "md",
-        filename: "discovery-notes.md",
-        contents: `# Customer discovery notes\n\n## Hypothesis\n_…_\n\n## Calls\n### Call 1\n_…_\n\n### Call 2\n_…_\n\n## Themes\n- _…_\n\n## Next bet\n_…_\n`,
+        body: `# Customer discovery notes\n\n## Hypothesis\n_…_\n\n## Calls\n### Call 1\n_…_\n\n### Call 2\n_…_\n\n## Themes\n- _…_\n\n## Next bet\n_…_\n`,
+        tone: "neutral",
       },
       {
         type: "note",

@@ -57,7 +57,10 @@ function summarizeTilesForPrompt(project: WorkProject): string {
         `- insight · ${t.title}${t.description ? ` — ${t.description}` : ""} (${t.url})`,
       );
     } else if (t.type === "file") {
-      lines.push(`- file · ${t.filename} (${t.contents.length} chars)`);
+      const label = t.title ?? "Files";
+      lines.push(
+        `- files · ${label} (${t.items.length} item${t.items.length === 1 ? "" : "s"})`,
+      );
     } else if (t.type === "skill_output") {
       lines.push(
         `- skill output · ${t.skillName}${

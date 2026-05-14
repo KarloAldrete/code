@@ -100,7 +100,11 @@ export function GithubActivityTile({
     const fetchedAt = tile.summary?.fetchedAt
       ? new Date(tile.summary.fetchedAt).getTime()
       : 0;
-    if (Date.now() - fetchedAt < STALE_MS) return;
+    // If the last fetch errored, retry on mount regardless of recency – the
+    // cause may have been transient (auth flow completed in another window,
+    // network glitch, stale main-process build after a restart).
+    const hadError = !!tile.summary?.error;
+    if (!hadError && Date.now() - fetchedAt < STALE_MS) return;
     autoRefreshedFor.current = key;
     setRefreshing(true);
     void onRefresh().finally(() => setRefreshing(false));
@@ -113,6 +117,7 @@ export function GithubActivityTile({
     tile.enabledTypes,
     tile.windowDays,
     tile.summary?.fetchedAt,
+    tile.summary?.error,
   ]);
 
   const repoLabel = tile.repo
@@ -404,35 +409,68 @@ function LiveBody({ tile, summary, refreshing }: LiveBodyProps) {
     );
   }
 
+  const countTypes = enabled.filter(
+    (t): t is Exclude<GithubActivityType, "release"> => t !== "release",
+  );
+  const showRelease = enabled.includes("release");
+  const cellCount = countTypes.length + (showRelease ? 1 : 0);
+  const gridColsClass =
+    cellCount <= 1
+      ? "grid-cols-1"
+      : cellCount === 2
+        ? "grid-cols-2"
+        : cellCount === 3
+          ? "grid-cols-3"
+          : "grid-cols-4";
+
   return (
     <Flex direction="column" className="h-full min-h-0">
-      <Box className="grid shrink-0 grid-cols-4 gap-2 border-(--gray-4) border-b px-4 py-2.5">
-        {enabled.map((t) => {
-          const Icon = TYPE_ICON[t];
-          const count = summary.counts[t] ?? 0;
-          return (
-            <Flex
-              key={t}
-              direction="column"
-              gap="0.5"
-              className="min-w-0 rounded-(--radius-2) bg-(--gray-2) px-2 py-1.5"
-            >
-              <Flex align="center" gap="1" className="text-(--gray-11)">
-                <Icon size={11} weight="duotone" />
-                <Text className="truncate text-[10px] uppercase tracking-wide">
-                  {TYPE_SHORT[t]}
+      <Flex
+        align="center"
+        justify="between"
+        className="shrink-0 border-(--gray-4) border-b px-4 pt-2"
+      >
+        <Text className="text-(--gray-10) text-[10px] uppercase tracking-wide">
+          Last {summary.windowDays} day{summary.windowDays === 1 ? "" : "s"}
+        </Text>
+      </Flex>
+      {cellCount > 0 && (
+        <Box
+          className={`grid shrink-0 ${gridColsClass} gap-2 border-(--gray-4) border-b px-4 py-2.5`}
+        >
+          {countTypes.map((t) => {
+            const Icon = TYPE_ICON[t];
+            const count = summary.counts[t] ?? 0;
+            return (
+              <Flex
+                key={t}
+                align="center"
+                justify="between"
+                gap="2"
+                className="min-w-0 rounded-(--radius-2) bg-(--gray-2) px-2 py-1.5"
+              >
+                <Flex
+                  align="center"
+                  gap="1"
+                  className="min-w-0 text-(--gray-11)"
+                >
+                  <Icon size={11} weight="duotone" />
+                  <Text className="truncate text-[10px] uppercase tracking-wide">
+                    {TYPE_SHORT[t]}
+                  </Text>
+                </Flex>
+                <Text
+                  weight="medium"
+                  className="shrink-0 text-(--gray-12) text-[15px] tabular-nums leading-none"
+                >
+                  {count}
                 </Text>
               </Flex>
-              <Text
-                weight="medium"
-                className="text-(--gray-12) text-[18px] leading-none"
-              >
-                {count}
-              </Text>
-            </Flex>
-          );
-        })}
-      </Box>
+            );
+          })}
+          {showRelease && <LatestReleaseCard release={summary.latestRelease} />}
+        </Box>
+      )}
 
       <Box className="scrollbar-overlay-y min-h-0 flex-1 overflow-y-auto">
         {summary.recent.length === 0 ? (
@@ -453,6 +491,69 @@ function LiveBody({ tile, summary, refreshing }: LiveBodyProps) {
         )}
       </Box>
     </Flex>
+  );
+}
+
+function LatestReleaseCard({
+  release,
+}: {
+  release: GithubActivitySummary["latestRelease"];
+}) {
+  const Icon = TYPE_ICON.release;
+  if (!release) {
+    return (
+      <Flex
+        align="center"
+        justify="between"
+        gap="2"
+        className="min-w-0 rounded-(--radius-2) bg-(--gray-2) px-2 py-1.5"
+      >
+        <Flex align="center" gap="1" className="min-w-0 text-(--gray-11)">
+          <Icon size={11} weight="duotone" />
+          <Text className="truncate text-[10px] uppercase tracking-wide">
+            Latest
+          </Text>
+        </Flex>
+        <Text className="shrink-0 text-(--gray-10) text-[11px]">None</Text>
+      </Flex>
+    );
+  }
+  // Prefer the tag (typical semver) over the human-friendly release name —
+  // the cell's value slot should read like "v1.2.3", matching the count
+  // slot's tabular-nums treatment in sibling cards.
+  const version = release.tagName || release.name || "Release";
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void openUrlInBrowser(release.url);
+      }}
+      title={`${version}${release.name && release.name !== release.tagName ? ` — ${release.name}` : ""} · ${new Date(release.publishedAt).toLocaleString()}`}
+      className="flex min-w-0 items-center justify-between gap-2 rounded-(--radius-2) bg-(--gray-2) px-2 py-1.5 transition-colors hover:bg-(--gray-3)"
+    >
+      <Flex
+        direction="column"
+        align="start"
+        className="min-w-0 text-(--gray-11)"
+      >
+        <Flex align="center" gap="1">
+          <Icon size={11} weight="duotone" />
+          <Text className="truncate text-[10px] uppercase tracking-wide">
+            Latest
+          </Text>
+        </Flex>
+        <Text className="text-(--gray-10) text-[10px] leading-tight">
+          {formatRelativeTimeShort(release.publishedAt)} ago
+        </Text>
+      </Flex>
+      <Text
+        weight="medium"
+        title={version}
+        className="shrink truncate text-(--gray-12) text-[15px] tabular-nums leading-none"
+      >
+        {version}
+      </Text>
+    </button>
   );
 }
 

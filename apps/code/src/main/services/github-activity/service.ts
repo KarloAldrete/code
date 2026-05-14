@@ -11,6 +11,7 @@ const log = logger.scope("github-activity-service");
 
 const RECENT_LIMIT = 10;
 const PER_TYPE_LIMIT = 50;
+const GH_API = "https://api.github.com";
 
 interface FetchActivityParams {
   repo: { owner: string; name: string };
@@ -18,110 +19,124 @@ interface FetchActivityParams {
   windowDays: number;
 }
 
-interface GhPrJson {
+/** Raw shapes returned by GitHub's REST API. Only fields we actually read. */
+interface RestPr {
   number: number;
   title: string;
-  url: string;
-  mergedAt?: string | null;
-  createdAt?: string;
-  author?: { login?: string | null; name?: string | null } | null;
+  html_url: string;
+  merged_at: string | null;
+  created_at: string;
+  user: { login?: string | null } | null;
 }
 
-interface GhIssueJson {
+interface RestIssue {
   number: number;
   title: string;
-  url: string;
-  createdAt: string;
-  author?: { login?: string | null; name?: string | null } | null;
+  html_url: string;
+  created_at: string;
+  user: { login?: string | null } | null;
+  /** Present when the issue is actually a PR. We filter these out. */
+  pull_request?: unknown;
 }
 
-interface GhReleaseJson {
-  name?: string | null;
-  tagName?: string | null;
-  publishedAt?: string | null;
-  url?: string | null;
-}
-
-function toIsoDate(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
-
-function authorOf(
-  author: { login?: string | null; name?: string | null } | null | undefined,
-): string | undefined {
-  if (!author) return undefined;
-  return author.login || author.name || undefined;
+interface RestRelease {
+  name: string | null;
+  tag_name: string;
+  published_at: string | null;
+  html_url: string;
 }
 
 function emptyCounts(): GithubActivitySummary["counts"] {
-  return { pr_merged: 0, pr_opened: 0, issue_opened: 0, release: 0 };
+  return { pr_merged: 0, pr_opened: 0, issue_opened: 0 };
 }
 
 @injectable()
 export class GithubActivityService {
+  /** Cached `gh auth token` result. Refreshed on every fetch since the user
+   *  may sign in / out between calls but we don't want to spawn `gh` more
+   *  than once per fetch cycle. */
+  private async getGithubToken(): Promise<string | null> {
+    const result = await execGh(["auth", "token"]);
+    if (result.exitCode !== 0) return null;
+    const token = result.stdout.trim();
+    return token.length > 0 ? token : null;
+  }
+
+  private async ghFetch<T>(
+    path: string,
+    token: string | null,
+  ): Promise<
+    { ok: true; data: T } | { ok: false; status: number; body: string }
+  > {
+    const headers: Record<string, string> = {
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "posthog-code",
+    };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(`${GH_API}${path}`, { headers });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      return { ok: false, status: res.status, body };
+    }
+    const data = (await res.json()) as T;
+    return { ok: true, data };
+  }
+
   /** Fetch a fresh summary for the given repo + config. Always returns a
-   *  summary — on error, `error` is set and counts are zero. */
+   *  summary – on error, `error` is set and counts are zero. */
   public async fetchActivity(
     params: FetchActivityParams,
   ): Promise<GithubActivitySummary> {
     const { repo, enabledTypes, windowDays } = params;
     const fetchedAt = new Date().toISOString();
     const since = new Date(Date.now() - windowDays * 86_400_000);
-    const sinceDate = toIsoDate(since);
     const sinceMs = since.getTime();
-    const repoArg = `${repo.owner}/${repo.name}`;
+    const repoPath = `/repos/${repo.owner}/${repo.name}`;
 
     const counts = emptyCounts();
     const items: GithubActivityItem[] = [];
-
+    let latestRelease: GithubActivitySummary["latestRelease"];
     const typeSet = new Set(enabledTypes);
 
-    // Auth probe — surface a friendly message before fanning out gh calls.
-    const authResult = await execGh(["auth", "status"]);
-    if (authResult.exitCode !== 0) {
-      const errText = authResult.stderr || authResult.error || "";
-      if (errText.includes("not found") || authResult.exitCode === 127) {
-        return {
-          fetchedAt,
-          windowDays,
-          counts,
-          recent: [],
-          error:
-            "The `gh` CLI is not installed. Install it from https://cli.github.com.",
-        };
-      }
-      return {
-        fetchedAt,
-        windowDays,
-        counts,
-        recent: [],
-        error: "Not signed in to GitHub. Run `gh auth login` in a terminal.",
-      };
-    }
+    // Reuse the same token PostHog Code uses elsewhere – the agent injects
+    // it as GH_TOKEN, PR actions read it via `gh auth token`. Calling the
+    // REST API directly with that token avoids the auth probe + per-request
+    // subprocess spawn pattern, and lets public-repo fetches succeed even
+    // when `gh` isn't installed at all.
+    const token = await this.getGithubToken();
 
     try {
       if (typeSet.has("pr_merged")) {
-        const merged = await this.fetchPrs(repoArg, "merged", sinceDate);
-        for (const pr of merged) {
-          const when = pr.mergedAt;
-          if (!when) continue;
+        const merged = await this.ghFetch<RestPr[]>(
+          `${repoPath}/pulls?state=closed&sort=updated&direction=desc&per_page=${PER_TYPE_LIMIT}`,
+          token,
+        );
+        if (!merged.ok) throw this.toFetchError(merged, token);
+        for (const pr of merged.data) {
+          if (!pr.merged_at) continue;
+          const when = pr.merged_at;
           if (new Date(when).getTime() < sinceMs) continue;
           counts.pr_merged += 1;
           items.push({
             id: `pr-merged-${pr.number}`,
             type: "pr_merged",
             title: pr.title,
-            url: pr.url,
-            actor: authorOf(pr.author),
+            url: pr.html_url,
+            actor: pr.user?.login ?? undefined,
             when,
           });
         }
       }
 
       if (typeSet.has("pr_opened")) {
-        const opened = await this.fetchPrs(repoArg, "open", sinceDate);
-        for (const pr of opened) {
-          const when = pr.createdAt;
+        const opened = await this.ghFetch<RestPr[]>(
+          `${repoPath}/pulls?state=open&sort=created&direction=desc&per_page=${PER_TYPE_LIMIT}`,
+          token,
+        );
+        if (!opened.ok) throw this.toFetchError(opened, token);
+        for (const pr of opened.data) {
+          const when = pr.created_at;
           if (!when) continue;
           if (new Date(when).getTime() < sinceMs) continue;
           counts.pr_opened += 1;
@@ -129,17 +144,23 @@ export class GithubActivityService {
             id: `pr-opened-${pr.number}`,
             type: "pr_opened",
             title: pr.title,
-            url: pr.url,
-            actor: authorOf(pr.author),
+            url: pr.html_url,
+            actor: pr.user?.login ?? undefined,
             when,
           });
         }
       }
 
       if (typeSet.has("issue_opened")) {
-        const issues = await this.fetchIssues(repoArg, sinceDate);
-        for (const iss of issues) {
-          const when = iss.createdAt;
+        const issues = await this.ghFetch<RestIssue[]>(
+          `${repoPath}/issues?state=open&sort=created&direction=desc&per_page=${PER_TYPE_LIMIT}`,
+          token,
+        );
+        if (!issues.ok) throw this.toFetchError(issues, token);
+        for (const iss of issues.data) {
+          // The /issues endpoint returns PRs too; filter them out.
+          if (iss.pull_request) continue;
+          const when = iss.created_at;
           if (!when) continue;
           if (new Date(when).getTime() < sinceMs) continue;
           counts.issue_opened += 1;
@@ -147,37 +168,44 @@ export class GithubActivityService {
             id: `issue-${iss.number}`,
             type: "issue_opened",
             title: iss.title,
-            url: iss.url,
-            actor: authorOf(iss.author),
+            url: iss.html_url,
+            actor: iss.user?.login ?? undefined,
             when,
           });
         }
       }
 
+      // Latest release: independent of the lookback window. Fetched only
+      // when the user has the "release" type enabled. If the repo has no
+      // releases yet, `latestRelease` stays undefined.
       if (typeSet.has("release")) {
-        const releases = await this.fetchReleases(repoArg);
-        for (const rel of releases) {
-          const when = rel.publishedAt;
-          if (!when) continue;
-          if (new Date(when).getTime() < sinceMs) continue;
-          counts.release += 1;
-          items.push({
-            id: `release-${rel.tagName ?? rel.name ?? when}`,
-            type: "release",
-            title: rel.name || rel.tagName || "Release",
-            url: rel.url || `https://github.com/${repoArg}/releases`,
-            when,
-          });
+        const releases = await this.ghFetch<RestRelease[]>(
+          `${repoPath}/releases?per_page=1`,
+          token,
+        );
+        if (!releases.ok) throw this.toFetchError(releases, token);
+        const latest = releases.data[0];
+        if (latest?.published_at) {
+          latestRelease = {
+            name: latest.name,
+            tagName: latest.tag_name,
+            url: latest.html_url,
+            publishedAt: latest.published_at,
+          };
         }
       }
     } catch (error) {
-      log.warn("github activity fetch failed", { repo: repoArg, error });
+      log.warn("github activity fetch failed", {
+        repo: `${repo.owner}/${repo.name}`,
+        error,
+      });
       const message =
         error instanceof Error ? error.message : "Failed to fetch activity";
       return {
         fetchedAt,
         windowDays,
         counts,
+        latestRelease,
         recent: [],
         error: message,
       };
@@ -186,100 +214,31 @@ export class GithubActivityService {
     items.sort((a, b) => (a.when < b.when ? 1 : a.when > b.when ? -1 : 0));
     const recent = items.slice(0, RECENT_LIMIT);
 
-    return { fetchedAt, windowDays, counts, recent };
+    return { fetchedAt, windowDays, counts, latestRelease, recent };
   }
 
-  private async fetchPrs(
-    repoArg: string,
-    state: "merged" | "open",
-    sinceDate: string,
-  ): Promise<GhPrJson[]> {
-    const searchKey = state === "merged" ? "merged" : "created";
-    const args = [
-      "pr",
-      "list",
-      "--repo",
-      repoArg,
-      "--state",
-      state,
-      "--search",
-      `${searchKey}:>=${sinceDate}`,
-      "--json",
-      "number,title,url,mergedAt,createdAt,author",
-      "--limit",
-      String(PER_TYPE_LIMIT),
-    ];
-    const result = await execGh(args);
-    if (result.exitCode !== 0) {
-      throw new Error(
-        result.stderr.trim() ||
-          result.error ||
-          `gh pr list (${state}) failed for ${repoArg}`,
+  /** Translate a non-2xx REST response into a friendly Error. 404s and 403s
+   *  on private repos usually mean the user needs to authenticate. */
+  private toFetchError(
+    failure: { status: number; body: string },
+    token: string | null,
+  ): Error {
+    if (failure.status === 404) {
+      return new Error(
+        token
+          ? "Repository not found, or your GitHub token doesn't have access to it."
+          : "Repository not found. If it's private, sign in to GitHub (run `gh auth login`) so PostHog Code can see it.",
       );
     }
-    try {
-      return JSON.parse(result.stdout) as GhPrJson[];
-    } catch {
-      return [];
-    }
-  }
-
-  private async fetchIssues(
-    repoArg: string,
-    sinceDate: string,
-  ): Promise<GhIssueJson[]> {
-    const args = [
-      "issue",
-      "list",
-      "--repo",
-      repoArg,
-      "--state",
-      "all",
-      "--search",
-      `created:>=${sinceDate}`,
-      "--json",
-      "number,title,url,createdAt,author",
-      "--limit",
-      String(PER_TYPE_LIMIT),
-    ];
-    const result = await execGh(args);
-    if (result.exitCode !== 0) {
-      throw new Error(
-        result.stderr.trim() ||
-          result.error ||
-          `gh issue list failed for ${repoArg}`,
+    if (failure.status === 401 || failure.status === 403) {
+      return new Error(
+        token
+          ? "GitHub rejected the request – your token may be expired or missing scope (re-run `gh auth login`)."
+          : "GitHub rate limit hit for unauthenticated requests. Run `gh auth login` to use your account.",
       );
     }
-    try {
-      return JSON.parse(result.stdout) as GhIssueJson[];
-    } catch {
-      return [];
-    }
-  }
-
-  private async fetchReleases(repoArg: string): Promise<GhReleaseJson[]> {
-    const args = [
-      "release",
-      "list",
-      "--repo",
-      repoArg,
-      "--limit",
-      "20",
-      "--json",
-      "name,tagName,publishedAt,url",
-    ];
-    const result = await execGh(args);
-    if (result.exitCode !== 0) {
-      throw new Error(
-        result.stderr.trim() ||
-          result.error ||
-          `gh release list failed for ${repoArg}`,
-      );
-    }
-    try {
-      return JSON.parse(result.stdout) as GhReleaseJson[];
-    } catch {
-      return [];
-    }
+    return new Error(
+      `GitHub API ${failure.status}: ${failure.body.slice(0, 200)}`,
+    );
   }
 }

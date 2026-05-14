@@ -16,6 +16,7 @@ import { ElectronClipboard } from "../platform-adapters/electron-clipboard";
 import { ElectronContextMenu } from "../platform-adapters/electron-context-menu";
 import { ElectronDialog } from "../platform-adapters/electron-dialog";
 import { ElectronFileIcon } from "../platform-adapters/electron-file-icon";
+import { ElectronFileLauncher } from "../platform-adapters/electron-file-launcher";
 import { ElectronImageProcessor } from "../platform-adapters/electron-image-processor";
 import { ElectronMainWindow } from "../platform-adapters/electron-main-window";
 import { ElectronNotifier } from "../platform-adapters/electron-notifier";
@@ -76,6 +77,7 @@ export const container = new Container({
 });
 
 container.bind(MAIN_TOKENS.UrlLauncher).to(ElectronUrlLauncher);
+container.bind(MAIN_TOKENS.FileLauncher).to(ElectronFileLauncher);
 container.bind(MAIN_TOKENS.StoragePaths).to(ElectronStoragePaths);
 container.bind(MAIN_TOKENS.AppMeta).to(ElectronAppMeta);
 container.bind(MAIN_TOKENS.Dialog).to(ElectronDialog);

@@ -3,6 +3,7 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: [
     "src/url-launcher.ts",
+    "src/file-launcher.ts",
     "src/storage-paths.ts",
     "src/app-meta.ts",
     "src/dialog.ts",

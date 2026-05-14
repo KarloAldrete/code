@@ -847,6 +847,36 @@ export class PostHogAPIClient {
     return data.results ?? [];
   }
 
+  /** Enable PostHog's insight sharing and return the access token used to
+   *  iframe-embed the insight at `{cloudUrl}/embedded/{token}`. If sharing is
+   *  already enabled this returns the existing token (PostHog's PATCH is
+   *  idempotent and round-trips the same `access_token`). */
+  async enableInsightSharing(
+    projectId: number,
+    insightId: number,
+  ): Promise<{ accessToken: string }> {
+    const urlPath = `/api/projects/${projectId}/insights/${insightId}/sharing/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "patch",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({ enabled: true }),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to enable insight sharing: ${response.statusText}`,
+      );
+    }
+    const data = (await response.json()) as { access_token?: string };
+    if (!data.access_token) {
+      throw new Error("PostHog returned no access_token for sharing config.");
+    }
+    return { accessToken: data.access_token };
+  }
+
   async runQuery<TResult = unknown>(
     projectId: number,
     query: Record<string, unknown>,

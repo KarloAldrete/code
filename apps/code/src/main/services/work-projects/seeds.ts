@@ -74,13 +74,12 @@ const launchTiles: Tile[] = [
   }),
   tile({
     id: "seed-launch-file",
-    type: "file",
+    type: "note",
     size: "md",
     state: "live",
     origin: "seed",
-    filename: "Launch plan.md",
-    contents:
-      "# Launch plan\n\n- Waitlist conversion ramp\n- ICP outreach\n- Feedback monitoring\n- Billing health\n",
+    body: "# Launch plan\n\n- Waitlist conversion ramp\n- ICP outreach\n- Feedback monitoring\n- Billing health\n",
+    tone: "neutral",
   }),
   tile({
     id: "seed-launch-skill",
@@ -143,13 +142,12 @@ const voiceTiles: Tile[] = [
   }),
   tile({
     id: "seed-voice-file",
-    type: "file",
+    type: "note",
     size: "md",
     state: "live",
     origin: "seed",
-    filename: "Interview themes.md",
-    contents:
-      "# Interview themes\n\n## Themes\n\n- Onboarding friction at install step\n- Wants per-project memory in chat\n- Asks for shareable canvases\n",
+    body: "# Interview themes\n\n## Themes\n\n- Onboarding friction at install step\n- Wants per-project memory in chat\n- Asks for shareable canvases\n",
+    tone: "neutral",
   }),
   tile({
     id: "seed-voice-note",

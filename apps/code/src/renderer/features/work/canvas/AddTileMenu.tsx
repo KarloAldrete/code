@@ -33,13 +33,12 @@ const CONTENT_OPTIONS: TileTypeOption[] = [
   },
   {
     type: "file",
-    label: "File",
-    description: "Markdown doc, editable inline.",
+    label: "Files",
+    description: "List of files on your computer.",
     icon: FileText,
     factory: () => ({
       type: "file",
-      filename: "untitled.md",
-      contents: "# New file\n",
+      items: [],
       size: "md",
     }),
   },

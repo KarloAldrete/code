@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { IAppMeta } from "@posthog/platform/app-meta";
 import type { DialogSeverity, IDialog } from "@posthog/platform/dialog";
+import type { IFileLauncher } from "@posthog/platform/file-launcher";
 import type { IImageProcessor } from "@posthog/platform/image-processor";
 import type { IUrlLauncher } from "@posthog/platform/url-launcher";
 import { IMAGE_MIME_TYPES } from "@shared/constants/image";
@@ -16,6 +17,8 @@ const fsPromises = fs.promises;
 
 const getUrlLauncher = () =>
   container.get<IUrlLauncher>(MAIN_TOKENS.UrlLauncher);
+const getFileLauncher = () =>
+  container.get<IFileLauncher>(MAIN_TOKENS.FileLauncher);
 const getDialog = () => container.get<IDialog>(MAIN_TOKENS.Dialog);
 const getAppMeta = () => container.get<IAppMeta>(MAIN_TOKENS.AppMeta);
 const getImageProcessor = () =>
@@ -222,6 +225,80 @@ export const osRouter = router({
     .input(z.object({ url: z.string() }))
     .mutation(async ({ input }) => {
       await getUrlLauncher().launch(input.url);
+    }),
+
+  /**
+   * Open a file or directory in the OS default application.
+   * Returns an error string from Electron when the path can't be opened
+   * (missing, no associated app, etc.) so the caller can surface it.
+   */
+  openFile: publicProcedure
+    .input(z.object({ filePath: z.string() }))
+    .output(z.object({ ok: z.boolean(), error: z.string().nullable() }))
+    .mutation(async ({ input }) => {
+      return await getFileLauncher().openPath(input.filePath);
+    }),
+
+  /**
+   * Reveal a file in Finder/Explorer.
+   */
+  showInFolder: publicProcedure
+    .input(z.object({ filePath: z.string() }))
+    .mutation(async ({ input }) => {
+      await getFileLauncher().showInFolder(input.filePath);
+      return { ok: true };
+    }),
+
+  /**
+   * Stat one or more absolute paths. Used by the project canvas's
+   * file-list tile to display name, parent folder, size, mtime, and
+   * existence without the renderer touching the filesystem directly.
+   */
+  statFiles: publicProcedure
+    .input(z.object({ paths: z.array(z.string()) }))
+    .output(
+      z.array(
+        z.object({
+          path: z.string(),
+          exists: z.boolean(),
+          isDirectory: z.boolean(),
+          name: z.string(),
+          parentDir: z.string(),
+          size: z.number().nullable(),
+          mtime: z.string().nullable(),
+        }),
+      ),
+    )
+    .query(async ({ input }) => {
+      const results = await Promise.all(
+        input.paths.map(async (p) => {
+          const name = path.basename(p);
+          const parentDir = path.dirname(p);
+          try {
+            const stat = await fsPromises.stat(p);
+            return {
+              path: p,
+              exists: true,
+              isDirectory: stat.isDirectory(),
+              name,
+              parentDir,
+              size: stat.isFile() ? stat.size : null,
+              mtime: stat.mtime.toISOString(),
+            };
+          } catch {
+            return {
+              path: p,
+              exists: false,
+              isDirectory: false,
+              name,
+              parentDir,
+              size: null,
+              mtime: null,
+            };
+          }
+        }),
+      );
+      return results;
     }),
 
   /**

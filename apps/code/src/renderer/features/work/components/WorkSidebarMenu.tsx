@@ -102,8 +102,19 @@ export function WorkSidebarMenu() {
     workView === "scheduled-create-prompt" ||
     workView === "scheduled-edit";
   const isDataSourcesActive = workView === "data-sources";
-  const isProjectsActive = workView === "projects";
+  // Keep the Projects nav item lit while a project is open – the open project
+  // shows as a sub-item, so the parent remains the "active section".
+  const isProjectsActive = workView === "projects" || isProjectDetailActive;
   const isMemoryActive = workView === "memory";
+
+  const activeProject = useMemo(() => {
+    if (!isProjectDetailActive || !workSelectedProjectId) return null;
+    return (
+      (allProjects ?? []).find((p) => p.id === workSelectedProjectId) ?? null
+    );
+  }, [isProjectDetailActive, workSelectedProjectId, allProjects]);
+  const showActiveAsSubItem =
+    !!activeProject && !pinnedProjects.some((p) => p.id === activeProject.id);
 
   const threadsWithTasks: { id: string; task: Task }[] = threadTasks.map(
     (task) => ({ id: task.id, task }),
@@ -163,35 +174,55 @@ export function WorkSidebarMenu() {
                   isActive={isActive}
                   onClick={onClick}
                 />
-                {isProjects && pinnedProjects.length > 0 && (
-                  <Flex direction="column" gap="1px">
-                    {pinnedProjects.map((project) => {
-                      const ProjectIcon =
-                        PROJECT_ICON_MAP[project.iconId] ??
-                        PROJECT_ICON_MAP.lightbulb;
-                      const isProjectActive =
-                        isProjectDetailActive &&
-                        workSelectedProjectId === project.id;
-                      return (
-                        <SidebarItem
-                          key={project.id}
-                          depth={1}
-                          icon={
-                            <ProjectIcon
-                              size={14}
-                              weight={isProjectActive ? "fill" : "regular"}
+                {isProjects &&
+                  (pinnedProjects.length > 0 || showActiveAsSubItem) && (
+                    <Flex direction="column" gap="1px">
+                      {pinnedProjects.map((project) => {
+                        const ProjectIcon =
+                          PROJECT_ICON_MAP[project.iconId] ??
+                          PROJECT_ICON_MAP.lightbulb;
+                        const isProjectActive =
+                          isProjectDetailActive &&
+                          workSelectedProjectId === project.id;
+                        return (
+                          <SidebarItem
+                            key={project.id}
+                            depth={1}
+                            icon={
+                              <ProjectIcon
+                                size={14}
+                                weight={isProjectActive ? "fill" : "regular"}
+                              />
+                            }
+                            label={project.name}
+                            isActive={isProjectActive}
+                            onClick={() =>
+                              navigateToWorkProjectDetail(project.id)
+                            }
+                          />
+                        );
+                      })}
+                      {showActiveAsSubItem &&
+                        activeProject &&
+                        (() => {
+                          const ProjectIcon =
+                            PROJECT_ICON_MAP[activeProject.iconId] ??
+                            PROJECT_ICON_MAP.lightbulb;
+                          return (
+                            <SidebarItem
+                              key={activeProject.id}
+                              depth={1}
+                              icon={<ProjectIcon size={14} weight="fill" />}
+                              label={activeProject.name}
+                              isActive
+                              onClick={() =>
+                                navigateToWorkProjectDetail(activeProject.id)
+                              }
                             />
-                          }
-                          label={project.name}
-                          isActive={isProjectActive}
-                          onClick={() =>
-                            navigateToWorkProjectDetail(project.id)
-                          }
-                        />
-                      );
-                    })}
-                  </Flex>
-                )}
+                          );
+                        })()}
+                    </Flex>
+                  )}
               </Box>
             );
           })}

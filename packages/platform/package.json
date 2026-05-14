@@ -8,6 +8,10 @@
       "types": "./dist/url-launcher.d.ts",
       "import": "./dist/url-launcher.js"
     },
+    "./file-launcher": {
+      "types": "./dist/file-launcher.d.ts",
+      "import": "./dist/file-launcher.js"
+    },
     "./storage-paths": {
       "types": "./dist/storage-paths.d.ts",
       "import": "./dist/storage-paths.js"

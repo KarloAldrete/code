@@ -1,3 +1,4 @@
+import { useOptionalAuthenticatedClient } from "@features/auth/hooks/authClient";
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import {
@@ -15,90 +16,8 @@ import { getCloudUrlFromRegion } from "@shared/utils/urls";
 import { openUrlInBrowser } from "@utils/browser";
 import { memo, useMemo, useState } from "react";
 import { TileFrame } from "../TileFrame";
-
-interface TrendsResult {
-  data: number[];
-  labels: string[];
-  days: string[];
-  count?: number;
-  aggregated_value?: number;
-  label?: string;
-}
-
-interface TrendsResponse {
-  results: TrendsResult[];
-}
-
-function formatCompactNumber(n: number): string {
-  return new Intl.NumberFormat("en-US").format(Math.round(n));
-}
-
-function describeDelta(values: number[]): string | null {
-  if (values.length < 4) return null;
-  const half = Math.floor(values.length / 2);
-  const recent = values.slice(values.length - half);
-  const prior = values.slice(values.length - half * 2, values.length - half);
-  const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
-  const recentSum = sum(recent);
-  const priorSum = sum(prior);
-  if (priorSum === 0) {
-    return recentSum > 0 ? `+${formatCompactNumber(recentSum)} vs. 0` : null;
-  }
-  const ratio = recentSum / priorSum;
-  if (ratio >= 2) {
-    return `+${ratio.toFixed(1)}× vs. prior ${half} days`;
-  }
-  const pct = ((recentSum - priorSum) / priorSum) * 100;
-  const sign = pct >= 0 ? "+" : "";
-  return `${sign}${pct.toFixed(0)}% vs. prior ${half} days`;
-}
-
-function SparklineBars({
-  values,
-  labels,
-}: {
-  values: number[];
-  labels?: string[];
-}) {
-  const width = 220;
-  const height = 40;
-  const gap = 2;
-  const n = values.length;
-  if (n === 0) return null;
-  const max = Math.max(...values, 1);
-  const barWidth = Math.max(1, (width - gap * (n - 1)) / n);
-  return (
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
-      width="100%"
-      height={height}
-      preserveAspectRatio="none"
-      role="img"
-      aria-label="Trend sparkline"
-    >
-      <title>Trend sparkline</title>
-      {values.map((v, i) => {
-        const h = Math.max(1, (v / max) * (height - 2));
-        const x = i * (barWidth + gap);
-        const y = height - h;
-        return (
-          <rect
-            // biome-ignore lint/suspicious/noArrayIndexKey: stable positional bars
-            key={i}
-            x={x}
-            y={y}
-            width={barWidth}
-            height={h}
-            fill="var(--green-11)"
-            rx={1}
-          >
-            <title>{labels?.[i] ? `${labels[i]}: ${v}` : String(v)}</title>
-          </rect>
-        );
-      })}
-    </svg>
-  );
-}
+import { InsightFrame } from "./headline/InsightFrame";
+import { SparklineBars } from "./headline/viz/SparklineBars";
 
 interface HeadlineTileProps {
   tile: HeadlineTileType;
@@ -111,7 +30,12 @@ interface HeadlineTileProps {
   onUpdate?: (patch: {
     label?: string;
     liveLabel?: string;
-    query?: { posthogProjectId: number; body: Record<string, unknown> };
+    query?: {
+      posthogProjectId: number;
+      body: Record<string, unknown>;
+      insightShortId?: string;
+      shareToken?: string;
+    };
     posthogUrl?: string;
     fallbackValue?: string;
     fallbackDelta?: string;
@@ -198,53 +122,8 @@ function LiveHeadline({
   onEdit,
   onClearQuery: _onClearQuery,
 }: LiveHeadlineProps) {
-  const query = tile.query;
-  const { data, isLoading, isError } = useAuthenticatedQuery<TrendsResponse>(
-    [
-      "work-project-headline",
-      tile.id,
-      query?.posthogProjectId,
-      JSON.stringify(query?.body ?? null),
-    ],
-    (client) =>
-      client.runQuery<TrendsResponse>(
-        // biome-ignore lint/style/noNonNullAssertion: gated by enabled below
-        query!.posthogProjectId,
-        // biome-ignore lint/style/noNonNullAssertion: gated by enabled below
-        query!.body,
-      ),
-    {
-      enabled: !!query,
-      staleTime: 60_000,
-      refetchOnWindowFocus: false,
-    },
-  );
-
-  const series = data?.results?.[0];
-  const liveValues = series?.data;
-  const liveLabels = series?.labels;
-  const liveTotal = series?.aggregated_value ?? series?.count;
-
-  const usingLive = !!liveValues && liveValues.length > 0;
-  const values = usingLive ? liveValues : tile.fallbackSparkline;
-  const labels = usingLive ? liveLabels : undefined;
-  const valueText = usingLive
-    ? formatCompactNumber(liveTotal ?? liveValues.reduce((a, b) => a + b, 0))
-    : tile.fallbackValue;
-  const deltaText = usingLive
-    ? (describeDelta(liveValues) ?? tile.fallbackDelta)
-    : tile.fallbackDelta;
-  const label = usingLive ? (tile.liveLabel ?? tile.label) : tile.label;
-
-  const statusLabel = isError
-    ? "Last refresh failed"
-    : isLoading && !usingLive
-      ? "Loading…"
-      : usingLive
-        ? "Live"
-        : query
-          ? "Cached"
-          : "Snapshot";
+  const shareToken = tile.query?.shareToken;
+  const label = shareToken ? (tile.liveLabel ?? tile.label) : tile.label;
 
   return (
     <TileFrame
@@ -285,41 +164,51 @@ function LiveHeadline({
       onApplyPending={onApplyPending}
       onRejectPending={onRejectPending}
     >
-      <Box className="px-4 py-3">
-        <Flex align="center" gap="2">
-          <Box
-            className={`h-1.5 w-1.5 rounded-full ${
-              isError
-                ? "bg-(--red-9)"
-                : usingLive
-                  ? "animate-pulse bg-(--green-9)"
-                  : "bg-(--gray-8)"
-            }`}
-          />
-          <Text
-            as="span"
-            className="text-(--gray-10) text-[11px] uppercase tracking-wide"
-          >
-            {statusLabel}
-          </Text>
-        </Flex>
-        <Flex align="baseline" gap="3" className="mt-1">
-          <Text
-            as="span"
-            weight="medium"
-            className="text-(--gray-12) text-[32px] leading-tight"
-          >
-            {valueText}
-          </Text>
-          <Text as="span" className="text-(--green-11) text-[12px]">
-            {deltaText}
-          </Text>
-        </Flex>
-        <Box className="mt-2">
-          <SparklineBars values={values} labels={labels} />
-        </Box>
-      </Box>
+      {shareToken ? (
+        <InsightFrame shareToken={shareToken} posthogUrl={tile.posthogUrl} />
+      ) : (
+        <SnapshotBody tile={tile} />
+      )}
     </TileFrame>
+  );
+}
+
+/** Rendered when there's no PostHog sharing token to embed — either because
+ *  the tile was proposed by the agent (snapshot values only) or because the
+ *  sharing mint failed at pick time. Shows the agent-provided fallback as a
+ *  number + sparkline. */
+function SnapshotBody({ tile }: { tile: HeadlineTileType }) {
+  return (
+    <Box className="px-4 py-3">
+      <Flex align="center" gap="2">
+        <Box className="h-1.5 w-1.5 rounded-full bg-(--gray-8)" />
+        <Text
+          as="span"
+          className="text-(--gray-10) text-[11px] uppercase tracking-wide"
+        >
+          Snapshot
+        </Text>
+      </Flex>
+      <Flex align="baseline" gap="3" className="mt-1">
+        <Text
+          as="span"
+          weight="medium"
+          className="text-(--gray-12) text-[32px] leading-tight"
+        >
+          {tile.fallbackValue}
+        </Text>
+        {tile.fallbackDelta && (
+          <Text as="span" className="text-(--green-11) text-[12px]">
+            {tile.fallbackDelta}
+          </Text>
+        )}
+      </Flex>
+      {tile.fallbackSparkline.length > 0 && (
+        <Box className="mt-2">
+          <SparklineBars values={tile.fallbackSparkline} />
+        </Box>
+      )}
+    </Box>
   );
 }
 
@@ -334,7 +223,12 @@ interface InsightSummary {
 
 interface PickedInsight {
   label: string;
-  query: { posthogProjectId: number; body: Record<string, unknown> };
+  query: {
+    posthogProjectId: number;
+    body: Record<string, unknown>;
+    insightShortId?: string;
+    shareToken?: string;
+  };
   posthogUrl: string;
 }
 
@@ -361,14 +255,21 @@ function extractQueryBody(
   if (kind === "InsightVizNode" && typeof raw.source === "object") {
     return raw.source as Record<string, unknown>;
   }
-  if (kind === "TrendsQuery") return raw;
+  // Any node with a `kind` is a runnable `/query/` body. Legacy `filters`-only
+  // insights (no `kind`) aren't supported and are filtered out at the picker.
+  if (kind) return raw;
   return null;
 }
 
-function insightSupports(insight: InsightSummary): boolean {
-  const body = extractQueryBody(insight.query);
-  if (!body) return false;
-  return body.kind === "TrendsQuery";
+/** Short kind chip shown next to each insight in the picker. Unwraps
+ *  InsightVizNode to find the inner query kind. */
+function readKindLabel(body: Record<string, unknown>): string | null {
+  const top = typeof body.kind === "string" ? body.kind : null;
+  if (top === "InsightVizNode" && typeof body.source === "object") {
+    const inner = (body.source as Record<string, unknown>).kind;
+    if (typeof inner === "string") return inner.replace(/Query$/, "");
+  }
+  return top ? top.replace(/Query$/, "") : null;
 }
 
 function displayName(insight: InsightSummary): string {
@@ -390,7 +291,9 @@ function InsightPicker({
   const [search, setSearch] = useState("");
   const projectId = useAuthStateValue((s) => s.projectId);
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
+  const client = useOptionalAuthenticatedClient();
   const [picking, setPicking] = useState(false);
+  const [pickError, setPickError] = useState<string | null>(null);
 
   const { data, isLoading, isError, error } = useAuthenticatedQuery<
     InsightSummary[]
@@ -410,18 +313,46 @@ function InsightPicker({
     },
   );
 
-  const filtered = useMemo(() => (data ?? []).filter(insightSupports), [data]);
+  // Drop legacy `filters`-only insights with no runnable query body; everything
+  // else is fair game and gets embedded via its sharing token.
+  const filtered = useMemo(
+    () => (data ?? []).filter((i) => extractQueryBody(i.query) !== null),
+    [data],
+  );
 
   const handlePick = async (insight: InsightSummary) => {
-    if (!projectId || !cloudRegion || picking) return;
+    if (!projectId || !cloudRegion || !client || picking) return;
     const body = extractQueryBody(insight.query);
     if (!body) return;
     setPicking(true);
+    setPickError(null);
     try {
       const cloudUrl = getCloudUrlFromRegion(cloudRegion);
+      let shareToken: string | undefined;
+      try {
+        const { accessToken } = await client.enableInsightSharing(
+          projectId,
+          insight.id,
+        );
+        shareToken = accessToken;
+      } catch (err) {
+        // We still want to land the pick so the user has a tile pointing at
+        // their insight; the iframe falls back to the snapshot body. The
+        // user can re-pick later (or hit "View in PostHog").
+        setPickError(
+          err instanceof Error
+            ? `Couldn't enable preview: ${err.message}`
+            : "Couldn't enable preview.",
+        );
+      }
       await onPick({
         label: displayName(insight),
-        query: { posthogProjectId: projectId, body },
+        query: {
+          posthogProjectId: projectId,
+          body,
+          insightShortId: insight.short_id,
+          ...(shareToken ? { shareToken } : {}),
+        },
         posthogUrl: `${cloudUrl}/project/${projectId}/insights/${insight.short_id}`,
       });
     } finally {
@@ -463,6 +394,13 @@ function InsightPicker({
           </Flex>
         ) : (
           <>
+            {pickError && (
+              <Box className="shrink-0 border-(--red-5) border-b bg-(--red-2) px-3 py-1.5">
+                <Text as="span" className="text-(--red-11) text-[11px]">
+                  {pickError}
+                </Text>
+              </Box>
+            )}
             <Box className="shrink-0 border-(--gray-4) border-b px-3 py-2">
               <Flex
                 align="center"
@@ -508,37 +446,51 @@ function InsightPicker({
                   className="h-full px-4 py-6 text-center text-(--gray-10) text-[12px]"
                 >
                   {search
-                    ? `No trends insights match "${search}".`
-                    : "No trends insights in this project yet."}
+                    ? `No insights match "${search}".`
+                    : "No insights in this project yet."}
                 </Flex>
               ) : (
                 <Flex direction="column">
-                  {filtered.map((insight) => (
-                    <button
-                      key={insight.id}
-                      type="button"
-                      disabled={picking}
-                      onClick={() => {
-                        void handlePick(insight);
-                      }}
-                      className="flex w-full flex-col items-start gap-0.5 border-(--gray-3) border-b px-4 py-2 text-left transition-colors last:border-b-0 hover:bg-(--gray-2) disabled:cursor-wait disabled:opacity-60"
-                    >
-                      <Text
-                        as="span"
-                        className="truncate text-(--gray-12) text-[12px] leading-tight"
+                  {filtered.map((insight) => {
+                    const body = extractQueryBody(insight.query);
+                    const kindLabel = body ? readKindLabel(body) : null;
+                    return (
+                      <button
+                        key={insight.id}
+                        type="button"
+                        disabled={picking}
+                        onClick={() => {
+                          void handlePick(insight);
+                        }}
+                        className="flex w-full flex-col items-start gap-0.5 border-(--gray-3) border-b px-4 py-2 text-left transition-colors last:border-b-0 hover:bg-(--gray-2) disabled:cursor-wait disabled:opacity-60"
                       >
-                        {displayName(insight)}
-                      </Text>
-                      {insight.description && (
-                        <Text
-                          as="span"
-                          className="truncate text-(--gray-10) text-[11px] leading-snug"
-                        >
-                          {insight.description}
-                        </Text>
-                      )}
-                    </button>
-                  ))}
+                        <Flex align="center" gap="2" className="w-full min-w-0">
+                          <Text
+                            as="span"
+                            className="min-w-0 truncate text-(--gray-12) text-[12px] leading-tight"
+                          >
+                            {displayName(insight)}
+                          </Text>
+                          {kindLabel && (
+                            <Text
+                              as="span"
+                              className="shrink-0 rounded-(--radius-1) bg-(--gray-3) px-1 py-px text-(--gray-10) text-[10px] uppercase tracking-wide"
+                            >
+                              {kindLabel}
+                            </Text>
+                          )}
+                        </Flex>
+                        {insight.description && (
+                          <Text
+                            as="span"
+                            className="truncate text-(--gray-10) text-[11px] leading-snug"
+                          >
+                            {insight.description}
+                          </Text>
+                        )}
+                      </button>
+                    );
+                  })}
                 </Flex>
               )}
             </Box>

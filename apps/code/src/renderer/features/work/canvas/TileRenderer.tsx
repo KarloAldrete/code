@@ -32,7 +32,10 @@ interface TileRendererProps {
     body?: string;
     tone?: "yellow" | "blue" | "green" | "pink" | "neutral";
   }) => void;
-  onUpdateFileTile?: (patch: { filename?: string; contents?: string }) => void;
+  onUpdateFileTile?: (patch: {
+    title?: string;
+    items?: Array<{ path: string; addedAt: string }>;
+  }) => Promise<void>;
   onUpdateChecklistItems?: (
     items: Array<{ text: string; done: boolean }>,
   ) => void;

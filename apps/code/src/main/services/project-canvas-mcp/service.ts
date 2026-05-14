@@ -317,47 +317,16 @@ export class ProjectCanvasMcpService {
     );
 
     server.tool(
-      "propose_tile_file",
-      "Propose a file tile with markdown contents. Use for written findings, hypothesis lists, brief writeups, summaries — anything that benefits from prose with structure. Arrives as a ghost tile.",
-      {
-        projectId: projectIdField,
-        filename: z
-          .string()
-          .describe("Filename like 'hypotheses.md' or 'monday-brief.md'."),
-        contents: z
-          .string()
-          .describe(
-            "Full markdown body. Keep it tight — bullets > paragraphs.",
-          ),
-      },
-      async (args) => {
-        log.info("Tool call: propose_tile_file", {
-          projectId: args.projectId,
-          filename: args.filename,
-        });
-        const updated = this.workProjects.addTile(
-          args.projectId,
-          {
-            type: "file",
-            filename: args.filename,
-            contents: args.contents,
-          },
-          { state: "pending_add", origin: "chat" },
-        );
-        return toolText(
-          updated
-            ? `File tile proposed on project ${args.projectId}.`
-            : `Project ${args.projectId} not found.`,
-        );
-      },
-    );
-
-    server.tool(
       "propose_tile_note",
-      "Propose a small sticky-note tile. Use for short callouts, open questions, or annotations — NOT for primary findings (use propose_tile_file for those).",
+      "Propose a sticky-note tile. Renders markdown so it's the right place for written findings, hypothesis lists, callouts, open questions, or annotations.",
       {
         projectId: projectIdField,
-        body: z.string().max(280).describe("Sticky note body, ≤280 chars."),
+        body: z
+          .string()
+          .max(4000)
+          .describe(
+            "Note body in markdown. Headings, bullets, checklists, and links are all rendered.",
+          ),
         tone: z.enum(NOTE_TONES).optional().describe("Sticky-note color tone."),
       },
       async (args) => {
@@ -383,7 +352,7 @@ export class ProjectCanvasMcpService {
 
     server.tool(
       "propose_tile_artifact",
-      `Propose a rich "artifact" tile on the canvas — checklist, table, chart, code, or embed. ONE tile type, multiple kinds. Use this when none of propose_tile_{headline,insight,file,note} fit. Pass the right shape in \`data\` for the chosen \`kind\`:
+      `Propose a rich "artifact" tile on the canvas — checklist, table, chart, code, or embed. ONE tile type, multiple kinds. Use this when none of propose_tile_{headline,insight,note} fit. Pass the right shape in \`data\` for the chosen \`kind\`:
 
 - kind="checklist": data = { items: [{ text: string, done: boolean }, ...] }
 - kind="table":     data = { headers: string[], rows: string[][] }
@@ -501,8 +470,8 @@ Arrives as a ghost tile the user reviews before it's accepted.`,
             if (t.type === "file") {
               return {
                 ...base,
-                filename: t.filename,
-                preview: t.contents.slice(0, 200),
+                title: t.title,
+                items: t.items.map((i) => i.path),
               };
             }
             if (t.type === "note") {

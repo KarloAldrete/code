@@ -110,7 +110,10 @@ export function ProjectHeader({
           if (t.type === "note") return `• ${t.body.split("\n")[0] || "Note"}`;
           if (t.type === "headline") return `• ${t.label}`;
           if (t.type === "insight") return `• ${t.title}`;
-          if (t.type === "file") return `• File: ${t.filename}`;
+          if (t.type === "file") {
+            const label = t.title ?? "Files";
+            return `• ${label} (${t.items.length})`;
+          }
           if (t.type === "skill_output") return `• Skill: ${t.skillName}`;
           return null;
         })

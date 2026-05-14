@@ -61,7 +61,10 @@ interface ProjectCanvasProps {
   ) => Promise<void>;
   onUpdateFileTile: (
     tileId: string,
-    patch: { filename?: string; contents?: string },
+    patch: {
+      title?: string;
+      items?: Array<{ path: string; addedAt: string }>;
+    },
   ) => Promise<void>;
   onUpdateChecklistItems: (
     tileId: string,
@@ -260,8 +263,8 @@ export function ProjectCanvas({
                         onUpdateNoteTile={(patch) => {
                           void onUpdateNoteTile(tile.id, patch);
                         }}
-                        onUpdateFileTile={(patch) => {
-                          void onUpdateFileTile(tile.id, patch);
+                        onUpdateFileTile={async (patch) => {
+                          await onUpdateFileTile(tile.id, patch);
                         }}
                         onUpdateChecklistItems={(items) => {
                           void onUpdateChecklistItems(tile.id, items);
@@ -322,13 +325,12 @@ function EmptyState({
       }),
     },
     {
-      label: "A file",
-      description: "Draft a doc the team can edit.",
+      label: "Files",
+      description: "Link files from your computer.",
       icon: FileText,
       factory: () => ({
         type: "file",
-        filename: "untitled.md",
-        contents: "# New file\n",
+        items: [],
         size: "md",
       }),
     },

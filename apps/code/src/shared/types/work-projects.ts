@@ -73,7 +73,7 @@ export const titleTile = tileBase.extend({
 });
 export type TitleTile = z.infer<typeof titleTile>;
 
-const trendsQueryBody = z.record(z.string(), z.unknown());
+const insightQueryBody = z.record(z.string(), z.unknown());
 
 export const headlineTile = tileBase.extend({
   type: z.literal("headline"),
@@ -84,11 +84,18 @@ export const headlineTile = tileBase.extend({
   fallbackValue: z.string(),
   fallbackDelta: z.string(),
   fallbackSparkline: z.array(z.number()),
-  /** PostHog `/query/` body. When omitted the tile renders the fallback. */
+  /** Reference to the picked PostHog insight. Present when the user has chosen
+   *  an insight via the picker; absent for fresh agent-proposed tiles which
+   *  still render fallback values. `shareToken` is minted on pick (PostHog
+   *  SharingConfiguration access_token) and used to embed the insight in an
+   *  iframe at `{cloudUrl}/embedded/{shareToken}`. `body` is kept so we can
+   *  recover or re-mint the share if it gets revoked. */
   query: z
     .object({
       posthogProjectId: z.number(),
-      body: trendsQueryBody,
+      body: insightQueryBody,
+      insightShortId: z.string().optional(),
+      shareToken: z.string().optional(),
     })
     .optional(),
   posthogUrl: z.string().optional(),
@@ -109,10 +116,21 @@ export const insightTile = tileBase.extend({
 });
 export type InsightTile = z.infer<typeof insightTile>;
 
+export const fileListItem = z.object({
+  /** Absolute path on the user's machine. */
+  path: z.string(),
+  /** ISO timestamp when the user added this file to the tile. */
+  addedAt: z.string(),
+});
+export type FileListItem = z.infer<typeof fileListItem>;
+
 export const fileTile = tileBase.extend({
   type: z.literal("file"),
-  filename: z.string(),
-  contents: z.string(),
+  /** Optional title shown in the tile header. Falls back to "Files". */
+  title: z.string().optional(),
+  /** Defaults to `[]` so legacy persisted tiles (without `items`) still
+   *  parse cleanly while the main-process migration backfills storage. */
+  items: z.array(fileListItem).default([]),
 });
 export type FileTile = z.infer<typeof fileTile>;
 
@@ -177,6 +195,17 @@ export const githubActivityItem = z.object({
 });
 export type GithubActivityItem = z.infer<typeof githubActivityItem>;
 
+/** Latest release info — surfaced as a standalone metric on the tile rather
+ *  than mixed into the recent feed, since releases happen on a cadence that
+ *  doesn't fit the lookback window. */
+export const githubLatestRelease = z.object({
+  name: z.string().nullable(),
+  tagName: z.string().nullable(),
+  url: z.string(),
+  publishedAt: z.string(),
+});
+export type GithubLatestRelease = z.infer<typeof githubLatestRelease>;
+
 export const githubActivitySummary = z.object({
   /** ISO timestamp of the last successful (or failed) fetch. */
   fetchedAt: z.string(),
@@ -186,9 +215,11 @@ export const githubActivitySummary = z.object({
     pr_merged: z.number().int().nonnegative(),
     pr_opened: z.number().int().nonnegative(),
     issue_opened: z.number().int().nonnegative(),
-    release: z.number().int().nonnegative(),
   }),
-  /** Interleaved recent items across enabled types, sorted desc by `when`. */
+  /** Most recent release on the repo, regardless of lookback window. */
+  latestRelease: githubLatestRelease.optional(),
+  /** Interleaved recent PRs and issues, sorted desc by `when`. Releases
+   *  are NOT included — they have their own card. */
   recent: z.array(githubActivityItem),
   /** Set when the fetch failed (gh not installed, not authed, repo missing). */
   error: z.string().optional(),

@@ -101,8 +101,40 @@ export class WorkProjectsService extends TypedEventEmitter<WorkProjectsEvents> {
     });
 
     this.migrateLegacyKeysIfNeeded();
+    this.migrateLegacyFileTilesIfNeeded();
     this.ensureSeeded();
     this.recoverStaleDeletions();
+  }
+
+  /** One-time migration: convert legacy single-file tiles (filename + contents)
+   *  to the new list-of-paths shape. Old inline content is discarded. Idempotent
+   *  — bails as soon as a tile already has `items`. */
+  private migrateLegacyFileTilesIfNeeded(): void {
+    const state = this.readState();
+    let changed = false;
+    for (const id of state.order) {
+      const project = state.projects[id];
+      if (!project) continue;
+      const nextTiles = project.tiles.map((t) => {
+        if (t.type !== "file") return t;
+        const tileRecord = t as unknown as Record<string, unknown>;
+        if (Array.isArray(tileRecord.items)) return t;
+        const {
+          filename: _legacyName,
+          contents: _legacyContents,
+          ...rest
+        } = tileRecord;
+        changed = true;
+        return { ...rest, items: [] } as unknown as Tile;
+      });
+      if (changed) {
+        state.projects[id] = { ...project, tiles: nextTiles };
+      }
+    }
+    if (changed) {
+      this.writeState(state);
+      log.info("Migrated legacy file tiles to file-list shape");
+    }
   }
 
   /** One-time migration: collapse legacy `seeded`/`projects`/`order` keys
@@ -699,15 +731,18 @@ export class WorkProjectsService extends TypedEventEmitter<WorkProjectsEvents> {
   updateFileTile(
     projectId: string,
     tileId: string,
-    patch: { filename?: string; contents?: string },
+    patch: {
+      title?: string;
+      items?: Array<{ path: string; addedAt: string }>;
+    },
   ): WorkProject | null {
     return this.mutateProject(projectId, (project) => {
       const tiles = project.tiles.map((t) => {
         if (t.id !== tileId || t.type !== "file") return t;
         return {
           ...t,
-          ...(patch.filename !== undefined ? { filename: patch.filename } : {}),
-          ...(patch.contents !== undefined ? { contents: patch.contents } : {}),
+          ...(patch.title !== undefined ? { title: patch.title } : {}),
+          ...(patch.items !== undefined ? { items: patch.items } : {}),
         };
       });
       return { ...project, tiles };
@@ -720,7 +755,12 @@ export class WorkProjectsService extends TypedEventEmitter<WorkProjectsEvents> {
     patch: {
       label?: string;
       liveLabel?: string;
-      query?: { posthogProjectId: number; body: Record<string, unknown> };
+      query?: {
+        posthogProjectId: number;
+        body: Record<string, unknown>;
+        insightShortId?: string;
+        shareToken?: string;
+      };
       posthogUrl?: string;
       fallbackValue?: string;
       fallbackDelta?: string;

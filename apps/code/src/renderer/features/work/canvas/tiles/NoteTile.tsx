@@ -1,5 +1,6 @@
+import { MarkdownRenderer } from "@features/editor/components/MarkdownRenderer";
 import { NoteIcon } from "@phosphor-icons/react";
-import { Box, Flex } from "@radix-ui/themes";
+import { Box, Flex, Text } from "@radix-ui/themes";
 import type {
   GridSize,
   NoteTile as NoteTileType,
@@ -58,12 +59,23 @@ export function NoteTile({
 }: NoteTileProps) {
   const tone: NoteTone = tile.tone ?? "yellow";
   const [value, setValue] = useState(tile.body);
+  const [editing, setEditing] = useState(false);
   const [tonePickerOpen, setTonePickerOpen] = useState(false);
   const toneRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     setValue(tile.body);
   }, [tile.body]);
+
+  useEffect(() => {
+    if (editing && textareaRef.current) {
+      textareaRef.current.focus();
+      // Put caret at end of content so users keep typing instead of overwriting.
+      const len = textareaRef.current.value.length;
+      textareaRef.current.setSelectionRange(len, len);
+    }
+  }, [editing]);
 
   useEffect(() => {
     if (!tonePickerOpen) return;
@@ -81,6 +93,11 @@ export function NoteTile({
     if (value === tile.body) return;
     onUpdate({ body: value });
   }, [value, tile.body, onUpdate]);
+
+  const handleExitEdit = useCallback(() => {
+    commit();
+    setEditing(false);
+  }, [commit]);
 
   const headerAction = onUpdate ? (
     <Box className="relative" ref={toneRef}>
@@ -137,14 +154,44 @@ export function NoteTile({
     >
       <Flex className={`h-full min-h-0 ${TONE_SOFT_BG[tone]}`}>
         <Box className={`w-[3px] shrink-0 ${TONE_STRIPE[tone]}`} />
-        <textarea
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onBlur={commit}
-          placeholder="Capture a thought…"
-          className="block h-full min-h-0 w-full resize-none bg-transparent px-3 py-2 text-(--gray-12) text-[13px] leading-snug outline-none placeholder:text-(--gray-9)"
-          readOnly={!onUpdate}
-        />
+        {editing ? (
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onBlur={handleExitEdit}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                (e.target as HTMLTextAreaElement).blur();
+              }
+            }}
+            placeholder="Capture a thought… markdown supported"
+            className="block h-full min-h-0 w-full resize-none bg-transparent px-3 py-2 font-mono text-(--gray-12) text-[12px] leading-snug outline-none placeholder:text-(--gray-9)"
+            readOnly={!onUpdate}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              if (onUpdate) setEditing(true);
+            }}
+            // Native button has its own focus ring + alignment; reset to a
+            // plain block so the rendered markdown sits naturally.
+            className="block min-h-0 w-full cursor-text bg-transparent px-3 py-2 text-left text-(--gray-12) text-[13px] leading-snug outline-none disabled:cursor-default"
+            disabled={!onUpdate}
+          >
+            {value.trim() ? (
+              <Box className="note-tile-markdown">
+                <MarkdownRenderer content={value} />
+              </Box>
+            ) : (
+              <Text as="span" className="text-(--gray-9) text-[13px] italic">
+                {onUpdate ? "Click to write… markdown supported" : "Empty note"}
+              </Text>
+            )}
+          </button>
+        )}
       </Flex>
     </TileFrame>
   );

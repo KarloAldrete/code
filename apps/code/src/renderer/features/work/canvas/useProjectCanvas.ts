@@ -365,22 +365,21 @@ export function useProjectCanvas(projectId: string | undefined) {
   const updateFileTile = useCallback(
     (
       tileId: string,
-      patch: { filename?: string; contents?: string },
+      patch: {
+        title?: string;
+        items?: Array<{ path: string; addedAt: string }>;
+      },
     ): Promise<void> => {
       return runOptimistic(
-        "Update file",
+        "Update file list",
         (project) => ({
           ...project,
           tiles: project.tiles.map((t) => {
             if (t.id !== tileId || t.type !== "file") return t;
             return {
               ...t,
-              ...(patch.filename !== undefined
-                ? { filename: patch.filename }
-                : {}),
-              ...(patch.contents !== undefined
-                ? { contents: patch.contents }
-                : {}),
+              ...(patch.title !== undefined ? { title: patch.title } : {}),
+              ...(patch.items !== undefined ? { items: patch.items } : {}),
             };
           }),
         }),
@@ -401,7 +400,12 @@ export function useProjectCanvas(projectId: string | undefined) {
       patch: {
         label?: string;
         liveLabel?: string;
-        query?: { posthogProjectId: number; body: Record<string, unknown> };
+        query?: {
+          posthogProjectId: number;
+          body: Record<string, unknown>;
+          insightShortId?: string;
+          shareToken?: string;
+        };
         posthogUrl?: string;
         fallbackValue?: string;
         fallbackDelta?: string;
