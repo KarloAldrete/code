@@ -104,6 +104,25 @@ describe("findPath", () => {
     expect(pointOutsideInflated(last, obstacles)).toBe(true);
   });
 
+  it("escapes when start is inside an obstacle, preserving the original from", () => {
+    // Mirrors production: the builder spawns at origin and the Hedgehouse
+    // sits there too. Without escape logic, A* can't leave the start cell.
+    const from = { x: 0, y: 0 };
+    const to = { x: 400, y: 0 };
+    const obstacles: Obstacle[] = [{ x: 0, y: 0, radius: 90 }];
+
+    const path = findPath(from, to, obstacles);
+
+    expect(path.length).toBeGreaterThanOrEqual(2);
+    expect(path[0]).toEqual(from);
+    expect(path[path.length - 1]).toEqual(to);
+    // Every waypoint after the first must be outside the inflated obstacle —
+    // the planner is allowed to start inside, but never to re-enter.
+    for (let i = 1; i < path.length; i++) {
+      expect(pointOutsideInflated(path[i], obstacles)).toBe(true);
+    }
+  });
+
   it("routes around multiple obstacles that both block the straight line", () => {
     const from = { x: -300, y: 0 };
     const to = { x: 300, y: 0 };

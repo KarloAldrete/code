@@ -6,15 +6,10 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  findPath,
-  type Obstacle,
-  snapGoal,
-  type Vec2,
-} from "../utils/pathfinding";
+import { findPath, snapGoal, type Vec2 } from "../utils/pathfinding";
+import { worldObstacles } from "../utils/worldObstacles";
 
 const DEFAULT_BUILD_ANIMATION_MS = 1500;
-const DEFAULT_NEST_OBSTACLE_RADIUS = 56;
 const DEFAULT_INITIAL_POS: Vec2 = { x: 0, y: 0 };
 
 export type BuilderAnimation = "idle" | "walking" | "building";
@@ -27,7 +22,6 @@ type BuilderState =
 export interface UseBuilderCoordinatorOptions {
   nests: Nest[];
   buildAnimationMs?: number;
-  nestObstacleRadius?: number;
   initialPos?: Vec2;
   /** Called when a pending build is committed — either because the build
    * animation finished, or because something interrupted it. The caller is
@@ -76,7 +70,6 @@ export interface BuilderCoordinator {
 export function useBuilderCoordinator({
   nests,
   buildAnimationMs = DEFAULT_BUILD_ANIMATION_MS,
-  nestObstacleRadius = DEFAULT_NEST_OBSTACLE_RADIUS,
   initialPos = DEFAULT_INITIAL_POS,
   onPendingBuildCommit,
 }: UseBuilderCoordinatorOptions): BuilderCoordinator {
@@ -151,22 +144,8 @@ export function useBuilderCoordinator({
         else setState({ kind: "idle" });
         return from;
       }
-      const obstacles: Obstacle[] = nests.map((nest) => ({
-        x: nest.mapX,
-        y: nest.mapY,
-        radius: nestObstacleRadius,
-      }));
-      // The nest we're walking to build isn't in the store yet, but we still
-      // want collision to treat the spot as occupied so the builder snaps to
-      // the perimeter instead of standing on top of the eventual sprite.
       const pendingObstacle = buildingFor ?? pendingBuildRef.current;
-      if (pendingObstacle) {
-        obstacles.push({
-          x: pendingObstacle.mapX,
-          y: pendingObstacle.mapY,
-          radius: nestObstacleRadius,
-        });
-      }
+      const obstacles = worldObstacles(nests, { pendingNest: pendingObstacle });
       const snapped = snapGoal(from, target, obstacles);
       const plan = findPath(from, snapped, obstacles);
       const resolvedGoal = plan[plan.length - 1] ?? snapped;
@@ -182,7 +161,7 @@ export function useBuilderCoordinator({
       setState({ kind: "walking", onArrive });
       return resolvedGoal;
     },
-    [nests, nestObstacleRadius, enterBuilding, commitPendingBuild, setPending],
+    [nests, enterBuilding, commitPendingBuild, setPending],
   );
 
   const handleArrive = useCallback(() => {

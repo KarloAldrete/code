@@ -5,6 +5,10 @@ import { useTRPC } from "@renderer/trpc";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { useWalkTo } from "../hooks/useWalkTo";
+import {
+  selectHogletWalkPath,
+  useHogletPositionStore,
+} from "../stores/hogletPositionStore";
 import { selectTaskSummary, useHogletStore } from "../stores/hogletStore";
 import { AnimatedHedgehog } from "./AnimatedHedgehog";
 import { HogletHammer } from "./HogletHammer";
@@ -46,7 +50,8 @@ export function WildHoglet({
     transition: { duration: 200, easing: "ease" },
   });
 
-  const { motionX, motionY, isWalking, facing } = useWalkTo(x, y);
+  const walkPath = useHogletPositionStore(selectHogletWalkPath(hoglet.id));
+  const { motionX, motionY, isWalking, facing } = useWalkTo(x, y, walkPath);
 
   const prStatusQuery = useQuery(
     trpc.workspace.getTaskPrStatus.queryOptions(

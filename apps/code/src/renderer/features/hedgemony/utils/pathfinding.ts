@@ -111,6 +111,42 @@ export function snapGoal(
   return nearestFreePointOnLine(from, to, infl);
 }
 
+// Walks from `from` toward `to` step by step, returning the first point that
+// is outside every inflated obstacle. Used when the agent starts inside an
+// obstacle (e.g. builder spawning at the Hedgehouse) — we need a free point
+// to hand to A*, ideally on the side of the obstacle facing the goal so the
+// resulting motion looks like a natural exit.
+function firstFreePointTowards(
+  from: Vec2,
+  to: Vec2,
+  infl: InflatedObstacle[],
+): Vec2 | null {
+  if (!pointBlocked(from, infl)) return from;
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist > 0) {
+    const steps = Math.max(1, Math.ceil(dist / (CELL / 4)));
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const c = { x: from.x + dx * t, y: from.y + dy * t };
+      if (!pointBlocked(c, infl)) return c;
+    }
+  }
+  // Fallback: radial sweep outward. Useful when the goal is also inside the
+  // same obstacle cluster — we still need *some* free perimeter point.
+  for (let r = CELL; r < 4096; r += CELL) {
+    for (let theta = 0; theta < Math.PI * 2; theta += Math.PI / 8) {
+      const c = {
+        x: from.x + Math.cos(theta) * r,
+        y: from.y + Math.sin(theta) * r,
+      };
+      if (!pointBlocked(c, infl)) return c;
+    }
+  }
+  return null;
+}
+
 type HeapEntry = { col: number; row: number; f: number };
 
 class MinHeap {
@@ -199,18 +235,28 @@ export function findPath(
   agentRadius: number = DEFAULT_AGENT_RADIUS,
 ): Vec2[] {
   const infl = inflate(obstacles, agentRadius);
+
+  // If we start inside an obstacle, the A* grid neighbors of `from` will all
+  // be blocked and the planner can't escape. Find a free perimeter point in
+  // the direction of the goal, run A* from there, and prepend the original
+  // `from` so the sprite walks out visually instead of teleporting.
+  const escaped = pointBlocked(from, infl)
+    ? firstFreePointTowards(from, to, infl)
+    : null;
+  const planFrom: Vec2 = escaped ?? from;
+
   const goal = pointBlocked(to, infl)
-    ? nearestFreePointOnLine(from, to, infl)
+    ? nearestFreePointOnLine(planFrom, to, infl)
     : to;
 
-  if (segmentClear(from, goal, infl)) {
-    return [from, goal];
+  if (segmentClear(planFrom, goal, infl)) {
+    return escaped ? [from, escaped, goal] : [planFrom, goal];
   }
 
-  const minX = Math.min(from.x, goal.x) - MARGIN;
-  const minY = Math.min(from.y, goal.y) - MARGIN;
-  const maxX = Math.max(from.x, goal.x) + MARGIN;
-  const maxY = Math.max(from.y, goal.y) + MARGIN;
+  const minX = Math.min(planFrom.x, goal.x) - MARGIN;
+  const minY = Math.min(planFrom.y, goal.y) - MARGIN;
+  const maxX = Math.max(planFrom.x, goal.x) + MARGIN;
+  const maxY = Math.max(planFrom.y, goal.y) + MARGIN;
   const cols = Math.max(2, Math.ceil((maxX - minX) / CELL) + 1);
   const rows = Math.max(2, Math.ceil((maxY - minY) / CELL) + 1);
 
@@ -229,7 +275,7 @@ export function findPath(
     return { col, row };
   };
 
-  const start = toGrid(from);
+  const start = toGrid(planFrom);
   const target = toGrid(goal);
 
   const blockedCache = new Map<number, boolean>();
@@ -314,7 +360,8 @@ export function findPath(
   }
 
   if (!found) {
-    return [nearestFreePointOnLine(from, goal, infl)];
+    const fallback = nearestFreePointOnLine(planFrom, goal, infl);
+    return escaped ? [from, fallback] : [fallback];
   }
 
   const gridPath: Vec2[] = [];
@@ -328,11 +375,13 @@ export function findPath(
   gridPath.reverse();
 
   if (gridPath.length === 0) {
-    return [nearestFreePointOnLine(from, goal, infl)];
+    const fallback = nearestFreePointOnLine(planFrom, goal, infl);
+    return escaped ? [from, fallback] : [fallback];
   }
 
-  gridPath[0] = from;
+  gridPath[0] = planFrom;
   gridPath[gridPath.length - 1] = goal;
 
-  return stringPull(gridPath, infl);
+  const pulled = stringPull(gridPath, infl);
+  return escaped ? [from, ...pulled] : pulled;
 }

@@ -28,7 +28,8 @@ import { selectHogletById, useHogletStore } from "../stores/hogletStore";
 import { selectNests, useNestStore } from "../stores/nestStore";
 import { useSpawnDialogStore } from "../stores/spawnDialogStore";
 import { collectHogletWorldPositions } from "../utils/hogletPositions";
-import { type Obstacle, snapGoal } from "../utils/pathfinding";
+import { findPath } from "../utils/pathfinding";
+import { worldObstacles } from "../utils/worldObstacles";
 import { BuilderCommandPanel } from "./BuilderCommandPanel";
 import { HedgehouseCommandPanel } from "./HedgehouseCommandPanel";
 import { HedgemonyHoldingPanel } from "./HedgemonyHoldingPanel";
@@ -49,11 +50,10 @@ import { WildHogletFlock } from "./WildHogletFlock";
 
 const log = logger.scope("hedgemony-map-view");
 
-// Match builder's collision radius for nests so hoglets stop at the same
-// perimeter the builder treats as solid. Hoglet sprite is 40px wide, so 20
-// keeps them from clipping into the nest sprite while not over-reserving space.
+// Hoglet sprite is 40px wide, so 20 keeps the sprite from clipping into nest
+// or Hedgehouse sprites while not over-reserving space. Obstacle radii are
+// centralized in `worldObstacles`.
 const HOGLET_RADIUS = 20;
-const HOGLET_NEST_OBSTACLE_RADIUS = 56;
 
 type Selection =
   | { type: "nest"; id: string }
@@ -323,14 +323,10 @@ export function HedgemonyMapView() {
 
     if (selection.type === "hoglets") {
       const positionStore = useHogletPositionStore.getState();
-      const obstacles: Obstacle[] = nests.map((nest) => ({
-        x: nest.mapX,
-        y: nest.mapY,
-        radius: HOGLET_NEST_OBSTACLE_RADIUS,
-      }));
-      // Resolve each hoglet's landing point against its current position so the
-      // snap pushes it to the side of the nest it's approaching from rather
-      // than radially. Read positions once via the same helper box-select uses
+      const obstacles = worldObstacles(nests);
+      // Resolve each hoglet's landing point against its current position so a
+      // click on the far side of an obstacle routes around it rather than
+      // clipping through. Read positions via the same helper box-select uses
       // so the "current" position matches what's rendered.
       const positionsNow = collectHogletWorldPositions(
         nests,
@@ -341,7 +337,7 @@ export function HedgemonyMapView() {
         positionsNow.map((p) => [p.hogletId, { x: p.x, y: p.y }]),
       );
       // Multi-select formation: pack them in a small ring around the target so
-      // they don't all stack on a single pixel. Single-select just snaps to
+      // they don't all stack on a single pixel. Single-select just heads to
       // the exact click point.
       const desired: { id: string; x: number; y: number }[] =
         selection.ids.length === 1
@@ -359,16 +355,18 @@ export function HedgemonyMapView() {
       let resolvedY = targetY;
       for (const slot of desired) {
         const from = currentById.get(slot.id) ?? { x: slot.x, y: slot.y };
-        const snapped = snapGoal(
+        const path = findPath(
           from,
           { x: slot.x, y: slot.y },
           obstacles,
           HOGLET_RADIUS,
         );
-        positionStore.setPosition(slot.id, snapped.x, snapped.y);
+        if (path.length === 0) continue;
+        positionStore.setWalkPath(slot.id, path);
         if (selection.ids.length === 1) {
-          resolvedX = Math.round(snapped.x);
-          resolvedY = Math.round(snapped.y);
+          const last = path[path.length - 1];
+          resolvedX = Math.round(last.x);
+          resolvedY = Math.round(last.y);
         }
       }
       if (selection.includeBuilder) {
