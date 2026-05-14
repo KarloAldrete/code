@@ -1,3 +1,4 @@
+import type { FunMode } from "@features/settings/stores/settingsStore";
 import type { HogletGender } from "@main/services/hedgemony/hoglet-names";
 import { logger } from "@utils/logger";
 
@@ -18,6 +19,8 @@ export type VoiceIntent =
   | "hoglet:select"
   | "system:error"
   | "system:signal_arrived";
+
+export type VoiceMode = FunMode;
 
 const voiceFiles = import.meta.glob<string>(
   "@renderer/assets/sounds/voice/**/*.wav",
@@ -49,6 +52,7 @@ const THROTTLE_MS = 600;
 
 let muted = false;
 let volume = 0.7;
+let currentMode: VoiceMode = "none";
 
 export function setVoiceMuted(next: boolean): void {
   muted = next;
@@ -58,15 +62,30 @@ export function setVoiceVolume(next: number): void {
   volume = Math.max(0, Math.min(1, next));
 }
 
+export function setVoiceMode(next: VoiceMode): void {
+  currentMode = next;
+}
+
 export function playVoice(
   intent: VoiceIntent,
   gender: HogletGender = "male",
 ): void {
   if (muted) return;
-  const genderBucket = REGISTRY[gender];
-  const candidates = genderBucket?.[intent];
-  if (!candidates || candidates.length === 0) {
-    log.warn("No voice clips registered for intent/gender", { intent, gender });
+
+  // Fall back to baseline ("none") when the active mode has no clip for this
+  // (intent, gender) — keeps fun modes ship-able incrementally without dead
+  // spots.
+  const modeBucket = REGISTRY[currentMode];
+  const fallbackBucket = REGISTRY.none;
+  const primary = modeBucket?.[gender]?.[intent] ?? [];
+  const candidates =
+    primary.length > 0 ? primary : (fallbackBucket?.[gender]?.[intent] ?? []);
+  if (candidates.length === 0) {
+    log.warn("No voice clips registered for intent/gender", {
+      intent,
+      gender,
+      mode: currentMode,
+    });
     return;
   }
 
@@ -94,25 +113,45 @@ export function playVoice(
   }
 }
 
-type GenderedRegistry = Record<HogletGender, Record<VoiceIntent, string[]>>;
+type ModedRegistry = Record<
+  VoiceMode,
+  Record<HogletGender, Record<VoiceIntent, string[]>>
+>;
 
-function buildRegistry(): GenderedRegistry {
-  const empty = (): Record<VoiceIntent, string[]> => {
+const ALL_MODES: VoiceMode[] = ["none", "pirate", "lolcat"];
+const ALL_GENDERS: HogletGender[] = ["male", "female"];
+
+function buildRegistry(): ModedRegistry {
+  const emptyIntents = (): Record<VoiceIntent, string[]> => {
     const record = {} as Record<VoiceIntent, string[]>;
     for (const intent of ALL_INTENTS) record[intent] = [];
     return record;
   };
-  const out: GenderedRegistry = {
-    male: empty(),
-    female: empty(),
+  const emptyGenders = (): Record<
+    HogletGender,
+    Record<VoiceIntent, string[]>
+  > => {
+    const record = {} as Record<HogletGender, Record<VoiceIntent, string[]>>;
+    for (const gender of ALL_GENDERS) record[gender] = emptyIntents();
+    return record;
   };
+  const out: ModedRegistry = {} as ModedRegistry;
+  for (const mode of ALL_MODES) out[mode] = emptyGenders();
+
   for (const [path, url] of Object.entries(voiceFiles)) {
-    const gender: HogletGender = path.includes("/female/") ? "female" : "male";
-    const filename = path.split("/").pop() ?? "";
-    const match = filename.match(/^(.+)_l\d+_t\d+\.wav$/);
+    // Paths look like `.../voice/<mode>/<gender>/<unit>_<intent>_l<N>_t<N>.wav`.
+    const match = path.match(
+      /\/voice\/([^/]+)\/([^/]+)\/([^/]+_l\d+_t\d+\.wav)$/,
+    );
     if (!match) continue;
-    const intent = match[1].replace(/^([^_]+)_/, "$1:") as VoiceIntent;
-    if (intent in out[gender]) out[gender][intent].push(url);
+    const [, modeSegment, genderSegment, filename] = match;
+    const mode = modeSegment as VoiceMode;
+    const gender = genderSegment as HogletGender;
+    if (!ALL_MODES.includes(mode) || !ALL_GENDERS.includes(gender)) continue;
+    const intentMatch = filename.match(/^(.+)_l\d+_t\d+\.wav$/);
+    if (!intentMatch) continue;
+    const intent = intentMatch[1].replace(/^([^_]+)_/, "$1:") as VoiceIntent;
+    if (intent in out[mode][gender]) out[mode][gender][intent].push(url);
   }
   return out;
 }

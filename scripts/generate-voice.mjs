@@ -2,17 +2,18 @@
 // Hedgemony voice line generator.
 //
 // Reads notes/hedgemony/voice-lines.json, calls ElevenLabs for every
-// (unit, intent, line, take) tuple in BOTH male and female voices, writes
-// wav files into apps/code/src/renderer/assets/sounds/voice/<gender>/.
+// (mode, gender, unit, intent, line, take) tuple, writes wav files into
+// apps/code/src/renderer/assets/sounds/voice/<mode>/<gender>/.
 // ElevenLabs returns raw PCM; we prepend a standard 44-byte WAV header.
 //
-// Voice IDs come from voice-lines.json's generation_metadata.voices.elevenlabs.
-// Only the API key lives in .env.
+// Voice IDs come from voice-lines.json's generation_metadata.voices.elevenlabs
+// keyed by mode → gender. Only the API key lives in .env.
 //
 // Usage:
 //   node --env-file=.env scripts/generate-voice.mjs
-//   node --env-file=.env scripts/generate-voice.mjs --force         # overwrite existing
-//   node --env-file=.env scripts/generate-voice.mjs --gender=male   # one gender only
+//   node --env-file=.env scripts/generate-voice.mjs --force            # overwrite existing
+//   node --env-file=.env scripts/generate-voice.mjs --mode=pirate      # one mode only
+//   node --env-file=.env scripts/generate-voice.mjs --gender=male      # one gender only
 //
 // Re-running is safe: existing files are skipped unless --force is passed.
 
@@ -26,10 +27,12 @@ const SCRIPT_PATH = join(REPO_ROOT, "notes/hedgemony/voice-lines.json");
 const OUT_DIR = join(REPO_ROOT, "apps/code/src/renderer/assets/sounds/voice");
 
 const FORCE = process.argv.includes("--force");
-const GENDER_FILTER = (() => {
-  const arg = process.argv.find((a) => a.startsWith("--gender="));
+const argValue = (flag) => {
+  const arg = process.argv.find((a) => a.startsWith(`${flag}=`));
   return arg ? arg.split("=")[1] : null;
-})();
+};
+const MODE_FILTER = argValue("--mode");
+const GENDER_FILTER = argValue("--gender");
 
 const VOICE_SETTINGS = {
   stability: 0.4, // lower = more emotional variation; suits "slightly anxious"
@@ -41,6 +44,13 @@ const VOICE_SETTINGS = {
 const MODEL_ID = "eleven_multilingual_v2";
 const SAMPLE_RATE = 22050;
 const OUTPUT_FORMAT = `pcm_${SAMPLE_RATE}`;
+
+// Maps fun mode → the key under each unit holding that mode's lines.
+const LINES_KEY = {
+  none: "lines",
+  pirate: "lines_pirate",
+  lolcat: "lines_lolcat",
+};
 
 async function main() {
   const apiKey = process.env.ELEVENLABS_API_KEY;
@@ -57,11 +67,11 @@ async function main() {
     ),
   );
 
-  const voicesByGender = script.generation_metadata?.voices?.elevenlabs ?? {};
-  const genders = Object.entries(voicesByGender)
+  const voicesByMode = script.generation_metadata?.voices?.elevenlabs ?? {};
+  const modes = Object.entries(voicesByMode)
     .filter(([key]) => key !== "$comment")
-    .filter(([gender]) => !GENDER_FILTER || gender === GENDER_FILTER);
-  if (genders.length === 0) {
+    .filter(([mode]) => !MODE_FILTER || mode === MODE_FILTER);
+  if (modes.length === 0) {
     console.error(
       "No usable voice IDs in voice-lines.json generation_metadata.voices.elevenlabs",
     );
@@ -70,42 +80,59 @@ async function main() {
 
   const takesPerLine = script.generation_metadata?.takes_per_line ?? 3;
 
+  // System lives at the top level of voice-lines.json; treat it like any other
+  // unit for generation purposes.
+  const allUnits = { ...script.units };
+  if (script.system) allUnits.system = script.system;
+
   let generated = 0;
   let skipped = 0;
   let failed = 0;
   let totalChars = 0;
 
-  // System lives at the top level of voice-lines.json; treat it like any other
-  // unit for generation purposes.
-  const allUnits = { ...script.units };
-  if (script.system?.lines) allUnits.system = { lines: script.system.lines };
+  for (const [mode, voicesByGender] of modes) {
+    const linesKey = LINES_KEY[mode];
+    if (!linesKey) {
+      console.warn(`[skip mode] no LINES_KEY mapping for "${mode}"`);
+      continue;
+    }
+    const genders = Object.entries(voicesByGender ?? {}).filter(
+      ([gender]) => !GENDER_FILTER || gender === GENDER_FILTER,
+    );
 
-  for (const [gender, voiceId] of genders) {
-    const genderDir = join(OUT_DIR, gender);
-    if (!existsSync(genderDir)) mkdirSync(genderDir, { recursive: true });
-    console.log(`\n— ${gender} (${voiceId}) —`);
+    for (const [gender, voiceId] of genders) {
+      const outSubdir = join(OUT_DIR, mode, gender);
+      if (!existsSync(outSubdir)) mkdirSync(outSubdir, { recursive: true });
+      console.log(`\n— ${mode}/${gender} (${voiceId}) —`);
 
-    for (const [unitName, unit] of Object.entries(allUnits)) {
-      for (const [intent, lines] of Object.entries(unit.lines)) {
-        for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
-          const text = lines[lineIdx];
-          for (let take = 1; take <= takesPerLine; take++) {
-            const filename = `${unitName}_${intent}_l${String(lineIdx + 1).padStart(2, "0")}_t${take}.wav`;
-            const outPath = join(genderDir, filename);
-            if (existsSync(outPath) && !FORCE) {
-              skipped++;
-              continue;
-            }
-            try {
-              const pcm = await tts(apiKey, voiceId, text);
-              const wav = pcmToWav(pcm, SAMPLE_RATE);
-              writeFileSync(outPath, wav);
-              totalChars += text.length;
-              generated++;
-              process.stdout.write(`  ✓ ${gender}/${filename}  "${text}"\n`);
-            } catch (error) {
-              failed++;
-              console.error(`  ✗ ${gender}/${filename}: ${error.message}`);
+      for (const [unitName, unit] of Object.entries(allUnits)) {
+        const lineSet = unit[linesKey];
+        if (!lineSet) continue;
+        for (const [intent, lines] of Object.entries(lineSet)) {
+          for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+            const text = lines[lineIdx];
+            for (let take = 1; take <= takesPerLine; take++) {
+              const filename = `${unitName}_${intent}_l${String(lineIdx + 1).padStart(2, "0")}_t${take}.wav`;
+              const outPath = join(outSubdir, filename);
+              if (existsSync(outPath) && !FORCE) {
+                skipped++;
+                continue;
+              }
+              try {
+                const pcm = await tts(apiKey, voiceId, text);
+                const wav = pcmToWav(pcm, SAMPLE_RATE);
+                writeFileSync(outPath, wav);
+                totalChars += text.length;
+                generated++;
+                process.stdout.write(
+                  `  ✓ ${mode}/${gender}/${filename}  "${text}"\n`,
+                );
+              } catch (error) {
+                failed++;
+                console.error(
+                  `  ✗ ${mode}/${gender}/${filename}: ${error.message}`,
+                );
+              }
             }
           }
         }

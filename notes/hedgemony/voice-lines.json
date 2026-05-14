@@ -1,7 +1,9 @@
 {
-  "$comment": "Voice line script for Hedgemony hoglet/hedgehog/builder units. One source of truth for both the runtime registry and the batch generation script. Each line is a short phrase; intent and unit fields drive when/where it plays. Generate 2-4 takes per line for variety.",
+  "$comment": "Voice line script for Hedgemony hoglet/hedgehog/builder units. One source of truth for both the runtime registry and the batch generation script. Each unit/intent ships a baseline `lines` array plus per-fun-mode `lines_pirate` and `lines_lolcat` arrays aligned by index. Generate 2-4 takes per line for variety.",
   "voice_direction": {
     "tone": "Earnest, slightly anxious British radio operator. Think WW2 RAF dispatcher crossed with a small woodland creature. Never bombastic. Never sarcastic.",
+    "tone_pirate": "Cornish/RP pirate hybrid. Drop the final 'g' on gerunds, lean on nautical verbs, sprinkle 'cap'n'. Keep the same anxious-helpful core energy — the hoglet is in costume, not a new personality.",
+    "tone_lolcat": "Read literally and deadpan. The joke is the text vs. the earnest delivery. No cat-affected yowls, no cute voice. Stretching vowels is fine where the spelling implies it ('yuuus?'), but only as much as the spelling on the page.",
     "pace": "Quick. Most lines under 1.5 seconds.",
     "compression": "Light radio-band EQ + subtle bandpass for unit chatter; full range for the hedgehog (orchestrator) and goal-complete fanfare.",
     "loudness": "Normalize to -16 LUFS integrated; peak ceiling -2 dBTP. Trim leading/trailing silence to <50ms.",
@@ -46,6 +48,80 @@
           "I'm waiting on review.",
           "CI's not happy."
         ]
+      },
+      "lines_pirate": {
+        "select": [
+          "Hoglet at the ready, cap'n.",
+          "Snouts to the wind.",
+          "At yer service.",
+          "Bristlin'.",
+          "Aye?",
+          "Reportin' in."
+        ],
+        "order_move": [
+          "On it, cap'n.",
+          "Settin' sail.",
+          "Trottin' yonder.",
+          "Right away, sir.",
+          "Aye, acknowledged.",
+          "Headin' that way."
+        ],
+        "order_work": [
+          "Workin' it.",
+          "Diggin' in.",
+          "Pull request on the wind.",
+          "I'll get on it, cap'n.",
+          "Spinnin' up."
+        ],
+        "complete": [
+          "Done, cap'n.",
+          "PR's up the mast.",
+          "That be me.",
+          "Ready for inspection."
+        ],
+        "blocked": [
+          "Run aground.",
+          "Need a hand, cap'n.",
+          "Waitin' on the cap'n's review.",
+          "The pipes ain't happy."
+        ]
+      },
+      "lines_lolcat": {
+        "select": [
+          "hoglet redy.",
+          "snoots up.",
+          "i can has order?",
+          "bristly.",
+          "yus?",
+          "i reports."
+        ],
+        "order_move": [
+          "on it.",
+          "rollin out.",
+          "trot trot.",
+          "ryt away.",
+          "aknolejed.",
+          "i go there."
+        ],
+        "order_work": [
+          "i workin.",
+          "diggin in.",
+          "pull rekwest cumming.",
+          "i can do.",
+          "spinny."
+        ],
+        "complete": [
+          "dun.",
+          "pee ar up.",
+          "iz me.",
+          "redy for revue."
+        ],
+        "blocked": [
+          "i is stuk.",
+          "halp pls.",
+          "wait for revue.",
+          "cee eye sad."
+        ]
       }
     },
     "hedgehog": {
@@ -72,6 +148,52 @@
           "Operator, your judgment.",
           "There's a fork — your call."
         ]
+      },
+      "lines_pirate": {
+        "select": [
+          "Steerin' the ship.",
+          "Hedgehog, at the helm.",
+          "The crew be at work.",
+          "Listenin'."
+        ],
+        "nest_established": [
+          "Anchor set.",
+          "We've made landfall.",
+          "Orders received."
+        ],
+        "goal_complete": [
+          "Goal achieved, by the seven seas.",
+          "Definition o' done — met.",
+          "The nest may rest."
+        ],
+        "intervention_request": [
+          "I need yer call on this, cap'n.",
+          "Cap'n, yer judgment.",
+          "Fork in the channel — yer call."
+        ]
+      },
+      "lines_lolcat": {
+        "select": [
+          "i conducts.",
+          "hedgehog here.",
+          "brood do thing.",
+          "i lissen."
+        ],
+        "nest_established": [
+          "nest establisht.",
+          "we has ground.",
+          "goal can has."
+        ],
+        "goal_complete": [
+          "goal acheived.",
+          "dun is dun.",
+          "nest go sleep."
+        ],
+        "intervention_request": [
+          "i needs ur call.",
+          "operator, u judge.",
+          "fork. u choose."
+        ]
       }
     },
     "builder": {
@@ -92,6 +214,40 @@
           "Foundation laid.",
           "Nest going up."
         ]
+      },
+      "lines_pirate": {
+        "select": [
+          "Builder, awaitin' orders.",
+          "Where to, cap'n?",
+          "Charts at the ready."
+        ],
+        "build_mode": [
+          "Pick yer spot.",
+          "Show me the shore.",
+          "Markin' out an anchorage."
+        ],
+        "place_nest": [
+          "Plac'd.",
+          "Foundation laid, by the keel.",
+          "Nest goin' up."
+        ]
+      },
+      "lines_lolcat": {
+        "select": [
+          "buildr awaits.",
+          "wher to?",
+          "bloo print redy."
+        ],
+        "build_mode": [
+          "pik ur spot.",
+          "show me grownd.",
+          "markin a nest."
+        ],
+        "place_nest": [
+          "plased.",
+          "foundayshun layd.",
+          "nest goin up."
+        ]
       }
     }
   },
@@ -106,15 +262,45 @@
         "That's not possible.",
         "Cannot do that there."
       ]
+    },
+    "lines_pirate": {
+      "signal_arrived": [
+        "New signal off the bow.",
+        "Incomin' report."
+      ],
+      "error": [
+        "That ain't possible.",
+        "Can't be done there."
+      ]
+    },
+    "lines_lolcat": {
+      "signal_arrived": [
+        "new signl.",
+        "incumming report."
+      ],
+      "error": [
+        "no can do.",
+        "cant do tahr."
+      ]
     }
   },
   "generation_metadata": {
     "takes_per_line": 3,
     "voices": {
-      "$comment": "ElevenLabs voice IDs by gender. Every line is generated in both, so different characters of the same unit can sound male or female. API key lives in .env (ELEVENLABS_API_KEY).",
+      "$comment": "ElevenLabs voice IDs by fun-mode then gender. The generator iterates every (mode, gender) pair and writes into voice/<mode>/<gender>/. API key lives in .env (ELEVENLABS_API_KEY).",
       "elevenlabs": {
-        "male": "0EUM9mI4gyhcJomBjQk1",
-        "female": "ICOQzoM8OzRgzvsz4a7X"
+        "none": {
+          "male": "0EUM9mI4gyhcJomBjQk1",
+          "female": "ICOQzoM8OzRgzvsz4a7X"
+        },
+        "pirate": {
+          "male": "6VgigPFWF0sNZy1BthVg",
+          "female": "NK9612C4HjnRIjNNLoj1"
+        },
+        "lolcat": {
+          "male": "0EUM9mI4gyhcJomBjQk1",
+          "female": "ICOQzoM8OzRgzvsz4a7X"
+        }
       },
       "openai_tts": {
         "hoglet": "shimmer or nova",
