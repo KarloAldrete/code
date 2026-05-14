@@ -47,13 +47,14 @@ export function McpToolBlock(props: McpToolBlockProps) {
     }),
   );
 
-  const isCreateCanvas = toolName === "create-canvas";
+  const isCanvasMutation =
+    toolName === "create-canvas" || toolName === "edit-canvas";
 
   return (
     <>
       <McpToolView {...props} />
-      {isCreateCanvas && <CreateCanvasResult {...props} />}
-      {hasUi && !isDisabledForServer && !isCreateCanvas && (
+      {isCanvasMutation && <CreateCanvasResult {...props} />}
+      {hasUi && !isDisabledForServer && !isCanvasMutation && (
         <McpAppHost {...props} serverName={serverName} toolName={toolName} />
       )}
     </>

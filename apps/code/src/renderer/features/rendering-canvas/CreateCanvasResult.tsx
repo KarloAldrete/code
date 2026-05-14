@@ -8,7 +8,8 @@ import { useSidebarStore } from "@features/sidebar/stores/sidebarStore";
 import { ArrowSquareOutIcon, RobotIcon } from "@phosphor-icons/react";
 import { Button, Dialog, Flex } from "@radix-ui/themes";
 import { useNavigationStore } from "@stores/navigationStore";
-import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 
 interface CreatedCanvas {
   id: string;
@@ -65,12 +66,22 @@ export function CreateCanvasResult({
     (s) => s.navigateToCanvasInput,
   );
   const setActiveTab = useSidebarStore((s) => s.setActiveTab);
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-
-  if (!isComplete || isFailed || wasCancelled) return null;
 
   const text = getContentText(content);
   const canvas = parseCreatedCanvas(text);
+  const canvasId = canvas?.id;
+
+  useEffect(() => {
+    if (!isComplete || isFailed || wasCancelled || !canvasId) return;
+    void queryClient.invalidateQueries({
+      queryKey: ["rendering-canvas", canvasId],
+    });
+    void queryClient.invalidateQueries({ queryKey: ["rendering-canvases"] });
+  }, [isComplete, isFailed, wasCancelled, canvasId, queryClient]);
+
+  if (!isComplete || isFailed || wasCancelled) return null;
 
   if (!canvas) {
     return (

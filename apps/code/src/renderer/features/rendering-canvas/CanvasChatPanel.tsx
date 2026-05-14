@@ -44,7 +44,7 @@ export function CanvasChatPanel({ canvasId }: CanvasChatPanelProps) {
   const messagePrefix = useMemo(() => {
     if (!canvas) return undefined;
     const path = canvas.path ? canvas.path : "(unset)";
-    return `[Canvas context: you are editing an existing PostHog rendering canvas. id=${canvas.id} name=${JSON.stringify(canvas.name)} path=${path}. To save changes, call create-canvas with the same id to overwrite this canvas's content.]`;
+    return `[Canvas context: you are editing an existing PostHog rendering canvas. id=${canvas.id} name=${JSON.stringify(canvas.name)} path=${path}. To edit a canvas, you must fetch the current code, generate a new version, and save it.]`;
   }, [canvas]);
 
   const {
