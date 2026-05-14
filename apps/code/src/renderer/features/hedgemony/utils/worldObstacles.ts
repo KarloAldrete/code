@@ -7,14 +7,15 @@ import type { Obstacle } from "./pathfinding";
 
 // Shared collision radii for everything that should block walking — kept here
 // so both the builder coordinator and the hoglet move handler agree on what
-// is solid. NEST is smaller than the visible sprite (140px / 2 = 70) because
-// agents inflate by their own radius during pathfinding; the additive sum is
-// what determines apparent clearance.
-export const NEST_OBSTACLE_RADIUS = 56;
+// is solid. The painted nest art fills roughly the whole 140px sprite, so the
+// obstacle radius needs to be close to 70 + a little buffer for the agent's
+// own sprite. Calibrated so hoglets stop *outside* the wreath rather than
+// half-inside it the way they were with the old 56.
+export const NEST_OBSTACLE_RADIUS = 78;
 // The Hedgehouse is the biggest structure on the map (220px). Without this
 // entry, agents walked straight through it — pathfinding was added before
 // the Hedgehouse existed and never picked it up.
-export const HEDGEHOUSE_OBSTACLE_RADIUS = 90;
+export const HEDGEHOUSE_OBSTACLE_RADIUS = 100;
 
 interface WorldObstacleOptions {
   /** A nest the builder is en-route to construct. Not in `nests` yet, but

@@ -3,7 +3,10 @@ import { WILD_BUCKET } from "../stores/hogletStore";
 
 const WILD_RING_INNER = 130;
 const WILD_RING_THICKNESS = 90;
-const BROOD_RADIUS = 92;
+// Brood hoglets sit in a ring around their nest. Was 92, which placed the
+// hoglet sprite half-overlapping the wreath (painted radius ~70 + hoglet
+// radius ~22). 115 keeps every hoglet visibly outside the nest art.
+const BROOD_RADIUS = 115;
 
 function hashToUnit(id: string, seed: number): number {
   let h = 2166136261 ^ seed;
