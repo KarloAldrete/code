@@ -286,10 +286,34 @@ function appendToLatestUserMessage(
   messages.push({ role: "user", content: appendix.trimStart() });
 }
 
+function clampDraftArrays(obj: Record<string, unknown>): void {
+  const limits: Record<string, number> = {
+    userStories: 6,
+    requirements: 8,
+    keyEntities: 6,
+    assumptions: 6,
+    successCriteria: 6,
+  };
+  for (const [key, max] of Object.entries(limits)) {
+    const value = obj[key];
+    if (Array.isArray(value) && value.length > max) {
+      obj[key] = value.slice(0, max);
+    }
+  }
+}
+
 function tryParseResponse(content: string): ParseResult {
   try {
     const raw = extractJsonObject(content);
-    const parsed = parsedGatewayResponse.parse(JSON.parse(raw));
+    const json = JSON.parse(raw) as Record<string, unknown>;
+    if (
+      json.kind === "propose_spec" &&
+      typeof json.draft === "object" &&
+      json.draft !== null
+    ) {
+      clampDraftArrays(json.draft as Record<string, unknown>);
+    }
+    const parsed = parsedGatewayResponse.parse(json);
     if (parsed.kind === "ask_question") {
       return {
         ok: true,

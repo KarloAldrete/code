@@ -111,6 +111,56 @@ describe("GoalSpecDraftService", () => {
     }
   });
 
+  it("clamps oversized arrays instead of failing to parse", async () => {
+    const oversizedDraft = {
+      kind: "propose_spec",
+      draft: {
+        name: "Pong game",
+        summary: "Add a pong game.",
+        primaryScenario: "Player launches pong from game menu.",
+        userStories: [
+          {
+            priority: "P1",
+            story: "As a player, I want to play pong.",
+            acceptanceScenarios: ["Given menu, when select, then pong loads."],
+          },
+        ],
+        requirements: Array.from({ length: 12 }, (_, i) => ({
+          id: `FR-${String(i + 1).padStart(3, "0")}`,
+          text: `Requirement ${i + 1}`,
+        })),
+        keyEntities: [],
+        assumptions: [],
+        successCriteria: Array.from({ length: 10 }, (_, i) => ({
+          id: `SC-${String(i + 1).padStart(3, "0")}`,
+          text: `Criterion ${i + 1}`,
+        })),
+        definitionOfDone: "Pong is playable.",
+      },
+    };
+
+    llmGateway.prompt.mockResolvedValue({
+      content: JSON.stringify(oversizedDraft),
+      model: GOAL_DRAFT_MODEL,
+      stopReason: "end_turn",
+      usage: { inputTokens: 10, outputTokens: 5 },
+    });
+
+    const response = await service.respond({
+      transcript: [
+        { role: "user", content: "Add a pong game to the repo." },
+        { role: "assistant", content: "What style do you want?" },
+        { role: "user", content: "Retro arcade, three difficulty levels." },
+      ],
+    });
+
+    expect(response.kind).toBe("propose_spec");
+    if (response.kind === "propose_spec") {
+      expect(response.draft.successCriteria).toHaveLength(6);
+      expect(response.draft.requirements).toHaveLength(8);
+    }
+  });
+
   it("returns an editable draft spec when enough context exists", async () => {
     llmGateway.prompt.mockResolvedValue({
       content: `Here you go:\n\n\`\`\`json\n${JSON.stringify({
