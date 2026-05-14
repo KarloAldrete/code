@@ -12,6 +12,9 @@ import {
   runTaskInCloud,
   sendCloudCommand,
 } from "../api";
+import { buildCloudPromptBlocks } from "../composer/attachments/buildCloudPrompt";
+import { serializeCloudPrompt } from "../composer/attachments/cloudPrompt";
+import type { PendingAttachment } from "../composer/attachments/types";
 import type {
   SessionEvent,
   SessionNotification,
@@ -142,7 +145,11 @@ interface TaskSessionStore {
 
   connectToTask: (task: Task) => Promise<void>;
   disconnectFromTask: (taskId: string) => void;
-  sendPrompt: (taskId: string, prompt: string) => Promise<void>;
+  sendPrompt: (
+    taskId: string,
+    prompt: string,
+    attachments?: PendingAttachment[],
+  ) => Promise<void>;
   sendPermissionResponse: (
     taskId: string,
     args: {
@@ -341,7 +348,11 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     logger.debug("Disconnected from task", { taskId });
   },
 
-  sendPrompt: async (taskId: string, prompt: string) => {
+  sendPrompt: async (
+    taskId: string,
+    prompt: string,
+    attachments: PendingAttachment[] = [],
+  ) => {
     const session = get().getSessionForTask(taskId);
     if (!session) {
       throw new Error("No active session for task");
@@ -351,9 +362,17 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     // the backend and let the desktop decide whether/when to process it.
     // No local gating, no client-side queueing.
 
-    // Local echo for immediate UX feedback — polling will re-surface the
-    // canonical copy once the agent writes it to the log; any duplicate is
-    // removed by content-based dedup in the polling loop below.
+    // The local echo always shows the plain prompt text in the chat. When
+    // attachments are present we send a structured cloud-prompt blob on the
+    // wire (`__twig_cloud_prompt_v1__:…`) so the agent receives the image
+    // and resource blocks alongside the text.
+    const wirePayload =
+      attachments.length > 0
+        ? serializeCloudPrompt(
+            await buildCloudPromptBlocks(prompt, attachments),
+          )
+        : prompt;
+
     const ts = Date.now();
     const userEvent: SessionEvent = {
       type: "session_update",
@@ -387,7 +406,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
 
     try {
       await sendCloudCommand(taskId, session.taskRunId, "user_message", {
-        content: prompt,
+        content: wirePayload,
       });
       logger.debug("Sent cloud command user_message", {
         taskId,
@@ -434,7 +453,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
           previousRunId: session.taskRunId,
         });
         try {
-          await get()._resumeCloudRun(taskId, session.taskRunId, prompt);
+          await get()._resumeCloudRun(taskId, session.taskRunId, wirePayload);
           return;
         } catch (resumeErr) {
           logger.error("Failed to resume cloud run", resumeErr);

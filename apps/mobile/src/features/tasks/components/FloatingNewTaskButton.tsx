@@ -33,7 +33,9 @@ export function FloatingNewTaskButton({ onPress }: FloatingNewTaskButtonProps) {
       }}
     >
       <Plus size={22} color={themeColors.accent.contrast} weight="bold" />
-      <Text className="text-[15px] font-semibold text-accent-contrast leading-tight">New task</Text>
+      <Text className="font-semibold text-[15px] text-accent-contrast leading-tight">
+        New task
+      </Text>
     </Pressable>
   );
 }
