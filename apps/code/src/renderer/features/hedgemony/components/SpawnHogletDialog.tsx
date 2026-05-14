@@ -126,7 +126,24 @@ export function SpawnHogletDialog({ open, onClose }: SpawnHogletDialogProps) {
       open={open}
       onOpenChange={(o) => !o && !submitting && onClose()}
     >
-      <Dialog.Content maxWidth="480px" size="2">
+      <Dialog.Content
+        maxWidth="480px"
+        size="2"
+        onPointerDownOutside={(e) => {
+          if (
+            (e.target as HTMLElement | null)?.closest("[data-quill-portal]")
+          ) {
+            e.preventDefault();
+          }
+        }}
+        onInteractOutside={(e) => {
+          if (
+            (e.target as HTMLElement | null)?.closest("[data-quill-portal]")
+          ) {
+            e.preventDefault();
+          }
+        }}
+      >
         <Dialog.Title size="3">Spawn an ad-hoc hoglet</Dialog.Title>
         <Dialog.Description size="2" color="gray">
           Dispatch a one-off agent without picking a nest. It'll appear in the
