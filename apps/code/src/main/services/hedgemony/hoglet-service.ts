@@ -10,18 +10,25 @@ import { HOGLET_NAMES } from "./hoglet-names";
 import type { PrGraphService } from "./pr-graph-service";
 import {
   type AdoptHogletInput,
+  clampReasoningEffortForAdapter,
+  DEFAULT_HOGLET_ENVIRONMENT,
+  DEFAULT_HOGLET_RUNTIME_ADAPTER,
   type DismissSignalHogletInput,
+  defaultModelForAdapter,
+  defaultReasoningEffortForAdapter,
   HedgemonyEvent,
   type HedgemonyEvents,
   type Hoglet,
   type HogletBucket,
   type HogletWatchEvent,
   type ListHogletsInput,
+  type NestLoadout,
   type RecordAdhocHogletInput,
   type RecordSignalBackedHogletInput,
   type ReleaseHogletInput,
   type RetireHogletInput,
   type SpawnFollowUpHogletInput,
+  type SpawnHogletInNestInput,
 } from "./schemas";
 
 const log = logger.scope("hoglet-service");
@@ -29,6 +36,7 @@ const log = logger.scope("hoglet-service");
 /** Safety caps from notes/hedgemony/backend-integration.md. */
 export const MAX_WILD_HOGLETS = 25;
 export const MAX_SIGNAL_STAGING_HOGLETS = 25;
+export const MAX_NEST_HOGLETS = 10;
 
 function bucketForHoglet(h: Hoglet): HogletBucket {
   if (h.nestId !== null) return { kind: "nest", nestId: h.nestId };
@@ -327,6 +335,77 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
   }
 
   /**
+   * Spawns a new hoglet inside a nest. Creates a cloud Task, creates and
+   * starts a TaskRun, then inserts the local sidecar row only after the
+   * cloud side succeeds. This ordering prevents orphaned sidecar rows
+   * when the cloud API is unavailable.
+   */
+  async spawnInNest(
+    input: SpawnHogletInNestInput,
+    loadout: NestLoadout = {},
+  ): Promise<{ hoglet: Hoglet; taskRunId: string }> {
+    const nestHoglets = this.hoglets.findAllForNest(input.nestId);
+    const activeCount = nestHoglets.filter((h) => !h.deletedAt).length;
+    if (activeCount >= MAX_NEST_HOGLETS) {
+      throw new Error("nest_hoglet_cap_reached");
+    }
+
+    const runtimeAdapter =
+      loadout.runtimeAdapter ?? DEFAULT_HOGLET_RUNTIME_ADAPTER;
+    const model = loadout.model ?? defaultModelForAdapter(runtimeAdapter);
+    const reasoningEffort = clampReasoningEffortForAdapter(
+      loadout.reasoningEffort ??
+        defaultReasoningEffortForAdapter(runtimeAdapter),
+      runtimeAdapter,
+    );
+    const environment = loadout.environment ?? DEFAULT_HOGLET_ENVIRONMENT;
+
+    const task = await this.cloudTasks.createTask({
+      title: truncateTitle(input.prompt),
+      description: input.prompt,
+      repository: input.repository ?? null,
+      originProduct: "automation",
+    });
+
+    const run = await this.cloudTasks.createTaskRun(task.id, {
+      environment,
+      mode: "background",
+      runtimeAdapter,
+      model,
+      reasoningEffort,
+      prAuthorshipMode: "bot",
+    });
+    await this.cloudTasks.startTaskRun(task.id, run.id, {
+      pendingUserMessage: input.prompt,
+    });
+
+    const created = this.hoglets.create({
+      taskId: task.id,
+      name: this.assignName(),
+      nestId: input.nestId,
+      signalReportId: null,
+    });
+
+    log.info("Hoglet spawned in nest", {
+      id: created.id,
+      name: created.name,
+      taskId: task.id,
+      taskRunId: run.id,
+      nestId: input.nestId,
+      model,
+      reasoningEffort,
+      runtimeAdapter,
+      environment,
+    });
+
+    this.emitChange(
+      { kind: "nest", nestId: input.nestId },
+      { kind: "upsert", hoglet: created },
+    );
+    return { hoglet: created, taskRunId: run.id };
+  }
+
+  /**
    * Spawns a follow-up hoglet in `nestId` to address late feedback on a
    * merged/closed parent's PR. Inherits the parent Task's repository so the
    * new agent operates in the same code context. Writes a
@@ -379,4 +458,10 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
   private emitChange(bucket: HogletBucket, event: HogletWatchEvent): void {
     this.emit(HedgemonyEvent.HogletChanged, { bucket, event });
   }
+}
+
+function truncateTitle(prompt: string): string {
+  const firstLine = prompt.split("\n")[0].trim();
+  if (firstLine.length <= 120) return firstLine;
+  return `${firstLine.slice(0, 117)}...`;
 }

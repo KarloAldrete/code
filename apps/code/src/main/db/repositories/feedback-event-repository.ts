@@ -7,7 +7,7 @@ import type { DatabaseService } from "../service";
 export type FeedbackEvent = typeof hedgemonyFeedbackEvents.$inferSelect;
 export type NewFeedbackEvent = typeof hedgemonyFeedbackEvents.$inferInsert;
 
-export type FeedbackEventSource = "pr_review" | "ci" | "issue";
+export type FeedbackEventSource = "pr_review" | "ci" | "issue" | "hedgehog";
 export type FeedbackEventOutcome = "injected" | "follow_up_spawned" | "failed";
 export type FeedbackTrustTier = "operator" | "internal" | "external";
 

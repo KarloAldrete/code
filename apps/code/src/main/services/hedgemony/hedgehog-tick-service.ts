@@ -7,6 +7,7 @@ import type { GitService } from "../git/service";
 import type { PromptWithToolsOutput } from "../llm-gateway/schemas";
 import type { LlmGatewayService } from "../llm-gateway/service";
 import type { CloudTaskClient } from "./cloud-task-client";
+import type { FeedbackRoutingService } from "./feedback-routing-service";
 import { HEDGEHOG_HANDLERS } from "./hedgehog-handlers/registry";
 import {
   type HedgehogToolDeps,
@@ -29,19 +30,44 @@ import type { NestChatService } from "./nest-chat-service";
 import type { NestService } from "./nest-service";
 import type { PrGraphService } from "./pr-graph-service";
 import {
+  DEFAULT_HOGLET_MODEL,
   HedgemonyEvent,
   type Hoglet,
   type HogletChangedEvent,
   type Nest,
   type NestChangedEvent,
+  type NestLoadout,
+  nestLoadout,
 } from "./schemas";
 
 const log = logger.scope("hedgehog-tick-service");
 
 const MIN_TICK_INTERVAL_MS = 30_000;
-const HEARTBEAT_INTERVAL_MS = 5 * 60_000;
-const HEDGEHOG_MODEL = "claude-sonnet-4-5";
-const MAX_TOKENS = 2_000;
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 2 * 60_000;
+const SCHEDULER_POLL_INTERVAL_MS = 60_000;
+const HEDGEHOG_MODEL = DEFAULT_HOGLET_MODEL;
+const HEDGEHOG_EFFORT = "max";
+const MAX_TOKENS = 4_000;
+
+function getHeartbeatIntervalMs(): number {
+  const envOverride = process.env.HEDGEMONY_HEARTBEAT_INTERVAL_MS;
+  if (envOverride) {
+    const parsed = Number.parseInt(envOverride, 10);
+    if (!Number.isNaN(parsed) && parsed >= 60_000 && parsed <= 600_000) {
+      return parsed;
+    }
+  }
+  return DEFAULT_HEARTBEAT_INTERVAL_MS;
+}
+
+function parseLoadout(loadoutJson: string | null): NestLoadout {
+  if (!loadoutJson) return {};
+  try {
+    return nestLoadout.parse(JSON.parse(loadoutJson));
+  } catch {
+    return {};
+  }
+}
 
 /**
  * Slice 6 of Hedgemony — the hedgehog. A per-nest ephemeral orchestrator that
@@ -80,6 +106,8 @@ export class HedgehogTickService {
     private readonly prGraph: PrGraphService,
     @inject(MAIN_TOKENS.GitService)
     private readonly git: GitService,
+    @inject(MAIN_TOKENS.FeedbackRoutingService)
+    private readonly feedbackRouting: FeedbackRoutingService,
   ) {}
 
   /**
@@ -111,9 +139,12 @@ export class HedgehogTickService {
       this.runHeartbeat().catch((error) =>
         log.error("heartbeat tick failed", { error }),
       );
-    }, HEARTBEAT_INTERVAL_MS);
+    }, SCHEDULER_POLL_INTERVAL_MS);
 
-    log.info("HedgehogTickService started");
+    log.info("HedgehogTickService started", {
+      schedulerPollIntervalMs: SCHEDULER_POLL_INTERVAL_MS,
+      defaultHeartbeatIntervalMs: getHeartbeatIntervalMs(),
+    });
   }
 
   stop(): void {
@@ -178,13 +209,16 @@ export class HedgehogTickService {
   }
 
   private async runHeartbeat(): Promise<void> {
+    const globalInterval = getHeartbeatIntervalMs();
     const activeNests = this.nestService
       .list()
       .filter((n) => n.status === "active");
     for (const nest of activeNests) {
+      const loadout = parseLoadout(nest.loadoutJson);
+      const interval = loadout.heartbeatIntervalMs ?? globalInterval;
       const state = this.stateRepo.findByNestId(nest.id);
       const last = state?.lastTickAt ? new Date(state.lastTickAt).getTime() : 0;
-      if (Date.now() - last < HEARTBEAT_INTERVAL_MS) continue;
+      if (Date.now() - last < interval) continue;
       await this.enqueueTick(nest.id, "heartbeat");
     }
   }
@@ -238,6 +272,7 @@ export class HedgehogTickService {
         scratchpad,
         triggerReason: reason,
         prDependencies: context.prDependencies,
+        loadout: context.loadout,
       });
 
       const response = await this.llm.promptWithTools(
@@ -246,6 +281,7 @@ export class HedgehogTickService {
           system: HEDGEHOG_SYSTEM_PROMPT,
           maxTokens: MAX_TOKENS,
           model: HEDGEHOG_MODEL,
+          effort: HEDGEHOG_EFFORT,
           tools: HEDGEHOG_TOOLS,
           toolChoice: { type: "auto" },
         },
@@ -322,6 +358,8 @@ export class HedgehogTickService {
     return {
       cloudTasks: this.cloudTasks,
       prGraph: this.prGraph,
+      feedbackRouting: this.feedbackRouting,
+      hogletService: this.hogletService,
       writeNestMessage: (nestId, input) => this.writeNestMessage(nestId, input),
     };
   }
@@ -330,6 +368,7 @@ export class HedgehogTickService {
     nest: Nest,
     budget: TickBudget,
   ): Promise<TickContext> {
+    const loadout = parseLoadout(nest.loadoutJson);
     const hoglets = this.hogletService
       .list({ nestId: nest.id })
       .filter((h): h is Hoglet => !h.deletedAt);
@@ -371,8 +410,8 @@ export class HedgehogTickService {
         });
       }
     }
-    const prDependencies = this.prDependencies.listForNest(nest.id);
-    return { nest, hoglets: enriched, budget, prDependencies };
+    const prDeps = this.prDependencies.listForNest(nest.id);
+    return { nest, hoglets: enriched, budget, prDependencies: prDeps, loadout };
   }
 
   private async resolvePrState(

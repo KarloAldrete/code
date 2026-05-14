@@ -43,6 +43,9 @@ export function useHedgemonyPromptRouter() {
         const session = sessionStoreSetters.getSessionByTaskId(payload.taskId);
         const isLive = session?.status === "connected";
 
+        const trustTier =
+          payload.source === "hedgehog" ? ("internal" as const) : undefined;
+
         if (isLive) {
           sendPromptToAgent(payload.taskId, payload.prompt);
           await trpcClient.hedgemony.feedback.recordRouted.mutate({
@@ -52,6 +55,7 @@ export function useHedgemonyPromptRouter() {
             payloadHash: payload.payloadHash,
             payloadRef: payload.payloadRef,
             routedOutcome: "injected",
+            trustTier,
           });
           if (payload.source === "pr_review" || payload.source === "ci") {
             track(ANALYTICS_EVENTS.HEDGEMONY_FEEDBACK_ROUTED, {
@@ -76,6 +80,7 @@ export function useHedgemonyPromptRouter() {
             payloadHash: payload.payloadHash,
             payloadRef: payload.payloadRef,
             routedOutcome: "follow_up_spawned",
+            trustTier,
           });
           if (payload.source === "pr_review" || payload.source === "ci") {
             track(ANALYTICS_EVENTS.HEDGEMONY_FEEDBACK_ROUTED, {
@@ -93,6 +98,7 @@ export function useHedgemonyPromptRouter() {
           payloadHash: payload.payloadHash,
           payloadRef: payload.payloadRef,
           routedOutcome: "failed",
+          trustTier,
         });
         if (payload.source === "pr_review" || payload.source === "ci") {
           track(ANALYTICS_EVENTS.HEDGEMONY_FEEDBACK_ROUTED, {

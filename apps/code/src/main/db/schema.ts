@@ -193,7 +193,7 @@ export const hedgemonyFeedbackEvents = sqliteTable(
       onDelete: "set null",
     }),
     hogletTaskId: text().notNull(),
-    source: text({ enum: ["pr_review", "ci", "issue"] }).notNull(),
+    source: text({ enum: ["pr_review", "ci", "issue", "hedgehog"] }).notNull(),
     payloadHash: text().notNull(),
     payloadRef: text().notNull(),
     trustTier: text({ enum: ["operator", "internal", "external"] })

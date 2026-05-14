@@ -25,12 +25,15 @@ import type {
 } from "../llm-gateway/schemas";
 import type { LlmGatewayService } from "../llm-gateway/service";
 import type { CloudTaskClient } from "./cloud-task-client";
+import type { FeedbackRoutingService } from "./feedback-routing-service";
 import { HedgehogTickService } from "./hedgehog-tick-service";
 import type { HogletService } from "./hoglet-service";
 import type { NestChatService } from "./nest-chat-service";
 import type { NestService } from "./nest-service";
 import type { PrGraphService } from "./pr-graph-service";
 import {
+  DEFAULT_CODEX_REASONING_EFFORT,
+  defaultModelForAdapter,
   HedgemonyEvent,
   type HedgemonyEvents,
   type Hoglet,
@@ -110,6 +113,7 @@ interface Mocks {
   prDependencies: PrDependencyRepository;
   prGraph: PrGraphService;
   git: GitService;
+  feedbackRouting: FeedbackRoutingService;
   emittedNestChanged: HedgemonyEvents["nest-changed"][];
 }
 
@@ -188,6 +192,10 @@ function setupMocks(input: {
   const hogletService = {
     list: vi.fn(() => hoglets),
     on: vi.fn(() => hogletService),
+    spawnInNest: vi.fn(async () => ({
+      hoglet: makeHoglet({ taskId: "spawned-task-1" }),
+      taskRunId: `run-${crypto.randomUUID().slice(0, 8)}`,
+    })),
   } as unknown as HogletService;
 
   const nestChat = {
@@ -256,6 +264,12 @@ function setupMocks(input: {
     getPrDetailsByUrl: vi.fn(async () => null),
   } as unknown as GitService;
 
+  const feedbackRouting = {
+    emit: vi.fn(),
+    emitInject: vi.fn(),
+    listenerCount: vi.fn(() => 0),
+  } as unknown as FeedbackRoutingService;
+
   return {
     llm,
     nestService,
@@ -266,6 +280,7 @@ function setupMocks(input: {
     prDependencies,
     prGraph,
     git,
+    feedbackRouting,
     emittedNestChanged,
   };
 }
@@ -281,6 +296,7 @@ function buildService(mocks: Mocks): HedgehogTickService {
     mocks.prDependencies,
     mocks.prGraph,
     mocks.git,
+    mocks.feedbackRouting,
   );
 }
 
@@ -314,7 +330,6 @@ describe("HedgehogTickService", () => {
       (e) => e.event.kind === "hedgehog_tick",
     );
     expect(tickEvents.length).toBeGreaterThanOrEqual(2);
-    // First emit is ticking, last is idle.
     const first = tickEvents[0].event as {
       kind: "hedgehog_tick";
       state: { state: string };
@@ -492,6 +507,300 @@ describe("HedgehogTickService", () => {
     expect(idleEmits.length).toBeGreaterThan(0);
   });
 
+  it("dispatches spawn_hoglet and calls hogletService.spawnInNest", async () => {
+    const mocks = setupMocks({
+      promptResponse: makePromptWithToolsResponse([
+        {
+          id: "t-1",
+          name: "spawn_hoglet",
+          input: {
+            prompt: "Build the checkout page",
+            repository: "posthog/posthog",
+          },
+        },
+      ]),
+    });
+    const service = buildService(mocks);
+    await service.tick("nest-1", "test");
+
+    expect(mocks.hogletService.spawnInNest).toHaveBeenCalledWith(
+      {
+        nestId: "nest-1",
+        prompt: "Build the checkout page",
+        repository: "posthog/posthog",
+      },
+      expect.objectContaining({}),
+    );
+    const audits = (
+      mocks.nestChat.recordHedgehogMessage as ReturnType<typeof vi.fn>
+    ).mock.calls
+      .map(([args]) => args)
+      .filter((m) => m.kind === "audit");
+    expect(audits.some((m) => m.body.includes("Spawned hoglet"))).toBe(true);
+  });
+
+  it("caps spawn_hoglet calls at 3 per tick", async () => {
+    const mocks = setupMocks({
+      promptResponse: makePromptWithToolsResponse([
+        { id: "t-1", name: "spawn_hoglet", input: { prompt: "work 1" } },
+        { id: "t-2", name: "spawn_hoglet", input: { prompt: "work 2" } },
+        { id: "t-3", name: "spawn_hoglet", input: { prompt: "work 3" } },
+        { id: "t-4", name: "spawn_hoglet", input: { prompt: "work 4" } },
+      ]),
+    });
+    const service = buildService(mocks);
+    await service.tick("nest-1", "test");
+
+    expect(mocks.hogletService.spawnInNest).toHaveBeenCalledTimes(3);
+    const cappedAudit = (
+      mocks.nestChat.recordHedgehogMessage as ReturnType<typeof vi.fn>
+    ).mock.calls
+      .map(([args]) => args)
+      .find((m) =>
+        typeof m.body === "string" ? m.body.includes("per-tick cap") : false,
+      );
+    expect(cappedAudit).toBeDefined();
+  });
+
+  it("counts failed spawns toward the per-tick cap", async () => {
+    const mocks = setupMocks({
+      promptResponse: makePromptWithToolsResponse([
+        { id: "t-1", name: "spawn_hoglet", input: { prompt: "work 1" } },
+        { id: "t-2", name: "spawn_hoglet", input: { prompt: "work 2" } },
+        { id: "t-3", name: "spawn_hoglet", input: { prompt: "work 3" } },
+        { id: "t-4", name: "spawn_hoglet", input: { prompt: "work 4" } },
+      ]),
+    });
+    (
+      mocks.hogletService.spawnInNest as ReturnType<typeof vi.fn>
+    ).mockRejectedValue(new Error("cloud_unavailable"));
+    const service = buildService(mocks);
+    await service.tick("nest-1", "test");
+
+    expect(mocks.hogletService.spawnInNest).toHaveBeenCalledTimes(3);
+  });
+
+  it("passes loadout model and runtimeAdapter when raising hoglets", async () => {
+    const idleHoglets = [makeHoglet({ id: "h1", taskId: "task-1" })];
+    const mocks = setupMocks({
+      nest: makeNest({
+        loadoutJson: JSON.stringify({
+          model: defaultModelForAdapter("codex"),
+          runtimeAdapter: "codex",
+          reasoningEffort: "high",
+          environment: "local",
+        }),
+      }),
+      hoglets: idleHoglets,
+      hogletStates: {
+        "task-1": { status: "completed", runId: "run-old" },
+      },
+      promptResponse: makePromptWithToolsResponse([
+        {
+          id: "t-1",
+          name: "raise_hoglet",
+          input: { hoglet_id: "h1", prompt: "go" },
+        },
+      ]),
+    });
+    const service = buildService(mocks);
+    await service.tick("nest-1", "test");
+
+    expect(mocks.cloudTasks.createTaskRun).toHaveBeenCalledWith(
+      "task-1",
+      expect.objectContaining({
+        model: defaultModelForAdapter("codex"),
+        runtimeAdapter: "codex",
+        reasoningEffort: "high",
+        environment: "local",
+        prAuthorshipMode: "bot",
+      }),
+    );
+  });
+
+  it("defaults to codex model when adapter is codex and no model is set", async () => {
+    const idleHoglets = [makeHoglet({ id: "h1", taskId: "task-1" })];
+    const mocks = setupMocks({
+      nest: makeNest({
+        loadoutJson: JSON.stringify({ runtimeAdapter: "codex" }),
+      }),
+      hoglets: idleHoglets,
+      hogletStates: {
+        "task-1": { status: "completed", runId: "run-old" },
+      },
+      promptResponse: makePromptWithToolsResponse([
+        {
+          id: "t-1",
+          name: "raise_hoglet",
+          input: { hoglet_id: "h1", prompt: "go" },
+        },
+      ]),
+    });
+    const service = buildService(mocks);
+    await service.tick("nest-1", "test");
+
+    expect(mocks.cloudTasks.createTaskRun).toHaveBeenCalledWith(
+      "task-1",
+      expect.objectContaining({
+        model: defaultModelForAdapter("codex"),
+        runtimeAdapter: "codex",
+        reasoningEffort: DEFAULT_CODEX_REASONING_EFFORT,
+      }),
+    );
+  });
+
+  it("passes loadout to spawnInNest when spawning hoglets", async () => {
+    const mocks = setupMocks({
+      nest: makeNest({
+        loadoutJson: JSON.stringify({
+          model: defaultModelForAdapter("codex"),
+          runtimeAdapter: "codex",
+          reasoningEffort: DEFAULT_CODEX_REASONING_EFFORT,
+        }),
+      }),
+      promptResponse: makePromptWithToolsResponse([
+        { id: "t-1", name: "spawn_hoglet", input: { prompt: "work" } },
+      ]),
+    });
+    const service = buildService(mocks);
+    await service.tick("nest-1", "test");
+
+    expect(mocks.hogletService.spawnInNest).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: "work" }),
+      expect.objectContaining({
+        model: defaultModelForAdapter("codex"),
+        runtimeAdapter: "codex",
+        reasoningEffort: DEFAULT_CODEX_REASONING_EFFORT,
+      }),
+    );
+  });
+
+  it("writes an error audit when spawn_hoglet fails", async () => {
+    const mocks = setupMocks({
+      promptResponse: makePromptWithToolsResponse([
+        { id: "t-1", name: "spawn_hoglet", input: { prompt: "work" } },
+      ]),
+    });
+    (
+      mocks.hogletService.spawnInNest as ReturnType<typeof vi.fn>
+    ).mockRejectedValue(new Error("nest_hoglet_cap_reached"));
+    const service = buildService(mocks);
+    await service.tick("nest-1", "test");
+
+    const audits = (
+      mocks.nestChat.recordHedgehogMessage as ReturnType<typeof vi.fn>
+    ).mock.calls
+      .map(([args]) => args)
+      .filter((m) => m.kind === "audit");
+    expect(audits.some((m) => m.body.includes("Failed to spawn"))).toBe(true);
+  });
+
+  it("message_hoglet emits an InjectPrompt event via feedbackRouting", async () => {
+    const hoglet = makeHoglet({ id: "h1", taskId: "task-1" });
+    const mocks = setupMocks({
+      hoglets: [hoglet],
+      hogletStates: {
+        "task-1": { status: "in_progress", runId: "run-1" },
+      },
+      promptResponse: makePromptWithToolsResponse([
+        {
+          id: "t-1",
+          name: "message_hoglet",
+          input: {
+            hoglet_id: "h1",
+            prompt: "Add error handling to the parser",
+          },
+        },
+      ]),
+    });
+    const service = buildService(mocks);
+    await service.tick("nest-1", "test");
+
+    expect(mocks.feedbackRouting.emitInject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: "task-1",
+        hogletId: "h1",
+        nestId: "nest-1",
+        source: "hedgehog",
+        prompt: "Add error handling to the parser",
+        fallbackPrompt: "Add error handling to the parser",
+      }),
+    );
+
+    const audits = (
+      mocks.nestChat.recordHedgehogMessage as ReturnType<typeof vi.fn>
+    ).mock.calls
+      .map(([args]) => args)
+      .filter((m) => m.kind === "audit");
+    expect(audits.some((m) => m.body.includes("Messaged hoglet h1"))).toBe(
+      true,
+    );
+  });
+
+  it("counts failed raises toward the per-tick cap", async () => {
+    const idleHoglets = [
+      makeHoglet({ id: "h1", taskId: "task-1" }),
+      makeHoglet({ id: "h2", taskId: "task-2" }),
+      makeHoglet({ id: "h3", taskId: "task-3" }),
+      makeHoglet({ id: "h4", taskId: "task-4" }),
+    ];
+    const mocks = setupMocks({
+      hoglets: idleHoglets,
+      hogletStates: {
+        "task-1": { status: "completed", runId: "r1" },
+        "task-2": { status: "completed", runId: "r2" },
+        "task-3": { status: "completed", runId: "r3" },
+        "task-4": { status: "completed", runId: "r4" },
+      },
+      promptResponse: makePromptWithToolsResponse([
+        { id: "t-1", name: "raise_hoglet", input: { hoglet_id: "h1" } },
+        { id: "t-2", name: "raise_hoglet", input: { hoglet_id: "h2" } },
+        { id: "t-3", name: "raise_hoglet", input: { hoglet_id: "h3" } },
+        { id: "t-4", name: "raise_hoglet", input: { hoglet_id: "h4" } },
+      ]),
+    });
+    (
+      mocks.cloudTasks.createTaskRun as ReturnType<typeof vi.fn>
+    ).mockRejectedValue(new Error("cloud_unavailable"));
+    const service = buildService(mocks);
+    await service.tick("nest-1", "test");
+
+    expect(mocks.cloudTasks.createTaskRun).toHaveBeenCalledTimes(3);
+  });
+
+  it("clamps codex reasoning effort to high when loadout specifies max", async () => {
+    const idleHoglets = [makeHoglet({ id: "h1", taskId: "task-1" })];
+    const mocks = setupMocks({
+      nest: makeNest({
+        loadoutJson: JSON.stringify({
+          runtimeAdapter: "codex",
+          reasoningEffort: "max",
+        }),
+      }),
+      hoglets: idleHoglets,
+      hogletStates: {
+        "task-1": { status: "completed", runId: "run-old" },
+      },
+      promptResponse: makePromptWithToolsResponse([
+        {
+          id: "t-1",
+          name: "raise_hoglet",
+          input: { hoglet_id: "h1", prompt: "go" },
+        },
+      ]),
+    });
+    const service = buildService(mocks);
+    await service.tick("nest-1", "test");
+
+    expect(mocks.cloudTasks.createTaskRun).toHaveBeenCalledWith(
+      "task-1",
+      expect.objectContaining({
+        runtimeAdapter: "codex",
+        reasoningEffort: "high",
+      }),
+    );
+  });
+
   it("dispatches link_pr_dependency, validating both task_ids belong to the nest", async () => {
     const mocks = setupMocks({
       hoglets: [
@@ -585,7 +894,6 @@ describe("HedgehogTickService", () => {
       ],
     });
     const edgeId = mocks.prDependencies.listForNest("nest-1")[0].id;
-    // Re-issue the prompt now that we know the assigned id.
     mocks.llm.promptWithTools = vi.fn(async () =>
       makePromptWithToolsResponse([
         {

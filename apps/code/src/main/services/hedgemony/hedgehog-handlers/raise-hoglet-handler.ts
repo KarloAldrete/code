@@ -1,4 +1,11 @@
 import { raiseHogletArgs } from "../hedgehog-tools";
+import {
+  clampReasoningEffortForAdapter,
+  DEFAULT_HOGLET_ENVIRONMENT,
+  DEFAULT_HOGLET_RUNTIME_ADAPTER,
+  defaultModelForAdapter,
+  defaultReasoningEffortForAdapter,
+} from "../schemas";
 import type { HandlerResult, HedgehogToolHandler } from "./types";
 import { recordToolValidationError, stringifyError, truncate } from "./utils";
 
@@ -15,6 +22,8 @@ export const raiseHogletHandler: HedgehogToolHandler = {
       });
       return { success: false, scratchpadSummary: "raise_hoglet capped" };
     }
+    ctx.budget.raiseCount += 1;
+
     const parsed = raiseHogletArgs.safeParse(block.input);
     if (!parsed.success) {
       return recordToolValidationError(
@@ -50,9 +59,24 @@ export const raiseHogletHandler: HedgehogToolHandler = {
     }
 
     try {
+      const runtimeAdapter =
+        ctx.loadout.runtimeAdapter ?? DEFAULT_HOGLET_RUNTIME_ADAPTER;
+      const model =
+        ctx.loadout.model ?? defaultModelForAdapter(runtimeAdapter);
+      const reasoningEffort = clampReasoningEffortForAdapter(
+        ctx.loadout.reasoningEffort ??
+          defaultReasoningEffortForAdapter(runtimeAdapter),
+        runtimeAdapter,
+      );
+      const environment =
+        ctx.loadout.environment ?? DEFAULT_HOGLET_ENVIRONMENT;
       const run = await deps.cloudTasks.createTaskRun(entry.hoglet.taskId, {
-        environment: "cloud",
+        environment,
         mode: "background",
+        runtimeAdapter,
+        model,
+        reasoningEffort,
+        prAuthorshipMode: "bot",
       });
       await deps.cloudTasks.startTaskRun(entry.hoglet.taskId, run.id, {
         pendingUserMessage: args.prompt,
@@ -69,7 +93,6 @@ export const raiseHogletHandler: HedgehogToolHandler = {
           prompt: args.prompt ?? null,
         },
       });
-      ctx.budget.raiseCount += 1;
       return {
         success: true,
         scratchpadSummary: `Raised hoglet ${args.hoglet_id}`,

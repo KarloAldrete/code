@@ -353,7 +353,7 @@ const KIND_ACCENT: Record<NestMessageKind, string> = {
 
 interface FeedbackRoutedPayload {
   type: "feedback_routed";
-  source: "pr_review" | "ci" | "issue";
+  source: "pr_review" | "ci" | "issue" | "hedgehog";
   outcome: "injected" | "follow_up_spawned" | "failed";
   payloadRef: string;
   hogletTaskId: string;
@@ -564,8 +564,13 @@ function FeedbackRoutedMessage({
     payload.outcome === "failed"
       ? "border-(--orange-6) bg-(--orange-2) text-(--orange-11)"
       : "border-(--cyan-6) bg-(--cyan-2) text-(--cyan-11)";
-  const label =
-    payload.source === "pr_review" ? "Feedback routed" : "CI failure routed";
+  const sourceLabels: Record<FeedbackRoutedPayload["source"], string> = {
+    pr_review: "Feedback routed",
+    ci: "CI failure routed",
+    issue: "Issue feedback routed",
+    hedgehog: "Hedgehog message routed",
+  };
+  const label = sourceLabels[payload.source];
   return (
     <div className={`rounded-(--radius-2) border ${tone} p-2`}>
       <div className="mb-1 flex items-center justify-between gap-2">

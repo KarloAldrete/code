@@ -3,6 +3,7 @@ import type { Task, TaskRun, TaskRunStatus } from "../../../shared/types";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import type { AuthService } from "../auth/service";
+import type { HedgemonyReasoningEffort } from "./schemas";
 
 const log = logger.scope("hedgemony-cloud-task-client");
 
@@ -12,6 +13,8 @@ interface CreateTaskRunOptions {
   branch?: string | null;
   runtimeAdapter?: "claude" | "codex";
   model?: string;
+  reasoningEffort?: HedgemonyReasoningEffort;
+  prAuthorshipMode?: "user" | "bot";
 }
 
 interface StartTaskRunOptions {
@@ -111,6 +114,12 @@ export class CloudTaskClient {
       body.runtime_adapter = options.runtimeAdapter;
     }
     if (options.model !== undefined) body.model = options.model;
+    if (options.reasoningEffort !== undefined) {
+      body.reasoning_effort = options.reasoningEffort;
+    }
+    if (options.prAuthorshipMode !== undefined) {
+      body.pr_authorship_mode = options.prAuthorshipMode;
+    }
 
     const response = await this.auth.authenticatedFetch(
       fetch,

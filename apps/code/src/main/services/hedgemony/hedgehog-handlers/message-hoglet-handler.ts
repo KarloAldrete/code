@@ -24,19 +24,32 @@ export const messageHogletHandler: HedgehogToolHandler = {
         `hoglet ${args.hoglet_id} not in this nest`,
       );
     }
+
+    deps.feedbackRouting.emitInject({
+      taskId: entry.hoglet.taskId,
+      hogletId: entry.hoglet.id,
+      nestId: ctx.nest.id,
+      source: "hedgehog",
+      payloadRef: `hedgehog-message:${ctx.nest.id}:${Date.now()}`,
+      payloadHash: `hm-${entry.hoglet.id}-${Date.now()}`,
+      prompt: args.prompt,
+      prUrl: "",
+      fallbackPrompt: args.prompt,
+    });
+
     deps.writeNestMessage(ctx.nest.id, {
       kind: "audit",
       sourceTaskId: entry.hoglet.taskId,
-      body: `Noted message for hoglet ${args.hoglet_id}: ${truncate(args.prompt, 300)} (Slice 6 — prompt is not yet injected into the live session).`,
+      body: `Messaged hoglet ${args.hoglet_id}: ${truncate(args.prompt, 300)}`,
       payloadJson: {
-        type: "message_hoglet_recorded",
+        type: "message_hoglet_injected",
         hogletId: args.hoglet_id,
         prompt: args.prompt,
       },
     });
     return {
       success: true,
-      scratchpadSummary: `message_hoglet recorded for ${args.hoglet_id}`,
+      scratchpadSummary: `message_hoglet injected for ${args.hoglet_id}`,
     };
   },
 };

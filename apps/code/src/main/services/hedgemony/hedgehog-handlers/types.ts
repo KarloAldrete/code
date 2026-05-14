@@ -1,10 +1,12 @@
 import type { PrDependency } from "../../../db/repositories/pr-dependency-repository";
 import type { AnthropicToolUseBlock } from "../../llm-gateway/schemas";
 import type { CloudTaskClient } from "../cloud-task-client";
+import type { FeedbackRoutingService } from "../feedback-routing-service";
 import type { HogletWithState } from "../hedgehog-prompts";
 import type { HedgehogToolName } from "../hedgehog-tools";
+import type { HogletService } from "../hoglet-service";
 import type { PrGraphService } from "../pr-graph-service";
-import type { Nest } from "../schemas";
+import type { Nest, NestLoadout } from "../schemas";
 
 /**
  * Per-tick state shared across handler invocations. Handlers that need to
@@ -13,18 +15,15 @@ import type { Nest } from "../schemas";
  */
 export class TickBudget {
   raiseCount = 0;
+  spawnCount = 0;
 }
 
 export interface TickContext {
   readonly nest: Nest;
   readonly hoglets: HogletWithState[];
   readonly budget: TickBudget;
-  /**
-   * PR dependency edges in this nest at tick time. Used by Slice 8's PR-graph
-   * handlers (link/unlink/rebase) for membership checks and by the user prompt
-   * to surface the current graph to the hedgehog.
-   */
   readonly prDependencies: PrDependency[];
+  readonly loadout: NestLoadout;
 }
 
 export interface WriteNestMessageInput {
@@ -37,16 +36,9 @@ export interface WriteNestMessageInput {
 
 export interface HedgehogToolDeps {
   readonly cloudTasks: CloudTaskClient;
-  /**
-   * Slice 8's PR graph manipulator. Handlers use it to declare new edges,
-   * remove them, and proactively trigger rebase routing.
-   */
   readonly prGraph: PrGraphService;
-  /**
-   * Write a message into nest chat and emit the change to subscribers.
-   * Closed over by the tick service so handlers don't take direct refs to
-   * NestChatService / NestService.
-   */
+  readonly feedbackRouting: FeedbackRoutingService;
+  readonly hogletService: HogletService;
   writeNestMessage(nestId: string, input: WriteNestMessageInput): void;
 }
 

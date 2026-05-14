@@ -2,16 +2,37 @@ import { z } from "zod";
 import type { AnthropicToolDefinition } from "../llm-gateway/schemas";
 
 /**
- * The hedgehog's tool list. Slice 6 added the brood-management primitives;
- * Slice 8 added PR-graph orchestration (`link_pr_dependency`,
- * `unlink_pr_dependency`, `rebase_child`). The hedgehog still cannot author
- * code — these tools only declare relationships and route rebase prompts.
+ * The hedgehog's tool list. Brood management (spawn, raise, kill, message,
+ * audit) plus Slice 8's PR-graph orchestration (link_pr_dependency,
+ * unlink_pr_dependency, rebase_child). The hedgehog cannot author code —
+ * these tools declare relationships and route prompts.
  *
- * `message_hoglet` is audit-only; Slice 7 (FeedbackRoutingService +
- * useHedgemonyPromptRouter hook) wires real prompt injection into live
- * sessions on the same channel.
+ * `message_hoglet` emits an InjectPrompt event via the FeedbackRoutingService
+ * pipeline. The renderer's useHedgemonyPromptRouter hook injects into live
+ * sessions or spawns follow-up hoglets for completed ones.
  */
 export const HEDGEHOG_TOOLS: AnthropicToolDefinition[] = [
+  {
+    name: "spawn_hoglet",
+    description:
+      "Create a brand-new hoglet (cloud Task) inside this nest and immediately start it. Use to decompose the nest goal into concrete work items. Each hoglet gets its own branch and worktree. Include a detailed prompt describing the work.",
+    input_schema: {
+      type: "object",
+      properties: {
+        prompt: {
+          type: "string",
+          description:
+            "Detailed instructions for the new hoglet. Be specific about what to build, which files/areas to touch, and acceptance criteria.",
+        },
+        repository: {
+          type: "string",
+          description:
+            "Optional repository reference (e.g. 'org/repo'). Use when the bootstrap context identified specific repos for the work.",
+        },
+      },
+      required: ["prompt"],
+    },
+  },
   {
     name: "raise_hoglet",
     description:
@@ -55,7 +76,7 @@ export const HEDGEHOG_TOOLS: AnthropicToolDefinition[] = [
   {
     name: "message_hoglet",
     description:
-      "Note an instruction you want delivered to a hoglet. In Slice 6 this writes an audit entry only — real prompt injection lands in a later slice. Use to record an intent; do not assume the hoglet will read it.",
+      "Send an instruction to a hoglet. If the hoglet has a live session, the prompt is injected immediately. If the session has ended, a follow-up hoglet is spawned with the prompt. Use for mid-flight course corrections or new context the hoglet needs.",
     input_schema: {
       type: "object",
       properties: {
@@ -161,6 +182,7 @@ export const HEDGEHOG_TOOLS: AnthropicToolDefinition[] = [
 ];
 
 export type HedgehogToolName =
+  | "spawn_hoglet"
   | "raise_hoglet"
   | "kill_hoglet"
   | "message_hoglet"
@@ -168,6 +190,11 @@ export type HedgehogToolName =
   | "link_pr_dependency"
   | "unlink_pr_dependency"
   | "rebase_child";
+
+export const spawnHogletArgs = z.object({
+  prompt: z.string().trim().min(1).max(8000),
+  repository: z.string().trim().min(1).optional(),
+});
 
 export const raiseHogletArgs = z.object({
   hoglet_id: z.string().min(1),
@@ -205,6 +232,7 @@ export const rebaseChildArgs = z.object({
   prompt: z.string().trim().min(1).max(2000).optional(),
 });
 
+export type SpawnHogletArgs = z.infer<typeof spawnHogletArgs>;
 export type RaiseHogletArgs = z.infer<typeof raiseHogletArgs>;
 export type KillHogletArgs = z.infer<typeof killHogletArgs>;
 export type MessageHogletArgs = z.infer<typeof messageHogletArgs>;

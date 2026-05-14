@@ -176,6 +176,7 @@ export class LlmGatewayService {
       system?: string;
       maxTokens?: number;
       model?: string;
+      effort?: LlmGatewayEffortLevel;
       tools: AnthropicToolDefinition[];
       toolChoice?: AnthropicToolChoice;
     },
@@ -184,6 +185,7 @@ export class LlmGatewayService {
       system,
       maxTokens,
       model = DEFAULT_GATEWAY_MODEL,
+      effort,
       tools,
       toolChoice,
     } = options;
@@ -207,6 +209,10 @@ export class LlmGatewayService {
       requestBody.system = system;
     }
 
+    if (effort) {
+      requestBody.output_config = { effort };
+    }
+
     if (toolChoice) {
       requestBody.tool_choice = toolChoice;
     }
@@ -214,6 +220,7 @@ export class LlmGatewayService {
     log.debug("Sending tools request to LLM gateway", {
       url: messagesUrl,
       model,
+      effort,
       messageCount: messages.length,
       toolCount: tools.length,
     });

@@ -18,11 +18,19 @@ import type { AffinityRouterService } from "./affinity-router";
 import type { CloudTaskClient } from "./cloud-task-client";
 import {
   HogletService,
+  MAX_NEST_HOGLETS,
   MAX_SIGNAL_STAGING_HOGLETS,
   MAX_WILD_HOGLETS,
 } from "./hoglet-service";
 import type { PrGraphService } from "./pr-graph-service";
-import { HedgemonyEvent, type Hoglet } from "./schemas";
+import {
+  DEFAULT_CLAUDE_REASONING_EFFORT,
+  DEFAULT_CODEX_REASONING_EFFORT,
+  DEFAULT_HOGLET_MODEL,
+  defaultModelForAdapter,
+  HedgemonyEvent,
+  type Hoglet,
+} from "./schemas";
 
 function createMockPrGraphService(): PrGraphService {
   return {
@@ -174,6 +182,11 @@ function createMockCloudTaskClient(
         repository: taskOverrides.repository ?? null,
       }),
     ),
+    createTaskRun: vi.fn(async () => ({
+      id: `run-${crypto.randomUUID().slice(0, 8)}`,
+      status: "not_started",
+    })),
+    startTaskRun: vi.fn(async () => ({})),
     getTaskWithLatestRun: vi.fn(async (taskId: string) => ({
       task: {
         id: taskId,
@@ -693,6 +706,227 @@ describe("HogletService", () => {
       service.retire({ hogletId: wild.id });
 
       expect(listener).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("spawnInNest", () => {
+    it("creates a cloud task + run, then inserts the sidecar row", async () => {
+      cloudTasks = createMockCloudTaskClient({ id: "cloud-task-1" });
+      service = new HogletService(
+        repo,
+        router,
+        prDeps as unknown as PrDependencyRepository,
+        cloudTasks,
+        createMockPrGraphService(),
+      );
+      const listener = vi.fn();
+      service.on(HedgemonyEvent.HogletChanged, listener);
+
+      const { hoglet, taskRunId } = await service.spawnInNest({
+        nestId: "nest-1",
+        prompt: "Build the checkout page",
+      });
+
+      expect(cloudTasks.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Build the checkout page",
+          description: "Build the checkout page",
+          repository: null,
+          originProduct: "automation",
+        }),
+      );
+      expect(cloudTasks.createTaskRun).toHaveBeenCalledWith(
+        "cloud-task-1",
+        expect.objectContaining({
+          environment: "cloud",
+          mode: "background",
+          runtimeAdapter: "claude",
+          model: DEFAULT_HOGLET_MODEL,
+          reasoningEffort: DEFAULT_CLAUDE_REASONING_EFFORT,
+          prAuthorshipMode: "bot",
+        }),
+      );
+      expect(cloudTasks.startTaskRun).toHaveBeenCalledWith(
+        "cloud-task-1",
+        expect.any(String),
+        { pendingUserMessage: "Build the checkout page" },
+      );
+      expect(hoglet.taskId).toBe("cloud-task-1");
+      expect(hoglet.nestId).toBe("nest-1");
+      expect(taskRunId).toBeTruthy();
+      expect(listener).toHaveBeenCalledWith({
+        bucket: { kind: "nest", nestId: "nest-1" },
+        event: { kind: "upsert", hoglet },
+      });
+    });
+
+    it("passes loadout model and runtimeAdapter to the cloud run", async () => {
+      cloudTasks = createMockCloudTaskClient({ id: "cloud-task-2" });
+      service = new HogletService(
+        repo,
+        router,
+        prDeps as unknown as PrDependencyRepository,
+        cloudTasks,
+        createMockPrGraphService(),
+      );
+
+      await service.spawnInNest(
+        { nestId: "nest-1", prompt: "work" },
+        {
+          model: defaultModelForAdapter("codex"),
+          runtimeAdapter: "codex",
+          reasoningEffort: "high",
+        },
+      );
+
+      expect(cloudTasks.createTaskRun).toHaveBeenCalledWith(
+        "cloud-task-2",
+        expect.objectContaining({
+          model: defaultModelForAdapter("codex"),
+          runtimeAdapter: "codex",
+          reasoningEffort: "high",
+        }),
+      );
+    });
+
+    it("defaults to codex model when runtimeAdapter is codex without explicit model", async () => {
+      cloudTasks = createMockCloudTaskClient({ id: "cloud-task-codex" });
+      service = new HogletService(
+        repo,
+        router,
+        prDeps as unknown as PrDependencyRepository,
+        cloudTasks,
+        createMockPrGraphService(),
+      );
+
+      await service.spawnInNest(
+        { nestId: "nest-1", prompt: "work" },
+        { runtimeAdapter: "codex" },
+      );
+
+      expect(cloudTasks.createTaskRun).toHaveBeenCalledWith(
+        "cloud-task-codex",
+        expect.objectContaining({
+          model: defaultModelForAdapter("codex"),
+          runtimeAdapter: "codex",
+          reasoningEffort: DEFAULT_CODEX_REASONING_EFFORT,
+        }),
+      );
+    });
+
+    it("passes repository to createTask when provided", async () => {
+      cloudTasks = createMockCloudTaskClient();
+      service = new HogletService(
+        repo,
+        router,
+        prDeps as unknown as PrDependencyRepository,
+        cloudTasks,
+        createMockPrGraphService(),
+      );
+
+      await service.spawnInNest({
+        nestId: "nest-1",
+        prompt: "work",
+        repository: "posthog/posthog",
+      });
+
+      expect(cloudTasks.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({ repository: "posthog/posthog" }),
+      );
+    });
+
+    it("enforces the nest hoglet cap", async () => {
+      for (let i = 0; i < MAX_NEST_HOGLETS; i++) {
+        repo._hoglets.set(
+          `h-${i}`,
+          makeHoglet({ id: `h-${i}`, taskId: `t-${i}`, nestId: "nest-1" }),
+        );
+      }
+
+      await expect(
+        service.spawnInNest({ nestId: "nest-1", prompt: "overflow" }),
+      ).rejects.toThrowError("nest_hoglet_cap_reached");
+      expect(cloudTasks.createTask).not.toHaveBeenCalled();
+    });
+
+    it("does not insert sidecar row when createTaskRun fails", async () => {
+      cloudTasks = createMockCloudTaskClient({ id: "cloud-fail" });
+      (cloudTasks.createTaskRun as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error("cloud_unavailable"),
+      );
+      service = new HogletService(
+        repo,
+        router,
+        prDeps as unknown as PrDependencyRepository,
+        cloudTasks,
+        createMockPrGraphService(),
+      );
+
+      await expect(
+        service.spawnInNest({ nestId: "nest-1", prompt: "work" }),
+      ).rejects.toThrowError("cloud_unavailable");
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it("does not insert sidecar row when startTaskRun fails", async () => {
+      cloudTasks = createMockCloudTaskClient({ id: "cloud-fail-2" });
+      (cloudTasks.startTaskRun as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error("start_failed"),
+      );
+      service = new HogletService(
+        repo,
+        router,
+        prDeps as unknown as PrDependencyRepository,
+        cloudTasks,
+        createMockPrGraphService(),
+      );
+
+      await expect(
+        service.spawnInNest({ nestId: "nest-1", prompt: "work" }),
+      ).rejects.toThrowError("start_failed");
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it("truncates long prompts in the task title", async () => {
+      cloudTasks = createMockCloudTaskClient();
+      service = new HogletService(
+        repo,
+        router,
+        prDeps as unknown as PrDependencyRepository,
+        cloudTasks,
+        createMockPrGraphService(),
+      );
+      const longPrompt = "A".repeat(200);
+
+      await service.spawnInNest({ nestId: "nest-1", prompt: longPrompt });
+
+      const titleArg = (cloudTasks.createTask as ReturnType<typeof vi.fn>).mock
+        .calls[0][0].title;
+      expect(titleArg.length).toBeLessThanOrEqual(120);
+    });
+
+    it("clamps codex reasoning effort to high when max is specified", async () => {
+      cloudTasks = createMockCloudTaskClient({ id: "cloud-task-clamp" });
+      service = new HogletService(
+        repo,
+        router,
+        prDeps as unknown as PrDependencyRepository,
+        cloudTasks,
+        createMockPrGraphService(),
+      );
+
+      await service.spawnInNest(
+        { nestId: "nest-1", prompt: "work" },
+        { runtimeAdapter: "codex", reasoningEffort: "max" },
+      );
+
+      expect(cloudTasks.createTaskRun).toHaveBeenCalledWith(
+        "cloud-task-clamp",
+        expect.objectContaining({
+          runtimeAdapter: "codex",
+          reasoningEffort: "high",
+        }),
+      );
     });
   });
 

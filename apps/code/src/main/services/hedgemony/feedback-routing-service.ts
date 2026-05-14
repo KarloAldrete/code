@@ -331,7 +331,7 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
     }
   }
 
-  private emitInject(payload: InjectPromptEventPayload): void {
+  emitInject(payload: InjectPromptEventPayload): void {
     const hasListeners =
       this.listenerCount(FeedbackRoutingEvent.InjectPrompt) > 0;
     if (hasListeners) {
@@ -387,6 +387,7 @@ function describeRoutedFeedback(input: RecordRoutedFeedbackInput): string {
     pr_review: "PR review comment",
     ci: "CI failure",
     issue: "issue update",
+    hedgehog: "hedgehog message",
   };
   const outcomeLabel: Record<string, string> = {
     injected: "→ injected into live session",

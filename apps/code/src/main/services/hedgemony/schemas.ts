@@ -244,6 +244,78 @@ export const hoglet = z.object({
 });
 export type Hoglet = z.infer<typeof hoglet>;
 
+export const hedgemonyReasoningEffort = z.enum([
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+]);
+export type HedgemonyReasoningEffort = z.infer<typeof hedgemonyReasoningEffort>;
+
+export const hogletRuntimeAdapter = z.enum(["claude", "codex"]);
+export type HogletRuntimeAdapter = z.infer<typeof hogletRuntimeAdapter>;
+
+export const nestLoadout = z
+  .object({
+    model: z.string().optional(),
+    runtimeAdapter: hogletRuntimeAdapter.optional(),
+    reasoningEffort: hedgemonyReasoningEffort.optional(),
+    environment: z.enum(["local", "cloud"]).optional(),
+    heartbeatIntervalMs: z.number().int().min(60_000).max(600_000).optional(),
+  })
+  .catch({});
+export type NestLoadout = z.infer<typeof nestLoadout>;
+
+export const DEFAULT_HOGLET_MODEL = "claude-opus-4-7";
+export const DEFAULT_CODEX_HOGLET_MODEL = "gpt-5.5";
+export const DEFAULT_HOGLET_RUNTIME_ADAPTER = "claude" as const;
+export const DEFAULT_HOGLET_ENVIRONMENT = "cloud" as const;
+export const DEFAULT_CLAUDE_REASONING_EFFORT: HedgemonyReasoningEffort = "max";
+export const DEFAULT_CODEX_REASONING_EFFORT: HedgemonyReasoningEffort = "high";
+
+export function defaultModelForAdapter(
+  adapter: HogletRuntimeAdapter | undefined,
+): string {
+  return adapter === "codex"
+    ? DEFAULT_CODEX_HOGLET_MODEL
+    : DEFAULT_HOGLET_MODEL;
+}
+
+export function defaultReasoningEffortForAdapter(
+  adapter: HogletRuntimeAdapter | undefined,
+): HedgemonyReasoningEffort {
+  return adapter === "codex"
+    ? DEFAULT_CODEX_REASONING_EFFORT
+    : DEFAULT_CLAUDE_REASONING_EFFORT;
+}
+
+const CODEX_MAX_EFFORT: HedgemonyReasoningEffort = "high";
+
+export function clampReasoningEffortForAdapter(
+  effort: HedgemonyReasoningEffort,
+  adapter: HogletRuntimeAdapter | undefined,
+): HedgemonyReasoningEffort {
+  if (adapter !== "codex") return effort;
+  const order: HedgemonyReasoningEffort[] = [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+  ];
+  const effortIdx = order.indexOf(effort);
+  const maxIdx = order.indexOf(CODEX_MAX_EFFORT);
+  return effortIdx > maxIdx ? CODEX_MAX_EFFORT : effort;
+}
+
+export const spawnHogletInNestInput = z.object({
+  nestId: z.string().min(1),
+  prompt: z.string().min(1).max(8000),
+  repository: z.string().trim().min(1).optional(),
+});
+export type SpawnHogletInNestInput = z.infer<typeof spawnHogletInNestInput>;
+
 export const recordAdhocHogletInput = z.object({
   taskId: z.string().min(1),
 });
@@ -304,7 +376,12 @@ export const hogletWatchEvent = z.discriminatedUnion("kind", [
 ]);
 export type HogletWatchEvent = z.infer<typeof hogletWatchEvent>;
 
-export const feedbackEventSource = z.enum(["pr_review", "ci", "issue"]);
+export const feedbackEventSource = z.enum([
+  "pr_review",
+  "ci",
+  "issue",
+  "hedgehog",
+]);
 export type FeedbackEventSource = z.infer<typeof feedbackEventSource>;
 
 export const feedbackEventOutcome = z.enum([
