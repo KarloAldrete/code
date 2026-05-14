@@ -1,7 +1,12 @@
 import { useFolders } from "@features/folders/hooks/useFolders";
 import { PromptInput } from "@features/message-editor/components/PromptInput";
+import { ReasoningLevelSelector } from "@features/sessions/components/ReasoningLevelSelector";
+import { UnifiedModelSelector } from "@features/sessions/components/UnifiedModelSelector";
+import type { AgentAdapter } from "@features/settings/stores/settingsStore";
+import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { get } from "@renderer/di/container";
 import { RENDERER_TOKENS } from "@renderer/di/tokens";
+import { usePreviewConfig } from "@renderer/features/task-detail/hooks/usePreviewConfig";
 import type {
   TaskCreationInput,
   TaskService,
@@ -28,6 +33,41 @@ export function WorkHomePrompt() {
   const { folders, isLoaded: foldersLoaded } = useFolders();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const [adapter, setAdapter] = useState<AgentAdapter>("claude");
+  const setLastUsedReasoningEffort = useSettingsStore(
+    (s) => s.setLastUsedReasoningEffort,
+  );
+  const {
+    modelOption,
+    thoughtOption,
+    isLoading: isPreviewLoading,
+    setConfigOption,
+  } = usePreviewConfig(adapter);
+
+  const currentModel =
+    modelOption?.type === "select" ? modelOption.currentValue : undefined;
+  const currentReasoningLevel =
+    thoughtOption?.type === "select" ? thoughtOption.currentValue : undefined;
+
+  const handleModelChange = useCallback(
+    (value: string) => {
+      if (modelOption) {
+        setConfigOption(modelOption.id, value);
+      }
+    },
+    [modelOption, setConfigOption],
+  );
+
+  const handleThoughtChange = useCallback(
+    (value: string) => {
+      if (thoughtOption) {
+        setConfigOption(thoughtOption.id, value);
+        setLastUsedReasoningEffort(value);
+      }
+    },
+    [thoughtOption, setConfigOption, setLastUsedReasoningEffort],
+  );
+
   const handleSubmit = useCallback(
     async (text: string) => {
       const trimmed = text.trim();
@@ -42,6 +82,9 @@ export function WorkHomePrompt() {
           content: trimmed,
           repoPath,
           workspaceMode: "local",
+          adapter,
+          model: currentModel,
+          reasoningLevel: currentReasoningLevel,
           // HACKATHON SHORTCUT: see useWorkThreadTasks.ts for the why. We mark
           // Work-mode tasks by stashing { work_thread: true, collaborators: [] }
           // into the existing `repository_config` JSON field. No backend deploy.
@@ -70,7 +113,16 @@ export function WorkHomePrompt() {
         setIsSubmitting(false);
       }
     },
-    [folders, foldersLoaded, isSubmitting, addThread, navigateToWorkTask],
+    [
+      folders,
+      foldersLoaded,
+      isSubmitting,
+      addThread,
+      navigateToWorkTask,
+      adapter,
+      currentModel,
+      currentReasoningLevel,
+    ],
   );
 
   return (
@@ -84,6 +136,26 @@ export function WorkHomePrompt() {
       enableBashMode={false}
       enableTeamMentions
       onSubmit={handleSubmit}
+      modelSelector={
+        <UnifiedModelSelector
+          modelOption={modelOption}
+          adapter={adapter}
+          onAdapterChange={setAdapter}
+          disabled={isSubmitting}
+          isConnecting={isPreviewLoading}
+          onModelChange={handleModelChange}
+        />
+      }
+      reasoningSelector={
+        !isPreviewLoading && (
+          <ReasoningLevelSelector
+            thoughtOption={thoughtOption}
+            adapter={adapter}
+            onChange={handleThoughtChange}
+            disabled={isSubmitting}
+          />
+        )
+      }
     />
   );
 }

@@ -31,5 +31,5 @@ export function WorkTaskDetailView() {
     );
   }
 
-  return <TaskDetail key={task.id} task={task} />;
+  return <TaskDetail key={task.id} task={task} chatOnly />;
 }

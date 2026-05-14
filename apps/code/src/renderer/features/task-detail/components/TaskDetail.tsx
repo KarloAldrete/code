@@ -36,9 +36,13 @@ const log = logger.scope("task-detail");
 
 interface TaskDetailProps {
   task: Task;
+  chatOnly?: boolean;
 }
 
-export function TaskDetail({ task: initialTask }: TaskDetailProps) {
+export function TaskDetail({
+  task: initialTask,
+  chatOnly = false,
+}: TaskDetailProps) {
   const taskId = initialTask.id;
   const selectTask = useTaskStore((s) => s.selectTask);
 
@@ -155,7 +159,9 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
         <Flex align="center" gap="1" className="shrink-0">
           <MemoryIndicator />
           <SaveAsScheduledTaskButton taskId={taskId} />
-          {openTargetPath && <ExternalAppsOpener targetPath={openTargetPath} />}
+          {!chatOnly && openTargetPath && (
+            <ExternalAppsOpener targetPath={openTargetPath} />
+          )}
         </Flex>
       </Flex>
     ),
@@ -166,6 +172,7 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
       isEditingTitle,
       handleTitleEditSubmit,
       handleTitleEditCancel,
+      chatOnly,
     ],
   );
 
@@ -178,8 +185,8 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
   const isCloud =
     workspace?.mode === "cloud" || task.latest_run?.environment === "cloud";
 
-  const isReviewOpen = reviewMode !== "closed";
-  const isExpanded = reviewMode === "expanded";
+  const isReviewOpen = !chatOnly && reviewMode !== "closed";
+  const isExpanded = !chatOnly && reviewMode === "expanded";
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [reviewWidth, setReviewWidth] = useState<number | null>(null);
@@ -231,38 +238,40 @@ export function TaskDetail({ task: initialTask }: TaskDetailProps) {
     <Box height="100%" ref={containerRef}>
       <Flex height="100%">
         <Box className={`min-w-0 flex-1 ${isExpanded ? "hidden" : ""}`}>
-          <PanelLayout taskId={taskId} task={task} />
+          <PanelLayout taskId={taskId} task={task} chatOnly={chatOnly} />
         </Box>
 
-        {isReviewOpen && !isExpanded && (
+        {!chatOnly && isReviewOpen && !isExpanded && (
           <Box
             onMouseDown={handleResizeStart}
             className="z-[1] w-[4px] shrink-0 cursor-col-resize border-l border-l-(--gray-6) bg-transparent transition-colors hover:bg-accent-6 active:bg-accent-8"
           />
         )}
 
-        <Box
-          style={{
-            flex: isExpanded ? 1 : undefined,
-            width: isReviewOpen
-              ? isExpanded
-                ? undefined
-                : reviewWidth
-                  ? `${reviewWidth}px`
-                  : "50%"
-              : "0px",
-            minWidth: isReviewOpen ? `${MIN_REVIEW_WIDTH}px` : "0px",
-            overflow: isReviewOpen ? undefined : "hidden",
-            visibility: isReviewOpen ? undefined : "hidden",
-          }}
-          className="h-full"
-        >
-          {isCloud ? (
-            <CloudReviewPage task={task} />
-          ) : (
-            <ReviewPage task={task} />
-          )}
-        </Box>
+        {!chatOnly && (
+          <Box
+            style={{
+              flex: isExpanded ? 1 : undefined,
+              width: isReviewOpen
+                ? isExpanded
+                  ? undefined
+                  : reviewWidth
+                    ? `${reviewWidth}px`
+                    : "50%"
+                : "0px",
+              minWidth: isReviewOpen ? `${MIN_REVIEW_WIDTH}px` : "0px",
+              overflow: isReviewOpen ? undefined : "hidden",
+              visibility: isReviewOpen ? undefined : "hidden",
+            }}
+            className="h-full"
+          >
+            {isCloud ? (
+              <CloudReviewPage task={task} />
+            ) : (
+              <ReviewPage task={task} />
+            )}
+          </Box>
+        )}
       </Flex>
       <FilePicker
         open={filePickerOpen}

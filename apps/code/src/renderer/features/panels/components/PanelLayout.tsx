@@ -18,6 +18,7 @@ import { LeafNodeRenderer } from "./LeafNodeRenderer";
 interface PanelLayoutProps {
   taskId: string;
   task: Task;
+  chatOnly?: boolean;
 }
 
 const PanelLayoutRenderer: React.FC<{
@@ -165,7 +166,11 @@ const PanelLayoutRenderer: React.FC<{
   return <>{renderNode(node)}</>;
 };
 
-export const PanelLayout: React.FC<PanelLayoutProps> = ({ taskId, task }) => {
+export const PanelLayout: React.FC<PanelLayoutProps> = ({
+  taskId,
+  task,
+  chatOnly,
+}) => {
   const layout = usePanelLayoutStore((state) => state.getLayout(taskId));
   const initializeTask = usePanelLayoutStore((state) => state.initializeTask);
   const dragDropHandlers = useDragDropHandlers(taskId);
@@ -174,9 +179,9 @@ export const PanelLayout: React.FC<PanelLayoutProps> = ({ taskId, task }) => {
 
   useEffect(() => {
     if (!layout) {
-      initializeTask(taskId);
+      initializeTask(taskId, { chatOnly });
     }
-  }, [taskId, layout, initializeTask]);
+  }, [taskId, layout, initializeTask, chatOnly]);
 
   if (!layout) {
     return null;
