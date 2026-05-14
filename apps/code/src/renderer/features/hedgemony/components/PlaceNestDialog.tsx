@@ -17,7 +17,7 @@ import {
 import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
 import type { ReactNode } from "react";
-import { useEffect, useReducer, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import {
   buildSimpleTranscript,
   initialPlaceNestDialogState,
@@ -364,15 +364,26 @@ function GoalDraftFlow({
   onDefinitionOfDoneChange: (value: string) => void;
 }) {
   const disabled = drafting || submitting;
-  const latestMessage = transcript.at(-1);
-  const isAnsweringQuestion =
-    latestMessage?.kind === "question" ||
-    (latestMessage?.role === "assistant" &&
-      !draft &&
-      latestMessage.kind !== "spec_proposal");
 
   return (
     <>
+      {draft && (
+        <>
+          {draft.bootstrapContext && (
+            <BootstrapContextPanel context={draft.bootstrapContext} />
+          )}
+          <SpecFields
+            name={name}
+            goalPrompt={goalPrompt}
+            definitionOfDone={definitionOfDone}
+            disabled={submitting}
+            onNameChange={onNameChange}
+            onGoalPromptChange={onGoalPromptChange}
+            onDefinitionOfDoneChange={onDefinitionOfDoneChange}
+          />
+        </>
+      )}
+
       {transcript.length === 0 ? (
         <div>
           <Text
@@ -407,35 +418,13 @@ function GoalDraftFlow({
           </Flex>
         </div>
       ) : (
-        <Transcript transcript={transcript} />
-      )}
-
-      {draft && (
-        <>
-          {draft.bootstrapContext && (
-            <BootstrapContextPanel context={draft.bootstrapContext} />
-          )}
-          <SpecFields
-            name={name}
-            goalPrompt={goalPrompt}
-            definitionOfDone={definitionOfDone}
-            disabled={submitting}
-            onNameChange={onNameChange}
-            onGoalPromptChange={onGoalPromptChange}
-            onDefinitionOfDoneChange={onDefinitionOfDoneChange}
-          />
-        </>
-      )}
-
-      {transcript.length > 0 && (
-        <DraftReplyBox
-          value={answer}
+        <ConversationPanel
+          transcript={transcript}
+          answer={answer}
           disabled={disabled}
-          loading={drafting}
-          hasDraft={Boolean(draft)}
-          isAnsweringQuestion={isAnsweringQuestion}
-          onChange={onAnswerChange}
-          onSubmit={onAnswer}
+          drafting={drafting}
+          onAnswerChange={onAnswerChange}
+          onAnswer={onAnswer}
         />
       )}
     </>
@@ -471,65 +460,85 @@ function DraftingStatus() {
   );
 }
 
-function DraftReplyBox({
-  value,
+function ConversationPanel({
+  transcript,
+  answer,
   disabled,
-  loading,
-  hasDraft,
-  isAnsweringQuestion,
-  onChange,
-  onSubmit,
+  drafting,
+  onAnswerChange,
+  onAnswer,
 }: {
-  value: string;
+  transcript: GoalDraftTranscriptMessage[];
+  answer: string;
   disabled: boolean;
-  loading: boolean;
-  hasDraft: boolean;
-  isAnsweringQuestion: boolean;
-  onChange: (value: string) => void;
-  onSubmit: () => void;
+  drafting: boolean;
+  onAnswerChange: (value: string) => void;
+  onAnswer: () => void;
 }) {
-  const label = isAnsweringQuestion ? "Answer" : "Feedback";
-  const placeholder = isAnsweringQuestion
-    ? "Add the missing context"
-    : "Make Pong keyboard-only and keep scoring simple";
-  const buttonLabel = isAnsweringQuestion
-    ? "Continue"
-    : hasDraft
-      ? "Refine spec"
-      : "Continue";
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, []);
 
   return (
-    <div>
-      <Text
-        as="label"
-        htmlFor="nest-draft-answer"
-        size="2"
-        mb="1"
-        weight="medium"
-        className="block"
-      >
-        {label}
-      </Text>
-      <TextArea
-        id="nest-draft-answer"
-        placeholder={placeholder}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        rows={3}
-        disabled={disabled}
-        autoFocus={!hasDraft}
-      />
-      <Flex mt="2" justify="end">
-        <Button
-          size="2"
-          variant="soft"
-          onClick={onSubmit}
-          disabled={!value.trim() || disabled}
-          loading={loading}
-        >
-          {buttonLabel}
-        </Button>
-      </Flex>
+    <div className="flex flex-col rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2)">
+      <div ref={scrollRef} className="max-h-[220px] overflow-y-auto p-2">
+        <Flex direction="column" gap="2">
+          {transcript.map((message, index) => (
+            <div
+              key={`${message.role}-${index}`}
+              className={
+                message.role === "user"
+                  ? "self-end rounded-(--radius-2) bg-(--accent-4) px-3 py-2 text-(--accent-12)"
+                  : "self-start rounded-(--radius-2) bg-(--gray-1) px-3 py-2 text-(--gray-12)"
+              }
+            >
+              <Text size="1" color="gray" weight="medium" className="block">
+                {message.role === "user"
+                  ? "Operator"
+                  : message.kind === "spec_proposal"
+                    ? "Spec draft"
+                    : "Goal draft"}
+              </Text>
+              <Text as="p" size="2" className="whitespace-pre-wrap">
+                {message.content}
+              </Text>
+            </div>
+          ))}
+        </Flex>
+      </div>
+
+      <div className="border-(--gray-5) border-t p-2">
+        <Flex gap="2" align="end">
+          <TextArea
+            id="nest-draft-answer"
+            className="flex-1"
+            placeholder="Reply..."
+            value={answer}
+            onChange={(e) => onAnswerChange(e.target.value)}
+            rows={1}
+            disabled={disabled}
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                if (answer.trim() && !disabled) onAnswer();
+              }
+            }}
+          />
+          <Button
+            size="2"
+            variant="soft"
+            onClick={onAnswer}
+            disabled={!answer.trim() || disabled}
+            loading={drafting}
+          >
+            Send
+          </Button>
+        </Flex>
+      </div>
     </div>
   );
 }
@@ -632,40 +641,6 @@ function BootstrapContextPanel({
       <Text size="2" className="block">
         {repositories}
       </Text>
-    </div>
-  );
-}
-
-function Transcript({
-  transcript,
-}: {
-  transcript: GoalDraftTranscriptMessage[];
-}) {
-  return (
-    <div className="max-h-[190px] overflow-y-auto rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2) p-2">
-      <Flex direction="column" gap="2">
-        {transcript.map((message, index) => (
-          <div
-            key={`${message.role}-${index}`}
-            className={
-              message.role === "user"
-                ? "self-end rounded-(--radius-2) bg-(--accent-4) px-3 py-2 text-(--accent-12)"
-                : "self-start rounded-(--radius-2) bg-(--gray-1) px-3 py-2 text-(--gray-12)"
-            }
-          >
-            <Text size="1" color="gray" weight="medium" className="block">
-              {message.role === "user"
-                ? "Operator"
-                : message.kind === "spec_proposal"
-                  ? "Spec draft"
-                  : "Goal draft"}
-            </Text>
-            <Text as="p" size="2" className="whitespace-pre-wrap">
-              {message.content}
-            </Text>
-          </div>
-        ))}
-      </Flex>
     </div>
   );
 }
