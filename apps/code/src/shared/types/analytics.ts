@@ -449,10 +449,22 @@ export const ANALYTICS_EVENTS = {
 
   // Hedgemony events
   HEDGEMONY_HOGLET_SPAWNED: "hedgemony.hoglet_spawned",
+  HEDGEMONY_HOGLET_ADOPTED: "hedgemony.hoglet_adopted",
+  HEDGEMONY_HOGLET_RELEASED: "hedgemony.hoglet_released",
 } as const;
 
 export interface HedgemonyHogletSpawnedProperties {
   source: "adhoc";
+}
+
+export interface HedgemonyHogletAdoptedProperties {
+  // Slice 3: only wild → nest. "nest" added in a future slice when nest →
+  // nest transfer ships alongside PR dep graph migration.
+  source: "wild";
+}
+
+export interface HedgemonyHogletReleasedProperties {
+  source: "nest";
 }
 
 // Event property mapping
@@ -543,4 +555,6 @@ export type EventPropertyMap = {
 
   // Hedgemony events
   [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_SPAWNED]: HedgemonyHogletSpawnedProperties;
+  [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_ADOPTED]: HedgemonyHogletAdoptedProperties;
+  [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_RELEASED]: HedgemonyHogletReleasedProperties;
 };

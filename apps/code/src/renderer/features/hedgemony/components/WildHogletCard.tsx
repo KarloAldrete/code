@@ -1,3 +1,4 @@
+import { useSortable } from "@dnd-kit/react/sortable";
 import { getAuthenticatedClient } from "@features/auth/hooks/authClient";
 import type { Hoglet } from "@main/services/hedgemony/schemas";
 import { GitPullRequest } from "@phosphor-icons/react";
@@ -13,6 +14,7 @@ const log = logger.scope("wild-hoglet-card");
 
 interface WildHogletCardProps {
   hoglet: Hoglet;
+  index: number;
 }
 
 type TaskStatus =
@@ -53,10 +55,18 @@ const PR_STATE_COLOR: Record<
   closed: "red",
 };
 
-export function WildHogletCard({ hoglet }: WildHogletCardProps) {
+export function WildHogletCard({ hoglet, index }: WildHogletCardProps) {
   const summary = useHogletStore(selectTaskSummary(hoglet.taskId));
   const trpc = useTRPC();
   const navigateToTask = useNavigationStore((s) => s.navigateToTask);
+
+  const { ref, isDragging } = useSortable({
+    id: hoglet.id,
+    index,
+    group: "wild-hoglets",
+    data: { type: "hoglet", hogletId: hoglet.id, sourceNestId: null },
+    transition: { duration: 200, easing: "ease" },
+  });
 
   const prStatusQuery = useQuery(
     trpc.workspace.getTaskPrStatus.queryOptions(
@@ -83,9 +93,11 @@ export function WildHogletCard({ hoglet }: WildHogletCardProps) {
 
   return (
     <button
+      ref={ref}
       type="button"
       onClick={handleClick}
-      className="flex w-full flex-col gap-2 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2) p-3 text-left transition-colors hover:bg-(--gray-3)"
+      className="flex w-full cursor-grab flex-col gap-2 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2) p-3 text-left transition-colors hover:bg-(--gray-3) active:cursor-grabbing"
+      style={{ opacity: isDragging ? 0.4 : 1 }}
     >
       <Text size="2" weight="medium" className="line-clamp-2 text-(--gray-12)">
         {title}

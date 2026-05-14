@@ -5,6 +5,7 @@ import type { HogletService } from "../../services/hedgemony/hoglet-service";
 import type { NestChatService } from "../../services/hedgemony/nest-chat-service";
 import type { NestService } from "../../services/hedgemony/nest-service";
 import {
+  adoptHogletInput,
   createNestInput,
   goalDraftRespondInput,
   goalDraftResponse,
@@ -19,6 +20,7 @@ import {
   nest,
   nestIdInput,
   recordAdhocHogletInput,
+  releaseHogletInput,
   updateNestInput,
 } from "../../services/hedgemony/schemas";
 import { publicProcedure, router } from "../trpc";
@@ -99,14 +101,25 @@ export const hedgemonyRouter = router({
       .output(hoglet)
       .mutation(({ input }) => getHogletService().recordAdhoc(input)),
 
+    adopt: publicProcedure
+      .input(adoptHogletInput)
+      .output(hoglet)
+      .mutation(({ input }) => getHogletService().adopt(input)),
+
+    release: publicProcedure
+      .input(releaseHogletInput)
+      .output(hoglet)
+      .mutation(({ input }) => getHogletService().release(input)),
+
     list: publicProcedure
       .input(listHogletsInput)
       .output(listHogletsOutput)
       .query(({ input }) => getHogletService().list(input)),
 
     /**
-     * Per-scope watch. Operators of the floating holding panel subscribe with
-     * `kind: "wild"`. Future slices will subscribe per nest for adopted hoglets.
+     * Per-scope watch. The floating Wild holding panel subscribes with
+     * `kind: "wild"`; each nest's brood cluster subscribes with
+     * `kind: "nest", nestId`.
      */
     watch: publicProcedure
       .input(hogletWatchScope)

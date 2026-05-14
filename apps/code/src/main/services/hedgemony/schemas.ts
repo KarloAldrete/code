@@ -179,6 +179,17 @@ export const recordAdhocHogletInput = z.object({
 });
 export type RecordAdhocHogletInput = z.infer<typeof recordAdhocHogletInput>;
 
+export const adoptHogletInput = z.object({
+  hogletId: z.string(),
+  nestId: z.string(),
+});
+export type AdoptHogletInput = z.infer<typeof adoptHogletInput>;
+
+export const releaseHogletInput = z.object({
+  hogletId: z.string(),
+});
+export type ReleaseHogletInput = z.infer<typeof releaseHogletInput>;
+
 export const listHogletsInput = z.object({
   wildOnly: z.boolean().optional(),
   nestId: z.string().optional(),

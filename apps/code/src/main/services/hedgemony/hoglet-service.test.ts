@@ -65,7 +65,17 @@ function createMockRepo() {
       hoglets.set(hoglet.id, hoglet);
       return hoglet;
     }),
-    update: vi.fn(),
+    update: vi.fn((id: string, patch: { nestId?: string | null }) => {
+      const existing = hoglets.get(id);
+      if (!existing) return null;
+      const updated = {
+        ...existing,
+        ...(patch.nestId !== undefined ? { nestId: patch.nestId } : {}),
+        updatedAt: new Date().toISOString(),
+      };
+      hoglets.set(id, updated);
+      return updated;
+    }),
     softDelete: vi.fn(),
   };
   return repo as typeof repo & HogletRepository;
@@ -138,5 +148,108 @@ describe("HogletService", () => {
     expect(() => service.list({})).toThrowError(
       "hoglets.list requires wildOnly or nestId",
     );
+  });
+
+  describe("adopt", () => {
+    it("emits removed for wild + upsert for the target nest", () => {
+      const wild = service.recordAdhoc({ taskId: "task-1" });
+      const listener = vi.fn();
+      service.on(HedgemonyEvent.HogletChanged, listener);
+
+      const adopted = service.adopt({
+        hogletId: wild.id,
+        nestId: "nest-A",
+      });
+
+      expect(adopted.nestId).toBe("nest-A");
+      expect(listener).toHaveBeenNthCalledWith(1, {
+        nestId: null,
+        event: { kind: "removed", hogletId: wild.id },
+      });
+      expect(listener).toHaveBeenNthCalledWith(2, {
+        nestId: "nest-A",
+        event: { kind: "upsert", hoglet: adopted },
+      });
+    });
+
+    it("is idempotent when the hoglet is already in the target nest", () => {
+      const wild = service.recordAdhoc({ taskId: "task-1" });
+      const first = service.adopt({ hogletId: wild.id, nestId: "nest-A" });
+
+      const listener = vi.fn();
+      service.on(HedgemonyEvent.HogletChanged, listener);
+      const second = service.adopt({ hogletId: wild.id, nestId: "nest-A" });
+
+      expect(second.id).toBe(first.id);
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it("rejects nest→nest direct transfer", () => {
+      const wild = service.recordAdhoc({ taskId: "task-1" });
+      service.adopt({ hogletId: wild.id, nestId: "nest-A" });
+
+      expect(() =>
+        service.adopt({ hogletId: wild.id, nestId: "nest-B" }),
+      ).toThrowError("hoglet_already_adopted");
+    });
+
+    it("throws on unknown hoglets", () => {
+      expect(() =>
+        service.adopt({ hogletId: "missing", nestId: "nest-A" }),
+      ).toThrowError("hoglet_not_found");
+    });
+
+    it("throws on deleted hoglets", () => {
+      const wild = service.recordAdhoc({ taskId: "task-1" });
+      const current = repo._hoglets.get(wild.id);
+      if (!current) throw new Error("test setup");
+      repo._hoglets.set(wild.id, {
+        ...current,
+        deletedAt: new Date().toISOString(),
+      });
+
+      expect(() =>
+        service.adopt({ hogletId: wild.id, nestId: "nest-A" }),
+      ).toThrowError("hoglet_deleted");
+    });
+  });
+
+  describe("release", () => {
+    it("emits removed for the source nest + upsert for wild", () => {
+      const wild = service.recordAdhoc({ taskId: "task-1" });
+      const adopted = service.adopt({ hogletId: wild.id, nestId: "nest-A" });
+
+      const listener = vi.fn();
+      service.on(HedgemonyEvent.HogletChanged, listener);
+      const released = service.release({ hogletId: adopted.id });
+
+      expect(released.nestId).toBeNull();
+      expect(listener).toHaveBeenNthCalledWith(1, {
+        nestId: "nest-A",
+        event: { kind: "removed", hogletId: adopted.id },
+      });
+      expect(listener).toHaveBeenNthCalledWith(2, {
+        nestId: null,
+        event: { kind: "upsert", hoglet: released },
+      });
+    });
+
+    it("is a no-op for already-wild hoglets", () => {
+      const wild = service.recordAdhoc({ taskId: "task-1" });
+      const listener = vi.fn();
+      service.on(HedgemonyEvent.HogletChanged, listener);
+
+      const result = service.release({ hogletId: wild.id });
+
+      expect(result.id).toBe(wild.id);
+      expect(result.nestId).toBeNull();
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it("throws on unknown hoglets", () => {
+      expect(() => service.release({ hogletId: "missing" })).toThrowError(
+        "hoglet_not_found",
+      );
+    });
   });
 });

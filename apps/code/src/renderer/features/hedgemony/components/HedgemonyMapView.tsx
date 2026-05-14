@@ -1,9 +1,16 @@
-import type { Nest } from "@main/services/hedgemony/schemas";
+import { PointerSensor } from "@dnd-kit/dom";
+import type { DragDropEvents } from "@dnd-kit/react";
+import { DragDropProvider } from "@dnd-kit/react";
+import type { Hoglet, Nest } from "@main/services/hedgemony/schemas";
 import { trpcClient } from "@renderer/trpc/client";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
+import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { AnimatePresence } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useHedgemonyViewStore } from "../stores/hedgemonyViewStore";
+import { useHogletStore, WILD_BUCKET } from "../stores/hogletStore";
 import {
   initializeNestStore,
   selectNests,
@@ -21,6 +28,7 @@ import type { BuilderAnimation } from "./BuilderSprite";
 import { HedgemonyEmptyState } from "./HedgemonyEmptyState";
 import { HedgemonyHoldingPanel } from "./HedgemonyHoldingPanel";
 import { HedgemonyMapSurface, type MoveMarker } from "./HedgemonyMapSurface";
+import { NestBroodCluster } from "./NestBroodCluster";
 import { NestDetailPanel } from "./NestDetailPanel";
 import { type NestCreationMode, PlaceNestDialog } from "./PlaceNestDialog";
 import { SpawnHogletDialog } from "./SpawnHogletDialog";
@@ -265,8 +273,64 @@ export function HedgemonyMapView() {
     setRelocatingNestId(id);
   };
 
+  const handleDragStart = useCallback<DragDropEvents["dragstart"]>((event) => {
+    const source = event.operation.source?.data;
+    if (source?.type === "hoglet" && typeof source.sourceNestId === "string") {
+      // Brood hoglet drag — make the release target visible if hidden.
+      const view = useHedgemonyViewStore.getState();
+      if (!view.holdingPanel.open) view.setHoldingPanelOpen(true);
+      if (view.holdingPanel.collapsed) view.toggleHoldingPanelCollapsed();
+    }
+  }, []);
+
+  const handleDragEnd = useCallback<DragDropEvents["dragend"]>((event) => {
+    if (event.canceled) return;
+    const source = event.operation.source?.data as
+      | {
+          type?: string;
+          hogletId?: string;
+          sourceNestId?: string | null;
+        }
+      | undefined;
+    const target = event.operation.target?.data as
+      | { type?: string; nestId?: string }
+      | undefined;
+    if (
+      !source ||
+      source.type !== "hoglet" ||
+      typeof source.hogletId !== "string"
+    ) {
+      return;
+    }
+    const { hogletId, sourceNestId = null } = source;
+
+    if (target?.type === "nest" && target.nestId) {
+      if (sourceNestId !== null) {
+        toast.error("Release this hoglet to wild before adopting it elsewhere");
+        return;
+      }
+      void adoptHoglet(hogletId, target.nestId);
+    } else if (target?.type === "wild") {
+      if (sourceNestId === null) return;
+      void releaseHoglet(hogletId, sourceNestId);
+    }
+  }, []);
+
   return (
-    <>
+    <DragDropProvider
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      sensors={[
+        {
+          plugin: PointerSensor,
+          options: {
+            activationConstraints: {
+              distance: { value: 5 },
+            },
+          },
+        },
+      ]}
+    >
       <HedgemonyMapSurface
         nests={nests}
         selectedNestId={activeNest?.id ?? null}
@@ -289,7 +353,11 @@ export function HedgemonyMapView() {
         onBuilderSelect={() => setSelection({ type: "builder" })}
         onBuilderArrive={handleBuilderArrive}
         onBuilderSegmentComplete={handleBuilderSegmentComplete}
-      />
+      >
+        {nests.map((nest) => (
+          <NestBroodCluster key={nest.id} nest={nest} />
+        ))}
+      </HedgemonyMapSurface>
       {activeNest && (
         <NestDetailPanel
           nest={activeNest}
@@ -321,6 +389,80 @@ export function HedgemonyMapView() {
       />
       <HedgemonyHoldingPanel />
       <SpawnHogletDialog open={spawnHogletOpen} onClose={closeSpawnHoglet} />
-    </>
+    </DragDropProvider>
   );
+}
+
+async function adoptHoglet(hogletId: string, nestId: string): Promise<void> {
+  const store = useHogletStore.getState();
+  const original = store.byBucket[WILD_BUCKET]?.find((h) => h.id === hogletId);
+  if (!original) {
+    log.warn("Adopt: source hoglet not found in wild bucket", { hogletId });
+    return;
+  }
+
+  // Optimistic move: wild → nest bucket.
+  const optimistic: Hoglet = {
+    ...original,
+    nestId,
+    updatedAt: new Date().toISOString(),
+  };
+  store.remove(WILD_BUCKET, hogletId);
+  store.upsert(nestId, optimistic);
+
+  try {
+    const updated = await trpcClient.hedgemony.hoglets.adopt.mutate({
+      hogletId,
+      nestId,
+    });
+    useHogletStore.getState().upsert(nestId, updated);
+    track(ANALYTICS_EVENTS.HEDGEMONY_HOGLET_ADOPTED, { source: "wild" });
+  } catch (error) {
+    log.error("Failed to adopt hoglet", { hogletId, nestId, error });
+    const current = useHogletStore.getState();
+    current.remove(nestId, hogletId);
+    current.upsert(WILD_BUCKET, original);
+    toast.error("Could not adopt hoglet");
+  }
+}
+
+async function releaseHoglet(
+  hogletId: string,
+  sourceNestId: string,
+): Promise<void> {
+  const store = useHogletStore.getState();
+  const original = store.byBucket[sourceNestId]?.find((h) => h.id === hogletId);
+  if (!original) {
+    log.warn("Release: source hoglet not found in nest bucket", {
+      hogletId,
+      sourceNestId,
+    });
+    return;
+  }
+
+  const optimistic: Hoglet = {
+    ...original,
+    nestId: null,
+    updatedAt: new Date().toISOString(),
+  };
+  store.remove(sourceNestId, hogletId);
+  store.upsert(WILD_BUCKET, optimistic);
+
+  try {
+    const updated = await trpcClient.hedgemony.hoglets.release.mutate({
+      hogletId,
+    });
+    useHogletStore.getState().upsert(WILD_BUCKET, updated);
+    track(ANALYTICS_EVENTS.HEDGEMONY_HOGLET_RELEASED, { source: "nest" });
+  } catch (error) {
+    log.error("Failed to release hoglet", {
+      hogletId,
+      sourceNestId,
+      error,
+    });
+    const current = useHogletStore.getState();
+    current.remove(WILD_BUCKET, hogletId);
+    current.upsert(sourceNestId, original);
+    toast.error("Could not release hoglet");
+  }
 }

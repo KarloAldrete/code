@@ -1,3 +1,4 @@
+import { useDroppable } from "@dnd-kit/react";
 import { CaretDown, CaretRight, X } from "@phosphor-icons/react";
 import { Flex, ScrollArea, Text } from "@radix-ui/themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -24,6 +25,11 @@ export function HedgemonyHoldingPanel() {
     (s) => s.toggleHoldingPanelCollapsed,
   );
   const setPosition = useHedgemonyViewStore((s) => s.setHoldingPanelPosition);
+
+  const { ref: dropRef, isDropTarget } = useDroppable({
+    id: "wild-drop-zone",
+    data: { type: "wild" },
+  });
 
   useEffect(() => {
     return initializeWildHogletStore();
@@ -118,7 +124,10 @@ export function HedgemonyHoldingPanel() {
 
   return (
     <div
-      className="fixed z-30 flex flex-col overflow-hidden rounded-(--radius-3) border border-(--gray-5) bg-(--color-panel-solid) shadow-md"
+      ref={dropRef}
+      className={`fixed z-30 flex flex-col overflow-hidden rounded-(--radius-3) border bg-(--color-panel-solid) shadow-md transition-colors ${
+        isDropTarget ? "border-(--accent-9)" : "border-(--gray-5)"
+      }`}
       style={{
         left: `${effectiveX}px`,
         top: `${effectiveY}px`,
@@ -147,11 +156,13 @@ export function HedgemonyHoldingPanel() {
             )}
           </button>
           <Text size="2" weight="medium" className="text-(--gray-12)">
-            Wild hoglets
+            {isDropTarget ? "Release to wild" : "Wild hoglets"}
           </Text>
-          <Text size="1" className="text-(--gray-10)">
-            {hoglets.length}
-          </Text>
+          {!isDropTarget && (
+            <Text size="1" className="text-(--gray-10)">
+              {hoglets.length}
+            </Text>
+          )}
         </Flex>
         <button
           type="button"
@@ -176,14 +187,19 @@ export function HedgemonyHoldingPanel() {
           )}
           {loaded && hoglets.length === 0 && (
             <Text size="2" className="px-3 py-4 text-(--gray-10)">
-              No wild hoglets. Use “Spawn hoglet” to dispatch a one-off agent.
+              No wild hoglets. Use “Spawn hoglet” to dispatch a one-off agent,
+              or drop an adopted hoglet here to release it.
             </Text>
           )}
           {loaded && hoglets.length > 0 && (
             <ScrollArea type="hover" scrollbars="vertical">
               <Flex direction="column" gap="2" p="2">
-                {sortedHoglets.map((hoglet) => (
-                  <WildHogletCard key={hoglet.id} hoglet={hoglet} />
+                {sortedHoglets.map((hoglet, index) => (
+                  <WildHogletCard
+                    key={hoglet.id}
+                    hoglet={hoglet}
+                    index={index}
+                  />
                 ))}
               </Flex>
             </ScrollArea>

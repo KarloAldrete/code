@@ -1,3 +1,4 @@
+import { useDroppable } from "@dnd-kit/react";
 import type { Nest } from "@main/services/hedgemony/schemas";
 import { Tooltip } from "@radix-ui/themes";
 import nestImage from "@renderer/assets/images/hedgemony/nest.png";
@@ -9,8 +10,10 @@ const NEST_SIZE = 140;
 const HOG_SIZE_IDLE = 44;
 const HOG_SIZE_MOVING = 88;
 const SELECTION_RING_SIZE = NEST_SIZE + 24;
+const DROP_RING_SIZE = NEST_SIZE + 44;
 const TERRITORY_SIZE = 220;
 const TERRITORY_SIZE_SELECTED = 260;
+const TERRITORY_SIZE_DROP_TARGET = 280;
 const NEST_SPEED = 100;
 const NEST_EASE = [0.4, 0, 0.2, 1] as const;
 const WALK_ANIMATION = "skins/default/walk/tile";
@@ -46,6 +49,11 @@ export function NestSprite({
   const motionY = useMotionValue(nest.mapY);
   const [isMoving, setIsMoving] = useState(false);
   const [facing, setFacing] = useState<"left" | "right">("right");
+
+  const { ref: dropRef, isDropTarget } = useDroppable({
+    id: `nest-drop-${nest.id}`,
+    data: { type: "nest", nestId: nest.id },
+  });
 
   useEffect(() => {
     const fromX = motionX.get();
@@ -86,6 +94,7 @@ export function NestSprite({
     >
       <Tooltip content={nest.goalPrompt} side="bottom">
         <motion.button
+          ref={dropRef}
           type="button"
           data-hedgemony-nest
           aria-label={`Select ${nest.name}`}
@@ -103,14 +112,35 @@ export function NestSprite({
             style={{ width: NEST_SIZE, height: NEST_SIZE }}
           >
             <div
-              className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 rounded-full"
+              className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 rounded-full transition-all duration-150"
               style={{
-                width: selected ? TERRITORY_SIZE_SELECTED : TERRITORY_SIZE,
-                height: selected ? TERRITORY_SIZE_SELECTED : TERRITORY_SIZE,
+                width: isDropTarget
+                  ? TERRITORY_SIZE_DROP_TARGET
+                  : selected
+                    ? TERRITORY_SIZE_SELECTED
+                    : TERRITORY_SIZE,
+                height: isDropTarget
+                  ? TERRITORY_SIZE_DROP_TARGET
+                  : selected
+                    ? TERRITORY_SIZE_SELECTED
+                    : TERRITORY_SIZE,
                 background: territoryBackground(nest),
+                filter: isDropTarget ? "saturate(1.6) brightness(1.1)" : "none",
               }}
             />
-            {selected && (
+            {isDropTarget && (
+              <motion.span
+                className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 rounded-full border-(--accent-9) border-2 border-dashed"
+                style={{
+                  width: DROP_RING_SIZE,
+                  height: DROP_RING_SIZE,
+                }}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.15, ease: "easeOut" }}
+              />
+            )}
+            {selected && !isDropTarget && (
               <motion.span
                 className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 rounded-full border-(--accent-9) border-2"
                 style={{
