@@ -122,12 +122,14 @@ export const workProjectsRouter = router({
         projectId: z.string(),
         tileId: z.string(),
         body: z.string().optional(),
+        tone: z.enum(["yellow", "blue", "green", "pink", "neutral"]).optional(),
       }),
     )
     .output(workProject.nullable())
     .mutation(({ input }) => {
       return getService().updateNoteTile(input.projectId, input.tileId, {
         body: input.body,
+        tone: input.tone,
       });
     }),
 

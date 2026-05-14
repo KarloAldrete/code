@@ -6,7 +6,7 @@ import {
   NoteIcon,
   Plus,
 } from "@phosphor-icons/react";
-import { Box, Text } from "@radix-ui/themes";
+import { Box, Flex, Text } from "@radix-ui/themes";
 import type { NewTileInput, TileType } from "@shared/types/work-projects";
 import { type ComponentType, useEffect, useRef, useState } from "react";
 
@@ -22,23 +22,33 @@ interface TileTypeOption {
   factory: () => NewTileInput;
 }
 
-const OPTIONS: TileTypeOption[] = [
+const CONTENT_OPTIONS: TileTypeOption[] = [
   {
     type: "note",
-    label: "Sticky note",
-    description: "Quick thought to capture or share with the team.",
+    label: "Note",
+    description: "Quick thought, in five colours.",
     icon: NoteIcon,
-    factory: () => ({
-      type: "note",
-      body: "",
-      tone: "yellow",
-      size: "sm",
-    }),
+    factory: () => ({ type: "note", body: "", tone: "yellow", size: "sm" }),
   },
   {
+    type: "file",
+    label: "File",
+    description: "Markdown doc, editable inline.",
+    icon: FileText,
+    factory: () => ({
+      type: "file",
+      filename: "untitled.md",
+      contents: "# New file\n",
+      size: "md",
+    }),
+  },
+];
+
+const POSTHOG_OPTIONS: TileTypeOption[] = [
+  {
     type: "headline",
-    label: "Headline stat",
-    description: "Big number with a sparkline. Optional PostHog query.",
+    label: "Headline metric",
+    description: "Big number with a live sparkline.",
     icon: GaugeIcon,
     factory: () => ({
       type: "headline",
@@ -51,8 +61,8 @@ const OPTIONS: TileTypeOption[] = [
   },
   {
     type: "insight",
-    label: "PostHog dashboard",
-    description: "Link a PostHog dashboard or insight.",
+    label: "Dashboard",
+    description: "Pin a PostHog dashboard or insight.",
     icon: ChartLineUp,
     factory: () => ({
       type: "insight",
@@ -62,22 +72,13 @@ const OPTIONS: TileTypeOption[] = [
       size: "md",
     }),
   },
-  {
-    type: "file",
-    label: "File",
-    description: "Markdown doc the team can edit inline.",
-    icon: FileText,
-    factory: () => ({
-      type: "file",
-      filename: "untitled.md",
-      contents: "# New file\n",
-      size: "md",
-    }),
-  },
+];
+
+const WORK_OPTIONS: TileTypeOption[] = [
   {
     type: "skill_output",
     label: "Skill output",
-    description: "Pin the latest run of a skill (asks chat to fill).",
+    description: "Pin the latest run of a skill.",
     icon: Lightbulb,
     factory: () => ({
       type: "skill_output",
@@ -86,6 +87,59 @@ const OPTIONS: TileTypeOption[] = [
     }),
   },
 ];
+
+function Section({
+  label,
+  options,
+  onPick,
+}: {
+  label: string;
+  options: TileTypeOption[];
+  onPick: (opt: TileTypeOption) => void;
+}) {
+  return (
+    <Box className="px-2 pt-2 pb-1">
+      <Text
+        as="div"
+        className="px-1 pb-1.5 text-(--gray-10) text-[10px] uppercase tracking-wide"
+      >
+        {label}
+      </Text>
+      <Flex direction="column" gap="1">
+        {options.map((opt) => {
+          const Icon = opt.icon;
+          return (
+            <button
+              type="button"
+              key={opt.type + opt.label}
+              onClick={() => onPick(opt)}
+              className="flex items-start gap-2.5 rounded-(--radius-2) px-2 py-1.5 text-left transition-colors hover:bg-(--gray-3)"
+            >
+              <Box className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-(--radius-2) bg-(--gray-3) text-(--gray-11)">
+                <Icon size={14} weight="duotone" />
+              </Box>
+              <Box className="min-w-0 flex-1">
+                <Text
+                  as="div"
+                  weight="medium"
+                  className="text-(--gray-12) text-[13px] leading-tight"
+                >
+                  {opt.label}
+                </Text>
+                <Text
+                  as="div"
+                  className="text-(--gray-11) text-[11px] leading-snug"
+                >
+                  {opt.description}
+                </Text>
+              </Box>
+            </button>
+          );
+        })}
+      </Flex>
+    </Box>
+  );
+}
 
 export function AddTileMenu({ onAdd }: AddTileMenuProps) {
   const [open, setOpen] = useState(false);
@@ -102,6 +156,11 @@ export function AddTileMenu({ onAdd }: AddTileMenuProps) {
     return () => document.removeEventListener("mousedown", handle);
   }, [open]);
 
+  const pick = (opt: TileTypeOption) => {
+    onAdd(opt.factory());
+    setOpen(false);
+  };
+
   return (
     <Box className="relative" ref={ref}>
       <button
@@ -113,40 +172,12 @@ export function AddTileMenu({ onAdd }: AddTileMenuProps) {
         Add tile
       </button>
       {open && (
-        <Box className="absolute top-9 right-0 z-20 w-[280px] overflow-hidden rounded-(--radius-3) border border-(--gray-5) bg-(--gray-1) shadow-lg">
-          {OPTIONS.map((opt) => {
-            const Icon = opt.icon;
-            return (
-              <button
-                type="button"
-                key={opt.type}
-                onClick={() => {
-                  onAdd(opt.factory());
-                  setOpen(false);
-                }}
-                className="flex w-full items-start gap-3 px-3 py-2.5 text-left hover:bg-(--gray-2)"
-              >
-                <Box className="mt-0.5 text-(--gray-11)">
-                  <Icon size={14} weight="duotone" />
-                </Box>
-                <Box className="min-w-0">
-                  <Text
-                    as="div"
-                    weight="medium"
-                    className="text-(--gray-12) text-[13px]"
-                  >
-                    {opt.label}
-                  </Text>
-                  <Text
-                    as="div"
-                    className="text-(--gray-11) text-[11px] leading-snug"
-                  >
-                    {opt.description}
-                  </Text>
-                </Box>
-              </button>
-            );
-          })}
+        <Box className="absolute top-9 right-0 z-20 w-[320px] overflow-hidden rounded-(--radius-3) border border-(--gray-5) bg-(--gray-1) shadow-lg">
+          <Section label="Content" options={CONTENT_OPTIONS} onPick={pick} />
+          <Box className="mx-2 border-(--gray-4) border-t" />
+          <Section label="PostHog" options={POSTHOG_OPTIONS} onPick={pick} />
+          <Box className="mx-2 border-(--gray-4) border-t" />
+          <Section label="Work" options={WORK_OPTIONS} onPick={pick} />
         </Box>
       )}
     </Box>

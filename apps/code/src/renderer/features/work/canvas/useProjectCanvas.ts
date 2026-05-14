@@ -137,12 +137,18 @@ export function useProjectCanvas(projectId: string | undefined) {
   );
 
   const updateNoteTile = useCallback(
-    async (tileId: string, body: string): Promise<void> => {
+    async (
+      tileId: string,
+      patch: {
+        body?: string;
+        tone?: "yellow" | "blue" | "green" | "pink" | "neutral";
+      },
+    ): Promise<void> => {
       if (!projectId) return;
       await trpcClient.workProjects.updateNoteTile.mutate({
         projectId,
         tileId,
-        body,
+        ...patch,
       });
       invalidate();
     },

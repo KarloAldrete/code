@@ -1,10 +1,12 @@
-import { ArrowLeft } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
+import { trpcClient } from "@renderer/trpc/client";
 import { useNavigationStore } from "@stores/navigationStore";
+import { toast } from "@utils/toast";
 import { useCallback, useRef, useState } from "react";
 import { ProjectCanvas } from "../canvas/ProjectCanvas";
 import { useProjectCanvas } from "../canvas/useProjectCanvas";
 import { ProjectChatPanel } from "./ProjectChatPanel";
+import { ProjectHeader } from "./ProjectHeader";
 
 const MIN_CONTENT_WIDTH = 360;
 const MIN_PANEL_WIDTH = 360;
@@ -70,6 +72,19 @@ export function WorkProjectDetailView() {
     [panelWidth],
   );
 
+  const handleDelete = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      await trpcClient.workProjects.delete.mutate({ projectId });
+      toast.success("Project deleted");
+      navigateToWorkProjects();
+    } catch (error) {
+      const description =
+        error instanceof Error ? error.message : "Unknown error";
+      toast.error("Could not delete project", { description });
+    }
+  }, [projectId, navigateToWorkProjects]);
+
   if (!projectId || (!project && !isLoading)) {
     return (
       <Box className="flex h-full w-full items-center justify-center">
@@ -101,16 +116,12 @@ export function WorkProjectDetailView() {
     <Box height="100%" ref={containerRef}>
       <Flex height="100%">
         <Box className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <Flex align="center" gap="2" className="shrink-0 px-6 pt-5">
-            <button
-              type="button"
-              onClick={navigateToWorkProjects}
-              className="-ml-1 flex items-center gap-1 text-(--gray-10) text-[12px] transition-colors hover:text-(--gray-12)"
-            >
-              <ArrowLeft size={12} weight="bold" />
-              Projects
-            </button>
-          </Flex>
+          <ProjectHeader
+            project={project}
+            onBack={navigateToWorkProjects}
+            onUpdateTitle={updateTitleTile}
+            onDelete={handleDelete}
+          />
           <Box className="min-h-0 flex-1">
             <ProjectCanvas
               projectId={project.id}
@@ -137,8 +148,8 @@ export function WorkProjectDetailView() {
               onUpdateTitleTile={async (patch) => {
                 await updateTitleTile(patch);
               }}
-              onUpdateNoteTile={async (tileId, body) => {
-                await updateNoteTile(tileId, body);
+              onUpdateNoteTile={async (tileId, patch) => {
+                await updateNoteTile(tileId, patch);
               }}
               onUpdateFileTile={async (tileId, patch) => {
                 await updateFileTile(tileId, patch);

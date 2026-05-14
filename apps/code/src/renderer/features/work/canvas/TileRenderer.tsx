@@ -23,7 +23,10 @@ interface TileRendererProps {
     tagline?: string;
     iconId?: ProjectIconId;
   }) => void;
-  onUpdateNoteTile?: (body: string) => void;
+  onUpdateNoteTile?: (patch: {
+    body?: string;
+    tone?: "yellow" | "blue" | "green" | "pink" | "neutral";
+  }) => void;
   onUpdateFileTile?: (patch: { filename?: string; contents?: string }) => void;
 }
 
@@ -98,7 +101,7 @@ export function TileRenderer({
           onResize={onResize}
           onApplyPending={onApplyPending}
           onRejectPending={onRejectPending}
-          onUpdateBody={onUpdateNoteTile}
+          onUpdate={onUpdateNoteTile}
         />
       );
   }

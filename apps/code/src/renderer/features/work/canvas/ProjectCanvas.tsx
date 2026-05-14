@@ -2,6 +2,7 @@ import { PointerSensor } from "@dnd-kit/dom";
 import type { DragDropEvents } from "@dnd-kit/react";
 import { DragDropProvider } from "@dnd-kit/react";
 import { useSortable } from "@dnd-kit/react/sortable";
+import { FileText, GaugeIcon, NoteIcon } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import type {
   NewTileInput,
@@ -10,7 +11,7 @@ import type {
   Tile,
   TileSize,
 } from "@shared/types/work-projects";
-import { type ReactNode, useCallback } from "react";
+import { type ReactNode, useCallback, useMemo } from "react";
 import { AddTileMenu } from "./AddTileMenu";
 import { SIZE_TO_COLSPAN } from "./TileFrame";
 import { TileRenderer } from "./TileRenderer";
@@ -30,7 +31,13 @@ interface ProjectCanvasProps {
     tagline?: string;
     iconId?: ProjectIconId;
   }) => Promise<void>;
-  onUpdateNoteTile: (tileId: string, body: string) => Promise<void>;
+  onUpdateNoteTile: (
+    tileId: string,
+    patch: {
+      body?: string;
+      tone?: "yellow" | "blue" | "green" | "pink" | "neutral";
+    },
+  ) => Promise<void>;
   onUpdateFileTile: (
     tileId: string,
     patch: { filename?: string; contents?: string },
@@ -80,11 +87,21 @@ export function ProjectCanvas({
   onUpdateNoteTile,
   onUpdateFileTile,
 }: ProjectCanvasProps) {
+  // Title tile is data-only — the project header renders the project's name,
+  // icon, tagline, and members. Filter it out of the canvas so we don't
+  // double-render.
+  const renderedTiles = useMemo(
+    () => tiles.filter((t) => t.type !== "title"),
+    [tiles],
+  );
+
   const handleDragOver: DragDropEvents["dragover"] = useCallback(
     (event) => {
       const sourceId = event.operation.source?.id;
       const targetId = event.operation.target?.id;
       if (!sourceId || !targetId || sourceId === targetId) return;
+      // Move indices are computed against the full tiles array so the service
+      // stays consistent with title-tile position.
       const sourceIndex = tiles.findIndex((t) => t.id === String(sourceId));
       const targetIndex = tiles.findIndex((t) => t.id === String(targetId));
       if (sourceIndex < 0 || targetIndex < 0) return;
@@ -98,7 +115,7 @@ export function ProjectCanvas({
       <Flex
         direction="column"
         gap="4"
-        className="mx-auto w-full max-w-[1000px] px-6 pt-8 pb-12"
+        className="mx-auto w-full max-w-[1000px] px-6 pt-6 pb-12"
       >
         <Flex align="center" justify="end" className="-mb-1">
           <AddTileMenu
@@ -107,8 +124,8 @@ export function ProjectCanvas({
             }}
           />
         </Flex>
-        {tiles.length === 0 ? (
-          <EmptyState />
+        {renderedTiles.length === 0 ? (
+          <EmptyState onAdd={onAddTile} />
         ) : (
           <DragDropProvider
             onDragOver={handleDragOver}
@@ -122,7 +139,7 @@ export function ProjectCanvas({
             ]}
           >
             <Box className="grid auto-rows-min grid-cols-12 gap-3">
-              {tiles.map((tile, index) => (
+              {renderedTiles.map((tile, index) => (
                 <Box
                   key={tile.id}
                   className={`${SIZE_TO_COLSPAN[tile.size]} min-w-0`}
@@ -131,20 +148,12 @@ export function ProjectCanvas({
                     <TileRenderer
                       tile={tile}
                       members={members}
-                      onRemove={
-                        tile.type === "title"
-                          ? undefined
-                          : () => {
-                              void onRemoveTile(tile.id);
-                            }
-                      }
-                      onResize={
-                        tile.type === "title"
-                          ? undefined
-                          : (size) => {
-                              void onResizeTile(tile.id, size);
-                            }
-                      }
+                      onRemove={() => {
+                        void onRemoveTile(tile.id);
+                      }}
+                      onResize={(size) => {
+                        void onResizeTile(tile.id, size);
+                      }}
                       onApplyPending={
                         tile.state !== "live"
                           ? () => {
@@ -162,8 +171,8 @@ export function ProjectCanvas({
                       onUpdateTitleTile={(patch) => {
                         void onUpdateTitleTile(patch);
                       }}
-                      onUpdateNoteTile={(body) => {
-                        void onUpdateNoteTile(tile.id, body);
+                      onUpdateNoteTile={(patch) => {
+                        void onUpdateNoteTile(tile.id, patch);
                       }}
                       onUpdateFileTile={(patch) => {
                         void onUpdateFileTile(tile.id, patch);
@@ -180,25 +189,100 @@ export function ProjectCanvas({
   );
 }
 
-function EmptyState() {
+function EmptyState({
+  onAdd,
+}: {
+  onAdd: (tile: NewTileInput) => Promise<void>;
+}) {
+  const starters: {
+    label: string;
+    description: string;
+    icon: typeof NoteIcon;
+    factory: () => NewTileInput;
+  }[] = [
+    {
+      label: "A note",
+      description: "Capture the goal or first thought.",
+      icon: NoteIcon,
+      factory: () => ({ type: "note", body: "", tone: "yellow", size: "md" }),
+    },
+    {
+      label: "A metric",
+      description: "Pin a number with a sparkline.",
+      icon: GaugeIcon,
+      factory: () => ({
+        type: "headline",
+        label: "Headline metric",
+        fallbackValue: "—",
+        fallbackDelta: "Set a target",
+        fallbackSparkline: [0, 0, 0, 0, 0],
+        size: "md",
+      }),
+    },
+    {
+      label: "A file",
+      description: "Draft a doc the team can edit.",
+      icon: FileText,
+      factory: () => ({
+        type: "file",
+        filename: "untitled.md",
+        contents: "# New file\n",
+        size: "md",
+      }),
+    },
+  ];
+
   return (
     <Flex
       direction="column"
       align="center"
-      justify="center"
-      gap="2"
+      gap="4"
       className="rounded-(--radius-3) border border-(--gray-5) border-dashed bg-(--gray-1) px-6 py-12"
     >
-      <Text as="div" weight="medium" className="text-(--gray-12) text-[14px]">
-        Nothing on this canvas yet
-      </Text>
-      <Text
-        as="div"
-        className="max-w-[420px] text-center text-(--gray-11) text-[12px]"
-      >
-        Add a tile from the menu, or ask the chat on the right to set this
-        project up — it can propose tiles you accept or reject.
-      </Text>
+      <Flex direction="column" align="center" gap="1">
+        <Text as="div" weight="medium" className="text-(--gray-12) text-[14px]">
+          A blank canvas
+        </Text>
+        <Text
+          as="div"
+          className="max-w-[440px] text-center text-(--gray-11) text-[12px]"
+        >
+          Drop in a starter tile below, or ask the chat on the right to set this
+          project up.
+        </Text>
+      </Flex>
+      <Flex align="stretch" justify="center" gap="2" wrap="wrap">
+        {starters.map((s) => {
+          const Icon = s.icon;
+          return (
+            <button
+              key={s.label}
+              type="button"
+              onClick={() => {
+                void onAdd(s.factory());
+              }}
+              className="flex w-[160px] flex-col items-start gap-1.5 rounded-(--radius-3) border border-(--gray-5) bg-(--gray-1) px-3 py-2.5 text-left transition-colors hover:border-(--gray-7) hover:bg-(--gray-2)"
+            >
+              <Box className="text-(--gray-11)">
+                <Icon size={16} weight="duotone" />
+              </Box>
+              <Text
+                as="div"
+                weight="medium"
+                className="text-(--gray-12) text-[13px]"
+              >
+                {s.label}
+              </Text>
+              <Text
+                as="div"
+                className="text-(--gray-11) text-[11px] leading-snug"
+              >
+                {s.description}
+              </Text>
+            </button>
+          );
+        })}
+      </Flex>
     </Flex>
   );
 }

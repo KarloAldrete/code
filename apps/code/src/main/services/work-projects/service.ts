@@ -270,7 +270,10 @@ export class WorkProjectsService extends TypedEventEmitter<WorkProjectsEvents> {
   updateNoteTile(
     projectId: string,
     tileId: string,
-    patch: { body?: string },
+    patch: {
+      body?: string;
+      tone?: "yellow" | "blue" | "green" | "pink" | "neutral";
+    },
   ): WorkProject | null {
     return this.mutateProject(projectId, (project) => {
       const tiles = project.tiles.map((t) => {
@@ -278,6 +281,7 @@ export class WorkProjectsService extends TypedEventEmitter<WorkProjectsEvents> {
         return {
           ...t,
           ...(patch.body !== undefined ? { body: patch.body } : {}),
+          ...(patch.tone !== undefined ? { tone: patch.tone } : {}),
         };
       });
       return { ...project, tiles };
