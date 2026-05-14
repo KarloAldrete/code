@@ -1,9 +1,12 @@
 import type { GoalSpecDraft } from "@main/services/hedgemony/schemas";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
+  clearNestDraft,
   formatDraftForTranscript,
   initialPlaceNestDialogState,
   placeNestDialogReducer,
+  restoreNestDraft,
+  saveNestDraft,
   suggestName,
 } from "./placeNestDialogReducer";
 
@@ -197,5 +200,66 @@ describe("placeNestDialogReducer", () => {
     const suggested = suggestName(long);
     expect(suggested.endsWith("...")).toBe(true);
     expect(suggested.length).toBe(80);
+  });
+
+  describe("draft persistence", () => {
+    beforeEach(() => {
+      localStorage.clear();
+    });
+
+    it("round-trips state through save and restore", () => {
+      const state = placeNestDialogReducer(
+        initialPlaceNestDialogState("guided"),
+        {
+          type: "draftProposed",
+          transcript: [{ role: "user", content: "Improve checkout" }],
+          draft,
+        },
+      );
+
+      saveNestDraft(state);
+      const restored = restoreNestDraft();
+      expect(restored).not.toBeNull();
+      expect(restored?.name).toBe(draft.name);
+      expect(restored?.goalPrompt).toBe(draft.goalPrompt);
+      expect(restored?.transcript).toHaveLength(2);
+    });
+
+    it("restores into a valid reducer state", () => {
+      const state = placeNestDialogReducer(
+        initialPlaceNestDialogState("guided"),
+        {
+          type: "draftQuestionReceived",
+          transcript: [{ role: "user", content: "Build pong" }],
+          question: "What platform?",
+        },
+      );
+
+      saveNestDraft(state);
+      const saved = restoreNestDraft()!;
+      const restored = placeNestDialogReducer(
+        initialPlaceNestDialogState("guided"),
+        { type: "restoreDraft", saved },
+      );
+
+      expect(restored.transcript).toHaveLength(2);
+      expect(restored.transcript[1].content).toBe("What platform?");
+      expect(restored.drafting).toBe(false);
+      expect(restored.submitting).toBe(false);
+      expect(restored.error).toBeNull();
+    });
+
+    it("clears saved draft from localStorage", () => {
+      const state = initialPlaceNestDialogState("guided");
+      saveNestDraft({ ...state, initialGoal: "something" });
+      expect(restoreNestDraft()).not.toBeNull();
+
+      clearNestDraft();
+      expect(restoreNestDraft()).toBeNull();
+    });
+
+    it("returns null when localStorage is empty", () => {
+      expect(restoreNestDraft()).toBeNull();
+    });
   });
 });

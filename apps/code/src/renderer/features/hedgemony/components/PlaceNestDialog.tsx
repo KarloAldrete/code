@@ -21,9 +21,12 @@ import type { ReactNode } from "react";
 import { useEffect, useReducer, useRef, useState } from "react";
 import {
   buildSimpleTranscript,
+  clearNestDraft,
   initialPlaceNestDialogState,
   type NestCreationMode,
   placeNestDialogReducer,
+  restoreNestDraft,
+  saveNestDraft,
   suggestName,
 } from "./placeNestDialogReducer";
 
@@ -85,8 +88,22 @@ export function PlaceNestDialog({
   } = state;
 
   useEffect(() => {
-    if (open) dispatch({ type: "reset", mode: initialMode });
+    if (!open) return;
+    const saved = restoreNestDraft();
+    if (saved) {
+      dispatch({ type: "restoreDraft", saved });
+    } else {
+      dispatch({ type: "reset", mode: initialMode });
+    }
   }, [open, initialMode]);
+
+  useEffect(() => {
+    if (!open) return;
+    const hasContent = transcript.length > 0 || initialGoal.trim().length > 0;
+    if (hasContent) {
+      saveNestDraft(state);
+    }
+  }, [open, state, initialGoal.trim, transcript.length]);
 
   const roundedMapX = Math.round(mapX);
   const roundedMapY = Math.round(mapY);
@@ -192,6 +209,7 @@ export function PlaceNestDialog({
         creationTranscript,
         creationBootstrap,
       });
+      clearNestDraft();
       onCreated?.(created);
       onClose();
     } catch (e) {
@@ -204,7 +222,15 @@ export function PlaceNestDialog({
   };
 
   return (
-    <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog.Root
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) {
+          clearNestDraft();
+          onClose();
+        }
+      }}
+    >
       <Dialog.Content maxWidth="640px" size="2" className="max-h-[85vh]">
         <Dialog.Title size="3">{t("Create a nest")}</Dialog.Title>
         <Dialog.Description size="2" color="gray">

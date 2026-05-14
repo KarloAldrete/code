@@ -34,6 +34,7 @@ type TextField =
 
 export type PlaceNestDialogAction =
   | { type: "reset"; mode: NestCreationMode }
+  | { type: "restoreDraft"; saved: PersistedNestDraft }
   | { type: "fieldChanged"; field: TextField; value: string }
   | { type: "toggleSimpleMode" }
   | {
@@ -81,6 +82,14 @@ export function placeNestDialogReducer(
   switch (action.type) {
     case "reset":
       return initialPlaceNestDialogState(action.mode);
+
+    case "restoreDraft":
+      return {
+        ...initialPlaceNestDialogState(
+          action.saved.simpleMode ? "simple" : "guided",
+        ),
+        ...action.saved,
+      };
 
     case "fieldChanged":
       return { ...state, [action.field]: action.value };
@@ -184,4 +193,45 @@ export function buildSimpleTranscript(input: {
       ),
     },
   ];
+}
+
+const DRAFT_STORAGE_KEY = "hedgemony-nest-draft";
+
+export interface PersistedNestDraft {
+  initialGoal: string;
+  answer: string;
+  transcript: GoalDraftTranscriptMessage[];
+  draft: GoalSpecDraft | null;
+  name: string;
+  goalPrompt: string;
+  definitionOfDone: string;
+  simpleMode: boolean;
+}
+
+export function saveNestDraft(state: PlaceNestDialogState): void {
+  const persisted: PersistedNestDraft = {
+    initialGoal: state.initialGoal,
+    answer: state.answer,
+    transcript: state.transcript,
+    draft: state.draft,
+    name: state.name,
+    goalPrompt: state.goalPrompt,
+    definitionOfDone: state.definitionOfDone,
+    simpleMode: state.simpleMode,
+  };
+  localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(persisted));
+}
+
+export function restoreNestDraft(): PersistedNestDraft | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as PersistedNestDraft;
+  } catch {
+    return null;
+  }
+}
+
+export function clearNestDraft(): void {
+  localStorage.removeItem(DRAFT_STORAGE_KEY);
 }
