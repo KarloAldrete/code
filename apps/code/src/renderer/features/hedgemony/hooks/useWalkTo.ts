@@ -1,11 +1,7 @@
-import {
-  type AnimationPlaybackControls,
-  animate,
-  type MotionValue,
-  useMotionValue,
-} from "framer-motion";
+import { type MotionValue, useMotionValue } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { HEDGEMONY_CONFIG } from "../config";
+import { sceneTicker } from "../runtime/SceneTicker";
 import type { Vec2 } from "../utils/pathfinding";
 
 interface WalkToResult {
@@ -20,6 +16,10 @@ interface WalkToResult {
  * `transitPath` is provided, it's treated as an ordered list of waypoints to
  * walk through *before* settling at the target — used so hoglets visibly route
  * around nests instead of clipping through them.
+ *
+ * Each segment is interpolated linearly at `HEDGEMONY_CONFIG.speeds.hoglet`
+ * px/sec, driven by the shared SceneTicker so the simulation can be paused,
+ * stepped, or replaced with a deterministic clock in tests.
  */
 export function useWalkTo(
   targetX: number,
@@ -40,11 +40,6 @@ export function useWalkTo(
       return;
     }
 
-    // Build the segment list. transitPath, when present, starts at the
-    // sprite's known position (path[0]) and ends near the target — we walk
-    // through every interior waypoint, then settle at (targetX, targetY).
-    // The trailing target is added unconditionally so a stale/rounded last
-    // waypoint never short-changes the final landing position.
     const segments: Vec2[] = [];
     if (transitPath && transitPath.length > 1) {
       for (let i = 1; i < transitPath.length; i++) {
@@ -58,54 +53,62 @@ export function useWalkTo(
 
     if (segments.length === 0) return;
 
-    let cancelled = false;
-    let xCtrl: AnimationPlaybackControls | null = null;
-    let yCtrl: AnimationPlaybackControls | null = null;
+    let segIndex = 0;
     let started = false;
-    let i = 0;
+    let segStartX = motionX.get();
+    let segStartY = motionY.get();
+    let segDurationS = 0;
+    let segElapsedS = 0;
+    let segActive = false;
 
-    const playSegment = () => {
-      if (cancelled) return;
-      if (i >= segments.length) {
-        setIsWalking(false);
-        return;
+    const beginSegment = (): boolean => {
+      while (segIndex < segments.length) {
+        const seg = segments[segIndex];
+        segStartX = motionX.get();
+        segStartY = motionY.get();
+        const dx = seg.x - segStartX;
+        const dy = seg.y - segStartY;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 1) {
+          segIndex++;
+          continue;
+        }
+        segDurationS = dist / HEDGEMONY_CONFIG.speeds.hoglet;
+        segElapsedS = 0;
+        segActive = true;
+        if (!started) {
+          started = true;
+          setIsWalking(true);
+        }
+        if (dx > 0) setFacing("right");
+        else if (dx < 0) setFacing("left");
+        return true;
       }
-      const seg = segments[i];
-      const sx = motionX.get();
-      const sy = motionY.get();
-      const dx = seg.x - sx;
-      const dy = seg.y - sy;
-      const dist = Math.hypot(dx, dy);
-      if (dist < 1) {
-        i++;
-        playSegment();
-        return;
-      }
-      if (!started) {
-        started = true;
-        setIsWalking(true);
-      }
-      if (dx > 0) setFacing("right");
-      else if (dx < 0) setFacing("left");
-      const duration = dist / HEDGEMONY_CONFIG.speeds.hoglet;
-      xCtrl = animate(motionX, seg.x, { duration, ease: "linear" });
-      yCtrl = animate(motionY, seg.y, {
-        duration,
-        ease: "linear",
-        onComplete: () => {
-          if (cancelled) return;
-          i++;
-          playSegment();
-        },
-      });
+      segActive = false;
+      setIsWalking(false);
+      return false;
     };
 
-    playSegment();
+    if (!beginSegment()) return;
+
+    const unsubscribe = sceneTicker.on((deltaMs) => {
+      if (!segActive) return;
+      segElapsedS += deltaMs / 1000;
+      const seg = segments[segIndex];
+      if (segElapsedS >= segDurationS) {
+        motionX.set(seg.x);
+        motionY.set(seg.y);
+        segIndex++;
+        beginSegment();
+        return;
+      }
+      const t = segElapsedS / segDurationS;
+      motionX.set(segStartX + (seg.x - segStartX) * t);
+      motionY.set(segStartY + (seg.y - segStartY) * t);
+    });
 
     return () => {
-      cancelled = true;
-      xCtrl?.stop();
-      yCtrl?.stop();
+      unsubscribe();
       setIsWalking(false);
     };
   }, [targetX, targetY, transitPath, motionX, motionY]);
