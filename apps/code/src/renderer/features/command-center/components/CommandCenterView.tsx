@@ -1,4 +1,5 @@
 import { HedgemonyMapView } from "@features/hedgemony/components/HedgemonyMapView";
+import { useHedgemonyViewStore } from "@features/hedgemony/stores/hedgemonyViewStore";
 import { useTaskViewed } from "@features/sidebar/hooks/useTaskViewed";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useSetHeaderContent } from "@hooks/useSetHeaderContent";
@@ -16,6 +17,7 @@ export function CommandCenterView() {
   const viewMode = useCommandCenterStore((s) => s.viewMode);
   const hedgemonyEnabled = useFeatureFlag(HEDGEMONY_FLAG, import.meta.env.DEV);
   const isMap = hedgemonyEnabled && viewMode === "map";
+  const hedgemonyFullscreen = useHedgemonyViewStore((s) => s.fullscreen);
 
   const { cells, summary } = useCommandCenterData();
   const { markAsViewed } = useTaskViewed();
@@ -53,7 +55,9 @@ export function CommandCenterView() {
 
   return (
     <Flex direction="column" height="100%">
-      <CommandCenterToolbar summary={summary} cells={cells} />
+      {!hedgemonyFullscreen && (
+        <CommandCenterToolbar summary={summary} cells={cells} />
+      )}
       <Box className="min-h-0 flex-1">
         {isMap ? (
           <HedgemonyMapView />

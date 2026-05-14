@@ -9,6 +9,7 @@ import { CommandMenu } from "@features/command/components/CommandMenu";
 import { CommandCenterView } from "@features/command-center/components/CommandCenterView";
 import { BgmPlayer } from "@features/hedgemony/audio/BgmPlayer";
 import { SfxBridge } from "@features/hedgemony/audio/SfxBridge";
+import { useHedgemonyViewStore } from "@features/hedgemony/stores/hedgemonyViewStore";
 import { InboxView } from "@features/inbox/components/InboxView";
 import { useInboxDeepLink } from "@features/inbox/hooks/useInboxDeepLink";
 import { McpServersView } from "@features/mcp-servers/components/McpServersView";
@@ -99,11 +100,18 @@ export function MainLayout() {
     toggleCommandMenu();
   }, [toggleCommandMenu]);
 
+  // When the Hedgemony map enters fullscreen, hide all chrome (header, left
+  // sidebar, bottom space-switcher). The header's `app-region: drag` would
+  // otherwise capture pointer events at the top edge of the screen — even
+  // with the map portal at z-[1000] over it — and the sidebar would visually
+  // bleed under semi-transparent map UI.
+  const hedgemonyFullscreen = useHedgemonyViewStore((s) => s.fullscreen);
+
   return (
     <Flex direction="column" height="100vh">
-      <HeaderRow />
+      {!hedgemonyFullscreen && <HeaderRow />}
       <Flex flexGrow="1" overflow="hidden">
-        <MainSidebar />
+        {!hedgemonyFullscreen && <MainSidebar />}
 
         <Box flexGrow="1" overflow="hidden">
           {view.type === "task-input" && (
@@ -138,14 +146,16 @@ export function MainLayout() {
         </Box>
       </Flex>
 
-      <SpaceSwitcher
-        tasks={visualTaskOrder}
-        activeTaskId={activeTaskId}
-        allTasks={tasks ?? []}
-        isOnNewTask={view.type === "task-input"}
-        onNavigateToTask={navigateToTask}
-        onNewTask={navigateToTaskInput}
-      />
+      {!hedgemonyFullscreen && (
+        <SpaceSwitcher
+          tasks={visualTaskOrder}
+          activeTaskId={activeTaskId}
+          allTasks={tasks ?? []}
+          isOnNewTask={view.type === "task-input"}
+          onNavigateToTask={navigateToTask}
+          onNewTask={navigateToTaskInput}
+        />
+      )}
       <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
       <KeyboardShortcutsSheet
         open={shortcutsSheetOpen}

@@ -499,7 +499,11 @@ export function HedgemonyMapView() {
         createPortal(
           <motion.div
             key="hedgemony-fullscreen"
-            className="fixed inset-0 z-[1000] bg-(--gray-1)"
+            // `no-drag` is mandatory here: without it, even though the portal
+            // visually covers the HeaderRow's `drag` region, the OS still
+            // captures pointer events at the top of the screen for window
+            // dragging, killing top-edge camera pan.
+            className="no-drag fixed inset-0 z-[1000] bg-(--gray-1)"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
