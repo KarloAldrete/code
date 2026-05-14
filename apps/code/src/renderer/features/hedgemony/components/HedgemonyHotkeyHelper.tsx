@@ -98,18 +98,25 @@ export function HedgemonyHotkeyHelper({
     items: HEDGEMONY_HOTKEYS.filter((h) => h.context === ctx),
   })).filter((g) => g.items.length > 0);
 
+  // Hide the floating launcher whenever something is selected — its position
+  // collides with the close button on the detail/command panels. The `?`
+  // shortcut still opens the helper from the keyboard.
+  const showLauncher = !activeContext;
+
   return (
     <>
-      <button
-        type="button"
-        onClick={() => onOpenChange(!open)}
-        title="Show hedgemony shortcuts (?)"
-        aria-label="Show hedgemony shortcuts"
-        className="absolute top-3 right-3 z-10 flex h-8 items-center gap-1 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2)/85 px-2 text-(--gray-11) text-[12px] backdrop-blur-sm transition-colors hover:bg-(--gray-3) hover:text-(--gray-12)"
-      >
-        <Keyboard size={14} />
-        <span className="font-mono text-[12px]">?</span>
-      </button>
+      {showLauncher && (
+        <button
+          type="button"
+          onClick={() => onOpenChange(!open)}
+          title="Show hedgemony shortcuts (?)"
+          aria-label="Show hedgemony shortcuts"
+          className="absolute top-3 right-3 z-10 flex h-8 items-center gap-1 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2)/85 px-2 text-(--gray-11) text-[12px] backdrop-blur-sm transition-colors hover:bg-(--gray-3) hover:text-(--gray-12)"
+        >
+          <Keyboard size={14} />
+          <span className="font-mono text-[12px]">?</span>
+        </button>
+      )}
       <AnimatePresence>
         {open && (
           <motion.div
