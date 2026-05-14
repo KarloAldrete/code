@@ -1,7 +1,6 @@
 import { Box, Flex, Text } from "@radix-ui/themes";
 import beachHog from "@renderer/assets/images/hedgehogs/beach-hog.png";
 import builderHog from "@renderer/assets/images/hedgehogs/builder-hog-03.png";
-import clickthatHog from "@renderer/assets/images/hedgehogs/clickthat-hog.png";
 import cursorHog from "@renderer/assets/images/hedgehogs/cursor-hog.png";
 import detectiveHog from "@renderer/assets/images/hedgehogs/detective-hog.png";
 import experimentsHog from "@renderer/assets/images/hedgehogs/experiments-hog.png";
@@ -11,7 +10,6 @@ import fileHog from "@renderer/assets/images/hedgehogs/file-hog.png";
 import graphsHog from "@renderer/assets/images/hedgehogs/graphs-hog.png";
 import hackerHog from "@renderer/assets/images/hedgehogs/hacker-hog.png";
 import happyHog from "@renderer/assets/images/hedgehogs/happy-hog.png";
-import magicBookHog from "@renderer/assets/images/hedgehogs/magic-book-hog.png";
 import partyHog from "@renderer/assets/images/hedgehogs/party-hog.png";
 import meepUrl from "@renderer/assets/sounds/meep.mp3";
 import type { CSSProperties } from "react";
@@ -44,18 +42,6 @@ const HOGS: { image: string; messages: string[] }[] = [
       "Tools sharpened, normie. What are we putting up?",
       "I'm fully caffeinated, normie. What are we constructing?",
       "Tap me, normie. We'll break ground after.",
-    ],
-  },
-  {
-    image: clickthatHog,
-    messages: [
-      "Hello normie, what shall we click into existence today?",
-      "Heya normie — which button needs clicking?",
-      "Hola normie, ready to point and click some progress?",
-      "Howdy normie, where's the next click taking us?",
-      "Locked in, normie. What's the first click?",
-      "Aim me, normie. I'll click anything that moves.",
-      "Hey normie, click me.",
     ],
   },
   {
@@ -164,18 +150,6 @@ const HOGS: { image: string; messages: string[] }[] = [
       "Bring it on, normie. What's first?",
       "I'm wide awake, normie. Where do we start?",
       "Psst normie, give me a click.",
-    ],
-  },
-  {
-    image: magicBookHog,
-    messages: [
-      "Hello normie, what spell are we casting today?",
-      "Heya normie, the grimoire's open — what'll it be?",
-      "Hola normie, ready to conjure something up?",
-      "Howdy normie, which page shall we turn?",
-      "Robes on, normie. What incantation today?",
-      "Open the tome, normie. We're summoning something big.",
-      "Click me, normie. The book is open.",
     ],
   },
   {
