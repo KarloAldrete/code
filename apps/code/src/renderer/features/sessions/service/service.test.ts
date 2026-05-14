@@ -16,7 +16,7 @@ const mockTrpcAgent = vi.hoisted(() => ({
   cancelPermission: { mutate: vi.fn() },
   onSessionEvent: { subscribe: vi.fn() },
   onPermissionRequest: { subscribe: vi.fn() },
-  onSessionIdleKilled: { subscribe: vi.fn(() => ({ unsubscribe: vi.fn() })) },
+  onSessionIdleKilled: { subscribe: vi.fn() },
   resetAll: { mutate: vi.fn().mockResolvedValue(undefined) },
   getPreviewConfigOptions: { query: vi.fn().mockResolvedValue([]) },
 }));
@@ -369,6 +369,9 @@ describe("SessionService", () => {
       unsubscribe: vi.fn(),
     });
     mockTrpcAgent.onPermissionRequest.subscribe.mockReturnValue({
+      unsubscribe: vi.fn(),
+    });
+    mockTrpcAgent.onSessionIdleKilled.subscribe.mockReturnValue({
       unsubscribe: vi.fn(),
     });
     mockTrpcCloudTask.onUpdate.subscribe.mockReturnValue({
@@ -3371,6 +3374,118 @@ describe("SessionService", () => {
       );
 
       vi.useRealTimers();
+    });
+  });
+
+  describe("handleIdleKill", () => {
+    function triggerIdleKill(taskRunId: string): void {
+      const onData = mockTrpcAgent.onSessionIdleKilled.subscribe.mock
+        .calls[0]?.[1]?.onData as
+        | ((event: { taskRunId: string }) => void)
+        | undefined;
+      expect(onData).toBeDefined();
+      onData?.({ taskRunId });
+    }
+
+    it("marks local sessions as errored on idle-kill", () => {
+      getSessionService();
+
+      const localSession = createMockSession({
+        taskRunId: "run-local",
+        taskId: "task-local",
+        isCloud: false,
+        status: "connected",
+      });
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-local": localSession,
+      });
+
+      triggerIdleKill("run-local");
+
+      expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+        "run-local",
+        expect.objectContaining({
+          status: "error",
+          errorMessage: "Session disconnected due to inactivity. Reconnecting…",
+          idleKilled: true,
+        }),
+      );
+    });
+
+    it("does not mark cloud sessions as errored on idle-kill", () => {
+      // The main-process idle timer tracks the local ACP helper. For cloud
+      // sessions, killing the local helper does not disconnect the cloud
+      // run — the SSE watcher manages that independently. Marking the
+      // session as errored here strands the user on a misleading
+      // "Reconnecting…" toast because useSessionConnection's auto-reconnect
+      // skips cloud sessions.
+      getSessionService();
+
+      const cloudSession = createMockSession({
+        taskRunId: "run-cloud",
+        taskId: "task-cloud",
+        isCloud: true,
+        cloudStatus: "queued",
+        status: "disconnected",
+      });
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-cloud": cloudSession,
+      });
+
+      triggerIdleKill("run-cloud");
+
+      // No error/status mutation on the cloud session
+      const errorUpdate = mockSessionStoreSetters.updateSession.mock.calls.find(
+        ([, patch]) =>
+          (patch as { idleKilled?: boolean }).idleKilled === true ||
+          (patch as { errorMessage?: string }).errorMessage ===
+            "Session disconnected due to inactivity. Reconnecting…",
+      );
+      expect(errorUpdate).toBeUndefined();
+    });
+
+    it("does not mark sessions with an active cloud watcher as errored even if isCloud is missing", async () => {
+      // Defensive: if the cloud flag was reset (e.g. by a stale handoff
+      // path) but the cloud watcher is still active for the task, treat
+      // the idle-kill as benign.
+      const service = getSessionService();
+
+      // Spin up a real cloud watcher for the task so cloudTaskWatchers.has
+      // returns true.
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(undefined);
+      mockTrpcLogs.fetchS3Logs.query.mockResolvedValue([]);
+      service.watchCloudTask(
+        "task-with-watcher",
+        "run-with-watcher",
+        "https://app.example.com",
+        123,
+        undefined,
+        undefined,
+        undefined,
+        "claude",
+      );
+
+      const sessionMissingCloudFlag = createMockSession({
+        taskRunId: "run-with-watcher",
+        taskId: "task-with-watcher",
+        isCloud: false,
+        status: "disconnected",
+      });
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-with-watcher": sessionMissingCloudFlag,
+      });
+
+      mockSessionStoreSetters.updateSession.mockClear();
+
+      triggerIdleKill("run-with-watcher");
+
+      const errorUpdate = mockSessionStoreSetters.updateSession.mock.calls.find(
+        ([, patch]) =>
+          (patch as { idleKilled?: boolean }).idleKilled === true ||
+          (patch as { errorMessage?: string }).errorMessage ===
+            "Session disconnected due to inactivity. Reconnecting…",
+      );
+      expect(errorUpdate).toBeUndefined();
     });
   });
 });

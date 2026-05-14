@@ -703,13 +703,39 @@ export class SessionService {
 
   /**
    * Handle an idle-kill from the main process without destroying session state.
-   * The main process already cleaned up the agent, so we only need to
+   * The main process already cleaned up the local agent, so we only need to
    * unsubscribe from the channel and mark the session as errored.
    * Preserves events, logUrl, configOptions and adapter so that Retry
    * can reconnect with full context via unstable_resumeSession.
+   *
+   * For cloud sessions this is a no-op: the main-process idle timer tracks
+   * the local ACP session only, but the cloud run is driven by the SSE
+   * watcher and a separate sandbox in PostHog's backend. Killing the local
+   * helper does not disconnect the cloud run, and surfacing it as a
+   * "Session disconnected due to inactivity. Reconnecting…" error here is
+   * misleading because `useSessionConnection`'s auto-reconnect path skips
+   * cloud sessions entirely (`if (isCloud || session?.isCloud) return;`),
+   * leaving the user stuck on a toast with no way to recover beyond a
+   * manual Retry click.
    */
   private handleIdleKill(taskRunId: string): void {
+    const session = sessionStoreSetters.getSessions()[taskRunId];
+    const hasActiveCloudWatcher =
+      session != null && this.cloudTaskWatchers.has(session.taskId);
+
+    // Always clean up any lingering local ACP subscription — the main process
+    // killed the local agent, so the channel is dead either way.
     this.unsubscribeFromChannel(taskRunId);
+
+    if (session?.isCloud || hasActiveCloudWatcher) {
+      log.info("Ignoring idle-kill for cloud session", {
+        taskRunId,
+        taskId: session?.taskId,
+        reason: session?.isCloud ? "session.isCloud" : "active_cloud_watcher",
+      });
+      return;
+    }
+
     sessionStoreSetters.updateSession(taskRunId, {
       status: "error",
       errorMessage: "Session disconnected due to inactivity. Reconnecting…",
