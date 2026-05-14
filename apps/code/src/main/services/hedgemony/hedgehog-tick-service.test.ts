@@ -54,6 +54,10 @@ import type {
   PrDependencyRepository,
 } from "../../db/repositories/pr-dependency-repository";
 import { createMockPrDependencyRepository } from "../../db/repositories/pr-dependency-repository.mock";
+import type {
+  Repository,
+  RepositoryRepository,
+} from "../../db/repositories/repository-repository";
 import type { GitService } from "../git/service";
 import type {
   AnthropicToolUseBlock,
@@ -152,7 +156,20 @@ interface Mocks {
   prGraph: PrGraphService;
   git: GitService;
   feedbackRouting: FeedbackRoutingService;
+  repositoryRepo: RepositoryRepository;
   emittedNestChanged: HedgemonyEvents["nest-changed"][];
+}
+
+function makeRepository(overrides: Partial<Repository> = {}): Repository {
+  return {
+    id: `repo-${crypto.randomUUID().slice(0, 8)}`,
+    path: "/tmp/fixture-repo",
+    remoteUrl: null,
+    lastAccessedAt: "2026-05-13T00:00:00.000Z",
+    createdAt: "2026-05-13T00:00:00.000Z",
+    updatedAt: "2026-05-13T00:00:00.000Z",
+    ...overrides,
+  };
 }
 
 function setupMocks(input: {
@@ -180,6 +197,7 @@ function setupMocks(input: {
   >;
   promptResponse?: PromptWithToolsOutput;
   promptThrows?: Error;
+  availableRepositories?: Repository[];
 }): Mocks {
   const nests = input.nests ?? [input.nest ?? makeNest()];
   const hoglets = input.hoglets ?? [];
@@ -326,6 +344,10 @@ function setupMocks(input: {
     listenerCount: vi.fn(() => 0),
   } as unknown as FeedbackRoutingService;
 
+  const repositoryRepo = {
+    findAll: vi.fn(() => input.availableRepositories ?? []),
+  } as unknown as RepositoryRepository;
+
   return {
     llm,
     nestService,
@@ -337,6 +359,7 @@ function setupMocks(input: {
     prGraph,
     git,
     feedbackRouting,
+    repositoryRepo,
     emittedNestChanged,
   };
 }
@@ -353,6 +376,7 @@ function buildService(mocks: Mocks): HedgehogTickService {
     mocks.prGraph,
     mocks.git,
     mocks.feedbackRouting,
+    mocks.repositoryRepo,
   );
 }
 
@@ -683,6 +707,7 @@ describe("HedgehogTickService", () => {
 
   it("caps spawn_hoglet calls at 3 per tick", async () => {
     const mocks = setupMocks({
+      nest: makeNest({ primaryRepository: "posthog/posthog" }),
       promptResponse: makePromptWithToolsResponse([
         { id: "t-1", name: "spawn_hoglet", input: { prompt: "work 1" } },
         { id: "t-2", name: "spawn_hoglet", input: { prompt: "work 2" } },
@@ -706,6 +731,7 @@ describe("HedgehogTickService", () => {
 
   it("counts failed spawns toward the per-tick cap", async () => {
     const mocks = setupMocks({
+      nest: makeNest({ primaryRepository: "posthog/posthog" }),
       promptResponse: makePromptWithToolsResponse([
         { id: "t-1", name: "spawn_hoglet", input: { prompt: "work 1" } },
         { id: "t-2", name: "spawn_hoglet", input: { prompt: "work 2" } },
@@ -830,6 +856,7 @@ describe("HedgehogTickService", () => {
   it("passes loadout to spawnInNest when spawning hoglets", async () => {
     const mocks = setupMocks({
       nest: makeNest({
+        primaryRepository: "posthog/posthog",
         loadoutJson: JSON.stringify({
           model: defaultModelForAdapter("codex"),
           runtimeAdapter: "codex",
@@ -888,8 +915,85 @@ describe("HedgehogTickService", () => {
     expect(prompt).toContain("primary_repository: Brooker-Fam/nexus-game");
   });
 
+  it("falls back to the sole locally-configured repo when nest has none", async () => {
+    const mocks = setupMocks({
+      nest: makeNest({ primaryRepository: null }),
+      availableRepositories: [
+        makeRepository({
+          remoteUrl: "https://github.com/posthog/posthog.git",
+        }),
+      ],
+      promptResponse: makePromptWithToolsResponse([
+        { id: "t-1", name: "spawn_hoglet", input: { prompt: "work" } },
+      ]),
+    });
+    const service = buildService(mocks);
+    await service.tick("nest-1", "test");
+
+    expect(mocks.hogletService.spawnInNest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: "work",
+        repository: "posthog/posthog",
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it("refuses spawn_hoglet when no repository can be resolved", async () => {
+    const mocks = setupMocks({
+      nest: makeNest({ primaryRepository: null }),
+      availableRepositories: [
+        makeRepository({ remoteUrl: "https://github.com/posthog/posthog.git" }),
+        makeRepository({
+          remoteUrl: "https://github.com/posthog/posthog-js.git",
+        }),
+      ],
+      promptResponse: makePromptWithToolsResponse([
+        { id: "t-1", name: "spawn_hoglet", input: { prompt: "work" } },
+      ]),
+    });
+    const service = buildService(mocks);
+    await service.tick("nest-1", "test");
+
+    expect(mocks.hogletService.spawnInNest).not.toHaveBeenCalled();
+    const audits = (
+      mocks.nestChat.recordHedgehogMessage as ReturnType<typeof vi.fn>
+    ).mock.calls
+      .map(([args]) => args)
+      .filter((m) => m.kind === "audit");
+    expect(
+      audits.some(
+        (m) =>
+          typeof m.body === "string" && m.body.includes("Refused spawn_hoglet"),
+      ),
+    ).toBe(true);
+  });
+
+  it("surfaces available_repositories from the repository repo in the user prompt", async () => {
+    const mocks = setupMocks({
+      nest: makeNest({ primaryRepository: null }),
+      availableRepositories: [
+        makeRepository({ remoteUrl: "https://github.com/posthog/posthog.git" }),
+        makeRepository({ remoteUrl: "git@github.com:posthog/posthog-js.git" }),
+        makeRepository({ remoteUrl: null }),
+      ],
+      promptResponse: makePromptWithToolsResponse([
+        { id: "t-1", name: "write_audit_entry", input: { summary: "noop" } },
+      ]),
+    });
+    const service = buildService(mocks);
+    await service.tick("nest-1", "test");
+
+    const prompt = (mocks.llm.promptWithTools as ReturnType<typeof vi.fn>).mock
+      .calls[0][0][0].content;
+    expect(prompt).toContain(
+      "available_repositories: posthog/posthog, posthog/posthog-js",
+    );
+  });
+
   it("writes an error audit when spawn_hoglet fails", async () => {
     const mocks = setupMocks({
+      nest: makeNest({ primaryRepository: "posthog/posthog" }),
       promptResponse: makePromptWithToolsResponse([
         { id: "t-1", name: "spawn_hoglet", input: { prompt: "work" } },
       ]),

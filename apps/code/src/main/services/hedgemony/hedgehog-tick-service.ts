@@ -1,6 +1,9 @@
+import { parseGithubUrl } from "@posthog/git/utils";
 import { inject, injectable } from "inversify";
+import { normalizeRepoKey } from "../../../shared/utils/repo";
 import type { HedgehogStateRepository } from "../../db/repositories/hedgehog-state-repository";
 import type { PrDependencyRepository } from "../../db/repositories/pr-dependency-repository";
+import type { RepositoryRepository } from "../../db/repositories/repository-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import type { GitService } from "../git/service";
@@ -110,6 +113,8 @@ export class HedgehogTickService {
     private readonly git: GitService,
     @inject(MAIN_TOKENS.FeedbackRoutingService)
     private readonly feedbackRouting: FeedbackRoutingService,
+    @inject(MAIN_TOKENS.RepositoryRepository)
+    private readonly repositoryRepo: RepositoryRepository,
   ) {}
 
   /**
@@ -292,6 +297,9 @@ export class HedgehogTickService {
         recentChat,
         context.hoglets,
       );
+      if (!repositoryContext.primaryRepository && nest.primaryRepository) {
+        repositoryContext.primaryRepository = nest.primaryRepository;
+      }
       const tickContext = { ...context, repositoryContext };
       const scratchpad = this.loadScratchpad(nestId);
       const userPrompt = buildUserPrompt({
@@ -470,14 +478,22 @@ export class HedgehogTickService {
       budget,
       prDependencies: prDeps,
       loadout,
-      repositoryContext: { repositories: [], primaryRepository: null },
+      repositoryContext: {
+        repositories: [],
+        primaryRepository: null,
+        availableRepositories: [],
+      },
     };
   }
 
   private deriveRepositoryContext(
     recentChat: NestMessage[],
     hoglets: HogletWithState[],
-  ): { repositories: string[]; primaryRepository: string | null } {
+  ): {
+    repositories: string[];
+    primaryRepository: string | null;
+    availableRepositories: string[];
+  } {
     const repositories = new Set<string>();
     let primaryRepository: string | null = null;
 
@@ -522,7 +538,44 @@ export class HedgehogTickService {
     if (!primaryRepository && list.length === 1) {
       primaryRepository = list[0] ?? null;
     }
-    return { repositories: list, primaryRepository };
+    return {
+      repositories: list,
+      primaryRepository,
+      availableRepositories: this.listAvailableRepositorySlugs(),
+    };
+  }
+
+  /**
+   * Builds the list of "owner/repo" slugs the hedgehog can choose from,
+   * sourced from every PostHog Code repository row on the operator's machine.
+   * Each remoteUrl is normalised through parseGithubUrl (handles HTTPS, SSH,
+   * shorthand) and falls back to normalizeRepoKey for non-GitHub remotes.
+   */
+  private listAvailableRepositorySlugs(): string[] {
+    const slugs = new Set<string>();
+    let rows: ReturnType<RepositoryRepository["findAll"]>;
+    try {
+      rows = this.repositoryRepo.findAll();
+    } catch (error) {
+      log.warn("repositoryRepo.findAll failed; available_repositories empty", {
+        error: stringifyError(error),
+      });
+      return [];
+    }
+    for (const row of rows) {
+      const remote = row.remoteUrl;
+      if (!remote) continue;
+      const parsed = parseGithubUrl(remote);
+      if (parsed && parsed.kind === "repo") {
+        slugs.add(`${parsed.owner}/${parsed.repo}`);
+        continue;
+      }
+      const normalised = normalizeRepoKey(remote);
+      if (normalised.length > 0 && normalised.includes("/")) {
+        slugs.add(normalised);
+      }
+    }
+    return [...slugs].sort();
   }
 
   private async resolvePrState(

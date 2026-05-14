@@ -32,14 +32,47 @@ export const spawnHogletHandler: HedgehogToolHandler = {
       );
     }
     const args = parsed.data;
-    const repository = args.repository ?? ctx.nest.primaryRepository ?? null;
+    const soleAvailable =
+      ctx.repositoryContext.availableRepositories.length === 1
+        ? (ctx.repositoryContext.availableRepositories[0] ?? null)
+        : null;
+    const repository =
+      args.repository ?? ctx.nest.primaryRepository ?? soleAvailable ?? null;
+    const repositorySource: "tool_call" | "nest_primary" | "sole_available" =
+      args.repository
+        ? "tool_call"
+        : ctx.nest.primaryRepository
+          ? "nest_primary"
+          : "sole_available";
+
+    if (!repository) {
+      const available = ctx.repositoryContext.availableRepositories;
+      const detail =
+        available.length === 0
+          ? "no repositories are configured locally"
+          : `pick one of: ${available.join(", ")}`;
+      deps.writeNestMessage(ctx.nest.id, {
+        kind: "audit",
+        body: `Refused spawn_hoglet — no repository could be resolved (${detail}). Hedgehog must pass a repository slug on the tool call.`,
+        payloadJson: {
+          type: "spawn_missing_repository",
+          attempted: args,
+          availableRepositories: available,
+        },
+      });
+      return {
+        success: false,
+        scratchpadSummary:
+          "spawn_hoglet refused: no repository resolvable for this nest",
+      };
+    }
 
     try {
       const { hoglet, taskRunId } = await deps.hogletService.spawnInNest(
         {
           nestId: ctx.nest.id,
           prompt: args.prompt,
-          repository: repository ?? undefined,
+          repository,
         },
         ctx.loadout,
       );
@@ -54,11 +87,7 @@ export const spawnHogletHandler: HedgehogToolHandler = {
           taskId: hoglet.taskId,
           taskRunId,
           repository,
-          repositorySource: args.repository
-            ? "tool_call"
-            : ctx.nest.primaryRepository
-              ? "nest_primary"
-              : "none",
+          repositorySource,
           model:
             ctx.loadout.model ??
             defaultModelForAdapter(ctx.loadout.runtimeAdapter),

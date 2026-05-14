@@ -27,7 +27,7 @@ export const HEDGEHOG_TOOLS: AnthropicToolDefinition[] = [
         repository: {
           type: "string",
           description:
-            "Optional repository reference (e.g. 'org/repo'). Use when the bootstrap context identified specific repos for the work.",
+            "Repository slug (e.g. 'org/repo') the hoglet should work in. Required unless the nest has a primary_repository or there is exactly one entry in available_repositories — in those cases the dispatcher fills it for you. Must match an entry in available_repositories.",
         },
       },
       required: ["prompt"],
