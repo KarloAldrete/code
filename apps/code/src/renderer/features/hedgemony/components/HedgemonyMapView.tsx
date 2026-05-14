@@ -36,6 +36,7 @@ import { worldObstacles } from "../utils/worldObstacles";
 import { BuilderCommandPanel } from "./BuilderCommandPanel";
 import { DyingHogletLayer } from "./DyingHogletLayer";
 import { HedgehouseCommandPanel } from "./HedgehouseCommandPanel";
+import { HEDGEHOUSE_MAP_X, HEDGEHOUSE_MAP_Y } from "./HedgehouseSprite";
 import { HedgemonyHoldingPanel } from "./HedgemonyHoldingPanel";
 import { HedgemonyHotkeyHelper } from "./HedgemonyHotkeyHelper";
 import {
@@ -331,6 +332,52 @@ export function HedgemonyMapView() {
     mapHotkeyOptions,
     [holdingPanel.open, setHoldingPanelOpen, toggleHoldingPanelCollapsed],
   );
+
+  // RTS-style keyboard selection. Without this the map has no way to pick a
+  // unit without a mouse. F1/F2 grab the two fixed-position structures; F3
+  // cycles nests since they're a dynamic set. Each selection also pans the
+  // camera so the player can see what they grabbed.
+  const selectBuilder = useCallback(() => {
+    playSfx("select");
+    playVoice("hoglet:select");
+    setSelection({ type: "builder" });
+    const pos = builder.visualPosRef.current;
+    surfaceRef.current?.centerOnPoint(pos.x, pos.y);
+  }, [builder.visualPosRef]);
+  useHotkeys("f1", selectBuilder, mapHotkeyOptions, [selectBuilder]);
+
+  const selectHedgehouse = useCallback(() => {
+    playSfx("select");
+    setSelection({ type: "hedgehouse" });
+    surfaceRef.current?.centerOnPoint(HEDGEHOUSE_MAP_X, HEDGEHOUSE_MAP_Y);
+  }, []);
+  useHotkeys("f2", selectHedgehouse, mapHotkeyOptions, [selectHedgehouse]);
+
+  const cycleNest = useCallback(
+    (direction: 1 | -1) => {
+      if (nests.length === 0) return;
+      const currentId = selection?.type === "nest" ? selection.id : null;
+      const currentIdx = currentId
+        ? nests.findIndex((n) => n.id === currentId)
+        : -1;
+      // Wrap forward and backward; with nothing selected we start at the
+      // first nest going forward, the last going backward.
+      const nextIdx =
+        currentIdx === -1
+          ? direction === 1
+            ? 0
+            : nests.length - 1
+          : (currentIdx + direction + nests.length) % nests.length;
+      const nest = nests[nextIdx];
+      playSfx("select");
+      playVoice("hoglet:select");
+      setSelection({ type: "nest", id: nest.id });
+      surfaceRef.current?.centerOnPoint(nest.mapX, nest.mapY);
+    },
+    [nests, selection],
+  );
+  useHotkeys("f3", () => cycleNest(1), mapHotkeyOptions, [cycleNest]);
+  useHotkeys("shift+f3", () => cycleNest(-1), mapHotkeyOptions, [cycleNest]);
 
   const flashMoveMarker = useCallback((x: number, y: number) => {
     const id = Date.now();

@@ -83,6 +83,24 @@ export const HEDGEMONY_HOTKEYS: HedgemonyHotkey[] = [
 
   // Selection
   {
+    id: "selection-builder",
+    keys: "f1",
+    description: "Select Builder",
+    context: "selection",
+  },
+  {
+    id: "selection-hedgehouse",
+    keys: "f2",
+    description: "Select Hedgehouse",
+    context: "selection",
+  },
+  {
+    id: "selection-cycle-nest",
+    keys: "f3",
+    description: "Cycle nests (Shift+F3 reverse)",
+    context: "selection",
+  },
+  {
     id: "selection-cancel",
     keys: "escape",
     description: "Cancel placement / exit fullscreen / deselect",

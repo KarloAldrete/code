@@ -81,6 +81,8 @@ export interface MapSurfaceHandle {
   fitToContents: () => void;
   centerSelected: () => void;
   resetView: () => void;
+  /** Smooth-pan the camera so a world point sits at the viewport center. */
+  centerOnPoint: (worldX: number, worldY: number) => void;
 }
 
 interface HedgemonyMapSurfaceProps {
@@ -338,6 +340,14 @@ function HedgemonyMapSurfaceImpl(
   // over `nests`, `builderPos`, etc.), so depending on them rebuilds the
   // handle each render — that's required for correctness; if we omitted them
   // the handle would call the first-render closure forever.
+  const centerOnPoint = useCallback(
+    (worldX: number, worldY: number) => {
+      const next = panToCenter(worldX, worldY, zoom);
+      animateToView(next.x, next.y);
+    },
+    [animateToView, zoom],
+  );
+
   useImperativeHandle(
     ref,
     () => ({
@@ -345,8 +355,16 @@ function HedgemonyMapSurfaceImpl(
       fitToContents: () => fitToContents(),
       centerSelected: () => centerSelected(),
       resetView: () => handleResetView(),
+      centerOnPoint: (worldX: number, worldY: number) =>
+        centerOnPoint(worldX, worldY),
     }),
-    [animateToView, fitToContents, centerSelected, handleResetView],
+    [
+      animateToView,
+      fitToContents,
+      centerSelected,
+      handleResetView,
+      centerOnPoint,
+    ],
   );
 
   const toWorldCoords = (clientX: number, clientY: number) => {
