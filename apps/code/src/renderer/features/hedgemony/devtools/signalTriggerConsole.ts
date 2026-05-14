@@ -15,6 +15,7 @@ type SignalStubCommand = (
   taskId: string;
   signalReportId: string;
 }>;
+type ListTasksCommand = () => Promise<Array<{ id: string; title: string }>>;
 
 const log = logger.scope("hedgemony-signal-trigger");
 
@@ -62,7 +63,46 @@ export function registerHedgemonySignalTriggerConsoleCommand(): void {
       writable: false,
     });
   }
+
+  if (typeof window.__hedgemonyListTasks !== "function") {
+    Object.defineProperty(window, "__hedgemonyListTasks", {
+      value: listTasksCommand,
+      configurable: true,
+      writable: false,
+    });
+  }
 }
+
+const listTasksCommand: ListTasksCommand = async () => {
+  // Task titles live in the REST-backed TanStack Query cache (see useTasks /
+  // useTaskSummaries — keyed off `["tasks", ...]`). We pull from cache rather
+  // than hitting the API so this works without auth juggling.
+  const entries = queryClient.getQueriesData<unknown>({ queryKey: ["tasks"] });
+  const seen = new Map<string, string>();
+  for (const [, data] of entries) {
+    const items = Array.isArray(data) ? data : [];
+    for (const item of items) {
+      if (
+        item &&
+        typeof item === "object" &&
+        "id" in item &&
+        "title" in item &&
+        typeof (item as { id: unknown }).id === "string" &&
+        typeof (item as { title: unknown }).title === "string"
+      ) {
+        const { id, title } = item as { id: string; title: string };
+        if (!seen.has(id)) seen.set(id, title);
+      }
+    }
+  }
+  const rows = Array.from(seen, ([id, title]) => ({ id, title }));
+  if (rows.length === 0) {
+    log.warn(
+      "No tasks in the React Query cache yet. Open the sidebar (which fetches task summaries) and try again.",
+    );
+  }
+  return rows;
+};
 
 /**
  * Synthesises a signal-backed hoglet without going through the real
@@ -78,9 +118,8 @@ export function registerHedgemonySignalTriggerConsoleCommand(): void {
  *   - `taskService.createTask` (re-uses the task you pass in)
  *
  * Useful for verifying UI rendering / drag / dismiss without waiting for
- * the real signal pipeline. Pass any existing cloud task id — get it from
- * the URL of the task detail view, or `trpcClient.workspace.getAll.query()`
- * in the console.
+ * the real signal pipeline. Pass any existing cloud task id — get a list
+ * via `window.__hedgemonyListTasks()` in the console.
  */
 const stubSignalCommand: SignalStubCommand = async (taskId, options = {}) => {
   if (!taskId || typeof taskId !== "string") {
@@ -132,5 +171,6 @@ declare global {
   interface Window {
     __hedgemonyTriggerSignal?: SignalTriggerCommand;
     __hedgemonyStubSignal?: SignalStubCommand;
+    __hedgemonyListTasks?: ListTasksCommand;
   }
 }
