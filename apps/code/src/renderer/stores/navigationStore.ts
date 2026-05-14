@@ -47,7 +47,8 @@ export type WorkView =
   | "scheduled-edit"
   | "data-sources"
   | "projects"
-  | "project-detail";
+  | "project-detail"
+  | "task-detail";
 
 export type ChatView = "home" | "conversation";
 
@@ -71,6 +72,7 @@ interface NavigationStore {
   workSelectedSkillId?: string;
   workScheduledEditId?: string;
   workSelectedProjectId?: string;
+  workActiveTaskId?: string;
   navigateToWorkHome: () => void;
   navigateToWorkGenerate: () => void;
   navigateToWorkSkill: (skillId: string) => void;
@@ -81,6 +83,7 @@ interface NavigationStore {
   navigateToWorkDataSources: () => void;
   navigateToWorkProjects: () => void;
   navigateToWorkProjectDetail: (projectId: string) => void;
+  navigateToWorkTask: (taskId: string) => void;
   chatView: ChatView;
   activeChatId: string | null;
   navigateToChatHome: () => void;
@@ -175,53 +178,62 @@ export const useNavigationStore = create<NavigationStore>()(
         workView: "home",
         workSelectedSkillId: undefined,
         workScheduledEditId: undefined,
+        workActiveTaskId: undefined,
         navigateToWorkHome: () =>
           set({
             workView: "home",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
+            workActiveTaskId: undefined,
           }),
         navigateToWorkGenerate: () =>
           set({
             workView: "generate",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
+            workActiveTaskId: undefined,
           }),
         navigateToWorkSkill: (skillId: string) =>
           set({
             workView: "skill-detail",
             workSelectedSkillId: skillId,
             workScheduledEditId: undefined,
+            workActiveTaskId: undefined,
           }),
         navigateToWorkLibrary: () =>
           set({
             workView: "library",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
+            workActiveTaskId: undefined,
           }),
         navigateToWorkScheduledList: () =>
           set({
             workView: "scheduled-list",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
+            workActiveTaskId: undefined,
           }),
         navigateToWorkScheduledCreate: () =>
           set({
             workView: "scheduled-edit",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
+            workActiveTaskId: undefined,
           }),
         navigateToWorkScheduledEdit: (scheduledId: string) =>
           set({
             workView: "scheduled-edit",
             workSelectedSkillId: undefined,
             workScheduledEditId: scheduledId,
+            workActiveTaskId: undefined,
           }),
         navigateToWorkDataSources: () =>
           set({
             workView: "data-sources",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
+            workActiveTaskId: undefined,
           }),
         navigateToWorkProjects: () =>
           set({
@@ -229,6 +241,7 @@ export const useNavigationStore = create<NavigationStore>()(
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
             workSelectedProjectId: undefined,
+            workActiveTaskId: undefined,
           }),
         navigateToWorkProjectDetail: (projectId: string) =>
           set({
@@ -236,6 +249,14 @@ export const useNavigationStore = create<NavigationStore>()(
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
             workSelectedProjectId: projectId,
+            workActiveTaskId: undefined,
+          }),
+        navigateToWorkTask: (taskId: string) =>
+          set({
+            workView: "task-detail",
+            workSelectedSkillId: undefined,
+            workScheduledEditId: undefined,
+            workActiveTaskId: taskId,
           }),
         chatView: "home",
         activeChatId: null,
@@ -263,6 +284,7 @@ export const useNavigationStore = create<NavigationStore>()(
             workView: "generate",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
+            workActiveTaskId: undefined,
             workGeneratePendingPrompt: prompt,
           }),
         consumeWorkGeneratePendingPrompt: () => {
@@ -497,6 +519,7 @@ export const useNavigationStore = create<NavigationStore>()(
         workSelectedSkillId: state.workSelectedSkillId,
         workScheduledEditId: state.workScheduledEditId,
         workSelectedProjectId: state.workSelectedProjectId,
+        workActiveTaskId: state.workActiveTaskId,
         chatView: state.chatView,
         activeChatId: state.activeChatId,
         view: {

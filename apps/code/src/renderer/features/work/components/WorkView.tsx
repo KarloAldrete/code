@@ -8,6 +8,7 @@ import { WorkProjectDetailView } from "./WorkProjectDetailView";
 import { WorkProjectsView } from "./WorkProjectsView";
 import { WorkSkillDetailView } from "./WorkSkillDetailView";
 import { WorkSkillsView } from "./WorkSkillsView";
+import { WorkTaskDetailView } from "./WorkTaskDetailView";
 
 export function WorkView() {
   const workView = useNavigationStore((s) => s.workView);
@@ -43,6 +44,10 @@ export function WorkView() {
 
   if (workView === "project-detail") {
     return <WorkProjectDetailView />;
+  }
+
+  if (workView === "task-detail") {
+    return <WorkTaskDetailView />;
   }
 
   return <WorkHome />;
