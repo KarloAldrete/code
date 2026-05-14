@@ -78,6 +78,9 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
         </>
       )}
 
+      {/* Tinder-style inbox review */}
+      <Stack.Screen name="review" options={{ headerShown: false }} />
+
       {/* Report detail - modal presentation */}
       <Stack.Screen
         name="report/[id]"

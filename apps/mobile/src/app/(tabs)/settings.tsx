@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthStore, useUserQuery } from "@/features/auth";
+import { useDismissedReportsStore } from "@/features/inbox/stores/dismissedReportsStore";
 import { MenuButton } from "@/features/navigation/components/MenuButton";
 import { usePushTokenStore } from "@/features/notifications/stores/pushTokenStore";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
@@ -47,6 +48,9 @@ export default function SettingsScreen() {
         });
     }
   };
+
+  const dismissedCount = useDismissedReportsStore((s) => s.dismissedIds.length);
+  const clearDismissed = useDismissedReportsStore((s) => s.clearDismissed);
 
   const handleLogout = async () => {
     await logout();
@@ -166,6 +170,33 @@ export default function SettingsScreen() {
               value={pushNotificationsEnabled}
               onValueChange={handleTogglePushNotifications}
             />
+          </View>
+        </View>
+
+        {/* Inbox */}
+        <View className="mb-6 rounded-xl bg-gray-2 p-4">
+          <Text className="mb-4 font-semibold text-gray-12 text-lg">Inbox</Text>
+          <View className="flex-row items-center justify-between py-2">
+            <View className="flex-1 pr-4">
+              <Text className="font-medium text-gray-12 text-sm">
+                Dismissed reports
+              </Text>
+              <Text className="text-gray-11 text-xs">
+                {dismissedCount} report{dismissedCount !== 1 ? "s" : ""}{" "}
+                dismissed in review mode
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={clearDismissed}
+              disabled={dismissedCount === 0}
+              className={`rounded-lg border px-3 py-1.5 ${
+                dismissedCount > 0
+                  ? "border-gray-6 bg-gray-3"
+                  : "border-gray-4 opacity-40"
+              }`}
+            >
+              <Text className="font-medium text-gray-12 text-xs">Clear</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
