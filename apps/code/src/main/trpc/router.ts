@@ -22,6 +22,7 @@ import { llmGatewayRouter } from "./routers/llm-gateway";
 import { logsRouter } from "./routers/logs";
 import { mcpAppsRouter } from "./routers/mcp-apps";
 import { mcpCallbackRouter } from "./routers/mcp-callback";
+import { memoryRouter } from "./routers/memory";
 import { notificationRouter } from "./routers/notification";
 import { oauthRouter } from "./routers/oauth";
 import { osRouter } from "./routers/os";
@@ -34,6 +35,7 @@ import { sleepRouter } from "./routers/sleep";
 import { suspensionRouter } from "./routers/suspension.js";
 import { uiRouter } from "./routers/ui";
 import { updatesRouter } from "./routers/updates";
+import { workProjectsRouter } from "./routers/work-projects";
 import { workspaceRouter } from "./routers/workspace";
 import { router } from "./trpc";
 
@@ -64,6 +66,7 @@ export const trpcRouter = router({
   notification: notificationRouter,
   oauth: oauthRouter,
   logs: logsRouter,
+  memory: memoryRouter,
   os: osRouter,
   processTracking: processTrackingRouter,
   provisioning: provisioningRouter,
@@ -76,6 +79,7 @@ export const trpcRouter = router({
   updates: updatesRouter,
   deepLink: deepLinkRouter,
   workspace: workspaceRouter,
+  workProjects: workProjectsRouter,
 });
 
 export type TrpcRouter = typeof trpcRouter;

@@ -10,6 +10,7 @@ import {
   TaskCreationSaga,
 } from "@renderer/sagas/task/task-creation";
 import { trpc } from "@renderer/trpc";
+import type { Task } from "@shared/types";
 import { logger } from "@utils/logger";
 import { queryClient } from "@utils/queryClient";
 import { injectable } from "inversify";
@@ -62,10 +63,12 @@ export class TaskService {
       onTaskReady: onTaskReady
         ? (output) => {
             this.optimisticallyUpdateWorkspaceCache(output);
+            this.optimisticallyAddTaskToListCache(output);
             this.updateStoresOnSuccess(output, input);
             void queryClient.invalidateQueries(
               trpc.workspace.getAll.pathFilter(),
             );
+            void queryClient.invalidateQueries({ queryKey: ["tasks", "list"] });
             onTaskReady(output);
           }
         : undefined,
@@ -75,10 +78,12 @@ export class TaskService {
 
     if (result.success) {
       this.optimisticallyUpdateWorkspaceCache(result.data);
+      this.optimisticallyAddTaskToListCache(result.data);
       if (!onTaskReady) {
         this.updateStoresOnSuccess(result.data, input);
       }
       void queryClient.invalidateQueries(trpc.workspace.getAll.pathFilter());
+      void queryClient.invalidateQueries({ queryKey: ["tasks", "list"] });
     }
 
     return result;
@@ -171,6 +176,32 @@ export class TaskService {
     queryClient.setQueriesData<Record<string, Workspace>>(
       trpc.workspace.getAll.pathFilter(),
       (old) => ({ ...old, [output.task.id]: workspace }),
+    );
+  }
+
+  /**
+   * Make the freshly created task readable from React Query so views like
+   * WorkTaskDetailView don't show a "Loading task..." flash while the 30s
+   * `useTasks` poll catches up.
+   *
+   * Writes to two places:
+   *   1. Per-task detail cache at `["tasks", "detail", id]` — exact key, so it
+   *      lands even on cold start before any list query has run.
+   *   2. Every populated `["tasks", "list", ...]` cache — no-op for filter
+   *      combinations that haven't been queried yet.
+   */
+  private optimisticallyAddTaskToListCache(output: TaskCreationOutput): void {
+    queryClient.setQueryData<Task>(
+      ["tasks", "detail", output.task.id],
+      output.task,
+    );
+    queryClient.setQueriesData<Task[]>(
+      { queryKey: ["tasks", "list"] },
+      (old) => {
+        if (!old) return old;
+        if (old.some((t) => t.id === output.task.id)) return old;
+        return [output.task, ...old];
+      },
     );
   }
 

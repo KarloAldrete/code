@@ -21,8 +21,7 @@ type ViewType =
   | "command-center"
   | "skills"
   | "mcp-servers"
-  | "setup"
-  | "memory";
+  | "setup";
 
 export interface TaskInputReportAssociation {
   reportId: string;
@@ -44,12 +43,25 @@ export type WorkView =
   | "skill-detail"
   | "library"
   | "scheduled-list"
+  | "scheduled-create-prompt"
   | "scheduled-edit"
   | "data-sources"
   | "projects"
-  | "project-detail";
+  | "project-detail"
+  | "memory"
+  | "task-detail";
 
 export type ChatView = "home" | "conversation";
+
+interface WorkSnapshot {
+  workView: WorkView;
+  workSelectedSkillId?: string;
+  workScheduledEditId?: string;
+  workSelectedProjectId?: string;
+  workActiveTaskId?: string;
+}
+
+const MAX_WORK_HISTORY = 50;
 
 interface ViewState {
   type: ViewType;
@@ -71,16 +83,22 @@ interface NavigationStore {
   workSelectedSkillId?: string;
   workScheduledEditId?: string;
   workSelectedProjectId?: string;
+  workActiveTaskId?: string;
+  workHistory: WorkSnapshot[];
+  workGoBack: () => void;
   navigateToWorkHome: () => void;
   navigateToWorkGenerate: () => void;
   navigateToWorkSkill: (skillId: string) => void;
   navigateToWorkLibrary: () => void;
   navigateToWorkScheduledList: () => void;
+  navigateToWorkScheduledCreatePrompt: () => void;
   navigateToWorkScheduledCreate: () => void;
   navigateToWorkScheduledEdit: (scheduledId: string) => void;
   navigateToWorkDataSources: () => void;
+  navigateToWorkMemory: () => void;
   navigateToWorkProjects: () => void;
   navigateToWorkProjectDetail: (projectId: string) => void;
+  navigateToWorkTask: (taskId: string) => void;
   chatView: ChatView;
   activeChatId: string | null;
   navigateToChatHome: () => void;
@@ -103,7 +121,6 @@ interface NavigationStore {
   navigateToArchived: () => void;
   navigateToCommandCenter: () => void;
   navigateToSkills: () => void;
-  navigateToMemory: () => void;
   navigateToMcpServers: () => void;
   navigateToSetup: () => void;
   goBack: () => void;
@@ -139,9 +156,6 @@ const isSameView = (view1: ViewState, view2: ViewState): boolean => {
   if (view1.type === "skills" && view2.type === "skills") {
     return true;
   }
-  if (view1.type === "memory" && view2.type === "memory") {
-    return true;
-  }
   if (view1.type === "mcp-servers" && view2.type === "mcp-servers") {
     return true;
   }
@@ -154,6 +168,26 @@ const isSameView = (view1: ViewState, view2: ViewState): boolean => {
 export const useNavigationStore = create<NavigationStore>()(
   persist(
     (set, get) => {
+      const navigateWork = (
+        next: Partial<WorkSnapshot> & { workView: WorkView },
+      ) => {
+        const current = get();
+        const keys = Object.keys(next) as Array<keyof WorkSnapshot>;
+        const wouldChange = keys.some((k) => current[k] !== next[k]);
+        if (!wouldChange) return;
+        const snapshot: WorkSnapshot = {
+          workView: current.workView,
+          workSelectedSkillId: current.workSelectedSkillId,
+          workScheduledEditId: current.workScheduledEditId,
+          workSelectedProjectId: current.workSelectedProjectId,
+          workActiveTaskId: current.workActiveTaskId,
+        };
+        const workHistory = [...current.workHistory, snapshot].slice(
+          -MAX_WORK_HISTORY,
+        );
+        set({ ...next, workHistory });
+      };
+
       const navigate = (newView: ViewState) => {
         const { view, history, historyIndex } = get();
         if (isSameView(view, newView)) {
@@ -175,67 +209,111 @@ export const useNavigationStore = create<NavigationStore>()(
         workView: "home",
         workSelectedSkillId: undefined,
         workScheduledEditId: undefined,
-        navigateToWorkHome: () =>
+        workActiveTaskId: undefined,
+        workHistory: [],
+        workGoBack: () => {
+          const { workHistory } = get();
+          if (workHistory.length === 0) return;
+          const prev = workHistory[workHistory.length - 1];
           set({
+            workView: prev.workView,
+            workSelectedSkillId: prev.workSelectedSkillId,
+            workScheduledEditId: prev.workScheduledEditId,
+            workSelectedProjectId: prev.workSelectedProjectId,
+            workActiveTaskId: prev.workActiveTaskId,
+            workHistory: workHistory.slice(0, -1),
+          });
+        },
+        navigateToWorkHome: () =>
+          navigateWork({
             workView: "home",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
+            workActiveTaskId: undefined,
           }),
         navigateToWorkGenerate: () =>
-          set({
+          navigateWork({
             workView: "generate",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
+            workActiveTaskId: undefined,
           }),
         navigateToWorkSkill: (skillId: string) =>
-          set({
+          navigateWork({
             workView: "skill-detail",
             workSelectedSkillId: skillId,
             workScheduledEditId: undefined,
+            workActiveTaskId: undefined,
           }),
         navigateToWorkLibrary: () =>
-          set({
+          navigateWork({
             workView: "library",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
+            workActiveTaskId: undefined,
           }),
         navigateToWorkScheduledList: () =>
-          set({
+          navigateWork({
             workView: "scheduled-list",
+            workSelectedSkillId: undefined,
+            workScheduledEditId: undefined,
+            workActiveTaskId: undefined,
+          }),
+        navigateToWorkScheduledCreatePrompt: () =>
+          navigateWork({
+            workView: "scheduled-create-prompt",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
           }),
         navigateToWorkScheduledCreate: () =>
-          set({
+          navigateWork({
             workView: "scheduled-edit",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
+            workActiveTaskId: undefined,
           }),
         navigateToWorkScheduledEdit: (scheduledId: string) =>
-          set({
+          navigateWork({
             workView: "scheduled-edit",
             workSelectedSkillId: undefined,
             workScheduledEditId: scheduledId,
+            workActiveTaskId: undefined,
           }),
         navigateToWorkDataSources: () =>
-          set({
+          navigateWork({
             workView: "data-sources",
+            workSelectedSkillId: undefined,
+            workScheduledEditId: undefined,
+            workActiveTaskId: undefined,
+          }),
+        navigateToWorkMemory: () =>
+          navigateWork({
+            workView: "memory",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
           }),
         navigateToWorkProjects: () =>
-          set({
+          navigateWork({
             workView: "projects",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
             workSelectedProjectId: undefined,
+            workActiveTaskId: undefined,
           }),
         navigateToWorkProjectDetail: (projectId: string) =>
-          set({
+          navigateWork({
             workView: "project-detail",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
             workSelectedProjectId: projectId,
+            workActiveTaskId: undefined,
+          }),
+        navigateToWorkTask: (taskId: string) =>
+          navigateWork({
+            workView: "task-detail",
+            workSelectedSkillId: undefined,
+            workScheduledEditId: undefined,
+            workActiveTaskId: taskId,
           }),
         chatView: "home",
         activeChatId: null,
@@ -258,13 +336,15 @@ export const useNavigationStore = create<NavigationStore>()(
                 : state.view,
           })),
         workGeneratePendingPrompt: undefined,
-        navigateToWorkGenerateWithPrompt: (prompt: string) =>
-          set({
+        navigateToWorkGenerateWithPrompt: (prompt: string) => {
+          set({ workGeneratePendingPrompt: prompt });
+          navigateWork({
             workView: "generate",
             workSelectedSkillId: undefined,
             workScheduledEditId: undefined,
-            workGeneratePendingPrompt: prompt,
-          }),
+            workActiveTaskId: undefined,
+          });
+        },
         consumeWorkGeneratePendingPrompt: () => {
           const pending = get().workGeneratePendingPrompt;
           if (pending !== undefined) {
@@ -430,10 +510,6 @@ export const useNavigationStore = create<NavigationStore>()(
           navigate({ type: "skills" });
         },
 
-        navigateToMemory: () => {
-          navigate({ type: "memory" });
-        },
-
         navigateToMcpServers: () => {
           navigate({ type: "mcp-servers" });
         },
@@ -493,10 +569,16 @@ export const useNavigationStore = create<NavigationStore>()(
       partialize: (state) => ({
         mode: state.mode,
         workOnboardingSkipped: state.workOnboardingSkipped,
-        workView: state.workView,
+        // scheduled-create-prompt is transient — it depends on the
+        // unpersisted pendingCreateDraft. Roll it back to the list on reload.
+        workView:
+          state.workView === "scheduled-create-prompt"
+            ? "scheduled-list"
+            : state.workView,
         workSelectedSkillId: state.workSelectedSkillId,
         workScheduledEditId: state.workScheduledEditId,
         workSelectedProjectId: state.workSelectedProjectId,
+        workActiveTaskId: state.workActiveTaskId,
         chatView: state.chatView,
         activeChatId: state.activeChatId,
         view: {

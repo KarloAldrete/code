@@ -12,9 +12,9 @@ import { useSidebarStore } from "@features/sidebar/stores/sidebarStore";
 import { SkillButtonsMenu } from "@features/skill-buttons/components/SkillButtonsMenu";
 import { useWorkspace } from "@features/workspace/hooks/useWorkspace";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
-import { Cloud, Spinner } from "@phosphor-icons/react";
+import { ArrowLeft, Cloud, Spinner } from "@phosphor-icons/react";
 import { Button as QuillButton } from "@posthog/quill";
-import { Box, Flex } from "@radix-ui/themes";
+import { Box, Flex, IconButton, Tooltip } from "@radix-ui/themes";
 import type { Task } from "@shared/types";
 import { useHeaderStore } from "@stores/headerStore";
 import { useNavigationStore } from "@stores/navigationStore";
@@ -109,6 +109,12 @@ const WINDOWS_TITLEBAR_INSET = 140;
 export function HeaderRow() {
   const content = useHeaderStore((state) => state.content);
   const view = useNavigationStore((state) => state.view);
+  const mode = useNavigationStore((state) => state.mode);
+  const workHistoryDepth = useNavigationStore(
+    (state) => state.workHistory.length,
+  );
+  const workGoBack = useNavigationStore((state) => state.workGoBack);
+  const showWorkBack = mode === "work" && workHistoryDepth > 0;
 
   const sidebarOpen = useSidebarStore((state) => state.open);
   const sidebarWidth = useSidebarStore((state) => state.width);
@@ -160,6 +166,21 @@ export function HeaderRow() {
           />
         )}
       </Flex>
+
+      {showWorkBack && (
+        <Flex align="center" pl="2" className="no-drag h-full shrink-0">
+          <Tooltip content="Back" side="bottom">
+            <IconButton
+              variant="ghost"
+              color="gray"
+              onClick={workGoBack}
+              aria-label="Back"
+            >
+              <ArrowLeft size={16} />
+            </IconButton>
+          </Tooltip>
+        </Flex>
+      )}
 
       {content && (
         <Flex

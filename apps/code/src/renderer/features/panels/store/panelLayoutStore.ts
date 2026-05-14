@@ -46,7 +46,7 @@ export interface PanelLayoutStore {
   taskLayouts: Record<string, TaskLayout>;
 
   getLayout: (taskId: string) => TaskLayout | null;
-  initializeTask: (taskId: string) => void;
+  initializeTask: (taskId: string, options?: { chatOnly?: boolean }) => void;
   openFile: (taskId: string, filePath: string, asPreview?: boolean) => void;
   openFileInSplit: (
     taskId: string,
@@ -107,21 +107,37 @@ export interface PanelLayoutStore {
   clearAllLayouts: () => void;
 }
 
-function createDefaultPanelTree(): PanelNode {
+function createDefaultPanelTree(options?: { chatOnly?: boolean }): PanelNode {
+  const chatTab: Tab = {
+    id: DEFAULT_TAB_IDS.LOGS,
+    label: "Chat",
+    data: { type: "logs" },
+    component: null,
+    closeable: false,
+    draggable: true,
+  };
+
+  if (options?.chatOnly) {
+    return {
+      type: "leaf",
+      id: DEFAULT_PANEL_IDS.MAIN_PANEL,
+      content: {
+        id: DEFAULT_PANEL_IDS.MAIN_PANEL,
+        tabs: [chatTab],
+        activeTabId: DEFAULT_TAB_IDS.LOGS,
+        showTabs: false,
+        droppable: false,
+      },
+    };
+  }
+
   return {
     type: "leaf",
     id: DEFAULT_PANEL_IDS.MAIN_PANEL,
     content: {
       id: DEFAULT_PANEL_IDS.MAIN_PANEL,
       tabs: [
-        {
-          id: DEFAULT_TAB_IDS.LOGS,
-          label: "Chat",
-          data: { type: "logs" },
-          component: null,
-          closeable: false,
-          draggable: true,
-        },
+        chatTab,
         {
           id: DEFAULT_TAB_IDS.SHELL,
           label: "Terminal",
@@ -314,12 +330,12 @@ export const usePanelLayoutStore = createWithEqualityFn<PanelLayoutStore>()(
         return get().taskLayouts[taskId] || null;
       },
 
-      initializeTask: (taskId) => {
+      initializeTask: (taskId, options) => {
         set((state) => ({
           taskLayouts: {
             ...state.taskLayouts,
             [taskId]: {
-              panelTree: createDefaultPanelTree(),
+              panelTree: createDefaultPanelTree(options),
               openFiles: [],
               recentFiles: [],
               openArtifacts: [],

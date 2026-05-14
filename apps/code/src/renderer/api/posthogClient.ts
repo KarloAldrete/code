@@ -74,6 +74,28 @@ export type McpInstallationTool = Schemas.MCPServerInstallationTool;
 
 export type Evaluation = Schemas.Evaluation;
 
+export interface OrgMember {
+  membershipId: string;
+  uuid: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+}
+
+const STUB_ORG_MEMBERS: OrgMember[] = [
+  { firstName: "Charles", email: "charles@posthog.com" },
+  { firstName: "Andy", email: "andy@posthog.com" },
+  { firstName: "Joe", email: "joe@posthog.com" },
+  { firstName: "Cleo", email: "cleo@posthog.com" },
+  { firstName: "James", email: "james@posthog.com" },
+].map((m) => ({
+  membershipId: m.email,
+  uuid: m.email,
+  email: m.email,
+  firstName: m.firstName,
+  lastName: "",
+}));
+
 export interface UserGitHubIntegration {
   id: string;
   kind: "github";
@@ -605,6 +627,86 @@ export class PostHogAPIClient {
     return data;
   }
 
+  async getOrgMembers(): Promise<OrgMember[]> {
+    // TODO: replace with a real API call once PostHog backend exposes a
+    // project-scoped org-members endpoint. `/api/organizations/@current/members/`
+    // is blocked for project-scoped OAuth tokens, and `/api/users/` returns
+    // global PostHog users — neither works. For now, return a fixed list.
+    return STUB_ORG_MEMBERS;
+  }
+
+  /**
+   * HACKATHON SHORTCUT — no dedicated collaborators endpoint exists on the
+   * backend yet, so we squat on the existing `repository_config` JSON field as
+   * a metadata bag. Read the current `repository_config`, merge in the new
+   * uuids alongside the `work_thread` marker, write it back via PATCH.
+   *
+   * Replace with `POST /api/projects/{team}/tasks/{id}/collaborators/` once the
+   * proper backend (`Task.collaborators` M2M + endpoint) ships. The change is
+   * isolated to this function — call sites stay the same.
+   */
+  async addTaskCollaborators(
+    taskId: string,
+    userUuids: string[],
+  ): Promise<{ ok: boolean }> {
+    if (userUuids.length === 0) return { ok: true };
+    const task = (await this.getTask(taskId)) as unknown as Task;
+    const existing = (task.repository_config ?? {}) as Record<string, unknown>;
+    const existingCollaborators = Array.isArray(existing.collaborators)
+      ? (existing.collaborators as unknown[]).filter(
+          (v): v is string => typeof v === "string",
+        )
+      : [];
+    const merged = [...existingCollaborators];
+    for (const uuid of userUuids) {
+      if (!merged.includes(uuid)) merged.push(uuid);
+    }
+    if (merged.length === existingCollaborators.length) {
+      log.info("addTaskCollaborators: nothing to add", {
+        taskId,
+        existingCollaborators,
+      });
+      return { ok: true };
+    }
+
+    const newRepositoryConfig = {
+      ...existing,
+      work_thread: true,
+      collaborators: merged,
+    };
+    log.info("addTaskCollaborators PATCH body", {
+      taskId,
+      existing,
+      newRepositoryConfig,
+    });
+    const patchResponse = (await this.updateTask(taskId, {
+      repository_config: newRepositoryConfig,
+    } as Partial<Schemas.Task>)) as unknown as {
+      id?: string;
+      repository_config?: unknown;
+    };
+    log.info("addTaskCollaborators PATCH response", {
+      taskId,
+      returned_repository_config: patchResponse?.repository_config,
+    });
+
+    // Verify by reading the task back — if the backend silently dropped our
+    // keys, this re-fetch will show it.
+    try {
+      const verify = (await this.getTask(taskId)) as unknown as {
+        repository_config?: unknown;
+      };
+      log.info("addTaskCollaborators GET verify", {
+        taskId,
+        repository_config: verify?.repository_config,
+      });
+    } catch (error) {
+      log.warn("addTaskCollaborators GET verify failed", { taskId, error });
+    }
+
+    return { ok: true };
+  }
+
   async getGithubLogin(): Promise<string | null> {
     const data = (await this.api.get("/api/users/{uuid}/github_login/", {
       path: { uuid: "@me" },
@@ -980,6 +1082,7 @@ export class PostHogAPIClient {
           Task,
           | "title"
           | "repository"
+          | "repository_config"
           | "json_schema"
           | "origin_product"
           | "signal_report"

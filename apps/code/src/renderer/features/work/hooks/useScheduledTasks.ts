@@ -71,19 +71,3 @@ export function useDeleteScheduledTask() {
     },
   );
 }
-
-export function useRunScheduledTaskNow() {
-  return useAuthenticatedMutation(
-    (client, id: string) => client.runTaskAutomationNow(id),
-    {
-      onSuccess: () => {
-        void Promise.all([
-          queryClient.invalidateQueries({
-            queryKey: scheduledTasksKeys.list(),
-          }),
-          queryClient.invalidateQueries({ queryKey: ["tasks"] }),
-        ]);
-      },
-    },
-  );
-}

@@ -21,16 +21,15 @@ import { useTasks } from "@features/tasks/hooks/useTasks";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import { ChatCircleText } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
-import blankPersonality from "@renderer/assets/images/personalities/blank.png";
 import { get as getDi } from "@renderer/di/container";
 import { RENDERER_TOKENS } from "@renderer/di/tokens";
 import type { Task } from "@shared/types";
+import type { WorkProject } from "@shared/types/work-projects";
 import { useProjectChatsStore } from "@stores/projectChatsStore";
 import { logger } from "@utils/logger";
 import { queryClient } from "@utils/queryClient";
 import { toast } from "@utils/toast";
 import { useCallback, useMemo, useRef, useState } from "react";
-import type { Project } from "../data/projects";
 
 const log = logger.scope("project-chat-panel");
 
@@ -38,51 +37,59 @@ function newChatId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `chat-${Date.now()}`;
 }
 
-function buildProjectContext(project: Project): string {
+function buildProjectContext(project: WorkProject): string {
   const lines: string[] = [];
   lines.push(`# Project: ${project.name}`);
-  lines.push(project.description);
+  lines.push(`Tagline: ${project.tagline}`);
+  if (project.members.length > 0) {
+    lines.push(`Members: ${project.members.map((m) => m.name).join(", ")}`);
+  }
 
-  if (project.headline) {
+  const titleTile = project.tiles.find((t) => t.type === "title");
+  if (titleTile && titleTile.type === "title") {
     lines.push("");
-    lines.push(`## Headline metric`);
     lines.push(
-      `${project.headline.label}: ${project.headline.value} (${project.headline.delta})`,
+      `This project canvas is a composable bento grid of tiles. The user can ask you to read, summarise, or draft updates for any tile. Tiles you can suggest the user add (they review each suggestion as a ghost tile before it's applied to the canvas):`,
     );
-    lines.push(`Dashboard: ${project.headline.posthogUrl}`);
+    lines.push(
+      `- headline: a big PostHog metric with sparkline\n- insight: a linked PostHog dashboard/insight\n- file: a markdown doc embedded in the canvas\n- note: a sticky-note for thoughts\n- skill_output: the latest result of a saved skill`,
+    );
   }
 
-  if (project.dashboards?.length) {
-    lines.push("");
-    lines.push(`## Dashboards`);
-    for (const d of project.dashboards) {
-      lines.push(`- **${d.name}** (owner: ${d.owner}) – ${d.description}`);
-      lines.push(`  ${d.url}`);
-    }
-  }
-
-  if (project.automations?.length) {
-    lines.push("");
-    lines.push(`## Automations`);
-    for (const a of project.automations) {
-      lines.push(
-        `- **${a.title}** (${a.enabled ? "on" : "off"}, ${a.schedule}) – ${a.description}`,
-      );
-    }
-  }
-
-  if (project.files?.length) {
-    lines.push("");
-    lines.push(`## Files`);
-    for (const f of project.files) {
-      lines.push(`- ${f.name} (${f.updatedLabel})`);
+  for (const t of project.tiles) {
+    if (t.type === "headline") {
+      lines.push("");
+      lines.push(`## Headline tile · ${t.label}`);
+      lines.push(`Current value: ${t.fallbackValue} (${t.fallbackDelta})`);
+      if (t.posthogUrl) lines.push(`Source: ${t.posthogUrl}`);
+    } else if (t.type === "insight") {
+      lines.push("");
+      lines.push(`## Insight tile · ${t.title}`);
+      if (t.description) lines.push(t.description);
+      lines.push(`URL: ${t.url}`);
+    } else if (t.type === "file") {
+      lines.push("");
+      lines.push(`## File · ${t.filename}`);
+      lines.push(t.contents.slice(0, 800));
+    } else if (t.type === "skill_output") {
+      lines.push("");
+      lines.push(`## Skill output · ${t.skillName}`);
+      if (t.skillDescription) lines.push(t.skillDescription);
+      if (t.lastRunOutput) {
+        lines.push("Last run:");
+        lines.push(t.lastRunOutput);
+      }
+    } else if (t.type === "note") {
+      lines.push("");
+      lines.push(`## Note`);
+      lines.push(t.body);
     }
   }
 
   return lines.join("\n");
 }
 
-function ProjectChatLanding({ project }: { project: Project }) {
+function ProjectChatLanding({ project }: { project: WorkProject }) {
   const editorRef = useRef<EditorHandle>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editorIsEmpty, setEditorIsEmpty] = useState(true);
@@ -231,19 +238,10 @@ function ProjectChatLanding({ project }: { project: Project }) {
         className="overflow-y-auto px-4 pb-4"
       >
         <Flex direction="column" gap="3" className="w-full max-w-[560px]">
-          <Flex align="start" gap="2">
-            <img
-              src={blankPersonality}
-              alt=""
-              aria-hidden="true"
-              className="h-9 w-9 shrink-0 select-none"
-              draggable={false}
-            />
-            <Text as="div" className="text-(--gray-11) text-[13px]">
-              Ask anything about {project.name} – I have its dashboards,
-              automations, and files in context.
-            </Text>
-          </Flex>
+          <Text as="div" className="text-(--gray-11) text-[13px]">
+            Ask anything about {project.name} — I have its dashboards,
+            automations, and files in context.
+          </Text>
           <PromptInput
             ref={editorRef}
             sessionId={`project-chat-landing-${project.id}`}
@@ -290,7 +288,7 @@ function ProjectChatSession({
   project,
   chatId,
 }: {
-  project: Project;
+  project: WorkProject;
   chatId: string;
 }) {
   const { data: tasks } = useTasks();
@@ -396,7 +394,7 @@ function ProjectChatSession({
   );
 }
 
-export function ProjectChatPanel({ project }: { project: Project }) {
+export function ProjectChatPanel({ project }: { project: WorkProject }) {
   const chatId = useProjectChatsStore((s) => s.chatIdByProjectId[project.id]);
 
   if (!chatId) {

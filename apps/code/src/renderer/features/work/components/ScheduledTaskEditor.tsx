@@ -23,14 +23,14 @@ import { useNavigationStore } from "@stores/navigationStore";
 import { formatRelativeTimeLong } from "@utils/time";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useOpenLastRun } from "../hooks/useOpenLastRun";
+import { useFireScheduledTask } from "../hooks/useLocalScheduleRunner";
 import {
   useCreateScheduledTask,
   useDeleteScheduledTask,
-  useRunScheduledTaskNow,
   useScheduledTasks,
   useUpdateScheduledTask,
 } from "../hooks/useScheduledTasks";
+import { useScheduleDisplayInfo } from "../stores/localScheduleRunsStore";
 import { type PendingEditDraft, useWorkStore } from "../stores/workStore";
 import { describeCron, parseSchedule } from "../utils/parseSchedule";
 import { decodePrompt, encodePrompt } from "../utils/sourcesPrompt";
@@ -83,8 +83,8 @@ function applyEditOverride(base: Draft, override: PendingEditDraft): Draft {
 
 export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
   const showList = useNavigationStore((s) => s.navigateToWorkScheduledList);
-  const navigateToMcpServers = useNavigationStore(
-    (s) => s.navigateToMcpServers,
+  const navigateToWorkDataSources = useNavigationStore(
+    (s) => s.navigateToWorkDataSources,
   );
   const consumePendingCreateDraft = useWorkStore(
     (s) => s.consumePendingCreateDraft,
@@ -133,7 +133,7 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
   // Sync the draft when the editor is pointed at a different existing
   // automation. If we have a pending edit-mode override for this id, apply it
   // once and then fall through to normal resync behaviour.
-  // The id is what should trigger a reset – other field changes from polling
+  // The id is what should trigger a reset — other field changes from polling
   // shouldn't clobber user edits.
   // biome-ignore lint/correctness/useExhaustiveDependencies: see comment above
   useEffect(() => {
@@ -150,8 +150,10 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
   const createScheduledTask = useCreateScheduledTask();
   const updateScheduledTask = useUpdateScheduledTask();
   const deleteScheduledTask = useDeleteScheduledTask();
-  const runScheduledTaskNow = useRunScheduledTaskNow();
-  const { openLastRun, isOpening } = useOpenLastRun();
+  const fireScheduledTask = useFireScheduledTask();
+  const navigateToWorkTask = useNavigationStore((s) => s.navigateToWorkTask);
+  const lastRunDisplay = useScheduleDisplayInfo(existing);
+  const [isRunningNow, setIsRunningNow] = useState(false);
 
   const isEditing = editingId !== null && existing !== null;
   const isSaving =
@@ -163,34 +165,37 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
   const missingFields = !nameTrimmed || !promptTrimmed || !parsedSchedule;
   const canSave = !missingFields && !isSaving;
 
-  const handleConnectMore = useCallback(() => {
-    if (isEditing && existing) {
-      setPendingEditDraft({
-        id: existing.id,
-        name: draft.name,
-        prompt: draft.promptBody,
-        sources: draft.sources,
-        scheduleText: draft.scheduleText,
-        enabled: draft.enabled,
-      });
-    } else {
-      setPendingCreateDraft({
-        name: draft.name,
-        prompt: draft.promptBody,
-        sources: draft.sources,
-        scheduleText: draft.scheduleText,
-        enabled: draft.enabled,
-      });
-    }
-    navigateToMcpServers();
-  }, [
-    isEditing,
-    existing,
-    draft,
-    setPendingEditDraft,
-    setPendingCreateDraft,
-    navigateToMcpServers,
-  ]);
+  const handleConfigureSource = useCallback(
+    (_sourceId: string) => {
+      if (isEditing && existing) {
+        setPendingEditDraft({
+          id: existing.id,
+          name: draft.name,
+          prompt: draft.promptBody,
+          sources: draft.sources,
+          scheduleText: draft.scheduleText,
+          enabled: draft.enabled,
+        });
+      } else {
+        setPendingCreateDraft({
+          name: draft.name,
+          prompt: draft.promptBody,
+          sources: draft.sources,
+          scheduleText: draft.scheduleText,
+          enabled: draft.enabled,
+        });
+      }
+      navigateToWorkDataSources();
+    },
+    [
+      isEditing,
+      existing,
+      draft,
+      setPendingEditDraft,
+      setPendingCreateDraft,
+      navigateToWorkDataSources,
+    ],
+  );
 
   const headerContent = useMemo(
     () => (
@@ -277,16 +282,16 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
 
   const handleRunNow = async () => {
     if (!isEditing) return;
+    setIsRunningNow(true);
     try {
-      await runScheduledTaskNow.mutateAsync(existing.id);
-      toast.success("Running now – opening the task to follow along");
-      // After the run is triggered the automation row gets new last_task_id /
-      // last_task_run_id values on the next refetch. We don't deep-link
-      // immediately because the task may take a moment to appear in cache.
+      const fired = await fireScheduledTask(existing, { navigate: true });
+      if (fired) toast.success("Running now");
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to run scheduled task",
       );
+    } finally {
+      setIsRunningNow(false);
     }
   };
 
@@ -316,7 +321,7 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
                 variant="soft"
                 color="gray"
                 onClick={handleRunNow}
-                loading={runScheduledTaskNow.isPending}
+                loading={isRunningNow}
               >
                 <Play size={14} />
                 Run now
@@ -378,7 +383,7 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
               />
               <Text size="1" className="text-(--gray-10)">
                 The agent picks the right skill from your request when the task
-                runs – no need to specify one.
+                runs — no need to specify one.
               </Text>
             </Flex>
 
@@ -392,7 +397,7 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
             <SourcesPicker
               value={draft.sources}
               onChange={(sources) => setDraft((d) => ({ ...d, sources }))}
-              onConnectMore={handleConnectMore}
+              onConfigureSource={handleConfigureSource}
             />
 
             {isEditing && (
@@ -418,7 +423,7 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
               </Flex>
             )}
 
-            {isEditing && existing.last_run_at && (
+            {isEditing && lastRunDisplay.lastRunAt && (
               <Flex
                 direction="column"
                 gap="2"
@@ -432,30 +437,27 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
                     <Flex align="center" gap="2">
                       <ScheduledTaskStatusBadge automation={existing} />
                       <Text size="2" className="truncate text-(--gray-12)">
-                        {formatRelativeTimeLong(existing.last_run_at)}
+                        {formatRelativeTimeLong(lastRunDisplay.lastRunAt)}
                       </Text>
                     </Flex>
                   </Flex>
-                  {existing.last_task_id && (
+                  {lastRunDisplay.taskId && (
                     <Button
                       size="2"
                       variant="soft"
-                      onClick={() =>
-                        openLastRun(
-                          existing.last_task_id ?? "",
-                          existing.last_task_run_id,
-                        )
-                      }
-                      loading={isOpening}
+                      onClick={() => {
+                        if (lastRunDisplay.taskId)
+                          navigateToWorkTask(lastRunDisplay.taskId);
+                      }}
                     >
                       <ArrowSquareOut size={14} />
                       Open task
                     </Button>
                   )}
                 </Flex>
-                {existing.last_error && (
+                {lastRunDisplay.error && (
                   <Callout.Root size="1" color="red" variant="soft">
-                    <Callout.Text>{existing.last_error}</Callout.Text>
+                    <Callout.Text>{lastRunDisplay.error}</Callout.Text>
                   </Callout.Root>
                 )}
               </Flex>

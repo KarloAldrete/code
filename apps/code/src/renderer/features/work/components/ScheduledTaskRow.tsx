@@ -2,6 +2,7 @@ import { CaretRight } from "@phosphor-icons/react";
 import { Flex, Text } from "@radix-ui/themes";
 import type { Schemas } from "@renderer/api/generated";
 import { formatRelativeTimeLong } from "@utils/time";
+import { useScheduleDisplayInfo } from "../stores/localScheduleRunsStore";
 import {
   labelForCron,
   nextRunForPreset,
@@ -30,7 +31,9 @@ export function ScheduledTaskRow({
   automation,
   onClick,
 }: ScheduledTaskRowProps) {
+  const display = useScheduleDisplayInfo(automation);
   const nextRunText = formatNextRun(automation);
+  const showError = display.status === "failed" && !!display.error;
 
   return (
     <button
@@ -59,12 +62,17 @@ export function ScheduledTaskRow({
                 · Next {nextRunText}
               </Text>
             )}
-            {automation.last_run_at && (
+            {display.lastRunAt && (
               <Text size="1" className="text-(--gray-10)">
-                · Last ran {formatRelativeTimeLong(automation.last_run_at)}
+                · Last ran {formatRelativeTimeLong(display.lastRunAt)}
               </Text>
             )}
           </Flex>
+          {showError && (
+            <Text size="1" className="truncate text-(--red-11)">
+              {display.error}
+            </Text>
+          )}
         </Flex>
         <CaretRight size={14} className="shrink-0 text-(--gray-9)" />
       </Flex>

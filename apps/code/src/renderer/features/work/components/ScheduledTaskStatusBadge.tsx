@@ -1,5 +1,6 @@
 import { Badge } from "@radix-ui/themes";
 import type { Schemas } from "@renderer/api/generated";
+import { useScheduleDisplayInfo } from "../stores/localScheduleRunsStore";
 
 interface ScheduledTaskStatusBadgeProps {
   automation: Schemas.TaskAutomation;
@@ -8,6 +9,8 @@ interface ScheduledTaskStatusBadgeProps {
 export function ScheduledTaskStatusBadge({
   automation,
 }: ScheduledTaskStatusBadgeProps) {
+  const display = useScheduleDisplayInfo(automation);
+
   if (automation.enabled === false) {
     return (
       <Badge size="1" variant="soft" color="gray">
@@ -16,7 +19,7 @@ export function ScheduledTaskStatusBadge({
     );
   }
 
-  switch (automation.last_run_status) {
+  switch (display.status) {
     case "failed":
       return (
         <Badge size="1" variant="soft" color="red">
