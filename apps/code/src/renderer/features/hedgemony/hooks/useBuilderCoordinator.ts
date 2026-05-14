@@ -10,7 +10,13 @@ import { findPath, snapGoal, type Vec2 } from "../utils/pathfinding";
 import { worldObstacles } from "../utils/worldObstacles";
 
 const DEFAULT_BUILD_ANIMATION_MS = 1500;
-const DEFAULT_INITIAL_POS: Vec2 = { x: 0, y: 0 };
+// Park the builder just south of the Hedgehouse (which sits at world origin
+// with a ~100px obstacle radius). Spawning the builder inside the Hedgehouse
+// obstacle meant every walk had to "escape" through the building first,
+// which read visually as the builder clipping straight through it. (0, 130)
+// puts the sprite at the doorway, outside the obstacle, so pathfinding can
+// route cleanly from the start.
+const DEFAULT_INITIAL_POS: Vec2 = { x: 0, y: 130 };
 
 export type BuilderAnimation = "idle" | "walking" | "building";
 

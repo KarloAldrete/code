@@ -103,7 +103,9 @@ describe("useBuilderCoordinator", () => {
   });
 
   it("startWalk with a zero-distance target into build immediately enters building", () => {
-    const { result } = renderHook(() => useBuilderCoordinator({ nests: [] }));
+    const { result } = renderHook(() =>
+      useBuilderCoordinator({ nests: [], initialPos: { x: 0, y: 0 } }),
+    );
     act(() => {
       result.current.startWalk({ x: 0, y: 0 }, "build");
     });
@@ -111,7 +113,9 @@ describe("useBuilderCoordinator", () => {
   });
 
   it("startWalk with a zero-distance target into idle stays idle", () => {
-    const { result } = renderHook(() => useBuilderCoordinator({ nests: [] }));
+    const { result } = renderHook(() =>
+      useBuilderCoordinator({ nests: [], initialPos: { x: 0, y: 0 } }),
+    );
     act(() => {
       result.current.startWalk({ x: 0, y: 0 }, "idle");
     });
