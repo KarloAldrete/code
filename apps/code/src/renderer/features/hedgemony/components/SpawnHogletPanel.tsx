@@ -45,6 +45,7 @@ import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { toast } from "@utils/toast";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { useHogletStore, WILD_BUCKET } from "../stores/hogletStore";
 import { CommandConsole } from "./CommandConsole";
 
@@ -506,6 +507,21 @@ export function SpawnHogletPanel({ onClose }: SpawnHogletPanelProps) {
   };
 
   const submitDisabled = !canSubmit || isCreatingTask || !isOnline;
+
+  // `Mod+Enter` submits from anywhere in the panel — matches the app-wide
+  // SUBMIT_BLUR convention and keeps the dispatch flow keyboard-friendly.
+  useHotkeys(
+    "mod+enter",
+    () => {
+      if (!submitDisabled) void handleSubmit();
+    },
+    {
+      enableOnFormTags: true,
+      enableOnContentEditable: true,
+      preventDefault: true,
+    },
+    [submitDisabled, handleSubmit],
+  );
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop container

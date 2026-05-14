@@ -78,6 +78,9 @@ export interface MapBoxSelection {
  */
 export interface MapSurfaceHandle {
   animateToView: (panX: number, panY: number, zoom: number) => void;
+  fitToContents: () => void;
+  centerSelected: () => void;
+  resetView: () => void;
 }
 
 interface HedgemonyMapSurfaceProps {
@@ -264,13 +267,6 @@ function HedgemonyMapSurfaceImpl(
     [x, y, zoom, setZoom, setPan],
   );
 
-  useImperativeHandle(ref, () => ({ animateToView }), [animateToView]);
-
-  const centerOnWorldPoint = (worldX: number, worldY: number) => {
-    const next = panToCenter(worldX, worldY, zoom);
-    animateToView(next.x, next.y);
-  };
-
   const focusNest = (nest: Nest) => {
     const nextZoom = Math.max(zoom, FOCUS_ZOOM);
     const next = panToCenter(nest.mapX, nest.mapY, nextZoom);
@@ -282,7 +278,7 @@ function HedgemonyMapSurfaceImpl(
     animateToView(next.x, next.y);
   };
 
-  const fitToContents = () => {
+  const fitToContents = useCallback(() => {
     const rect = outerRef.current?.getBoundingClientRect();
     if (!rect) return;
 
@@ -308,23 +304,50 @@ function HedgemonyMapSurfaceImpl(
     const centerY = (minY + maxY) / 2;
     const next = panToCenter(centerX, centerY, nextZoom);
     animateToView(next.x, next.y, nextZoom);
-  };
+  }, [animateToView, nests, builderPos.x, builderPos.y]);
 
-  const centerSelected = () => {
-    if (selectedNest) {
-      centerOnWorldPoint(selectedNest.mapX, selectedNest.mapY);
-      return;
-    }
-    if (builderSelected) centerOnWorldPoint(builderPos.x, builderPos.y);
-  };
+  const centerSelected = useCallback(() => {
+    const target = selectedNest
+      ? { x: selectedNest.mapX, y: selectedNest.mapY }
+      : builderSelected
+        ? { x: builderPos.x, y: builderPos.y }
+        : null;
+    if (!target) return;
+    const next = panToCenter(target.x, target.y, zoom);
+    animateToView(next.x, next.y);
+  }, [
+    selectedNest,
+    builderSelected,
+    builderPos.x,
+    builderPos.y,
+    zoom,
+    animateToView,
+  ]);
 
-  const handleResetView = () => {
+  const handleResetView = useCallback(() => {
     animateToView(0, 0, 1);
     // resetView() also resets holding-panel/bookmark sentinel state that
     // animateToView doesn't touch. Run it alongside so the rest stays in sync;
     // the pan/zoom store fields will get re-set by animateToView's commit.
     resetView();
-  };
+  }, [animateToView, resetView]);
+
+  // Exposed once the camera helpers are declared so the parent map view can
+  // drive Fit / Center / Reset from hotkeys with the same closures the on-
+  // screen buttons use. The helpers are recreated each render (they close
+  // over `nests`, `builderPos`, etc.), so depending on them rebuilds the
+  // handle each render — that's required for correctness; if we omitted them
+  // the handle would call the first-render closure forever.
+  useImperativeHandle(
+    ref,
+    () => ({
+      animateToView,
+      fitToContents: () => fitToContents(),
+      centerSelected: () => centerSelected(),
+      resetView: () => handleResetView(),
+    }),
+    [animateToView, fitToContents, centerSelected, handleResetView],
+  );
 
   const toWorldCoords = (clientX: number, clientY: number) => {
     const rect = outerRef.current?.getBoundingClientRect();

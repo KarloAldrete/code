@@ -7,8 +7,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useHotkeys } from "react-hotkeys-hook";
 import { toast } from "sonner";
+import { useBgmStore } from "../audio/bgmStore";
 import { playSfx } from "../audio/sfx";
+import { useSfxStore } from "../audio/sfxStore";
 import { playVoice } from "../audio/voice";
+import type { HedgemonyHotkeyContext } from "../constants/hotkeys";
 import { useBuilderCoordinator } from "../hooks/useBuilderCoordinator";
 import { useSignalIngestion } from "../hooks/useSignalIngestion";
 import {
@@ -34,6 +37,7 @@ import { BuilderCommandPanel } from "./BuilderCommandPanel";
 import { DyingHogletLayer } from "./DyingHogletLayer";
 import { HedgehouseCommandPanel } from "./HedgehouseCommandPanel";
 import { HedgemonyHoldingPanel } from "./HedgemonyHoldingPanel";
+import { HedgemonyHotkeyHelper } from "./HedgemonyHotkeyHelper";
 import {
   HedgemonyMapSurface,
   type MapBoxSelection,
@@ -94,6 +98,16 @@ export function HedgemonyMapView() {
   const setOsFullscreen = useHedgemonyViewStore((s) => s.setOsFullscreen);
   const setView = useHedgemonyViewStore((s) => s.setView);
   const saveBookmark = useHedgemonyViewStore((s) => s.saveBookmark);
+  const holdingPanel = useHedgemonyViewStore((s) => s.holdingPanel);
+  const setHoldingPanelOpen = useHedgemonyViewStore(
+    (s) => s.setHoldingPanelOpen,
+  );
+  const toggleHoldingPanelCollapsed = useHedgemonyViewStore(
+    (s) => s.toggleHoldingPanelCollapsed,
+  );
+  const toggleBgmMute = useBgmStore((s) => s.toggleMute);
+  const toggleSfxMute = useSfxStore((s) => s.toggleMute);
+  const [helperOpen, setHelperOpen] = useState(false);
 
   const builder = useBuilderCoordinator({
     nests,
@@ -195,6 +209,9 @@ export function HedgemonyMapView() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      // The hotkey helper handles its own Esc; let it close on its own without
+      // also unwinding the player's placement / selection state behind it.
+      if (helperOpen) return;
       // Esc unwinds the most-specific UI mode first: placement → fullscreen →
       // selection. Without this ordering, hitting Esc in fullscreen during a
       // placement would dump the user all the way back to nothing-selected.
@@ -210,7 +227,7 @@ export function HedgemonyMapView() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [mode, selection, fullscreen, exitFullscreen]);
+  }, [mode, selection, fullscreen, exitFullscreen, helperOpen]);
 
   // Suppress map-only hotkeys while a modal dialog is open so typing in the
   // dialog (or just having it focused) doesn't ricochet into fullscreen /
@@ -274,6 +291,46 @@ export function HedgemonyMapView() {
   useHotkeys("shift+3", () => handleSaveBookmark(3), mapHotkeyOptions, [
     handleSaveBookmark,
   ]);
+
+  // AoE-style camera commands. Surface owns the imperative animations; we
+  // route through its handle so the keys behave identically to the on-screen
+  // Fit / Center / Reset buttons.
+  useHotkeys("z", () => surfaceRef.current?.fitToContents(), mapHotkeyOptions);
+  useHotkeys(
+    "shift+z",
+    () => surfaceRef.current?.resetView(),
+    mapHotkeyOptions,
+  );
+  useHotkeys(
+    "space",
+    () => surfaceRef.current?.centerSelected(),
+    mapHotkeyOptions,
+  );
+
+  // Audio. Plain `m` is far enough from any other binding to be safe; Shift+M
+  // toggles the louder voice/SFX bucket. Stays enabled in dialogs so players
+  // can silence the hedgehog from anywhere.
+  useHotkeys("m", () => toggleBgmMute(), { preventDefault: true }, [
+    toggleBgmMute,
+  ]);
+  useHotkeys("shift+m", () => toggleSfxMute(), { preventDefault: true }, [
+    toggleSfxMute,
+  ]);
+
+  // Holding panel toggle. `T` collapses/expands inline; if closed entirely,
+  // open it first so a single press always produces a visible change.
+  useHotkeys(
+    "t",
+    () => {
+      if (!holdingPanel.open) {
+        setHoldingPanelOpen(true);
+        return;
+      }
+      toggleHoldingPanelCollapsed();
+    },
+    mapHotkeyOptions,
+    [holdingPanel.open, setHoldingPanelOpen, toggleHoldingPanelCollapsed],
+  );
 
   const flashMoveMarker = useCallback((x: number, y: number) => {
     const id = Date.now();
@@ -458,6 +515,17 @@ export function HedgemonyMapView() {
   const buildMode = mode.kind === "placingNest";
   const relocatingNestId = mode.kind === "relocatingNest" ? mode.nestId : null;
 
+  // Drives the highlighted section of the hotkey helper so the player can see
+  // which contextual commands are currently bound based on what's selected.
+  const activeHotkeyContext: HedgemonyHotkeyContext | null = (() => {
+    if (spawnHogletOpen || pendingPlacement) return "dialog";
+    if (activeNest) return "nest";
+    if (builderSelected) return "builder";
+    if (hedgehouseSelected) return "hedgehouse";
+    if (singleSelectedHogletId) return "hoglet";
+    return null;
+  })();
+
   const handleHogletSelect = useCallback(
     (hogletId: string, additive: boolean) => {
       playSfx("select");
@@ -615,6 +683,11 @@ export function HedgemonyMapView() {
           />
         )}
       </AnimatePresence>
+      <HedgemonyHotkeyHelper
+        open={helperOpen}
+        onOpenChange={setHelperOpen}
+        activeContext={activeHotkeyContext}
+      />
       <HedgemonyHoldingPanel />
       <AnimatePresence>
         {spawnHogletOpen && (
@@ -664,7 +737,9 @@ export function HedgemonyMapView() {
               onClick={exitFullscreen}
               title="Exit fullscreen (Esc / F)"
               aria-label="Exit fullscreen"
-              className="absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-full border border-(--gray-6) bg-(--gray-2)/80 text-(--gray-11) text-[16px] backdrop-blur-sm transition-colors hover:bg-(--gray-3) hover:text-(--gray-12)"
+              // Shifted left to make room for the hotkey helper button which
+              // sits at the map's top-right corner.
+              className="absolute top-3 right-16 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-(--gray-6) bg-(--gray-2)/80 text-(--gray-11) text-[16px] backdrop-blur-sm transition-colors hover:bg-(--gray-3) hover:text-(--gray-12)"
             >
               ×
             </button>

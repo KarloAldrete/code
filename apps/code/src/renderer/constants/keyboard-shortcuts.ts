@@ -1,3 +1,7 @@
+import {
+  HEDGEMONY_CONTEXT_LABELS,
+  HEDGEMONY_HOTKEYS,
+} from "@features/hedgemony/constants/hotkeys";
 import { isMac } from "@utils/platform";
 
 export const SHORTCUTS = {
@@ -26,7 +30,12 @@ export const SHORTCUTS = {
   SUBMIT_BLUR: "mod+enter",
 } as const;
 
-export type ShortcutCategory = "general" | "navigation" | "panels" | "editor";
+export type ShortcutCategory =
+  | "general"
+  | "navigation"
+  | "panels"
+  | "editor"
+  | "hedgemony";
 
 export interface KeyboardShortcut {
   id: string;
@@ -209,6 +218,15 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     category: "editor",
     context: "Rich text editor",
   },
+  ...HEDGEMONY_HOTKEYS.map(
+    (h): KeyboardShortcut => ({
+      id: `hedgemony-${h.id}`,
+      keys: h.keys,
+      description: h.description,
+      category: "hedgemony",
+      context: HEDGEMONY_CONTEXT_LABELS[h.context],
+    }),
+  ),
 ];
 
 export const CATEGORY_LABELS: Record<ShortcutCategory, string> = {
@@ -216,6 +234,7 @@ export const CATEGORY_LABELS: Record<ShortcutCategory, string> = {
   navigation: "Navigation",
   panels: "Panels & Tabs",
   editor: "Editor",
+  hedgemony: "Hedgemony",
 };
 
 export function getShortcutsByCategory(): Record<
@@ -227,6 +246,7 @@ export function getShortcutsByCategory(): Record<
     navigation: [],
     panels: [],
     editor: [],
+    hedgemony: [],
   };
   for (const shortcut of KEYBOARD_SHORTCUTS) {
     grouped[shortcut.category].push(shortcut);

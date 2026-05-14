@@ -116,6 +116,7 @@ export function KeyboardShortcutsList() {
     "navigation",
     "panels",
     "editor",
+    "hedgemony",
   ];
 
   return (
