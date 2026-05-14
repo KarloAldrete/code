@@ -31,7 +31,7 @@ import {
 import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
 import type { KeyboardEvent, ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { selectNestMessages, useNestChatStore } from "../stores/nestChatStore";
 import { selectHedgehogState, useNestStore } from "../stores/nestStore";
@@ -72,6 +72,8 @@ export function NestDetailPanel({
   const [sending, setSending] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
 
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     setName(nest.name);
     setGoalPrompt(nest.goalPrompt);
@@ -81,6 +83,15 @@ export function NestDetailPanel({
     setChatError(null);
     void loadMessages(nest.id);
   }, [nest, loadMessages]);
+
+  useEffect(() => {
+    const viewport = scrollAreaRef.current?.querySelector<HTMLElement>(
+      "[data-radix-scroll-area-viewport]",
+    );
+    if (viewport) {
+      viewport.scrollTop = viewport.scrollHeight;
+    }
+  }, []);
 
   const handleSendChat = async () => {
     const body = chatDraft.trim();
@@ -200,7 +211,12 @@ export function NestDetailPanel({
         }
       />
 
-      <ScrollArea type="auto" scrollbars="vertical" className="min-h-0 flex-1">
+      <ScrollArea
+        ref={scrollAreaRef}
+        type="auto"
+        scrollbars="vertical"
+        className="min-h-0 flex-1"
+      >
         <Flex direction="column" gap="4" px="4" py="3">
           <Flex direction="row" gap="3" wrap="wrap">
             <LabeledField
