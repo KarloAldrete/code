@@ -25,7 +25,7 @@ interface BroodHogletProps {
   x: number;
   y: number;
   selected: boolean;
-  onSelect: (hogletId: string) => void;
+  onSelect: (hogletId: string, additive: boolean) => void;
 }
 
 export function BroodHoglet({
@@ -76,7 +76,7 @@ export function BroodHoglet({
 
   const handleClick = (event: React.MouseEvent) => {
     event.stopPropagation();
-    onSelect(hoglet.id);
+    onSelect(hoglet.id, event.shiftKey || event.metaKey || event.ctrlKey);
   };
 
   return (

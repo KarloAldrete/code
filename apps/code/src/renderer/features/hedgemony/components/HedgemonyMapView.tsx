@@ -3,7 +3,7 @@ import type { DragDropEvents } from "@dnd-kit/react";
 import { DragDropProvider } from "@dnd-kit/react";
 import { logger } from "@utils/logger";
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useHotkeys } from "react-hotkeys-hook";
 import { toast } from "sonner";
@@ -26,15 +26,18 @@ import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import { selectHogletById, useHogletStore } from "../stores/hogletStore";
 import { selectNests, useNestStore } from "../stores/nestStore";
 import { useSpawnDialogStore } from "../stores/spawnDialogStore";
+import { collectHogletWorldPositions } from "../utils/hogletPositions";
 import { BuilderCommandPanel } from "./BuilderCommandPanel";
 import { HedgehouseCommandPanel } from "./HedgehouseCommandPanel";
 import { HedgemonyHoldingPanel } from "./HedgemonyHoldingPanel";
 import {
   HedgemonyMapSurface,
+  type MapBoxSelection,
   type MapSurfaceHandle,
   type MoveMarker,
 } from "./HedgemonyMapSurface";
 import { HogletDetailPanel } from "./HogletDetailPanel";
+import { MultiHogletDetailPanel } from "./MultiHogletDetailPanel";
 import { NestBroodCluster } from "./NestBroodCluster";
 import { NestDetailPanel } from "./NestDetailPanel";
 import { type NestCreationMode, PlaceNestDialog } from "./PlaceNestDialog";
@@ -47,7 +50,7 @@ type Selection =
   | { type: "nest"; id: string }
   | { type: "builder" }
   | { type: "hedgehouse" }
-  | { type: "hoglet"; id: string }
+  | { type: "hoglets"; ids: string[] }
   | null;
 
 /**
@@ -300,10 +303,24 @@ export function HedgemonyMapView() {
     const targetX = Math.round(x);
     const targetY = Math.round(y);
 
-    if (selection.type === "hoglet") {
-      useHogletPositionStore
-        .getState()
-        .setPosition(selection.id, targetX, targetY);
+    if (selection.type === "hoglets") {
+      const positionStore = useHogletPositionStore.getState();
+      // Multi-select formation: pack them in a small ring around the target so
+      // they don't all stack on a single pixel. Single-select just snaps to
+      // the exact click point.
+      if (selection.ids.length === 1) {
+        positionStore.setPosition(selection.ids[0], targetX, targetY);
+      } else {
+        const radius = 28 + selection.ids.length * 4;
+        selection.ids.forEach((id, i) => {
+          const angle = (2 * Math.PI * i) / selection.ids.length;
+          positionStore.setPosition(
+            id,
+            targetX + Math.cos(angle) * radius,
+            targetY + Math.sin(angle) * radius,
+          );
+        });
+      }
       playSfx("order");
       playVoice("hoglet:order_move");
       flashMoveMarker(targetX, targetY);
@@ -316,22 +333,73 @@ export function HedgemonyMapView() {
     flashMoveMarker(Math.round(resolved.x), Math.round(resolved.y));
   };
 
+  const handleBoxSelect = useCallback(
+    ({ minX, minY, maxX, maxY, additive }: MapBoxSelection) => {
+      const nestsNow = selectNests(useNestStore.getState());
+      const byBucket = useHogletStore.getState().byBucket;
+      const overrides = useHogletPositionStore.getState().positions;
+      const positions = collectHogletWorldPositions(
+        nestsNow,
+        byBucket,
+        overrides,
+      );
+      const hit = positions
+        .filter((p) => p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY)
+        .map((p) => p.hogletId);
+
+      setSelection((prev) => {
+        // Additive (shift/cmd) keeps a prior hoglet selection and unions in
+        // the marquee hits. Non-additive replaces — clicking an empty area
+        // with a tiny marquee that catches nothing still clears selection.
+        if (additive && prev?.type === "hoglets") {
+          const merged = Array.from(new Set([...prev.ids, ...hit]));
+          if (merged.length === 0) return null;
+          return { type: "hoglets", ids: merged };
+        }
+        if (hit.length === 0) return null;
+        return { type: "hoglets", ids: hit };
+      });
+      if (hit.length > 0) playSfx("select");
+    },
+    [],
+  );
+
   const activeNest =
     selection?.type === "nest"
       ? (nests.find((nest) => nest.id === selection.id) ?? null)
       : null;
   const builderSelected = selection?.type === "builder";
   const hedgehouseSelected = selection?.type === "hedgehouse";
-  const selectedHogletId = selection?.type === "hoglet" ? selection.id : null;
-  const activeHoglet = useHogletStore(selectHogletById(selectedHogletId));
+  const selectedHogletIds = useMemo(
+    () => new Set<string>(selection?.type === "hoglets" ? selection.ids : []),
+    [selection],
+  );
+  const singleSelectedHogletId =
+    selection?.type === "hoglets" && selection.ids.length === 1
+      ? selection.ids[0]
+      : null;
+  const activeHoglet = useHogletStore(selectHogletById(singleSelectedHogletId));
   const buildMode = mode.kind === "placingNest";
   const relocatingNestId = mode.kind === "relocatingNest" ? mode.nestId : null;
 
-  const handleHogletSelect = useCallback((hogletId: string) => {
-    playSfx("select");
-    playVoice("hoglet:select");
-    setSelection({ type: "hoglet", id: hogletId });
-  }, []);
+  const handleHogletSelect = useCallback(
+    (hogletId: string, additive: boolean) => {
+      playSfx("select");
+      playVoice("hoglet:select");
+      setSelection((prev) => {
+        if (additive && prev?.type === "hoglets") {
+          // Toggle: shift-clicking an already-selected hoglet removes it.
+          if (prev.ids.includes(hogletId)) {
+            const next = prev.ids.filter((id) => id !== hogletId);
+            return next.length === 0 ? null : { type: "hoglets", ids: next };
+          }
+          return { type: "hoglets", ids: [...prev.ids, hogletId] };
+        }
+        return { type: "hoglets", ids: [hogletId] };
+      });
+    },
+    [],
+  );
 
   const beginBuildNest = () => {
     setMode({ kind: "placingNest", creationMode: "guided" });
@@ -382,12 +450,13 @@ export function HedgemonyMapView() {
         builderPositionRef={builder.visualPosRef}
         builderSelected={builderSelected}
         builderAnimation={builder.animation}
-        hogletSelected={selectedHogletId !== null}
+        hogletSelected={selectedHogletIds.size > 0}
         pendingNest={builder.pendingNest}
         buildMode={buildMode}
         moveMarker={moveMarker}
         onMapClick={handleMapClick}
         onMapRightClick={handleMapRightClick}
+        onMapBoxSelect={handleBoxSelect}
         onNestSelect={(nest) => {
           playSfx("select");
           playVoice("hoglet:select");
@@ -411,12 +480,12 @@ export function HedgemonyMapView() {
           <NestBroodCluster
             key={nest.id}
             nest={nest}
-            selectedHogletId={selectedHogletId}
+            selectedHogletIds={selectedHogletIds}
             onHogletSelect={handleHogletSelect}
           />
         ))}
         <WildHogletFlock
-          selectedHogletId={selectedHogletId}
+          selectedHogletIds={selectedHogletIds}
           onHogletSelect={handleHogletSelect}
         />
       </HedgemonyMapSurface>
@@ -453,6 +522,14 @@ export function HedgemonyMapView() {
             key={activeHoglet.id}
             hoglet={activeHoglet}
             onClose={() => setSelection(null)}
+          />
+        )}
+        {selection?.type === "hoglets" && selection.ids.length > 1 && (
+          <MultiHogletDetailPanel
+            key="multi-hoglet-panel"
+            hogletIds={selection.ids}
+            onClose={() => setSelection(null)}
+            onSelectOne={(id) => setSelection({ type: "hoglets", ids: [id] })}
           />
         )}
       </AnimatePresence>

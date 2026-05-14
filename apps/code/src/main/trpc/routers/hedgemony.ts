@@ -39,6 +39,7 @@ import {
   recordRoutedFeedbackInput,
   recordSignalBackedHogletInput,
   releaseHogletInput,
+  retireHogletInput,
   sendNestMessageInput,
   spawnFollowUpHogletInput,
   updateNestInput,
@@ -186,6 +187,10 @@ export const hedgemonyRouter = router({
       .mutation(({ input }) => {
         getHogletService().dismissSignal(input);
       }),
+
+    retire: publicProcedure.input(retireHogletInput).mutation(({ input }) => {
+      getHogletService().retire(input);
+    }),
 
     list: publicProcedure
       .input(listHogletsInput)

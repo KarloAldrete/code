@@ -1159,3 +1159,73 @@ button,
 ::highlight(search-match-active) {
   background-color: var(--orange-a8);
 }
+
+/*
+ * CommandConsole — Starcraft-style beveled chrome for hedgemony bottom panels.
+ * Two stacked clip-paths fake a chamfered border: the outer layer paints the
+ * accent color, the inner layer paints the body gradient, and 1.5px of padding
+ * on the outer leaves a visible accent rim that follows the chamfer.
+ *
+ * drop-shadow on the outer respects the clip-path so the cast shadow follows
+ * the angled corners instead of squaring off.
+ */
+.command-console-bevel-outer {
+  clip-path: polygon(
+    14px 0,
+    calc(100% - 14px) 0,
+    100% 14px,
+    100% calc(100% - 14px),
+    calc(100% - 14px) 100%,
+    14px 100%,
+    0 calc(100% - 14px),
+    0 14px
+  );
+  padding: 1.5px;
+  background: linear-gradient(
+    180deg,
+    var(--accent-a9) 0%,
+    var(--accent-a7) 45%,
+    var(--accent-a10) 100%
+  );
+  filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.42));
+}
+
+.command-console-bevel-inner {
+  clip-path: polygon(
+    13px 0,
+    calc(100% - 13px) 0,
+    100% 13px,
+    100% calc(100% - 13px),
+    calc(100% - 13px) 100%,
+    13px 100%,
+    0 calc(100% - 13px),
+    0 13px
+  );
+  background:
+    linear-gradient(
+      180deg,
+      var(--gray-3) 0%,
+      var(--gray-1) 32%,
+      var(--gray-2) 100%
+    ),
+    radial-gradient(
+      ellipse at 50% 0%,
+      var(--accent-a3) 0%,
+      transparent 60%
+    );
+  background-blend-mode: normal, screen;
+}
+
+/* Top-edge accent rail. Sits flush against the inner chamfered top so it
+   reads as a uniform glowing strip across the console header. */
+.command-console-rail {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--accent-9) 18%,
+    var(--accent-11) 50%,
+    var(--accent-9) 82%,
+    transparent 100%
+  );
+  box-shadow: 0 0 8px var(--accent-a8);
+}

@@ -58,6 +58,16 @@ export interface MoveMarker {
   y: number;
 }
 
+/** World-space bounding box from a marquee box-selection. */
+export interface MapBoxSelection {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  /** True if shift/cmd/ctrl was held — caller should add to selection, not replace. */
+  additive: boolean;
+}
+
 /**
  * Imperative camera control exposed by `HedgemonyMapSurface` via ref. Lets the
  * parent (`HedgemonyMapView`) drive smooth camera moves for actions that
@@ -88,6 +98,8 @@ interface HedgemonyMapSurfaceProps {
   onMapClick?: (worldX: number, worldY: number) => void;
   /** Right-click on empty map at world coords. */
   onMapRightClick?: (worldX: number, worldY: number) => void;
+  /** Marquee drag-select completed — world-space rect. */
+  onMapBoxSelect?: (selection: MapBoxSelection) => void;
   onNestSelect?: (nest: Nest) => void;
   onBuilderSelect?: () => void;
   onBuilderArrive?: () => void;
@@ -114,6 +126,7 @@ function HedgemonyMapSurfaceImpl(
     children,
     onMapClick,
     onMapRightClick,
+    onMapBoxSelect,
     onNestSelect,
     onBuilderSelect,
     onBuilderArrive,
@@ -136,7 +149,19 @@ function HedgemonyMapSurfaceImpl(
   const y = useMotionValue(panY);
 
   const outerRef = useRef<HTMLDivElement>(null);
-  const pointerDown = useRef<{ x: number; y: number } | null>(null);
+  const pointerDown = useRef<{
+    x: number;
+    y: number;
+    onEntity: boolean;
+  } | null>(null);
+  // Live marquee rect in container-relative pixel coords. Set once the pointer
+  // crosses the click/drag threshold so single-clicks never flash a marquee.
+  const [marqueeRect, setMarqueeRect] = useState<{
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
+  } | null>(null);
   // Middle-button drag-pan: anchors the world point under the cursor at the
   // moment middle-down fires, then moves the camera with pointer delta. Stored
   // in a ref so we can read/clear it from window-level listeners without
@@ -351,7 +376,16 @@ function HedgemonyMapSurfaceImpl(
       return;
     }
     if (event.button !== 0) return;
-    pointerDown.current = { x: event.clientX, y: event.clientY };
+    const onEntity = Boolean(
+      (event.target as HTMLElement).closest(
+        "[data-hedgemony-nest], [data-hedgemony-hedgehouse], [data-hedgemony-hoglet]",
+      ),
+    );
+    pointerDown.current = {
+      x: event.clientX,
+      y: event.clientY,
+      onEntity,
+    };
   };
 
   const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -367,6 +401,47 @@ function HedgemonyMapSurfaceImpl(
     const start = pointerDown.current;
     pointerDown.current = null;
     if (event.button !== 0) return;
+
+    // Marquee path: convert pixel rect to world rect, fire box-select.
+    if (marqueeRect) {
+      const target = event.currentTarget;
+      if (target.hasPointerCapture(event.pointerId)) {
+        target.releasePointerCapture(event.pointerId);
+      }
+      const rect = outerRef.current?.getBoundingClientRect();
+      if (rect && onMapBoxSelect) {
+        const minSx = Math.min(marqueeRect.startX, marqueeRect.endX);
+        const minSy = Math.min(marqueeRect.startY, marqueeRect.endY);
+        const maxSx = Math.max(marqueeRect.startX, marqueeRect.endX);
+        const maxSy = Math.max(marqueeRect.startY, marqueeRect.endY);
+        const aWorld = clientToWorld(
+          rect.left + minSx,
+          rect.top + minSy,
+          rect,
+          x.get(),
+          y.get(),
+          zoom,
+        );
+        const bWorld = clientToWorld(
+          rect.left + maxSx,
+          rect.top + maxSy,
+          rect,
+          x.get(),
+          y.get(),
+          zoom,
+        );
+        onMapBoxSelect({
+          minX: Math.min(aWorld.x, bWorld.x),
+          maxX: Math.max(aWorld.x, bWorld.x),
+          minY: Math.min(aWorld.y, bWorld.y),
+          maxY: Math.max(aWorld.y, bWorld.y),
+          additive: event.shiftKey || event.metaKey || event.ctrlKey,
+        });
+      }
+      setMarqueeRect(null);
+      return;
+    }
+
     if (!start || !onMapClick) return;
     if (
       (event.target as HTMLElement).closest(
@@ -393,6 +468,34 @@ function HedgemonyMapSurfaceImpl(
       y.set(drag.startPanY + (event.clientY - drag.startClientY));
       return;
     }
+
+    // Left-button marquee: while the button is held and we started on empty
+    // map, draw a rectangle once the pointer crosses the click/drag threshold.
+    const start = pointerDown.current;
+    if (start && !start.onEntity && !placementMode) {
+      const dx = event.clientX - start.x;
+      const dy = event.clientY - start.y;
+      if (marqueeRect || Math.hypot(dx, dy) > CLICK_MOVE_THRESHOLD_PX) {
+        const rect = outerRef.current?.getBoundingClientRect();
+        if (rect) {
+          // Capture once on entry so we keep getting events outside the surface.
+          if (!marqueeRect) {
+            const target = event.currentTarget;
+            if (!target.hasPointerCapture(event.pointerId)) {
+              target.setPointerCapture(event.pointerId);
+            }
+          }
+          setMarqueeRect({
+            startX: start.x - rect.left,
+            startY: start.y - rect.top,
+            endX: event.clientX - rect.left,
+            endY: event.clientY - rect.top,
+          });
+        }
+        return;
+      }
+    }
+
     if (!placementMode) return;
     const world = toWorldCoords(event.clientX, event.clientY);
     if (world) setPlacementPointer(world);
@@ -504,6 +607,19 @@ function HedgemonyMapSurfaceImpl(
         </AnimatePresence>
         {children}
       </motion.div>
+
+      {marqueeRect && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute border border-(--accent-9) border-dashed bg-(--accent-4)/20"
+          style={{
+            left: Math.min(marqueeRect.startX, marqueeRect.endX),
+            top: Math.min(marqueeRect.startY, marqueeRect.endY),
+            width: Math.abs(marqueeRect.endX - marqueeRect.startX),
+            height: Math.abs(marqueeRect.endY - marqueeRect.startY),
+          }}
+        />
+      )}
 
       <div
         className="absolute bottom-3 left-3"

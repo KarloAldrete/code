@@ -19,6 +19,7 @@ import {
   type RecordAdhocHogletInput,
   type RecordSignalBackedHogletInput,
   type ReleaseHogletInput,
+  type RetireHogletInput,
   type SpawnFollowUpHogletInput,
 } from "./schemas";
 
@@ -282,6 +283,33 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
     log.info("Signal-backed hoglet dismissed", {
       id: deleted.id,
       signalReportId: existing.signalReportId,
+    });
+  }
+
+  /**
+   * Soft-deletes any hoglet (wild, signal-backed staging, or nested) and
+   * emits a `removed` event for whichever bucket it currently lives in.
+   * Unlike [[dismissSignal]] this does not touch the upstream Inbox signal —
+   * callers that want to suppress the source signal must do so themselves.
+   */
+  retire(input: RetireHogletInput): void {
+    const existing = this.hoglets.findById(input.hogletId);
+    if (!existing) throw new Error("hoglet_not_found");
+    if (existing.deletedAt) {
+      log.warn("retire called on already-deleted hoglet", {
+        hogletId: existing.id,
+      });
+      return;
+    }
+
+    const bucket = bucketForHoglet(existing);
+    const deleted = this.hoglets.softDelete(input.hogletId);
+    if (!deleted) throw new Error("hoglet_update_failed");
+
+    this.emitChange(bucket, { kind: "removed", hogletId: deleted.id });
+    log.info("Hoglet retired", {
+      id: deleted.id,
+      from: bucket.kind,
     });
   }
 

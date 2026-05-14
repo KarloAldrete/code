@@ -6,16 +6,49 @@ import {
   CaretDown,
   ChatCircle,
   House,
-  X,
+  Trash,
+  Warning,
 } from "@phosphor-icons/react";
-import { Badge, IconButton, Text, Tooltip } from "@radix-ui/themes";
+import {
+  AlertDialog,
+  Badge,
+  Button,
+  Flex,
+  IconButton,
+  Text,
+  Tooltip,
+} from "@radix-ui/themes";
+import { trpcClient } from "@renderer/trpc/client";
 import type { Task } from "@shared/types";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useNavigationStore } from "@stores/navigationStore";
-import { motion } from "framer-motion";
+import { track } from "@utils/analytics";
+import { logger } from "@utils/logger";
 import { useState } from "react";
+import { toast } from "sonner";
 import { useHogletPositionStore } from "../stores/hogletPositionStore";
-import { selectTaskSummary, useHogletStore } from "../stores/hogletStore";
+import {
+  SIGNAL_STAGING_BUCKET,
+  selectTaskSummary,
+  useHogletStore,
+  WILD_BUCKET,
+} from "../stores/hogletStore";
+import { CommandConsole } from "./CommandConsole";
 import { STATUS_BADGE_COLOR, type TaskStatus } from "./hogletStatus";
+
+const log = logger.scope("hoglet-detail-panel");
+
+function bucketKeyForHoglet(h: Hoglet): string {
+  if (h.nestId !== null) return h.nestId;
+  if (h.signalReportId !== null) return SIGNAL_STAGING_BUCKET;
+  return WILD_BUCKET;
+}
+
+function retireSourceForHoglet(h: Hoglet): "wild" | "signal_staging" | "nest" {
+  if (h.nestId !== null) return "nest";
+  if (h.signalReportId !== null) return "signal_staging";
+  return "wild";
+}
 
 interface HogletDetailPanelProps {
   hoglet: Hoglet;
@@ -40,9 +73,9 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
   );
 
   const [chatOpen, setChatOpen] = useState(false);
+  const [retireDialogOpen, setRetireDialogOpen] = useState(false);
+  const [retiring, setRetiring] = useState(false);
 
-  // Always fetch the task so the summary can show the original prompt; the
-  // session itself only spins up once the user expands into chat mode below.
   const taskQuery = useAuthenticatedQuery<Task>(
     ["tasks", "detail", hoglet.taskId],
     (client) => client.getTask(hoglet.taskId) as unknown as Promise<Task>,
@@ -63,26 +96,51 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
     if (taskQuery.data) navigateToTask(taskQuery.data);
   };
 
+  const handleRetire = async () => {
+    if (retiring) return;
+    setRetiring(true);
+
+    const bucketKey = bucketKeyForHoglet(hoglet);
+    const original = useHogletStore
+      .getState()
+      .byBucket[bucketKey]?.find((h) => h.id === hoglet.id);
+    useHogletStore.getState().remove(bucketKey, hoglet.id);
+    clearPosition(hoglet.id);
+    setRetireDialogOpen(false);
+    onClose();
+
+    try {
+      await trpcClient.hedgemony.hoglets.retire.mutate({
+        hogletId: hoglet.id,
+      });
+      track(ANALYTICS_EVENTS.HEDGEMONY_HOGLET_RETIRED, {
+        source: retireSourceForHoglet(hoglet),
+      });
+    } catch (error) {
+      log.error("Failed to retire hoglet", { hogletId: hoglet.id, error });
+      if (original) {
+        useHogletStore.getState().upsert(bucketKey, original);
+      }
+      toast.error("Could not retire hoglet");
+    } finally {
+      setRetiring(false);
+    }
+  };
+
   const description = taskQuery.data?.description?.trim() ?? "";
 
   return (
-    <motion.aside
-      key={hoglet.id}
-      initial={{ y: "110%", opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      exit={{ y: "110%", opacity: 0 }}
-      transition={{ type: "spring", damping: 28, stiffness: 240, mass: 0.6 }}
-      className="-translate-x-1/2 absolute bottom-3 left-1/2 z-10 flex w-[min(720px,calc(100vw-1.5rem))] flex-col rounded-(--radius-3) border border-(--gray-5) bg-(--gray-1) shadow-xl"
-      style={{ height: chatOpen ? "min(60vh, 540px)" : "auto" }}
+    <CommandConsole
+      consoleKey={hoglet.id}
+      size="wide"
+      style={{ height: chatOpen ? "min(60vh, 540px)" : undefined }}
       onPointerDown={(e) => e.stopPropagation()}
       onContextMenuCapture={(e) => e.stopPropagation()}
     >
-      <header className="flex items-start justify-between gap-3 border-(--gray-5) border-b px-4 py-3">
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <div className="flex items-center gap-2">
-            <Text size="1" color="gray" weight="medium">
-              Hoglet
-            </Text>
+      <CommandConsole.Header
+        eyebrow={
+          <span className="flex items-center gap-2">
+            Hoglet
             <Badge color={STATUS_BADGE_COLOR[status]} size="1" variant="soft">
               {STATUS_LABEL[status]}
             </Badge>
@@ -92,64 +150,63 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
             <Badge color="gray" size="1" variant="surface">
               {provenance}
             </Badge>
-          </div>
-          <Text size="3" weight="bold" className="truncate text-(--gray-12)">
-            {title}
-          </Text>
-          <Text size="1" className="text-(--gray-10)">
-            {summary?.repository ?? "No repository"} · updated{" "}
-            {new Date(updatedAt).toLocaleString()}
-          </Text>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {hasOverride && (
-            <Tooltip content="Return hoglet to its default spot" side="top">
+          </span>
+        }
+        title={title}
+        subtitle={`${summary?.repository ?? "No repository"} · updated ${new Date(updatedAt).toLocaleString()}`}
+        onClose={onClose}
+        trailing={
+          <>
+            {hasOverride && (
+              <Tooltip content="Return hoglet to its default spot" side="top">
+                <IconButton
+                  size="1"
+                  variant="soft"
+                  color="gray"
+                  onClick={() => clearPosition(hoglet.id)}
+                  aria-label="Send to default position"
+                >
+                  <House size={14} />
+                </IconButton>
+              </Tooltip>
+            )}
+            <Tooltip content="Open task in editor" side="top">
               <IconButton
                 size="1"
                 variant="soft"
                 color="gray"
-                onClick={() => clearPosition(hoglet.id)}
-                aria-label="Send to default position"
+                onClick={handleOpenInEditor}
+                aria-label="Open task in editor"
               >
-                <House size={14} />
+                <ArrowSquareOut size={14} />
               </IconButton>
             </Tooltip>
-          )}
-          <Tooltip content="Open task in editor" side="top">
-            <IconButton
-              size="1"
-              variant="soft"
-              color="gray"
-              onClick={handleOpenInEditor}
-              aria-label="Open task in editor"
-            >
-              <ArrowSquareOut size={14} />
-            </IconButton>
-          </Tooltip>
-          <Tooltip content="Close (Esc)" side="top">
-            <IconButton
-              size="1"
-              variant="ghost"
-              color="gray"
-              onClick={onClose}
-              aria-label="Close"
-            >
-              <X size={15} />
-            </IconButton>
-          </Tooltip>
-        </div>
-      </header>
+            <Tooltip content="Retire hoglet" side="top">
+              <IconButton
+                size="1"
+                variant="soft"
+                color="red"
+                onClick={() => setRetireDialogOpen(true)}
+                disabled={retiring}
+                aria-label="Retire hoglet"
+              >
+                <Trash size={14} />
+              </IconButton>
+            </Tooltip>
+          </>
+        }
+      />
 
       {chatOpen ? (
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex items-center justify-between gap-2 border-(--gray-5) border-b bg-(--gray-2) px-3 py-1.5">
+          <div className="flex items-center justify-between gap-2 border-(--accent-a5) border-b bg-(--gray-a2) px-3 py-1.5">
             <Text size="1" color="gray" weight="medium">
               Conversation
             </Text>
             <button
               type="button"
               onClick={() => setChatOpen(false)}
-              className="flex items-center gap-1 rounded-(--radius-2) px-2 py-0.5 text-(--gray-11) text-[11px] hover:bg-(--gray-3) hover:text-(--gray-12)"
+              className="flex items-center gap-1 rounded-(--radius-2) px-2 py-0.5 text-(--gray-11) text-[11px] hover:bg-(--accent-a3) hover:text-(--accent-12)"
             >
               <CaretDown size={12} />
               Collapse
@@ -172,11 +229,11 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
           </div>
         </div>
       ) : (
-        <div className="flex flex-col gap-3 px-4 py-3">
+        <CommandConsole.Body>
           <button
             type="button"
             onClick={() => setChatOpen(true)}
-            className="group flex flex-col gap-1.5 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-2) p-3 text-left transition-colors hover:border-(--accent-7) hover:bg-(--accent-3)"
+            className="group flex flex-col gap-1.5 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-a2) p-3 text-left transition-colors hover:border-(--accent-7) hover:bg-(--accent-a3)"
           >
             <div className="flex items-center justify-between gap-2">
               <Text
@@ -223,8 +280,45 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
               <span>Affinity {hoglet.affinityScore.toFixed(2)}</span>
             )}
           </div>
-        </div>
+        </CommandConsole.Body>
       )}
-    </motion.aside>
+
+      <AlertDialog.Root
+        open={retireDialogOpen}
+        onOpenChange={setRetireDialogOpen}
+      >
+        <AlertDialog.Content maxWidth="440px">
+          <AlertDialog.Title>
+            <Flex align="center" gap="2">
+              <Warning size={18} weight="fill" color="var(--red-9)" />
+              <Text className="font-bold">Retire this hoglet?</Text>
+            </Flex>
+          </AlertDialog.Title>
+          <AlertDialog.Description className="text-sm">
+            <Text>
+              The hoglet will be removed from the map. The underlying task is
+              not deleted and can still be opened from your task list.
+            </Text>
+          </AlertDialog.Description>
+          <Flex gap="3" mt="4" justify="end">
+            <AlertDialog.Cancel>
+              <Button variant="soft" color="gray">
+                Cancel
+              </Button>
+            </AlertDialog.Cancel>
+            <AlertDialog.Action>
+              <Button
+                variant="solid"
+                color="red"
+                onClick={handleRetire}
+                disabled={retiring}
+              >
+                Retire
+              </Button>
+            </AlertDialog.Action>
+          </Flex>
+        </AlertDialog.Content>
+      </AlertDialog.Root>
+    </CommandConsole>
   );
 }

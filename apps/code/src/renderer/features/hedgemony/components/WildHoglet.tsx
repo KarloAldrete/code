@@ -24,7 +24,7 @@ interface WildHogletProps {
   x: number;
   y: number;
   selected: boolean;
-  onSelect: (hogletId: string) => void;
+  onSelect: (hogletId: string, additive: boolean) => void;
 }
 
 export function WildHoglet({
@@ -74,7 +74,7 @@ export function WildHoglet({
 
   const handleClick = (event: React.MouseEvent) => {
     event.stopPropagation();
-    onSelect(hoglet.id);
+    onSelect(hoglet.id, event.shiftKey || event.metaKey || event.ctrlKey);
   };
 
   return (

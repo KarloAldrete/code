@@ -3,35 +3,18 @@ import { useEffect, useMemo } from "react";
 import { initializeNestHogletStore } from "../service/hogletSubscriptionService";
 import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import { selectNestHoglets, useHogletStore } from "../stores/hogletStore";
+import { broodHogletPosition } from "../utils/hogletPositions";
 import { BroodHoglet } from "./BroodHoglet";
-
-const RADIUS = 92;
 
 interface NestBroodClusterProps {
   nest: Nest;
-  selectedHogletId: string | null;
-  onHogletSelect: (hogletId: string) => void;
-}
-
-function broodPosition(
-  index: number,
-  total: number,
-  origin: { x: number; y: number },
-): { x: number; y: number } {
-  // Even angular distribution starting at -π/2 so the first sibling sits
-  // directly above the nest. Stable as long as the caller sorts hoglets
-  // deterministically.
-  const safeTotal = Math.max(total, 1);
-  const angle = -Math.PI / 2 + (2 * Math.PI * index) / safeTotal;
-  return {
-    x: origin.x + Math.cos(angle) * RADIUS,
-    y: origin.y + Math.sin(angle) * RADIUS,
-  };
+  selectedHogletIds: ReadonlySet<string>;
+  onHogletSelect: (hogletId: string, additive: boolean) => void;
 }
 
 export function NestBroodCluster({
   nest,
-  selectedHogletId,
+  selectedHogletIds,
   onHogletSelect,
 }: NestBroodClusterProps) {
   const hoglets = useHogletStore(selectNestHoglets(nest.id));
@@ -58,7 +41,7 @@ export function NestBroodCluster({
         const override = positionOverrides[hoglet.id];
         const position =
           override ??
-          broodPosition(index, ordered.length, {
+          broodHogletPosition(index, ordered.length, {
             x: nest.mapX,
             y: nest.mapY,
           });
@@ -70,7 +53,7 @@ export function NestBroodCluster({
             index={index}
             x={position.x}
             y={position.y}
-            selected={selectedHogletId === hoglet.id}
+            selected={selectedHogletIds.has(hoglet.id)}
             onSelect={onHogletSelect}
           />
         );

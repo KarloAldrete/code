@@ -273,6 +273,11 @@ export const dismissSignalHogletInput = z.object({
 });
 export type DismissSignalHogletInput = z.infer<typeof dismissSignalHogletInput>;
 
+export const retireHogletInput = z.object({
+  hogletId: z.string(),
+});
+export type RetireHogletInput = z.infer<typeof retireHogletInput>;
+
 export const listHogletsInput = z.object({
   wildOnly: z.boolean().optional(),
   signalStagingOnly: z.boolean().optional(),

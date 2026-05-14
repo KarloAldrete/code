@@ -1,7 +1,7 @@
 import { useFunSpeak } from "@features/fun-mode/hooks/useFunSpeak";
 import { Info, Plus } from "@phosphor-icons/react";
 import { Tooltip } from "@radix-ui/themes";
-import { motion } from "framer-motion";
+import { CommandConsole } from "./CommandConsole";
 
 interface HedgehouseCommandPanelProps {
   onSpawnWildHog: () => void;
@@ -14,64 +14,64 @@ export function HedgehouseCommandPanel({
 }: HedgehouseCommandPanelProps) {
   const t = useFunSpeak();
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 8 }}
-      transition={{ duration: 0.15, ease: "easeOut" }}
-      className="-translate-x-1/2 absolute bottom-3 left-1/2 z-10 flex items-stretch gap-3 rounded-(--radius-3) border border-(--gray-5) bg-(--gray-1) px-3 py-2 shadow-xl"
-    >
-      <div className="flex min-w-[140px] flex-col justify-center pr-3 text-[11px]">
-        <div className="flex items-center gap-1.5">
-          <span className="font-medium text-(--gray-12) text-[13px]">
-            {t("Hedgehouse")}
+    <CommandConsole consoleKey="hedgehouse-command">
+      <div className="flex items-stretch gap-3 px-3 py-2">
+        <CommandConsole.Section noDivider className="min-w-[140px] pr-3">
+          <div className="flex items-center gap-1.5">
+            <span className="font-semibold text-(--gray-12) text-[13px]">
+              {t("Hedgehouse")}
+            </span>
+            <Tooltip
+              content={
+                <div className="flex max-w-[260px] flex-col gap-1.5">
+                  <span className="font-medium">
+                    Wild hoglets ship a PR and die.
+                  </span>
+                  <span className="text-[11px] opacity-90">
+                    Use the Hedgehouse for short, one-off tasks that don't need
+                    a goal.
+                  </span>
+                  <span className="text-[11px] opacity-90">
+                    For multi-step work that needs orchestration, use the
+                    Builder to create a nest.
+                  </span>
+                </div>
+              }
+            >
+              <Info
+                size={12}
+                className="cursor-help text-(--accent-10) hover:text-(--accent-12)"
+              />
+            </Tooltip>
+          </div>
+          <span className="text-(--gray-10) text-[11px]">
+            {t("One-off hoglets · no orchestration")}
           </span>
-          <Tooltip
-            content={
-              <div className="flex max-w-[260px] flex-col gap-1.5">
-                <span className="font-medium">
-                  Wild hoglets ship a PR and die.
-                </span>
-                <span className="text-[11px] opacity-90">
-                  Use the Hedgehouse for short, one-off tasks that don't need a
-                  goal.
-                </span>
-                <span className="text-[11px] opacity-90">
-                  For multi-step work that needs orchestration, use the Builder
-                  to create a nest.
-                </span>
-              </div>
-            }
+        </CommandConsole.Section>
+
+        <CommandConsole.Section className="flex-row items-center gap-2">
+          <button
+            type="button"
+            onClick={onSpawnWildHog}
+            className="flex h-9 items-center gap-1.5 rounded-(--radius-2) border border-(--accent-7) bg-(--accent-a3) px-3 font-medium text-(--accent-11) text-[12px] transition-colors hover:bg-(--accent-a5) hover:text-(--accent-12)"
+            title="Dispatch a one-off agent from the Hedgehouse"
           >
-            <Info
-              size={12}
-              className="cursor-help text-(--gray-9) hover:text-(--gray-11)"
-            />
-          </Tooltip>
-        </div>
-        <span className="text-(--gray-10)">
-          {t("One-off hoglets · no orchestration")}
-        </span>
+            <Plus size={14} />
+            {t("Spawn wild hog")}
+          </button>
+        </CommandConsole.Section>
+
+        <CommandConsole.Section className="pr-1 pl-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="font-mono text-(--gray-10) text-[10px] uppercase tracking-wider hover:text-(--gray-12)"
+            title="Deselect (Esc)"
+          >
+            Esc
+          </button>
+        </CommandConsole.Section>
       </div>
-      <div className="flex items-center gap-2 border-(--gray-5) border-l pl-3">
-        <button
-          type="button"
-          onClick={onSpawnWildHog}
-          className="flex h-9 items-center gap-1.5 rounded-(--radius-2) border border-(--accent-7) bg-(--accent-3) px-3 font-medium text-(--accent-11) text-[12px] transition-colors hover:bg-(--accent-4) hover:text-(--accent-12)"
-          title="Dispatch a one-off agent from the Hedgehouse"
-        >
-          <Plus size={14} />
-          {t("Spawn wild hog")}
-        </button>
-      </div>
-      <button
-        type="button"
-        onClick={onClose}
-        className="self-start text-(--gray-9) text-[11px] hover:text-(--gray-12)"
-        title="Deselect (Esc)"
-      >
-        Esc
-      </button>
-    </motion.div>
+    </CommandConsole>
   );
 }

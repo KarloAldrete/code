@@ -453,6 +453,7 @@ export const ANALYTICS_EVENTS = {
   HEDGEMONY_HOGLET_RELEASED: "hedgemony.hoglet_released",
   HEDGEMONY_HOGLET_INGESTED: "hedgemony.hoglet_ingested",
   HEDGEMONY_HOGLET_DISMISSED: "hedgemony.hoglet_dismissed",
+  HEDGEMONY_HOGLET_RETIRED: "hedgemony.hoglet_retired",
   HEDGEMONY_FEEDBACK_ROUTED: "hedgemony.feedback_routed",
 } as const;
 
@@ -477,6 +478,10 @@ export interface HedgemonyHogletIngestedProperties {
 
 export interface HedgemonyHogletDismissedProperties {
   source: "signal";
+}
+
+export interface HedgemonyHogletRetiredProperties {
+  source: "wild" | "signal_staging" | "nest";
 }
 
 export interface HedgemonyFeedbackRoutedProperties {
@@ -576,5 +581,6 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_RELEASED]: HedgemonyHogletReleasedProperties;
   [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_INGESTED]: HedgemonyHogletIngestedProperties;
   [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_DISMISSED]: HedgemonyHogletDismissedProperties;
+  [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_RETIRED]: HedgemonyHogletRetiredProperties;
   [ANALYTICS_EVENTS.HEDGEMONY_FEEDBACK_ROUTED]: HedgemonyFeedbackRoutedProperties;
 };

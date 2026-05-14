@@ -616,6 +616,71 @@ describe("HogletService", () => {
     });
   });
 
+  describe("retire", () => {
+    it("soft-deletes a wild hoglet and emits removal from the wild bucket", () => {
+      const wild = service.recordAdhoc({ taskId: "task-1" });
+
+      const listener = vi.fn();
+      service.on(HedgemonyEvent.HogletChanged, listener);
+      service.retire({ hogletId: wild.id });
+
+      expect(repo.softDelete).toHaveBeenCalledWith(wild.id);
+      expect(listener).toHaveBeenCalledWith({
+        bucket: { kind: "wild" },
+        event: { kind: "removed", hogletId: wild.id },
+      });
+    });
+
+    it("soft-deletes a signal-backed staging hoglet and emits from signal_staging", async () => {
+      const signal = await service.recordSignalBacked({
+        taskId: "task-2",
+        signalReportId: "sr-2",
+      });
+
+      const listener = vi.fn();
+      service.on(HedgemonyEvent.HogletChanged, listener);
+      service.retire({ hogletId: signal.id });
+
+      expect(repo.softDelete).toHaveBeenCalledWith(signal.id);
+      expect(listener).toHaveBeenCalledWith({
+        bucket: { kind: "signal_staging" },
+        event: { kind: "removed", hogletId: signal.id },
+      });
+    });
+
+    it("soft-deletes a nested hoglet and emits from that nest's bucket", () => {
+      const wild = service.recordAdhoc({ taskId: "task-3" });
+      const adopted = service.adopt({ hogletId: wild.id, nestId: "nest-X" });
+
+      const listener = vi.fn();
+      service.on(HedgemonyEvent.HogletChanged, listener);
+      service.retire({ hogletId: adopted.id });
+
+      expect(repo.softDelete).toHaveBeenCalledWith(adopted.id);
+      expect(listener).toHaveBeenCalledWith({
+        bucket: { kind: "nest", nestId: "nest-X" },
+        event: { kind: "removed", hogletId: adopted.id },
+      });
+    });
+
+    it("throws on unknown hoglets", () => {
+      expect(() => service.retire({ hogletId: "missing" })).toThrowError(
+        "hoglet_not_found",
+      );
+    });
+
+    it("is a no-op on already-deleted hoglets", () => {
+      const wild = service.recordAdhoc({ taskId: "task-4" });
+      service.retire({ hogletId: wild.id });
+
+      const listener = vi.fn();
+      service.on(HedgemonyEvent.HogletChanged, listener);
+      service.retire({ hogletId: wild.id });
+
+      expect(listener).not.toHaveBeenCalled();
+    });
+  });
+
   describe("spawnFollowUp", () => {
     it("creates a follow-up hoglet and pr_dependency edge", async () => {
       cloudTasks = createMockCloudTaskClient({
