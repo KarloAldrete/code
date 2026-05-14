@@ -489,16 +489,19 @@ export function HedgemonyMapView() {
           onHogletSelect={handleHogletSelect}
         />
       </HedgemonyMapSurface>
-      {activeNest && (
-        <NestDetailPanel
-          nest={activeNest}
-          onClose={() => {
-            setMode({ kind: "browsing" });
-            setSelection(null);
-          }}
-          onRelocate={() => beginRelocateNest(activeNest.id)}
-        />
-      )}
+      <AnimatePresence>
+        {activeNest && (
+          <NestDetailPanel
+            key={activeNest.id}
+            nest={activeNest}
+            onClose={() => {
+              setMode({ kind: "browsing" });
+              setSelection(null);
+            }}
+            onRelocate={() => beginRelocateNest(activeNest.id)}
+          />
+        )}
+      </AnimatePresence>
       <AnimatePresence>
         {builderSelected && !buildMode && (
           <BuilderCommandPanel

@@ -1207,12 +1207,7 @@ button,
       var(--gray-3) 0%,
       var(--gray-1) 32%,
       var(--gray-2) 100%
-    ),
-    radial-gradient(
-      ellipse at 50% 0%,
-      var(--accent-a3) 0%,
-      transparent 60%
-    );
+    ), radial-gradient(ellipse at 50% 0%, var(--accent-a3) 0%, transparent 60%);
   background-blend-mode: normal, screen;
 }
 

@@ -5,18 +5,17 @@ import {
   useUserGithubRepositories,
   useUserRepositoryIntegration,
 } from "@hooks/useIntegrations";
-import { X } from "@phosphor-icons/react";
-import { Button, Flex, Text, TextArea } from "@radix-ui/themes";
+import { Button, Text, TextArea } from "@radix-ui/themes";
 import { get as getFromContainer } from "@renderer/di/container";
 import { RENDERER_TOKENS } from "@renderer/di/tokens";
 import { trpcClient } from "@renderer/trpc/client";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
-import { motion } from "framer-motion";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { useHogletStore, WILD_BUCKET } from "../stores/hogletStore";
+import { CommandConsole } from "./CommandConsole";
 
 const log = logger.scope("spawn-hoglet-panel");
 
@@ -118,43 +117,20 @@ export function SpawnHogletPanel({ onClose }: SpawnHogletPanelProps) {
   };
 
   return (
-    <motion.aside
-      initial={{ opacity: 0, y: 24 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 24 }}
-      transition={{ duration: 0.18, ease: "easeOut" }}
-      className="-translate-x-1/2 absolute bottom-3 left-1/2 z-10 flex max-h-[min(80%,560px)] w-[680px] min-w-0 max-w-[calc(100%-24px)] flex-col rounded-(--radius-3) border border-(--gray-5) bg-(--gray-1) shadow-xl"
+    <CommandConsole
+      consoleKey="spawn-hoglet"
+      size="wide"
+      style={{ maxHeight: "min(80%, 560px)" }}
     >
-      <div className="flex items-start justify-between gap-3 border-(--gray-5) border-b px-4 py-3">
-        <div className="min-w-0">
-          <Text size="1" color="gray" className="block">
-            {t("Hedgehouse")}
-          </Text>
-          <Text size="3" weight="bold" className="block truncate">
-            {t("Send out a wild hog")}
-          </Text>
-          <Text size="1" color="gray" className="mt-0.5 block">
-            Dispatched from the town hall of the wilds — lands in the holding
-            area, no nest required.
-          </Text>
-        </div>
-        <button
-          type="button"
-          onClick={handleClose}
-          disabled={submitting}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-(--radius-2) text-(--gray-10) hover:bg-(--gray-3) hover:text-(--gray-12) disabled:opacity-40"
-          title="Close"
-        >
-          <X size={15} />
-        </button>
-      </div>
+      <CommandConsole.Header
+        eyebrow={t("Hedgehouse")}
+        title={t("Send out a wild hog")}
+        subtitle="Dispatched from the town hall of the wilds — lands in the holding area, no nest required."
+        onClose={handleClose}
+        closeDisabled={submitting}
+      />
 
-      <Flex
-        direction="column"
-        gap="3"
-        p="4"
-        className="min-h-0 flex-1 overflow-y-auto"
-      >
+      <CommandConsole.Body scroll>
         <div>
           <Text
             as="label"
@@ -210,15 +186,9 @@ export function SpawnHogletPanel({ onClose }: SpawnHogletPanelProps) {
             {error}
           </Text>
         )}
-      </Flex>
+      </CommandConsole.Body>
 
-      <Flex
-        gap="2"
-        px="4"
-        py="3"
-        justify="end"
-        className="border-(--gray-5) border-t"
-      >
+      <CommandConsole.Footer>
         <Button
           variant="soft"
           color="gray"
@@ -234,7 +204,7 @@ export function SpawnHogletPanel({ onClose }: SpawnHogletPanelProps) {
         >
           {t("Send wild hog")}
         </Button>
-      </Flex>
-    </motion.aside>
+      </CommandConsole.Footer>
+    </CommandConsole>
   );
 }

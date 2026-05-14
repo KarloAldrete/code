@@ -1,9 +1,8 @@
 import type { Hoglet } from "@main/services/hedgemony/schemas";
-import { X } from "@phosphor-icons/react";
-import { Badge, IconButton, Text, Tooltip } from "@radix-ui/themes";
-import { motion } from "framer-motion";
+import { Badge, Text } from "@radix-ui/themes";
 import { useMemo } from "react";
 import { selectTaskSummary, useHogletStore } from "../stores/hogletStore";
+import { CommandConsole } from "./CommandConsole";
 import { STATUS_BADGE_COLOR, type TaskStatus } from "./hogletStatus";
 
 interface MultiHogletDetailPanelProps {
@@ -74,26 +73,18 @@ export function MultiHogletDetailPanel({
   }, [hoglets, summaries]);
 
   return (
-    <motion.aside
-      initial={{ y: "110%", opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      exit={{ y: "110%", opacity: 0 }}
-      transition={{ type: "spring", damping: 28, stiffness: 240, mass: 0.6 }}
-      className="-translate-x-1/2 absolute bottom-3 left-1/2 z-10 flex max-h-[60vh] w-[min(720px,calc(100vw-1.5rem))] flex-col rounded-(--radius-3) border border-(--gray-5) bg-(--gray-1) shadow-xl"
+    <CommandConsole
+      consoleKey="multi-hoglet"
+      size="wide"
+      style={{ maxHeight: "60vh" }}
       onPointerDown={(e) => e.stopPropagation()}
       onContextMenuCapture={(e) => e.stopPropagation()}
     >
-      <header className="flex items-start justify-between gap-3 border-(--gray-5) border-b px-4 py-3">
-        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <div className="flex items-center gap-2">
-            <Text size="1" color="gray" weight="medium">
-              Selection
-            </Text>
-            <Text size="3" weight="bold" className="text-(--gray-12)">
-              {hogletIds.length} hoglets
-            </Text>
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5">
+      <CommandConsole.Header
+        eyebrow="Selection"
+        title={`${hogletIds.length} hoglets`}
+        subtitle={
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
             {STATUS_ORDER.map((status) => {
               const count = statusCounts[status];
               if (count === 0) return null;
@@ -109,21 +100,9 @@ export function MultiHogletDetailPanel({
               );
             })}
           </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <Tooltip content="Close (Esc)" side="top">
-            <IconButton
-              size="1"
-              variant="ghost"
-              color="gray"
-              onClick={onClose}
-              aria-label="Close"
-            >
-              <X size={15} />
-            </IconButton>
-          </Tooltip>
-        </div>
-      </header>
+        }
+        onClose={onClose}
+      />
 
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-2">
         {hoglets.length === 0 ? (
@@ -140,7 +119,7 @@ export function MultiHogletDetailPanel({
           ))
         )}
       </div>
-    </motion.aside>
+    </CommandConsole>
   );
 }
 
