@@ -5,9 +5,8 @@ import {
   useMotionValue,
 } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
+import { HEDGEMONY_CONFIG } from "../config";
 import type { Vec2 } from "../utils/pathfinding";
-
-const SPEED = 120;
 
 interface WalkToResult {
   motionX: MotionValue<number>;
@@ -88,7 +87,7 @@ export function useWalkTo(
       }
       if (dx > 0) setFacing("right");
       else if (dx < 0) setFacing("left");
-      const duration = dist / SPEED;
+      const duration = dist / HEDGEMONY_CONFIG.speeds.hoglet;
       xCtrl = animate(motionX, seg.x, { duration, ease: "linear" });
       yCtrl = animate(motionY, seg.y, {
         duration,

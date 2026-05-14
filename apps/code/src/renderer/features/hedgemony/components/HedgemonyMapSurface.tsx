@@ -20,6 +20,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { HEDGEMONY_CONFIG } from "../config";
 import {
   HEDGEMONY_ZOOM_MAX,
   HEDGEMONY_ZOOM_MIN,
@@ -37,7 +38,7 @@ import { NestConstructionSite } from "./NestConstructionSite";
 import { NestSprite } from "./NestSprite";
 import { SfxControl } from "./SfxControl";
 
-const BUILD_ANIMATION_MS = 1500;
+const BUILD_ANIMATION_MS = HEDGEMONY_CONFIG.animation.buildMs;
 
 const ZOOM_WHEEL_STEP = 0.0015;
 const CLICK_MOVE_THRESHOLD_PX = 4;
@@ -46,11 +47,9 @@ const FIT_PADDING_PX = 360;
 const FOCUS_ZOOM = 1.4;
 const MINIMAP_SIZE_DEFAULT = 168;
 const MINIMAP_SIZE_FULLSCREEN = 232;
-const CAMERA_ANIM_DURATION_S = 0.42;
-// Material Design "standard" cubic-bezier — gentle ease-out that reads as a
-// confident snap without feeling abrupt. Typed as a mutable tuple so framer's
-// `Easing` overload (which expects a 4-tuple, not `number[]`) accepts it.
-const CAMERA_ANIM_EASE: [number, number, number, number] = [0.4, 0, 0.2, 1];
+const CAMERA_ANIM_DURATION_S = HEDGEMONY_CONFIG.camera.animDurationS;
+const CAMERA_ANIM_EASE: [number, number, number, number] =
+  HEDGEMONY_CONFIG.camera.ease;
 
 export interface MoveMarker {
   id: number;

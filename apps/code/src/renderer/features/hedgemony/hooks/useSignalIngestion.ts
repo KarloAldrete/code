@@ -9,6 +9,7 @@ import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { useEffect, useRef } from "react";
+import { HEDGEMONY_CONFIG } from "../config";
 import { useHogletStore } from "../stores/hogletStore";
 import { buildSignalPrompt } from "../utils/signalPrompt";
 
@@ -17,7 +18,7 @@ const log = logger.scope("signal-ingestion");
 /** Poll cadence for the Inbox signals endpoint. Slower than the Inbox tab's 3s
  *  cadence because staging is asynchronous — operators don't need sub-5s
  *  reaction. 30s keeps the network footprint modest while feeling live. */
-const INGESTION_REFETCH_MS = 30_000;
+const INGESTION_REFETCH_MS = HEDGEMONY_CONFIG.polling.signalIngestionMs;
 
 /** Cap per-tick ingestion to avoid bursts when first opening the map view with
  *  a backlog. Remaining reports are picked up on the next refetch. */

@@ -1,9 +1,10 @@
 import { electronStorage } from "@utils/electronStorage";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { HEDGEMONY_CONFIG } from "../config";
 
-const ZOOM_MIN = 0.25;
-const ZOOM_MAX = 2;
+const ZOOM_MIN = HEDGEMONY_CONFIG.camera.zoomMin;
+const ZOOM_MAX = HEDGEMONY_CONFIG.camera.zoomMax;
 
 function clampZoom(value: number): number {
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, value));

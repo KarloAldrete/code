@@ -2,6 +2,7 @@ import { getAuthenticatedClient } from "@features/auth/hooks/authClient";
 import type { HogletWatchEvent } from "@main/services/hedgemony/schemas";
 import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
+import { HEDGEMONY_CONFIG } from "../config";
 import { WILD_BUCKET } from "../constants/buckets";
 import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import { useHogletStore } from "../stores/hogletStore";
@@ -10,7 +11,7 @@ import { getHogletVisualPosition } from "../utils/hogletVisualPositions";
 
 const log = logger.scope("hoglet-subscription-service");
 
-const TASK_SUMMARY_REFRESH_MS = 10_000;
+const TASK_SUMMARY_REFRESH_MS = HEDGEMONY_CONFIG.polling.taskSummaryMs;
 
 type WatchHandle = { unsubscribe: () => void };
 

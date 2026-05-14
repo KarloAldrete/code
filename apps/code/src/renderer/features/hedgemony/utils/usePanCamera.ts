@@ -1,8 +1,9 @@
 import type { MotionValue } from "framer-motion";
 import { type RefObject, useEffect, useRef } from "react";
+import { HEDGEMONY_CONFIG } from "../config";
 
 const EDGE_ZONE_PX = 36;
-const BASE_SPEED_PX_PER_SEC = 950;
+const BASE_SPEED_PX_PER_SEC = HEDGEMONY_CONFIG.speeds.panCamera;
 const BOOST_MULTIPLIER = 2.2;
 const COMMIT_DEBOUNCE_MS = 200;
 const MAX_FRAME_DT_S = 0.05;

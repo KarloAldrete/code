@@ -12,6 +12,7 @@ import { useBgmStore } from "../audio/bgmStore";
 import { playSfx } from "../audio/sfx";
 import { useSfxStore } from "../audio/sfxStore";
 import { playVoice } from "../audio/voice";
+import { HEDGEMONY_CONFIG } from "../config";
 import type { HedgemonyHotkeyContext } from "../constants/hotkeys";
 import {
   BUILDER_NAME,
@@ -614,7 +615,7 @@ export function HedgemonyMapView() {
     moveMarkerTimerRef.current = setTimeout(() => {
       moveMarkerTimerRef.current = null;
       setMoveMarker((current) => (current?.id === id ? null : current));
-    }, 600);
+    }, HEDGEMONY_CONFIG.animation.moveMarkerMs);
   }, []);
 
   const collectLiveHogletPositions = useCallback(() => {

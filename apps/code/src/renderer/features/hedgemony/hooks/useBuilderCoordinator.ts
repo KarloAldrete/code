@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { HEDGEMONY_CONFIG } from "../config";
 import {
   findPath,
   type Obstacle,
@@ -15,7 +16,7 @@ import {
 } from "../utils/pathfinding";
 import { worldObstacles } from "../utils/worldObstacles";
 
-const DEFAULT_BUILD_ANIMATION_MS = 1500;
+const DEFAULT_BUILD_ANIMATION_MS = HEDGEMONY_CONFIG.animation.buildMs;
 // Park the builder just south of the Hedgehouse. The previous attempt at
 // (0, 130) was still broken: pathfinding inflates the Hedgehouse obstacle
 // (raw radius 100) by the agent's pathfinding radius (36 for the builder)

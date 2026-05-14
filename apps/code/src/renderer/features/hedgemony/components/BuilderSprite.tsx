@@ -6,6 +6,7 @@ import {
   useMotionValue,
 } from "framer-motion";
 import { type MutableRefObject, useCallback, useEffect, useState } from "react";
+import { HEDGEMONY_CONFIG } from "../config";
 import { BUILDER_NAME } from "../constants/map";
 import type { BuilderAnimation } from "../hooks/useBuilderCoordinator";
 import { selectNests, useNestStore } from "../stores/nestStore";
@@ -21,7 +22,6 @@ export type { BuilderAnimation };
 
 const SPRITE_SIZE = 72;
 const SELECTION_RING_SIZE = SPRITE_SIZE + 18;
-const SPEED = 150;
 
 const ANIMATION_KEYS: Record<BuilderAnimation, HedgehogAnimation> = {
   idle: "idle",
@@ -30,9 +30,9 @@ const ANIMATION_KEYS: Record<BuilderAnimation, HedgehogAnimation> = {
 };
 
 const ANIMATION_FPS: Record<BuilderAnimation, number> = {
-  idle: 8,
-  walking: 14,
-  building: 12,
+  idle: HEDGEMONY_CONFIG.animation.fps.idle,
+  walking: HEDGEMONY_CONFIG.animation.fps.walk,
+  building: HEDGEMONY_CONFIG.animation.fps.action,
 };
 
 interface BuilderSpriteProps {
@@ -125,7 +125,7 @@ export function BuilderSprite({
         advance();
         return;
       }
-      const duration = dist / SPEED;
+      const duration = dist / HEDGEMONY_CONFIG.speeds.builder;
       xControls = animate(motionX, to.x, { duration, ease: "linear" });
       yControls = animate(motionY, to.y, {
         duration,

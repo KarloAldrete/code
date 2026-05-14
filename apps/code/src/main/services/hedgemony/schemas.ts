@@ -1,7 +1,15 @@
 import { z } from "zod";
-import { logger } from "../../utils/logger";
 
-const schemaLog = logger.scope("hedgemony-schemas");
+// Renderer code imports types from this module, so it must not statically
+// import the main-only logger (which transitively pulls in `node:fs` and
+// black-screens the browser bundle). The main process registers a real
+// logger via `setHedgemonySchemaLogger`; renderer-side, schemaLog stays a
+// no-op.
+type SchemaLogger = { warn: (msg: string, ctx?: object) => void };
+let schemaLog: SchemaLogger = { warn: () => {} };
+export function setHedgemonySchemaLogger(l: SchemaLogger): void {
+  schemaLog = l;
+}
 
 /**
  * GitHub-style repository slug. Matches what `parseGithubUrl` produces:

@@ -5,6 +5,7 @@ import { Tooltip } from "@radix-ui/themes";
 import nestImage from "@renderer/assets/images/hedgemony/nest.png";
 import { animate, motion, useMotionValue } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
+import { HEDGEMONY_CONFIG } from "../config";
 import {
   selectNestHoglets,
   selectTaskSummary,
@@ -25,8 +26,6 @@ const SELECTION_RING_SIZE = NEST_SIZE + 24;
 const TERRITORY_SIZE = 220;
 const TERRITORY_SIZE_SELECTED = 260;
 const TERRITORY_SIZE_DROP_TARGET = 280;
-const NEST_SPEED = 100;
-const NEST_EASE = [0.4, 0, 0.2, 1] as const;
 const WALK_ANIMATION = "walk" as const;
 const IDLE_ANIMATION = "idle" as const;
 const TICKING_ANIMATION = "action" as const;
@@ -160,14 +159,14 @@ export function NestSprite({
     if (dx > 0) setFacing("right");
     else if (dx < 0) setFacing("left");
     setIsMoving(true);
-    const duration = dist / NEST_SPEED;
+    const duration = dist / HEDGEMONY_CONFIG.speeds.nest;
     const xControls = animate(motionX, nest.mapX, {
       duration,
-      ease: NEST_EASE,
+      ease: HEDGEMONY_CONFIG.camera.ease,
     });
     const yControls = animate(motionY, nest.mapY, {
       duration,
-      ease: NEST_EASE,
+      ease: HEDGEMONY_CONFIG.camera.ease,
       onComplete: () => setIsMoving(false),
     });
     return () => {

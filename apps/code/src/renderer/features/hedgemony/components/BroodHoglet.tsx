@@ -5,6 +5,7 @@ import { useTRPC } from "@renderer/trpc";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { useCallback } from "react";
+import { HEDGEMONY_CONFIG } from "../config";
 import { useTransitPath } from "../hooks/useTransitPath";
 import { useWalkTo } from "../hooks/useWalkTo";
 import {
@@ -87,7 +88,7 @@ export function BroodHoglet({
   const prStatusQuery = useQuery(
     trpc.workspace.getTaskPrStatus.queryOptions(
       { taskId: hoglet.taskId, cloudPrUrl: null },
-      { staleTime: 30_000 },
+      { staleTime: HEDGEMONY_CONFIG.polling.prStatusStaleMs },
     ),
   );
 
@@ -105,7 +106,9 @@ export function BroodHoglet({
       ? "walkRobo"
       : "walk"
     : statusAnimationKey;
-  const fps = isWalking ? 14 : FPS_BY_TASK_STATUS[status ?? "not_started"];
+  const fps = isWalking
+    ? HEDGEMONY_CONFIG.animation.fps.walk
+    : FPS_BY_TASK_STATUS[status ?? "not_started"];
   const cancelled = status === "cancelled";
   const accentColor = nestAccentColor(nestId);
 
