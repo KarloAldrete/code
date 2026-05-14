@@ -2,8 +2,10 @@ import { getAuthenticatedClient } from "@features/auth/hooks/authClient";
 import { orgMembersQueryKey } from "@features/auth/hooks/useOrgMembers";
 import type { OrgMember } from "@renderer/api/posthogClient";
 import { queryClient } from "@utils/queryClient";
+import { createElement } from "react";
 import type { SuggestionItem } from "../types";
 import { createSuggestionMention } from "./createSuggestionMention";
+import { TeamMemberSuggestionRow } from "./TeamMemberSuggestionRow";
 
 interface TeamMemberSuggestionItem extends SuggestionItem {
   email: string;
@@ -51,5 +53,6 @@ export function createTeamMemberMention() {
         chipType: "team_member",
       }));
     },
+    renderItem: (item) => createElement(TeamMemberSuggestionRow, { item }),
   });
 }

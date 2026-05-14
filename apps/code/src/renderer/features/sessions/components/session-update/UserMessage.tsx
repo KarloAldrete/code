@@ -8,11 +8,13 @@ import {
   Copy,
   File,
   SlackLogo,
+  UserPlus,
 } from "@phosphor-icons/react";
 import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
 import { motion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  extractTeamMembers,
   hasFileMentions,
   MentionChip,
   parseFileMentions,
@@ -46,6 +48,13 @@ function formatTimestamp(ts: number): string {
   });
 }
 
+function formatNameList(names: string[]): string {
+  if (names.length === 0) return "";
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
 export function UserMessage({
   content,
   timestamp,
@@ -56,6 +65,7 @@ export function UserMessage({
 }: UserMessageProps) {
   const containsFileMentions = hasFileMentions(content);
   const showAttachmentChips = attachments.length > 0 && !containsFileMentions;
+  const addedTeamMembers = extractTeamMembers(content);
   const [copied, setCopied] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isOverflowing, setIsOverflowing] = useState(false);
@@ -147,6 +157,40 @@ export function UserMessage({
               </>
             )}
           </button>
+        )}
+        {addedTeamMembers.length > 0 && (
+          <Flex
+            align="center"
+            gap="1.5"
+            className="mt-1.5 text-(--gray-10) text-[12px]"
+          >
+            <Flex align="center" className="-space-x-1">
+              {addedTeamMembers.map((m) =>
+                m.avatar ? (
+                  <img
+                    key={m.uuid}
+                    src={m.avatar}
+                    alt=""
+                    className="size-4 rounded-full border border-(--gray-2) object-cover"
+                  />
+                ) : (
+                  <span
+                    key={m.uuid}
+                    className="flex size-4 items-center justify-center rounded-full border border-(--gray-2) bg-(--gray-5)"
+                  >
+                    <UserPlus size={10} />
+                  </span>
+                ),
+              )}
+            </Flex>
+            <span>
+              Added{" "}
+              <span className="text-(--gray-12)">
+                {formatNameList(addedTeamMembers.map((m) => m.name))}
+              </span>{" "}
+              to the thread
+            </span>
+          </Flex>
         )}
         {sourceUrl && (
           <a
