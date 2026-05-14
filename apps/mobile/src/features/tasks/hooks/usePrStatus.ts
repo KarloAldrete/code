@@ -7,6 +7,8 @@ export interface PrStatus {
   state: "open" | "closed";
   merged: boolean;
   draft: boolean;
+  additions: number;
+  deletions: number;
 }
 
 function parsePrUrl(
@@ -50,11 +52,15 @@ export function usePrStatus(prUrl: string | null | undefined) {
           state: string;
           merged: boolean;
           draft: boolean;
+          additions?: number;
+          deletions?: number;
         };
         return {
           state: data.state === "closed" ? "closed" : "open",
           merged: !!data.merged,
           draft: !!data.draft,
+          additions: data.additions ?? 0,
+          deletions: data.deletions ?? 0,
         };
       } catch (err) {
         log.warn("Failed to fetch PR status", err);

@@ -120,6 +120,16 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
           headerTintColor: themeColors.gray[12],
         }}
       />
+      <Stack.Screen
+        name="pr-diff"
+        options={{
+          presentation: "modal",
+          headerShown: true,
+          title: "Files changed",
+          headerStyle: { backgroundColor: themeColors.background },
+          headerTintColor: themeColors.gray[12],
+        }}
+      />
     </Stack>
   );
 }

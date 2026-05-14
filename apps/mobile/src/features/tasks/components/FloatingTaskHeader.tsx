@@ -88,7 +88,12 @@ export function FloatingTaskHeader({
           ) : null}
         </View>
 
-        <View className="h-11 w-11 items-center justify-end">{rightSlot}</View>
+        <View
+          className="h-11 flex-row items-center justify-end gap-2"
+          style={{ minWidth: 44 }}
+        >
+          {rightSlot}
+        </View>
       </View>
     </View>
   );

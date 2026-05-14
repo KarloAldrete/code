@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FloatingBackButton } from "@/components/FloatingBackButton";
 import { getTask, runTaskInCloud } from "@/features/tasks/api";
 import { FloatingTaskHeader } from "@/features/tasks/components/FloatingTaskHeader";
+import { PrDiffStatsBadge } from "@/features/tasks/components/PrDiffStatsBadge";
 import { PrStatusBadge } from "@/features/tasks/components/PrStatusBadge";
 import { TaskSessionView } from "@/features/tasks/components/TaskSessionView";
 import { buildCloudPromptBlocks } from "@/features/tasks/composer/attachments/buildCloudPrompt";
@@ -439,7 +440,10 @@ export default function TaskDetailScreen() {
         subtitle={task?.repository ?? undefined}
         rightSlot={
           prUrl ? (
-            <PrStatusBadge prUrl={prUrl} />
+            <>
+              <PrDiffStatsBadge prUrl={prUrl} />
+              <PrStatusBadge prUrl={prUrl} />
+            </>
           ) : isLocal ? (
             <Pressable
               onPress={() =>

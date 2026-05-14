@@ -43,7 +43,7 @@ export function PrStatusBadge({ prUrl }: PrStatusBadgeProps) {
     <Pressable
       onPress={handlePress}
       hitSlop={10}
-      className="rounded-lg border p-2 active:opacity-60"
+      className="h-9 w-9 items-center justify-center rounded-lg border active:opacity-60"
       style={{
         backgroundColor: toRgba(color, 0.12),
         borderColor: toRgba(color, 0.35),
