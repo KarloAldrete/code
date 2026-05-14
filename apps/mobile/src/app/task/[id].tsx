@@ -17,7 +17,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FloatingBackButton } from "@/components/FloatingBackButton";
 import { getTask, runTaskInCloud } from "@/features/tasks/api";
 import { FloatingTaskHeader } from "@/features/tasks/components/FloatingTaskHeader";
+import { PrDiffStatsBadge } from "@/features/tasks/components/PrDiffStatsBadge";
+import { PrStatusBadge } from "@/features/tasks/components/PrStatusBadge";
 import { TaskSessionView } from "@/features/tasks/components/TaskSessionView";
+import { buildCloudPromptBlocks } from "@/features/tasks/composer/attachments/buildCloudPrompt";
+import { serializeCloudPrompt } from "@/features/tasks/composer/attachments/cloudPrompt";
+import type { PendingAttachment } from "@/features/tasks/composer/attachments/types";
 import {
   DEFAULT_EXECUTION_MODE,
   DEFAULT_MODEL,
@@ -180,16 +185,23 @@ export default function TaskDetailScreen() {
   // creates a fresh run that resumes from the previous one and queues the
   // message as pending_user_message.
   const handleSendAfterTerminal = useCallback(
-    async (text: string) => {
+    async (text: string, attachments: PendingAttachment[]) => {
       if (!taskId || !task) return;
       try {
         setRetrying(true);
         disconnectFromTask(taskId);
 
+        const pendingUserMessage =
+          attachments.length > 0
+            ? serializeCloudPrompt(
+                await buildCloudPromptBlocks(text, attachments),
+              )
+            : text;
+
         const supportsReasoning = modelSupportsReasoning(composerModel);
         const updatedTask = await runTaskInCloud(taskId, {
           resumeFromRunId: task.latest_run?.id,
-          pendingUserMessage: text,
+          pendingUserMessage,
           runtimeAdapter: "claude",
           model: composerModel,
           reasoningEffort: supportsReasoning ? composerReasoning : undefined,
@@ -220,16 +232,16 @@ export default function TaskDetailScreen() {
   );
 
   const handleSendPrompt = useCallback(
-    (text: string) => {
+    (text: string, attachments: PendingAttachment[]) => {
       if (!taskId) return;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
       if (session?.terminalStatus) {
-        handleSendAfterTerminal(text);
+        handleSendAfterTerminal(text, attachments);
         return;
       }
 
-      sendPrompt(taskId, text).catch((err) => {
+      sendPrompt(taskId, text, attachments).catch((err) => {
         log.error("Failed to send prompt", err);
         Alert.alert(
           "Failed to send",
@@ -333,6 +345,7 @@ export default function TaskDetailScreen() {
   // Stale detection for local tasks: if no new S3 data arrives for 30s
   // while the agent is supposedly working, the desktop may be offline.
   const isLocal = task?.latest_run?.environment === "local";
+  const prUrl = task?.latest_run?.output?.pr_url as string | undefined;
   const [isStale, setIsStale] = useState(false);
   useEffect(() => {
     if (!isLocal || !session?.isPromptPending) {
@@ -412,7 +425,12 @@ export default function TaskDetailScreen() {
         title={loading ? "Loading..." : task?.title || "Task"}
         subtitle={task?.repository ?? undefined}
         rightSlot={
-          isLocal ? (
+          prUrl ? (
+            <>
+              <PrDiffStatsBadge prUrl={prUrl} />
+              <PrStatusBadge prUrl={prUrl} />
+            </>
+          ) : isLocal ? (
             <Pressable
               onPress={() =>
                 ActionSheetIOS.showActionSheetWithOptions(

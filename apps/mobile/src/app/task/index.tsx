@@ -5,11 +5,13 @@ import {
   BrainIcon,
   CaretDown,
   GithubLogo,
+  MicrophoneIcon,
   PaperclipIcon,
   PauseIcon,
   PencilIcon,
   Robot,
   ShieldCheck,
+  StopIcon,
 } from "phosphor-react-native";
 import { useCallback, useState } from "react";
 import {
@@ -26,9 +28,20 @@ import {
 import Animated, { runOnJS, useAnimatedStyle } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useVoiceRecording } from "@/features/chat";
 import { createTask, runTaskInCloud } from "@/features/tasks/api";
 import { GitHubConnectionPrompt } from "@/features/tasks/components/GitHubConnectionPrompt";
 import { GitHubLoadNotice } from "@/features/tasks/components/GitHubLoadNotice";
+import { AttachmentSheet } from "@/features/tasks/composer/attachments/AttachmentSheet";
+import { AttachmentsBar } from "@/features/tasks/composer/attachments/AttachmentsBar";
+import { buildCloudPromptBlocks } from "@/features/tasks/composer/attachments/buildCloudPrompt";
+import { serializeCloudPrompt } from "@/features/tasks/composer/attachments/cloudPrompt";
+import {
+  captureFromCamera,
+  pickDocument,
+  pickPhotoFromLibrary,
+} from "@/features/tasks/composer/attachments/pickers";
+import type { PendingAttachment } from "@/features/tasks/composer/attachments/types";
 import { DotBackground } from "@/features/tasks/composer/DotBackground";
 import {
   DEFAULT_EXECUTION_MODE,
@@ -157,6 +170,51 @@ export default function NewTaskScreen() {
   const [modeSheetOpen, setModeSheetOpen] = useState(false);
   const [modelSheetOpen, setModelSheetOpen] = useState(false);
   const [reasoningSheetOpen, setReasoningSheetOpen] = useState(false);
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
+
+  const appendTranscript = useCallback((transcript: string) => {
+    setPrompt((prev) => (prev ? `${prev} ${transcript}` : transcript));
+  }, []);
+
+  const {
+    status: voiceStatus,
+    startRecording,
+    stopRecording,
+    cancelRecording,
+  } = useVoiceRecording({ onTranscript: appendTranscript });
+  const isRecording = voiceStatus === "recording";
+  const isTranscribing = voiceStatus === "transcribing";
+
+  const handleMicPress = useCallback(async () => {
+    if (isRecording) {
+      await stopRecording();
+    } else if (!isTranscribing) {
+      await startRecording();
+    }
+  }, [isRecording, isTranscribing, startRecording, stopRecording]);
+
+  const handleMicLongPress = useCallback(async () => {
+    if (isRecording) {
+      await cancelRecording();
+    }
+  }, [isRecording, cancelRecording]);
+
+  const addAttachment = useCallback(
+    async (picker: () => Promise<PendingAttachment | null>) => {
+      try {
+        const att = await picker();
+        if (att) setAttachments((prev) => [...prev, att]);
+      } catch (err) {
+        log.error("Failed to pick attachment", err);
+      }
+    },
+    [],
+  );
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  }, []);
 
   const selectedRepositoryOption = findRepositoryOption(
     repositoryOptions,
@@ -173,11 +231,8 @@ export default function NewTaskScreen() {
     !!repositoryWarning && repositoryOptions.length === 0;
 
   const handleCreateTask = useCallback(async () => {
-    if (
-      !prompt.trim() ||
-      !isRepositorySelectionComplete(selection) ||
-      creating
-    ) {
+    const hasContent = !!prompt.trim() || attachments.length > 0;
+    if (!hasContent || !isRepositorySelectionComplete(selection) || creating) {
       return;
     }
 
@@ -185,10 +240,18 @@ export default function NewTaskScreen() {
 
     try {
       const trimmedPrompt = prompt.trim();
+      // The task description is plain text (it shows up as the task title and
+      // in metadata). Attachments only enter the agent prompt via the cloud
+      // payload below.
+      const descriptionText =
+        trimmedPrompt ||
+        (attachments.length === 1
+          ? `Attached: ${attachments[0].fileName}`
+          : `Attached ${attachments.length} files`);
 
       const task = await createTask({
-        description: trimmedPrompt,
-        title: trimmedPrompt.slice(0, 100),
+        description: descriptionText,
+        title: descriptionText.slice(0, 100),
         repository: selection.repository ?? undefined,
         github_integration: selection.integrationId ?? undefined,
         ...(signalReport
@@ -199,10 +262,17 @@ export default function NewTaskScreen() {
           : {}),
       });
 
+      const pendingUserMessage =
+        attachments.length > 0
+          ? serializeCloudPrompt(
+              await buildCloudPromptBlocks(trimmedPrompt, attachments),
+            )
+          : trimmedPrompt;
+
       const supportsReasoning = modelSupportsReasoning(model);
 
       await runTaskInCloud(task.id, {
-        pendingUserMessage: trimmedPrompt,
+        pendingUserMessage,
         runtimeAdapter: "claude",
         model,
         reasoningEffort: supportsReasoning ? reasoning : undefined,
@@ -216,6 +286,7 @@ export default function NewTaskScreen() {
       setCreating(false);
     }
   }, [
+    attachments,
     creating,
     mode,
     model,
@@ -226,8 +297,9 @@ export default function NewTaskScreen() {
     signalReport,
   ]);
 
+  const hasContent = !!prompt.trim() || attachments.length > 0;
   const canSubmit =
-    !!prompt.trim() && isRepositorySelectionComplete(selection) && !creating;
+    hasContent && isRepositorySelectionComplete(selection) && !creating;
   const showReasoningPill = modelSupportsReasoning(model);
 
   if (isLoading && hasGithubIntegration === null) {
@@ -358,6 +430,10 @@ export default function NewTaskScreen() {
             </View>
 
             <View className="overflow-hidden rounded-2xl border border-gray-6 bg-card">
+              <AttachmentsBar
+                attachments={attachments}
+                onRemove={removeAttachment}
+              />
               <TextInput
                 className="px-4 pt-3.5 pb-3 text-[15px] text-gray-12"
                 style={{ minHeight: 56, maxHeight: 200 }}
@@ -372,12 +448,20 @@ export default function NewTaskScreen() {
               <View className="flex-row items-center gap-2 px-2 pb-2">
                 <Pressable
                   hitSlop={8}
-                  onPress={() => {
-                    // Attachments are not wired up yet in the mobile composer.
-                  }}
-                  className="h-9 w-9 items-center justify-center"
+                  onPress={() => setAttachmentSheetOpen(true)}
+                  accessibilityLabel="Add attachment"
+                  accessibilityRole="button"
+                  className="h-9 w-9 items-center justify-center active:opacity-60"
                 >
-                  <PaperclipIcon size={18} color={themeColors.gray[10]} />
+                  <PaperclipIcon
+                    size={18}
+                    color={
+                      attachments.length > 0
+                        ? themeColors.accent[11]
+                        : themeColors.gray[10]
+                    }
+                    weight={attachments.length > 0 ? "fill" : "regular"}
+                  />
                 </Pressable>
 
                 <ScrollView
@@ -421,18 +505,44 @@ export default function NewTaskScreen() {
                 </ScrollView>
 
                 <Pressable
-                  onPress={handleCreateTask}
-                  disabled={!canSubmit}
+                  onPress={
+                    isTranscribing
+                      ? undefined
+                      : isRecording
+                        ? handleMicPress
+                        : hasContent
+                          ? handleCreateTask
+                          : handleMicPress
+                  }
+                  onLongPress={handleMicLongPress}
+                  disabled={
+                    isTranscribing || (hasContent && !canSubmit && !isRecording)
+                  }
+                  accessibilityLabel={
+                    isRecording
+                      ? "Stop recording"
+                      : hasContent
+                        ? "Create task"
+                        : "Record voice"
+                  }
                   className={`h-9 w-9 items-center justify-center rounded-lg ${
-                    canSubmit ? "bg-gray-12" : "bg-gray-5"
+                    canSubmit || isRecording || (!hasContent && !isTranscribing)
+                      ? "bg-gray-12"
+                      : "bg-gray-5"
                   }`}
                 >
-                  {creating ? (
+                  {creating || isTranscribing ? (
                     <ActivityIndicator
                       size="small"
                       color={themeColors.background}
                     />
-                  ) : (
+                  ) : isRecording ? (
+                    <StopIcon
+                      size={18}
+                      color={themeColors.status.error}
+                      weight="fill"
+                    />
+                  ) : hasContent ? (
                     <ArrowUp
                       size={18}
                       color={
@@ -440,6 +550,8 @@ export default function NewTaskScreen() {
                       }
                       weight="bold"
                     />
+                  ) : (
+                    <MicrophoneIcon size={18} color={themeColors.background} />
                   )}
                 </Pressable>
               </View>
@@ -507,6 +619,14 @@ export default function NewTaskScreen() {
           label: reasoningLevel.label,
           icon: <BrainIcon size={16} color={themeColors.gray[11]} />,
         }))}
+      />
+
+      <AttachmentSheet
+        open={attachmentSheetOpen}
+        onClose={() => setAttachmentSheetOpen(false)}
+        onPickPhoto={() => addAttachment(pickPhotoFromLibrary)}
+        onPickCamera={() => addAttachment(captureFromCamera)}
+        onPickDocument={() => addAttachment(pickDocument)}
       />
     </>
   );

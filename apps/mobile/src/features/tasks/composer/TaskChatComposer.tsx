@@ -10,7 +10,13 @@ import {
   ShieldCheck,
   Stop,
 } from "phosphor-react-native";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -22,7 +28,16 @@ import {
   View,
 } from "react-native";
 import { useVoiceRecording } from "@/features/chat";
+import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
+import { AttachmentSheet } from "./attachments/AttachmentSheet";
+import { AttachmentsBar } from "./attachments/AttachmentsBar";
+import {
+  captureFromCamera,
+  pickDocument,
+  pickPhotoFromLibrary,
+} from "./attachments/pickers";
+import type { PendingAttachment } from "./attachments/types";
 import {
   DEFAULT_EXECUTION_MODE,
   DEFAULT_MODEL,
@@ -40,8 +55,10 @@ import {
 import { Pill } from "./Pill";
 import { SelectSheet } from "./SelectSheet";
 
+const log = logger.scope("task-chat-composer");
+
 interface TaskChatComposerProps {
-  onSend: (message: string) => void;
+  onSend: (message: string, attachments: PendingAttachment[]) => void;
   onStop?: () => void;
   disabled?: boolean;
   placeholder?: string;
@@ -135,8 +152,15 @@ export function TaskChatComposer({
 }: TaskChatComposerProps) {
   const themeColors = useThemeColors();
   const [message, setMessage] = useState("");
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
+
+  const appendTranscript = useCallback((transcript: string) => {
+    setMessage((prev) => (prev ? `${prev} ${transcript}` : transcript));
+  }, []);
+
   const { status, startRecording, stopRecording, cancelRecording } =
-    useVoiceRecording();
+    useVoiceRecording({ onTranscript: appendTranscript });
 
   const isRecording = status === "recording";
   const isTranscribing = status === "transcribing";
@@ -147,24 +171,38 @@ export function TaskChatComposer({
 
   const showReasoningPill = modelSupportsReasoning(model);
 
-  const canSend = message.trim().length > 0 && !disabled && !isRecording;
+  const hasContent = message.trim().length > 0 || attachments.length > 0;
+  const canSend = hasContent && !disabled && !isRecording;
   const showStop =
     !isUserTurn && !canSend && !isRecording && !isTranscribing && !!onStop;
 
   const handleSend = () => {
     const trimmed = message.trim();
-    if (!trimmed || disabled) return;
+    if (!hasContent || disabled) return;
     setMessage("");
+    setAttachments([]);
     Keyboard.dismiss();
-    onSend(trimmed);
+    onSend(trimmed, attachments);
+  };
+
+  const addAttachment = async (
+    picker: () => Promise<PendingAttachment | null>,
+  ) => {
+    try {
+      const att = await picker();
+      if (att) setAttachments((prev) => [...prev, att]);
+    } catch (err) {
+      log.error("Failed to pick attachment", err);
+    }
+  };
+
+  const removeAttachment = (id: string) => {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
   };
 
   const handleMicPress = async () => {
     if (isRecording) {
-      const transcript = await stopRecording();
-      if (transcript) {
-        setMessage((prev) => (prev ? `${prev} ${transcript}` : transcript));
-      }
+      await stopRecording();
     } else if (!isTranscribing) {
       await startRecording();
     }
@@ -187,6 +225,10 @@ export function TaskChatComposer({
         <View className="relative">
           <PulsingBorder active={isUserTurn} color={themeColors.accent[9]} />
           <View className="overflow-hidden rounded-2xl border border-gray-6 bg-card">
+            <AttachmentsBar
+              attachments={attachments}
+              onRemove={removeAttachment}
+            />
             <TextInput
               className="px-4 pt-3.5 pb-3 text-[15px] text-gray-12"
               style={{ minHeight: 56, maxHeight: 200 }}
@@ -208,12 +250,21 @@ export function TaskChatComposer({
             <View className="flex-row items-center gap-2 px-2 pb-2">
               <Pressable
                 hitSlop={8}
-                onPress={() => {
-                  /* attachments — coming soon */
-                }}
-                className="h-9 w-9 items-center justify-center"
+                onPress={() => setAttachmentSheetOpen(true)}
+                disabled={disabled || isRecording}
+                accessibilityLabel="Add attachment"
+                accessibilityRole="button"
+                className="h-9 w-9 items-center justify-center active:opacity-60"
               >
-                <PaperclipIcon size={18} color={themeColors.gray[10]} />
+                <PaperclipIcon
+                  size={18}
+                  color={
+                    attachments.length > 0
+                      ? themeColors.accent[11]
+                      : themeColors.gray[10]
+                  }
+                  weight={attachments.length > 0 ? "fill" : "regular"}
+                />
               </Pressable>
 
               <ScrollView
@@ -341,6 +392,14 @@ export function TaskChatComposer({
           label: r.label,
           icon: <BrainIcon size={16} color={themeColors.gray[11]} />,
         }))}
+      />
+
+      <AttachmentSheet
+        open={attachmentSheetOpen}
+        onClose={() => setAttachmentSheetOpen(false)}
+        onPickPhoto={() => addAttachment(pickPhotoFromLibrary)}
+        onPickCamera={() => addAttachment(captureFromCamera)}
+        onPickDocument={() => addAttachment(pickDocument)}
       />
     </>
   );

@@ -78,6 +78,9 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
         </>
       )}
 
+      {/* Tinder-style inbox review */}
+      <Stack.Screen name="review" options={{ headerShown: false }} />
+
       {/* Report detail - modal presentation */}
       <Stack.Screen
         name="report/[id]"
@@ -113,6 +116,16 @@ function RootLayoutNav({ isConnected }: RootLayoutNavProps) {
         options={{
           presentation: "modal",
           headerShown: true,
+          headerStyle: { backgroundColor: themeColors.background },
+          headerTintColor: themeColors.gray[12],
+        }}
+      />
+      <Stack.Screen
+        name="pr-diff"
+        options={{
+          presentation: "modal",
+          headerShown: true,
+          title: "Files changed",
           headerStyle: { backgroundColor: themeColors.background },
           headerTintColor: themeColors.gray[12],
         }}

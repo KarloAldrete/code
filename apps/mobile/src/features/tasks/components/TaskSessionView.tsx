@@ -22,7 +22,12 @@ import {
 } from "@/features/chat";
 import { getRandomThinkingActivity } from "@/features/chat/utils/thinkingMessages";
 import { useThemeColors } from "@/lib/theme";
-import type { PlanEntry, SessionEvent, SessionNotification } from "../types";
+import type {
+  PlanEntry,
+  SessionEvent,
+  SessionNotification,
+  SessionNotificationAttachment,
+} from "../types";
 import { PlanStatusBar } from "./PlanStatusBar";
 import { QuestionCard } from "./QuestionCard";
 
@@ -64,6 +69,7 @@ interface ParsedMessage {
   ts?: number;
   toolData?: ToolData;
   children?: ParsedMessage[];
+  attachments?: SessionNotificationAttachment[];
 }
 
 function mapToolStatus(
@@ -84,7 +90,12 @@ function mapToolStatus(
 }
 
 type ParsedNotification =
-  | { type: "user" | "agent" | "agent_complete" | "thought"; content: string }
+  | {
+      type: "user";
+      content: string;
+      attachments?: SessionNotificationAttachment[];
+    }
+  | { type: "agent" | "agent_complete" | "thought"; content: string }
   | { type: "tool" | "tool_update"; toolData: ToolData }
   | { type: "plan"; entries: PlanEntry[] };
 
@@ -99,11 +110,24 @@ function parseSessionNotification(
   switch (update.sessionUpdate) {
     case "user_message_chunk":
     case "agent_message_chunk": {
-      if (update.content?.type === "text") {
+      const hasText = update.content?.type === "text";
+      const isUser = update.sessionUpdate === "user_message_chunk";
+      if (isUser) {
+        const attachments = update.attachments;
+        // Drop only if there's neither text nor attachments to render.
+        if (!hasText && (!attachments || attachments.length === 0)) {
+          return null;
+        }
         return {
-          type:
-            update.sessionUpdate === "user_message_chunk" ? "user" : "agent",
-          content: update.content.text,
+          type: "user",
+          content: hasText ? (update.content?.text ?? "") : "",
+          attachments,
+        };
+      }
+      if (hasText) {
+        return {
+          type: "agent",
+          content: update.content?.text ?? "",
         };
       }
       return null;
@@ -301,6 +325,7 @@ function processNewEvents(
           type: "user",
           content: parsed.content ?? "",
           ts: event.ts,
+          attachments: parsed.attachments,
         });
         state.lastAgentMsgIdx = null;
         break;
@@ -403,22 +428,58 @@ function processNewEvents(
   return { messages: state.lastSnapshot, plan: state.plan };
 }
 
+const THOUGHT_COLLAPSED_LINE_COUNT = 5;
+
 function CollapsedThought({ content }: { content: string }) {
   const themeColors = useThemeColors();
   const [expanded, setExpanded] = useState(false);
+  const [showAllLines, setShowAllLines] = useState(false);
+
+  const hasContent = content.trim().length > 0;
+  const contentLines = content.split("\n");
+  const isLineCollapsible =
+    hasContent && contentLines.length > THOUGHT_COLLAPSED_LINE_COUNT;
+  const hiddenLineCount = contentLines.length - THOUGHT_COLLAPSED_LINE_COUNT;
+  const displayedContent =
+    showAllLines || !isLineCollapsible
+      ? content
+      : contentLines.slice(0, THOUGHT_COLLAPSED_LINE_COUNT).join("\n");
 
   return (
-    <Pressable onPress={() => setExpanded(!expanded)} className="px-4 py-0.5">
-      <View className="flex-row items-center gap-2">
-        <Brain size={12} color={themeColors.gray[8]} />
-        <Text className="font-mono text-[12px] text-gray-8">Thought</Text>
-      </View>
-      {expanded && (
-        <Text className="mt-1 ml-5 font-mono text-[11px] text-gray-8 leading-4">
-          {content}
-        </Text>
+    <View className="px-4 py-0.5">
+      <Pressable
+        onPress={() => {
+          if (!hasContent) return;
+          setExpanded((v) => !v);
+          if (!expanded) setShowAllLines(false);
+        }}
+        className="flex-row items-center gap-2"
+      >
+        <Brain size={12} color={themeColors.gray[11]} />
+        <Text className="text-[13px] text-gray-11">Thinking</Text>
+      </Pressable>
+      {expanded && hasContent && (
+        <View className="mt-1 ml-5 overflow-hidden rounded-lg border border-gray-6 px-3 py-2">
+          <Text
+            className="font-mono text-[12px] text-gray-11 leading-4"
+            selectable
+          >
+            {displayedContent}
+          </Text>
+          {isLineCollapsible && !showAllLines && (
+            <Pressable
+              onPress={() => setShowAllLines(true)}
+              className="mt-1 self-start"
+              hitSlop={6}
+            >
+              <Text className="text-[12px] text-gray-10">
+                +{hiddenLineCount} more lines
+              </Text>
+            </Pressable>
+          )}
+        </View>
       )}
-    </Pressable>
+    </View>
   );
 }
 
@@ -791,7 +852,13 @@ export function TaskSessionView({
     ({ item }: { item: ParsedMessage }) => {
       switch (item.type) {
         case "user":
-          return <HumanMessage content={item.content} timestamp={item.ts} />;
+          return (
+            <HumanMessage
+              content={item.content}
+              timestamp={item.ts}
+              attachments={item.attachments}
+            />
+          );
         case "agent":
           return (
             <AgentMessage

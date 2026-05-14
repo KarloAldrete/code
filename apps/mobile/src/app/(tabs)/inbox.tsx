@@ -1,25 +1,56 @@
 import { useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FilterSheet } from "@/features/inbox/components/FilterSheet";
 import { FloatingInboxHeader } from "@/features/inbox/components/FloatingInboxHeader";
+import { InboxViewToggle } from "@/features/inbox/components/InboxViewToggle";
 import { ReportList } from "@/features/inbox/components/ReportList";
 import { ReviewerFilterSheet } from "@/features/inbox/components/ReviewerFilterSheet";
+import { TinderView } from "@/features/inbox/components/TinderView";
 import { useInboxReports } from "@/features/inbox/hooks/useInboxReports";
+import { useDismissedReportsStore } from "@/features/inbox/stores/dismissedReportsStore";
 import { useInboxFilterStore } from "@/features/inbox/stores/inboxFilterStore";
+import { useInboxStore } from "@/features/inbox/stores/inboxStore";
 import type { SignalReport } from "@/features/inbox/types";
+import { useIntegrations } from "@/features/tasks/hooks/useIntegrations";
+
+type InboxViewMode = "list" | "tinder";
 
 export default function InboxScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { isFetching, error } = useInboxReports();
+  const { reports, isFetching, isLoading, error } = useInboxReports();
   const [filterOpen, setFilterOpen] = useState(false);
   const [reviewerOpen, setReviewerOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<InboxViewMode>("list");
   const reviewerFilterCount = useInboxFilterStore(
     (s) => s.suggestedReviewerFilter.length,
   );
 
+  // ── Tinder mode data ──────────────────────────────────────────────────────
+  const dismissedIds = useDismissedReportsStore((s) => s.dismissedIds);
+  const setCurrentIndex = useInboxStore((s) => s.setCurrentIndex);
+  const { repositoryOptions } = useIntegrations();
+
+  // Same data as the list view, filtered to reports where the user is a
+  // suggested reviewer (the eye icon in the list) and not yet dismissed.
+  const tinderReports = useMemo(
+    () =>
+      reports.filter(
+        (r) => r.is_suggested_reviewer && !dismissedIds.includes(r.id),
+      ),
+    [reports, dismissedIds],
+  );
+
+  // Reset card index when switching to tinder mode
+  useEffect(() => {
+    if (viewMode === "tinder") {
+      setCurrentIndex(0);
+    }
+  }, [viewMode, setCurrentIndex]);
+
+  // ── List mode handlers ────────────────────────────────────────────────────
   const handleReportPress = useCallback(
     (report: SignalReport) => {
       router.push(`/report/${report.id}`);
@@ -27,16 +58,34 @@ export default function InboxScreen() {
     [router],
   );
 
-  // Header occupies insets.top + 6 (top pad) + 44 (button stack) + 8 (bottom
+  const handleTaskStarted = useCallback(
+    (taskId: string) => {
+      router.push(`/task/${taskId}`);
+    },
+    [router],
+  );
+
+  // Header occupies insets.top + 6 (top pad) + 40 (MenuButton) + 8 (bottom
   // pad), plus a small buffer so the first row isn't hugging the fade edge.
-  const headerHeight = insets.top + 72;
+  const headerHeight = insets.top + 60;
 
   return (
     <View className="flex-1 bg-background">
-      <ReportList
-        onReportPress={handleReportPress}
-        contentInsetTop={headerHeight}
-      />
+      {viewMode === "list" ? (
+        <ReportList
+          onReportPress={handleReportPress}
+          contentInsetTop={headerHeight}
+        />
+      ) : (
+        <View style={{ paddingTop: headerHeight }} className="flex-1">
+          <TinderView
+            reports={tinderReports}
+            repositoryOptions={repositoryOptions}
+            onTaskStarted={handleTaskStarted}
+            isLoading={isLoading}
+          />
+        </View>
+      )}
 
       <FloatingInboxHeader
         isFetching={isFetching}
@@ -45,6 +94,8 @@ export default function InboxScreen() {
         onReviewerPress={() => setReviewerOpen(true)}
         onFilterPress={() => setFilterOpen(true)}
       />
+
+      <InboxViewToggle mode={viewMode} onModeChange={setViewMode} />
 
       <FilterSheet visible={filterOpen} onClose={() => setFilterOpen(false)} />
       <ReviewerFilterSheet
