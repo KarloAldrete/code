@@ -1,7 +1,11 @@
 import { KeyHint } from "@components/ui/KeyHint";
 import { useFunSpeak } from "@features/fun-mode/hooks/useFunSpeak";
-import { Info, Lightning, Plus } from "@phosphor-icons/react";
-import { Tooltip } from "@radix-ui/themes";
+import { NoticesList } from "@features/hedgemony/components/notices/NoticesList";
+import { useFederation } from "@features/hedgemony/hooks/useFederation";
+import { useNestStore } from "@features/hedgemony/stores/nestStore";
+import { Bell, Info, Lightning, Plus } from "@phosphor-icons/react";
+import { ScrollArea, Tooltip } from "@radix-ui/themes";
+import { useEffect, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { CommandConsole } from "./CommandConsole";
 
@@ -13,16 +17,69 @@ interface BuilderCommandPanelProps {
   onClose: () => void;
 }
 
+function formatUnreadCount(count: number): string {
+  if (count > 9) return "9+";
+  return String(count);
+}
+
 export function BuilderCommandPanel({
   onBuildNest,
   onQuickNest,
   onClose,
 }: BuilderCommandPanelProps) {
   const t = useFunSpeak();
+  const [noticesOpen, setNoticesOpen] = useState(false);
+  const {
+    openProposals,
+    unreadCount,
+    acceptProposal,
+    dismissProposal,
+    snoozeProposal,
+    markNoticesRead,
+  } = useFederation();
+  const nestsById = useNestStore((s) => s.nests);
+
   useHotkeys("b", onBuildNest, [onBuildNest]);
   useHotkeys("q", onQuickNest, [onQuickNest]);
+  useHotkeys("n", () => setNoticesOpen((open) => !open), []);
+
+  useEffect(() => {
+    if (noticesOpen && unreadCount > 0) {
+      markNoticesRead();
+    }
+  }, [noticesOpen, unreadCount, markNoticesRead]);
+
   return (
     <CommandConsole consoleKey="builder-command">
+      {noticesOpen && (
+        <div className="flex max-h-[280px] min-h-[80px] flex-col border-(--accent-a5) border-b">
+          <div className="flex items-center justify-between px-4 py-2">
+            <span className="font-mono text-(--accent-11) text-[10px] uppercase tracking-[0.18em]">
+              Notices
+            </span>
+            <span className="text-(--gray-10) text-[11px]">
+              {openProposals.length === 0
+                ? "All clear"
+                : openProposals.length === 1
+                  ? "1 open"
+                  : `${openProposals.length} open`}
+            </span>
+          </div>
+          <ScrollArea
+            type="auto"
+            scrollbars="vertical"
+            className="min-h-0 flex-1"
+          >
+            <NoticesList
+              proposals={openProposals}
+              nestsById={nestsById}
+              onAccept={acceptProposal}
+              onDismiss={dismissProposal}
+              onSnooze={snoozeProposal}
+            />
+          </ScrollArea>
+        </div>
+      )}
       <div className="flex items-stretch gap-3 px-3 py-2">
         <CommandConsole.Section noDivider className="min-w-[120px] pr-3">
           <div className="flex items-center gap-1.5">
@@ -76,6 +133,32 @@ export function BuilderCommandPanel({
             <Lightning size={14} />
             {t("Quick nest")}
             <KeyHint className="ml-1">Q</KeyHint>
+          </button>
+          <button
+            type="button"
+            onClick={() => setNoticesOpen((open) => !open)}
+            aria-pressed={noticesOpen}
+            aria-label={
+              unreadCount > 0 ? `Notices (${unreadCount} unread)` : "Notices"
+            }
+            className={`relative flex h-9 items-center gap-1.5 rounded-(--radius-2) border px-3 font-medium text-[12px] transition-colors ${
+              noticesOpen
+                ? "border-(--accent-7) bg-(--accent-a3) text-(--accent-11) hover:bg-(--accent-a5) hover:text-(--accent-12)"
+                : "border-(--gray-6) bg-(--gray-a2) text-(--gray-12) hover:bg-(--gray-a4)"
+            }`}
+            title="Builder notices (N)"
+          >
+            <Bell size={14} />
+            {t("Notices")}
+            {unreadCount > 0 && (
+              <span
+                data-testid="notices-tab-badge"
+                className="ml-0.5 inline-flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-(--red-9) px-1 font-medium text-[10px] text-white leading-none"
+              >
+                {formatUnreadCount(unreadCount)}
+              </span>
+            )}
+            <KeyHint className="ml-1">N</KeyHint>
           </button>
         </CommandConsole.Section>
 

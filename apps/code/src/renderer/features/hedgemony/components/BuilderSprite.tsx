@@ -1,3 +1,4 @@
+import { useFederation } from "@features/hedgemony/hooks/useFederation";
 import { Tooltip } from "@radix-ui/themes";
 import {
   type AnimationPlaybackControls,
@@ -48,6 +49,24 @@ interface BuilderSpriteProps {
   onSegmentComplete?: (reachedIndex: number) => void;
 }
 
+function formatUnreadBadgeCount(count: number): string {
+  if (count > 9) return "9+";
+  return String(count);
+}
+
+function BuilderUnreadBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <output
+      data-testid="builder-unread-badge"
+      aria-label={`${count} unread notices`}
+      className="-translate-y-1 absolute top-0 right-0 inline-flex h-[18px] min-w-[18px] translate-x-1 items-center justify-center rounded-full border border-(--gray-1) bg-(--red-9) px-1 font-semibold text-[10px] text-white leading-none shadow-sm"
+    >
+      {formatUnreadBadgeCount(count)}
+    </output>
+  );
+}
+
 export function BuilderSprite({
   path,
   selected,
@@ -58,6 +77,7 @@ export function BuilderSprite({
   onSegmentComplete,
 }: BuilderSpriteProps) {
   const builderName = BUILDER_NAME;
+  const { unreadCount } = useFederation();
   const initial = path[0] ?? { x: 0, y: 0 };
   const motionX = useMotionValue(initial.x);
   const motionY = useMotionValue(initial.y);
@@ -205,6 +225,7 @@ export function BuilderSprite({
               facing={facing}
               size={SPRITE_SIZE}
             />
+            <BuilderUnreadBadge count={unreadCount} />
           </div>
           <div className="mt-1 max-w-35 truncate rounded-(--radius-2) bg-(--gray-3) px-2 py-0.5 font-medium text-(--gray-11) text-[11px] shadow-sm">
             {builderName}
