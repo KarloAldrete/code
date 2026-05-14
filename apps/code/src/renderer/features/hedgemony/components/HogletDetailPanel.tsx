@@ -1,4 +1,5 @@
 import { CommandCenterSessionView } from "@features/command-center/components/CommandCenterSessionView";
+import { archiveTaskImperative } from "@features/tasks/hooks/useArchiveTask";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import type { Hoglet } from "@main/services/hedgemony/schemas";
 import {
@@ -24,6 +25,7 @@ import { trpcClient } from "@renderer/trpc/client";
 import type { Task } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useNavigationStore } from "@stores/navigationStore";
+import { useQueryClient } from "@tanstack/react-query";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { useState } from "react";
@@ -36,6 +38,7 @@ import {
   useHogletStore,
   WILD_BUCKET,
 } from "../stores/hogletStore";
+import { wildHogletPosition } from "../utils/hogletPositions";
 import { CommandConsole } from "./CommandConsole";
 import { STATUS_BADGE_COLOR, type TaskStatus } from "./hogletStatus";
 
@@ -74,6 +77,7 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
   const hasOverride = useHogletPositionStore(
     (s) => s.positions[hoglet.id] !== undefined,
   );
+  const queryClient = useQueryClient();
 
   const [chatOpen, setChatOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -105,10 +109,13 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
     setRetiring(true);
 
     const bucketKey = bucketKeyForHoglet(hoglet);
-    const original = useHogletStore
-      .getState()
-      .byBucket[bucketKey]?.find((h) => h.id === hoglet.id);
-    useHogletStore.getState().remove(bucketKey, hoglet.id);
+    const store = useHogletStore.getState();
+    const original = store.byBucket[bucketKey]?.find((h) => h.id === hoglet.id);
+
+    const posOverride = useHogletPositionStore.getState().positions[hoglet.id];
+    const pos = posOverride ?? wildHogletPosition(hoglet.id);
+    store.startDying(hoglet.id, pos.x, pos.y);
+    store.remove(bucketKey, hoglet.id);
     clearPosition(hoglet.id);
     setRetireDialogOpen(false);
     onClose();
@@ -120,9 +127,13 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
       track(ANALYTICS_EVENTS.HEDGEMONY_HOGLET_RETIRED, {
         source: retireSourceForHoglet(hoglet),
       });
+      await archiveTaskImperative(hoglet.taskId, queryClient, {
+        skipNavigate: true,
+      });
     } catch (error) {
       log.error("Failed to retire hoglet", { hogletId: hoglet.id, error });
       if (original) {
+        useHogletStore.getState().finalizeDeath(hoglet.id);
         useHogletStore.getState().upsert(bucketKey, original);
       }
       toast.error("Could not retire hoglet");

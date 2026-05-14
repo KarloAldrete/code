@@ -2,11 +2,13 @@ import { getAuthenticatedClient } from "@features/auth/hooks/authClient";
 import type { HogletWatchEvent } from "@main/services/hedgemony/schemas";
 import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
+import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import {
   SIGNAL_STAGING_BUCKET,
   useHogletStore,
   WILD_BUCKET,
 } from "../stores/hogletStore";
+import { wildHogletPosition } from "../utils/hogletPositions";
 
 const log = logger.scope("hoglet-subscription-service");
 
@@ -14,10 +16,21 @@ const TASK_SUMMARY_REFRESH_MS = 10_000;
 
 type WatchHandle = { unsubscribe: () => void };
 
+function resolveHogletPosition(hogletId: string): { x: number; y: number } {
+  const override = useHogletPositionStore.getState().positions[hogletId];
+  if (override) return override;
+  return wildHogletPosition(hogletId);
+}
+
 function applyWatchEvent(bucket: string, event: HogletWatchEvent): void {
   const store = useHogletStore.getState();
-  if (event.kind === "upsert") store.upsert(bucket, event.hoglet);
-  else store.remove(bucket, event.hogletId);
+  if (event.kind === "upsert") {
+    store.upsert(bucket, event.hoglet);
+  } else {
+    const pos = resolveHogletPosition(event.hogletId);
+    store.startDying(event.hogletId, pos.x, pos.y);
+    store.remove(bucket, event.hogletId);
+  }
 }
 
 async function refreshTaskSummaries(taskIds: string[]): Promise<void> {

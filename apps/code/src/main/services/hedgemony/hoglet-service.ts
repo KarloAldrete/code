@@ -320,6 +320,12 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
     });
   }
 
+  retireByTaskId(taskId: string): void {
+    const existing = this.hoglets.findByTaskId(taskId);
+    if (!existing || existing.deletedAt) return;
+    this.retire({ hogletId: existing.id });
+  }
+
   /**
    * Spawns a follow-up hoglet in `nestId` to address late feedback on a
    * merged/closed parent's PR. Inherits the parent Task's repository so the

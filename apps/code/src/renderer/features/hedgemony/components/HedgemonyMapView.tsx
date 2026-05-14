@@ -31,6 +31,7 @@ import { collectHogletWorldPositions } from "../utils/hogletPositions";
 import { findPath } from "../utils/pathfinding";
 import { worldObstacles } from "../utils/worldObstacles";
 import { BuilderCommandPanel } from "./BuilderCommandPanel";
+import { DyingHogletLayer } from "./DyingHogletLayer";
 import { HedgehouseCommandPanel } from "./HedgehouseCommandPanel";
 import { HedgemonyHoldingPanel } from "./HedgemonyHoldingPanel";
 import {
@@ -565,6 +566,7 @@ export function HedgemonyMapView() {
           selectedHogletIds={selectedHogletIds}
           onHogletSelect={handleHogletSelect}
         />
+        <DyingHogletLayer />
       </HedgemonyMapSurface>
       <AnimatePresence>
         {activeNest && (

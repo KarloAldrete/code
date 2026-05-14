@@ -1,3 +1,4 @@
+import disappearUrl from "@renderer/assets/sounds/disappear.wav";
 import { logger } from "@utils/logger";
 
 const log = logger.scope("hedgemony-sfx");
@@ -10,7 +11,8 @@ export type SfxName =
   | "arrive"
   | "spawn"
   | "error"
-  | "goalComplete";
+  | "goalComplete"
+  | "retire";
 
 class SfxEngine {
   private ctx: AudioContext | null = null;
@@ -58,6 +60,9 @@ class SfxEngine {
         return;
       case "goalComplete":
         this.playGoalComplete(ctx, master);
+        return;
+      case "retire":
+        this.playFile(ctx, master, disappearUrl);
         return;
     }
   }
@@ -268,6 +273,19 @@ class SfxEngine {
       osc.start(start);
       osc.stop(start + 0.32);
     });
+  }
+
+  private playFile(ctx: AudioContext, dest: AudioNode, url: string): void {
+    fetch(url)
+      .then((res) => res.arrayBuffer())
+      .then((buf) => ctx.decodeAudioData(buf))
+      .then((decoded) => {
+        const src = ctx.createBufferSource();
+        src.buffer = decoded;
+        src.connect(dest);
+        src.start();
+      })
+      .catch((err) => log.warn("Failed to play sfx file", { err }));
   }
 
   private click(ctx: AudioContext, dest: AudioNode, gainVal: number): void {

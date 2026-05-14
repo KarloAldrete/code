@@ -206,6 +206,12 @@ export const hedgemonyRouter = router({
       getHogletService().retire(input);
     }),
 
+    retireByTaskId: publicProcedure
+      .input(z.object({ taskId: z.string() }))
+      .mutation(({ input }) => {
+        getHogletService().retireByTaskId(input.taskId);
+      }),
+
     list: publicProcedure
       .input(listHogletsInput)
       .output(listHogletsOutput)

@@ -5,16 +5,25 @@ import { create } from "zustand";
 export const WILD_BUCKET = "wild";
 export const SIGNAL_STAGING_BUCKET = "signal_staging";
 
+export interface DyingHogletEntry {
+  hogletId: string;
+  x: number;
+  y: number;
+}
+
 interface HogletStoreState {
   byBucket: Record<string, Hoglet[]>;
   taskSummaries: Record<string, Schemas.TaskSummary>;
   loaded: Record<string, boolean>;
+  dying: Map<string, DyingHogletEntry>;
 }
 
 interface HogletStoreActions {
   setBucket: (bucket: string, hoglets: Hoglet[]) => void;
   upsert: (bucket: string, hoglet: Hoglet) => void;
   remove: (bucket: string, hogletId: string) => void;
+  startDying: (hogletId: string, x: number, y: number) => void;
+  finalizeDeath: (hogletId: string) => void;
   setTaskSummaries: (summaries: Schemas.TaskSummary[]) => void;
   reset: () => void;
 }
@@ -25,6 +34,7 @@ const initialState: HogletStoreState = {
   byBucket: {},
   taskSummaries: {},
   loaded: {},
+  dying: new Map(),
 };
 
 export const useHogletStore = create<HogletStore>()((set) => ({
@@ -55,6 +65,20 @@ export const useHogletStore = create<HogletStore>()((set) => ({
           [bucket]: current.filter((h) => h.id !== hogletId),
         },
       };
+    }),
+
+  startDying: (hogletId, x, y) =>
+    set((state) => {
+      const next = new Map(state.dying);
+      next.set(hogletId, { hogletId, x, y });
+      return { dying: next };
+    }),
+
+  finalizeDeath: (hogletId) =>
+    set((state) => {
+      const next = new Map(state.dying);
+      next.delete(hogletId);
+      return { dying: next };
     }),
 
   setTaskSummaries: (summaries) =>
@@ -104,3 +128,7 @@ export const selectHogletById =
     }
     return null;
   };
+
+export const selectDyingHoglets = (state: HogletStore): DyingHogletEntry[] => [
+  ...state.dying.values(),
+];

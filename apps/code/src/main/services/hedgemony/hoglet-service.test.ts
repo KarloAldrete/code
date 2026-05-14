@@ -220,6 +220,7 @@ describe("HogletService", () => {
 
     expect(repo.create).toHaveBeenCalledWith({
       taskId: "task-1",
+      name: expect.any(String),
       nestId: null,
       signalReportId: null,
     });
@@ -416,6 +417,7 @@ describe("HogletService", () => {
 
       expect(repo.create).toHaveBeenCalledWith({
         taskId: "task-1",
+        name: expect.any(String),
         nestId: null,
         signalReportId: "sr-1",
         affinityScore: null,
@@ -454,6 +456,7 @@ describe("HogletService", () => {
 
       expect(repo.create).toHaveBeenCalledWith({
         taskId: "task-1",
+        name: expect.any(String),
         nestId: "nest-checkout",
         signalReportId: "sr-1",
         affinityScore: 0.82,
