@@ -56,11 +56,11 @@ export function CommandConsole({
       transition={SLIDE_UP_TRANSITION}
       onPointerDown={onPointerDown}
       onContextMenuCapture={onContextMenuCapture}
-      className={`-translate-x-1/2 absolute bottom-3 left-1/2 z-10 ${WIDTH_CLASS[size]} ${className ?? ""}`}
+      className={`-translate-x-1/2 absolute bottom-3 left-1/2 z-10 flex flex-col ${WIDTH_CLASS[size]} ${className ?? ""}`}
       style={{ width, ...style }}
     >
-      <div className="command-console-bevel-outer">
-        <div className="command-console-bevel-inner relative flex flex-col">
+      <div className="command-console-bevel-outer flex min-h-0 flex-1 flex-col">
+        <div className="command-console-bevel-inner relative flex min-h-0 flex-1 flex-col">
           <div className="-translate-x-1/2 absolute top-0 left-1/2 h-px w-[70%]">
             <div className="command-console-rail h-full w-full" />
           </div>
