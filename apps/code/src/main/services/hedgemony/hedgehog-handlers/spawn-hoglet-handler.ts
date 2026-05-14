@@ -60,8 +60,14 @@ export const spawnHogletHandler: HedgehogToolHandler = {
       }
     }
     const available = ctx.repositoryContext.availableRepositories;
-    const availableSet = new Set(available);
-    if (args.repository && !availableSet.has(args.repository)) {
+    // GitHub slugs are case-insensitive on github.com; the integration API
+    // returns lowercase while operator transcripts often capitalize the org.
+    // Compare on lowercase to keep `Brooker-Fam/foo` and `brooker-fam/foo`
+    // from being treated as different repos.
+    const availableLowerSet = new Set(available.map((s) => s.toLowerCase()));
+    const hasAvailable = (slug: string): boolean =>
+      availableLowerSet.has(slug.toLowerCase());
+    if (args.repository && !hasAvailable(args.repository)) {
       const detail =
         available.length === 0
           ? "no repositories are configured locally"
@@ -74,7 +80,7 @@ export const spawnHogletHandler: HedgehogToolHandler = {
       );
     }
     const persistedPrimary =
-      ctx.nest.primaryRepository && availableSet.has(ctx.nest.primaryRepository)
+      ctx.nest.primaryRepository && hasAvailable(ctx.nest.primaryRepository)
         ? ctx.nest.primaryRepository
         : null;
     if (ctx.nest.primaryRepository && persistedPrimary === null) {

@@ -120,11 +120,45 @@ const integrationsResponseSchema = z
   })
   .passthrough();
 
+const repoEntrySchema = z.union([
+  z.string().min(1).max(140),
+  z
+    .object({
+      full_name: z.string().min(1).max(140).optional(),
+      name: z.string().min(1).max(140).optional(),
+    })
+    .passthrough(),
+]);
+
+/**
+ * The repos endpoint returns one of several shapes depending on installation
+ * state and pagination wrapper. The renderer's `normalizeGithubRepositories`
+ * already handles the same set; mirror its tolerance here so a wrapper change
+ * doesn't silently empty the integration cache and lock the hedgehog out of
+ * every repo for 5 minutes.
+ */
 const integrationReposResponseSchema = z
   .object({
-    results: z.array(z.string().min(1).max(140)).optional(),
+    repositories: z.array(repoEntrySchema).optional(),
+    results: z.array(repoEntrySchema).optional(),
   })
   .passthrough();
+
+function extractRepoSlugs(
+  data: z.infer<typeof integrationReposResponseSchema>,
+): string[] {
+  const entries = data.repositories ?? data.results ?? [];
+  const slugs: string[] = [];
+  for (const entry of entries) {
+    if (typeof entry === "string") {
+      slugs.push(entry);
+      continue;
+    }
+    const slug = entry.full_name ?? entry.name;
+    if (slug && slug.length > 0) slugs.push(slug);
+  }
+  return slugs;
+}
 
 const signalReportSchema = z
   .object({
@@ -553,13 +587,21 @@ export class CloudTaskClient {
 
       const map = new Map<string, string>();
       const slugs: string[] = [];
+      let anyInstallationFailed = false;
       await Promise.all(
         integrations.map(async (integration) => {
           const reposRes = await this.auth.authenticatedFetch(
             fetch,
             `${apiHost}/api/users/@me/integrations/github/${integration.installation_id}/repos/?limit=500`,
           );
-          if (!reposRes.ok) return;
+          if (!reposRes.ok) {
+            anyInstallationFailed = true;
+            log.warn("integration repos fetch failed", {
+              installationId: integration.installation_id,
+              status: reposRes.status,
+            });
+            return;
+          }
           let reposData: z.infer<typeof integrationReposResponseSchema>;
           try {
             reposData = await parseJsonResponse(
@@ -568,13 +610,14 @@ export class CloudTaskClient {
               integrationReposResponseSchema,
             );
           } catch (error) {
+            anyInstallationFailed = true;
             log.warn("integration repos response rejected by schema", {
               installationId: integration.installation_id,
               error: error instanceof Error ? error.message : String(error),
             });
             return;
           }
-          for (const repo of reposData.results ?? []) {
+          for (const repo of extractRepoSlugs(reposData)) {
             const key = repo.toLowerCase();
             if (!map.has(key)) {
               map.set(key, integration.id);
@@ -584,8 +627,27 @@ export class CloudTaskClient {
         }),
       );
 
+      // If every installation's repo list failed, don't cache — otherwise the
+      // hedgehog gets locked out for 5 minutes on transient network blips.
+      if (anyInstallationFailed && map.size === 0) {
+        log.warn(
+          "resolveGithubUserIntegration: all installation repo fetches failed, skipping cache write",
+          { repository, integrationCount: integrations.length },
+        );
+        return null;
+      }
+
       this.repoIntegrationCache = { map, slugs, fetchedAt: now };
-      return map.get(repository.toLowerCase()) ?? null;
+      const matched = map.get(repository.toLowerCase()) ?? null;
+      log.info("resolveGithubUserIntegration result", {
+        repository,
+        lookupKey: repository.toLowerCase(),
+        matchedIntegrationId: matched,
+        mapSize: map.size,
+        sampleSlugs: slugs.slice(0, 10),
+        anyInstallationFailed,
+      });
+      return matched;
     } catch (error) {
       log.warn("resolveGithubUserIntegration failed", {
         repository,
