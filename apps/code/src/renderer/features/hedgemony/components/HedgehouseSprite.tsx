@@ -29,7 +29,17 @@ export function HedgehouseSprite({
         transform: `translate(calc(-50% + ${HEDGEHOUSE_MAP_X}px), calc(-50% + ${HEDGEHOUSE_MAP_Y}px))`,
       }}
     >
-      <Tooltip content="Hedgehouse — town hall of the wilds">
+      <Tooltip
+        content={
+          <div className="flex flex-col gap-1">
+            <span className="font-medium">Hedgehouse</span>
+            <span className="text-[11px] opacity-80">
+              Spawn wild hoglets — one-off agent tasks. No nest, no
+              orchestration.
+            </span>
+          </div>
+        }
+      >
         <motion.button
           type="button"
           data-hedgemony-hedgehouse

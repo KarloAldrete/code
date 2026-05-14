@@ -12,7 +12,10 @@ vi.mock("../../utils/logger.js", () => ({
 }));
 
 import type { HogletRepository } from "../../db/repositories/hoglet-repository";
+import type { PrDependencyRepository } from "../../db/repositories/pr-dependency-repository";
+import { createMockPrDependencyRepository } from "../../db/repositories/pr-dependency-repository.mock";
 import type { AffinityRouterService } from "./affinity-router";
+import type { CloudTaskClient } from "./cloud-task-client";
 import {
   HogletService,
   MAX_SIGNAL_STAGING_HOGLETS,
@@ -137,15 +140,62 @@ function createMockRepo() {
   return repo as typeof repo & HogletRepository;
 }
 
+function createMockCloudTaskClient(
+  taskOverrides: Partial<{
+    id: string;
+    title: string;
+    repository: string | null;
+  }> = {},
+): CloudTaskClient {
+  return {
+    createTask: vi.fn(
+      async (input: { title: string; description: string }) => ({
+        id: taskOverrides.id ?? `task-${crypto.randomUUID().slice(0, 8)}`,
+        task_number: null,
+        slug: "",
+        title: taskOverrides.title ?? input.title,
+        description: input.description,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        origin_product: "user_created",
+        repository: taskOverrides.repository ?? null,
+      }),
+    ),
+    getTaskWithLatestRun: vi.fn(async (taskId: string) => ({
+      task: {
+        id: taskId,
+        task_number: null,
+        slug: "",
+        title: "parent",
+        description: "",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        origin_product: "user_created",
+        repository: taskOverrides.repository ?? null,
+      },
+      latestRun: null,
+    })),
+  } as unknown as CloudTaskClient;
+}
+
 describe("HogletService", () => {
   let repo: ReturnType<typeof createMockRepo>;
   let router: AffinityRouterService;
+  let prDeps: ReturnType<typeof createMockPrDependencyRepository>;
+  let cloudTasks: CloudTaskClient;
   let service: HogletService;
 
   beforeEach(() => {
     repo = createMockRepo();
     router = createMockAffinityRouter(null);
-    service = new HogletService(repo, router);
+    prDeps = createMockPrDependencyRepository();
+    cloudTasks = createMockCloudTaskClient();
+    service = new HogletService(
+      repo,
+      router,
+      prDeps as unknown as PrDependencyRepository,
+      cloudTasks,
+    );
   });
 
   it("records an adhoc hoglet and emits a wild change event", () => {
@@ -373,7 +423,12 @@ describe("HogletService", () => {
         nestId: "nest-checkout",
         score: 0.82,
       });
-      service = new HogletService(repo, router);
+      service = new HogletService(
+        repo,
+        router,
+        prDeps as unknown as PrDependencyRepository,
+        cloudTasks,
+      );
       const listener = vi.fn();
       service.on(HedgemonyEvent.HogletChanged, listener);
 
@@ -405,7 +460,12 @@ describe("HogletService", () => {
         });
       }
       router = createMockAffinityRouter({ nestId: "nest-A", score: 0.9 });
-      service = new HogletService(repo, router);
+      service = new HogletService(
+        repo,
+        router,
+        prDeps as unknown as PrDependencyRepository,
+        cloudTasks,
+      );
       const routed = await service.recordSignalBacked({
         taskId: "task-routed",
         signalReportId: "sr-routed",
@@ -479,7 +539,12 @@ describe("HogletService", () => {
   describe("affinity score clearing", () => {
     it("clears affinityScore on adopt", async () => {
       router = createMockAffinityRouter({ nestId: "nest-A", score: 0.9 });
-      service = new HogletService(repo, router);
+      service = new HogletService(
+        repo,
+        router,
+        prDeps as unknown as PrDependencyRepository,
+        cloudTasks,
+      );
       const routed = await service.recordSignalBacked({
         taskId: "task-1",
         signalReportId: "sr-1",
@@ -497,7 +562,12 @@ describe("HogletService", () => {
 
     it("clears affinityScore on release", async () => {
       router = createMockAffinityRouter({ nestId: "nest-A", score: 0.75 });
-      service = new HogletService(repo, router);
+      service = new HogletService(
+        repo,
+        router,
+        prDeps as unknown as PrDependencyRepository,
+        cloudTasks,
+      );
       const routed = await service.recordSignalBacked({
         taskId: "task-1",
         signalReportId: "sr-1",
@@ -537,6 +607,54 @@ describe("HogletService", () => {
       expect(() => service.dismissSignal({ hogletId: "missing" })).toThrowError(
         "hoglet_not_found",
       );
+    });
+  });
+
+  describe("spawnFollowUp", () => {
+    it("creates a follow-up hoglet and pr_dependency edge", async () => {
+      cloudTasks = createMockCloudTaskClient({
+        id: "child-task-1",
+        repository: "org/repo",
+      });
+      service = new HogletService(
+        repo,
+        router,
+        prDeps as unknown as PrDependencyRepository,
+        cloudTasks,
+      );
+
+      const listener = vi.fn();
+      service.on(HedgemonyEvent.HogletChanged, listener);
+
+      const child = await service.spawnFollowUp({
+        nestId: "nest-1",
+        parentTaskId: "parent-task-1",
+        prompt: "Address late feedback",
+        payloadRef: "pr-comment:12345",
+      });
+
+      expect(cloudTasks.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: "Address late feedback",
+          repository: "org/repo",
+        }),
+      );
+      expect(child).toMatchObject({
+        taskId: "child-task-1",
+        nestId: "nest-1",
+        signalReportId: null,
+      });
+      expect(prDeps._rows).toHaveLength(1);
+      expect(prDeps._rows[0]).toMatchObject({
+        nestId: "nest-1",
+        parentTaskId: "parent-task-1",
+        childTaskId: "child-task-1",
+        state: "follow_up",
+      });
+      expect(listener).toHaveBeenCalledWith({
+        bucket: { kind: "nest", nestId: "nest-1" },
+        event: { kind: "upsert", hoglet: child },
+      });
     });
   });
 });

@@ -135,7 +135,18 @@ export function BuilderSprite({
       className="absolute top-1/2 left-1/2"
       style={{ x: motionX, y: motionY }}
     >
-      <Tooltip content="Builder hedgehog · click to select" side="bottom">
+      <Tooltip
+        content={
+          <div className="flex flex-col gap-1">
+            <span className="font-medium">Builder hedgehog</span>
+            <span className="text-[11px] opacity-80">
+              Build nests — multi-step goals orchestrated by a hedgehog.
+              Right-click to move.
+            </span>
+          </div>
+        }
+        side="bottom"
+      >
         <motion.button
           type="button"
           data-hedgemony-nest

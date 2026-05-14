@@ -1,5 +1,11 @@
+import { z } from "zod";
+import type { FeedbackEventRepository } from "../../db/repositories/feedback-event-repository";
 import { container } from "../../di/container";
 import { MAIN_TOKENS } from "../../di/tokens";
+import {
+  FeedbackRoutingEvent,
+  type FeedbackRoutingService,
+} from "../../services/hedgemony/feedback-routing-service";
 import type { GoalSpecDraftService } from "../../services/hedgemony/goal-spec-draft-service";
 import type { HedgehogTickService } from "../../services/hedgemony/hedgehog-tick-service";
 import type { HogletService } from "../../services/hedgemony/hoglet-service";
@@ -10,12 +16,16 @@ import {
   completeNestInput,
   createNestInput,
   dismissSignalHogletInput,
+  feedbackEvent,
   forgetCompletedNestContextInput,
   goalDraftRespondInput,
   goalDraftResponse,
   HedgemonyEvent,
   hoglet,
   hogletWatchScope,
+  injectPromptEventPayload,
+  listFeedbackForNestInput,
+  listFeedbackForNestOutput,
   listHogletsInput,
   listHogletsOutput,
   listNestChatInput,
@@ -26,9 +36,11 @@ import {
   nestMessage,
   recordAdhocHogletInput,
   recordBootstrapHandoffInput,
+  recordRoutedFeedbackInput,
   recordSignalBackedHogletInput,
   releaseHogletInput,
   sendNestMessageInput,
+  spawnFollowUpHogletInput,
   updateNestInput,
 } from "../../services/hedgemony/schemas";
 import { publicProcedure, router } from "../trpc";
@@ -42,6 +54,10 @@ const getHogletService = () =>
   container.get<HogletService>(MAIN_TOKENS.HogletService);
 const getHedgehogTickService = () =>
   container.get<HedgehogTickService>(MAIN_TOKENS.HedgehogTickService);
+const getFeedbackRoutingService = () =>
+  container.get<FeedbackRoutingService>(MAIN_TOKENS.FeedbackRoutingService);
+const getFeedbackEventRepository = () =>
+  container.get<FeedbackEventRepository>(MAIN_TOKENS.FeedbackEventRepository);
 
 export const hedgemonyRouter = router({
   goalDraft: router({
@@ -89,6 +105,13 @@ export const hedgemonyRouter = router({
       .input(nestIdInput)
       .output(nest)
       .mutation(({ input }) => getService().unarchive(input)),
+
+    spawnFollowUpHoglet: publicProcedure
+      .input(spawnFollowUpHogletInput)
+      .output(hoglet)
+      .mutation(
+        async ({ input }) => await getHogletService().spawnFollowUp(input),
+      ),
 
     /**
      * Per-nest watch. Emits on status change, archive, and (later) hoglet
@@ -201,5 +224,46 @@ export const hedgemonyRouter = router({
           }
         }
       }),
+  }),
+  feedback: router({
+    /**
+     * Live stream of `injectPrompt` events. The renderer hook
+     * `useHedgemonyPromptRouter` subscribes once at app level and either
+     * calls the existing `sendPromptToAgent` for connected sessions or
+     * calls `nests.spawnFollowUpHoglet` for closed ones.
+     */
+    onInjectPrompt: publicProcedure.subscription(async function* ({ signal }) {
+      const service = getFeedbackRoutingService();
+      const iterable = service.toIterable(FeedbackRoutingEvent.InjectPrompt, {
+        signal,
+      });
+      for await (const data of iterable) {
+        yield data;
+      }
+    }),
+
+    /** Drains any events emitted before the subscription attached. */
+    getPendingInjects: publicProcedure
+      .output(z.array(injectPromptEventPayload))
+      .query(() => getFeedbackRoutingService().consumePending()),
+
+    /**
+     * Records the outcome of a routed feedback event. Inserts a
+     * `hedgemony_feedback_event` row (idempotent on the dedupe index)
+     * and writes a `feedback_routed` audit row to nest chat.
+     */
+    recordRouted: publicProcedure
+      .input(recordRoutedFeedbackInput)
+      .output(feedbackEvent)
+      .mutation(({ input }) =>
+        getFeedbackRoutingService().recordRoutedOutcome(input),
+      ),
+
+    listForNest: publicProcedure
+      .input(listFeedbackForNestInput)
+      .output(listFeedbackForNestOutput)
+      .query(({ input }) =>
+        getFeedbackEventRepository().listForNest(input.nestId, input.limit),
+      ),
   }),
 });
