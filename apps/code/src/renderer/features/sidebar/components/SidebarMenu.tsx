@@ -1,4 +1,5 @@
 import { DotsCircleSpinner } from "@components/DotsCircleSpinner";
+import { Tooltip } from "@components/ui/Tooltip";
 import { useCommandCenterStore } from "@features/command-center/stores/commandCenterStore";
 import { useInboxReports } from "@features/inbox/hooks/useInboxReports";
 import { isReportUpForReview } from "@features/inbox/utils/filterReports";
@@ -16,6 +17,7 @@ import {
 import { useTasks, useUpdateTask } from "@features/tasks/hooks/useTasks";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
 import { useTaskContextMenu } from "@hooks/useTaskContextMenu";
+import { ArrowsClockwise } from "@phosphor-icons/react";
 import {
   ScrollArea,
   Separator,
@@ -212,6 +214,10 @@ function SidebarMenuComponent() {
   const updateTask = useUpdateTask();
   const queryClient = useQueryClient();
 
+  const handleRefreshFiles = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["rendering-canvases"] });
+  }, [queryClient]);
+
   const handleArchivePrior = useCallback(
     async (taskId: string) => {
       const allVisible = [...sidebarData.pinnedTasks, ...sidebarData.flatTasks];
@@ -366,10 +372,22 @@ function SidebarMenuComponent() {
           onValueChange={(value) => setActiveTab(value as SidebarTab)}
           className="flex min-h-0 flex-1 flex-col"
         >
-          <TabsList className="mx-2 mt-2 shrink-0">
-            <TabsTrigger value="files">Files</TabsTrigger>
-            <TabsTrigger value="tasks">Tasks</TabsTrigger>
-          </TabsList>
+          <Flex align="center" justify="between" className="mx-2 mt-2 shrink-0">
+            <TabsList>
+              <TabsTrigger value="files">Files</TabsTrigger>
+              <TabsTrigger value="tasks">Tasks</TabsTrigger>
+            </TabsList>
+            <Tooltip content="Refresh files">
+              <button
+                type="button"
+                onClick={handleRefreshFiles}
+                className="flex h-6 w-6 items-center justify-center rounded-(--radius-2) text-(--gray-11) hover:bg-(--gray-3) hover:text-(--gray-12)"
+                aria-label="Refresh files"
+              >
+                <ArrowsClockwise size={14} />
+              </button>
+            </Tooltip>
+          </Flex>
 
           <TabsContent value="files" className="min-h-0 flex-1">
             <ProjectTreeView />

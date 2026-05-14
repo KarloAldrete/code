@@ -43,27 +43,24 @@ function buildCanvasTree(canvases: RenderingCanvas[]): CanvasTreeNode[] {
     for (let i = 0; i < segments.length; i++) {
       const segment = segments[i];
       const currentPath = segments.slice(0, i + 1).join("/");
-      const isLeaf = i === segments.length - 1;
 
-      if (isLeaf) {
-        const leaf: CanvasTreeNode = {
-          name: canvas.name,
-          path: `${currentPath}__${canvas.id}`,
-          depth: i,
-          canvasId: canvas.id,
-          children: [],
-        };
-        index.get(parentPath)?.children.push(leaf);
-      } else {
-        let node = index.get(currentPath);
-        if (!node) {
-          node = { name: segment, path: currentPath, depth: i, children: [] };
-          index.get(parentPath)?.children.push(node);
-          index.set(currentPath, node);
-        }
+      let node = index.get(currentPath);
+      if (!node) {
+        node = { name: segment, path: currentPath, depth: i, children: [] };
+        index.get(parentPath)?.children.push(node);
+        index.set(currentPath, node);
       }
       parentPath = currentPath;
     }
+
+    const leaf: CanvasTreeNode = {
+      name: canvas.name,
+      path: `${parentPath}__${canvas.id}`,
+      depth: segments.length,
+      canvasId: canvas.id,
+      children: [],
+    };
+    index.get(parentPath)?.children.push(leaf);
   }
 
   return root.children;
