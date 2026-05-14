@@ -65,6 +65,13 @@ export function HedgemonyMapView() {
   const [pendingMode, setPendingMode] = useState<NestCreationMode>("guided");
   const [moveMarker, setMoveMarker] = useState<MoveMarker | null>(null);
   const buildingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // A nest that has been created server-side but not yet inserted into the
+  // local store. It exists conceptually at its placement (and counts as a
+  // collision obstacle for path planning) but doesn't render until the
+  // builder completes the build animation. This keeps the visual story
+  // consistent: the builder walks to the placement, builds, then the nest
+  // appears — instead of the nest popping in the moment the dialog closes.
+  const [pendingBuild, setPendingBuild] = useState<Nest | null>(null);
   // Authoritative on-screen position of the builder sprite, updated by
   // BuilderSprite each motion frame. Used as the start point for re-plans so
   // the path begins where the sprite visually is — not at the last waypoint
@@ -144,27 +151,54 @@ export function HedgemonyMapView() {
     }
   }
 
+  // Commits the in-flight build (if any) into the nest store, making it
+  // visible and a normal obstacle from now on. Used both when the builder
+  // finishes the build animation and when the build is interrupted — in
+  // either case the nest already exists server-side, so it must end up
+  // visible.
+  const commitPendingBuild = useCallback(() => {
+    setPendingBuild((prev) => {
+      if (prev) useNestStore.getState().upsert(prev);
+      return null;
+    });
+  }, []);
+
   const enterBuilding = useCallback(() => {
     if (buildingTimerRef.current) clearTimeout(buildingTimerRef.current);
     setBuilderState({ kind: "building" });
     buildingTimerRef.current = setTimeout(() => {
       setBuilderState({ kind: "idle" });
       buildingTimerRef.current = null;
+      commitPendingBuild();
     }, BUILD_ANIMATION_MS);
-  }, []);
+  }, [commitPendingBuild]);
 
   const startWalk = useCallback(
-    (target: Vec2, onArrive: "idle" | "build"): Vec2 => {
+    (target: Vec2, onArrive: "idle" | "build", buildingFor?: Nest): Vec2 => {
       if (buildingTimerRef.current) {
         clearTimeout(buildingTimerRef.current);
         buildingTimerRef.current = null;
       }
+      // Any non-build walk interrupts an in-flight build. Commit the pending
+      // nest now so it doesn't get stuck invisible forever.
+      if (onArrive !== "build") commitPendingBuild();
       const from = builderVisualPosRef.current;
       const obstacles: Obstacle[] = nests.map((nest) => ({
         x: nest.mapX,
         y: nest.mapY,
         radius: NEST_OBSTACLE_RADIUS,
       }));
+      // The nest we're walking to build isn't in the store yet, but we still
+      // want collision to treat the spot as occupied so the builder snaps to
+      // the perimeter instead of standing on top of the eventual sprite.
+      const pendingObstacle = buildingFor ?? pendingBuild;
+      if (pendingObstacle) {
+        obstacles.push({
+          x: pendingObstacle.mapX,
+          y: pendingObstacle.mapY,
+          radius: NEST_OBSTACLE_RADIUS,
+        });
+      }
       const snapped = snapGoal(from, target, obstacles);
       const path = findPath(from, snapped, obstacles);
       const resolvedGoal = path[path.length - 1] ?? snapped;
@@ -180,7 +214,7 @@ export function HedgemonyMapView() {
       setBuilderState({ kind: "walking", onArrive });
       return resolvedGoal;
     },
-    [nests, enterBuilding],
+    [nests, enterBuilding, pendingBuild, commitPendingBuild],
   );
 
   const handleBuilderArrive = useCallback(() => {
@@ -383,8 +417,14 @@ export function HedgemonyMapView() {
         mapY={pendingPlacement?.y ?? 0}
         initialMode={pendingMode}
         onClose={() => setPendingPlacement(null)}
-        onCreated={(mapX, mapY) => {
-          startWalk({ x: mapX, y: mapY }, "build");
+        onCreated={(created) => {
+          // If a previous build is still in flight, commit it now so it
+          // doesn't end up stranded — then queue the new one and walk.
+          setPendingBuild((prev) => {
+            if (prev) useNestStore.getState().upsert(prev);
+            return created;
+          });
+          startWalk({ x: created.mapX, y: created.mapY }, "build", created);
         }}
       />
       <HedgemonyHoldingPanel />

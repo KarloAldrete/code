@@ -1,6 +1,7 @@
 import type {
   GoalDraftTranscriptMessage,
   GoalSpecDraft,
+  Nest,
 } from "@main/services/hedgemony/schemas";
 import {
   Button,
@@ -15,7 +16,6 @@ import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { useNestStore } from "../stores/nestStore";
 
 const log = logger.scope("place-nest-dialog");
 
@@ -29,7 +29,13 @@ export interface PlaceNestDialogProps {
   /** Which Builder button opened the dialog. Defaults to "guided". */
   initialMode?: NestCreationMode;
   onClose: () => void;
-  onCreated?: (mapX: number, mapY: number) => void;
+  /**
+   * Fired with the newly-created nest. The caller is responsible for
+   * inserting it into the local store at the right time (e.g. after the
+   * builder's build animation completes), so the sprite doesn't pop in
+   * before the builder gets there.
+   */
+  onCreated?: (nest: Nest) => void;
 }
 
 export function PlaceNestDialog({
@@ -185,10 +191,7 @@ export function PlaceNestDialog({
         creationMode: simpleMode ? "simple" : "guided",
         creationTranscript,
       });
-      // Insert locally so the sprite renders immediately and the store's
-      // diff effect opens a watch subscription for it.
-      useNestStore.getState().upsert(created);
-      onCreated?.(created.mapX, created.mapY);
+      onCreated?.(created);
       onClose();
     } catch (e) {
       log.error("Failed to create nest", { error: e });
