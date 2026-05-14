@@ -35,9 +35,11 @@ import {
 
 const log = logger.scope("hoglet-service");
 
-/** Safety caps from notes/hedgemony/backend-integration.md. */
-export const MAX_WILD_HOGLETS = 25;
-export const MAX_SIGNAL_STAGING_HOGLETS = 25;
+/** Safety caps from notes/hedgemony/backend-integration.md. The wild cap
+ *  covers both operator-spawned ad-hoc hoglets and signal-backed hoglets that
+ *  the affinity router didn't auto-route into a nest, since both share the
+ *  wild bucket on the map. */
+export const MAX_WILD_HOGLETS = 50;
 export const MAX_NEST_HOGLETS = 10;
 
 type CreateTaskInput = Parameters<CloudTaskClient["createTask"]>[0];
@@ -132,7 +134,6 @@ class HogletSpawnSaga<TOutput> extends Saga<
 
 function bucketForHoglet(h: Hoglet): HogletBucket {
   if (h.nestId !== null) return { kind: "nest", nestId: h.nestId };
-  if (h.signalReportId !== null) return { kind: "signal_staging" };
   return { kind: "wild" };
 }
 
@@ -179,11 +180,8 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
 
   list(input: ListHogletsInput): Hoglet[] {
     if (input.wildOnly) return this.hoglets.findAllWild();
-    if (input.signalStagingOnly) return this.hoglets.findAllSignalStaging();
     if (input.nestId) return this.hoglets.findAllForNest(input.nestId);
-    throw new Error(
-      "hoglets.list requires wildOnly, signalStagingOnly, or nestId",
-    );
+    throw new Error("hoglets.list requires wildOnly or nestId");
   }
 
   recordAdhoc(input: RecordAdhocHogletInput): Hoglet {
@@ -251,9 +249,12 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
     });
 
     if (match === null) {
-      const stagingCount = this.hoglets.countSignalStaging();
-      if (stagingCount >= MAX_SIGNAL_STAGING_HOGLETS) {
-        throw new Error("signal_staging_cap_reached");
+      // No affinity match — the hoglet joins the wild bucket on the map.
+      // Wild now covers both operator-spawned ad-hoc work and unrouted
+      // signal-backed hoglets; the cap is shared.
+      const wildCount = this.hoglets.countWild();
+      if (wildCount >= MAX_WILD_HOGLETS) {
+        throw new Error("wild_hoglet_cap_reached");
       }
       const created = this.hoglets.create({
         taskId: input.taskId,
@@ -262,16 +263,13 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
         signalReportId: input.signalReportId,
         affinityScore: null,
       });
-      log.info("Signal-backed hoglet recorded in staging", {
+      log.info("Signal-backed hoglet recorded as wild", {
         id: created.id,
         name: created.name,
         taskId: created.taskId,
         signalReportId: created.signalReportId,
       });
-      this.emitChange(
-        { kind: "signal_staging" },
-        { kind: "upsert", hoglet: created },
-      );
+      this.emitChange({ kind: "wild" }, { kind: "upsert", hoglet: created });
       return created;
     }
 
@@ -350,9 +348,9 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
     });
     if (!updated) throw new Error("hoglet_update_failed");
 
-    // Released signal-backed hoglets return to the signal-staging bucket;
-    // ad-hoc hoglets return to wild. The destination bucket is determined by
-    // whether signal_report_id is set, not by user choice.
+    // Every released hoglet returns to wild — both ad-hoc and signal-backed.
+    // The signal-backed ones keep their signal_report_id so the robot sprite
+    // still renders, but they share the same bucket as ad-hoc wild hoglets.
     const destinationBucket = bucketForHoglet(updated);
     this.emitChange(
       { kind: "nest", nestId: previousNestId },
@@ -371,11 +369,11 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
   }
 
   /**
-   * Soft-deletes a signal-backed hoglet from the staging area. The caller
-   * (renderer) is responsible for the upstream "suppress" call to the Inbox
-   * signals API; this service intentionally doesn't reach across that
-   * boundary. Audit log capture for the underlying signal happens via the
-   * Inbox lifecycle, not Hedgemony.
+   * Soft-deletes a signal-backed hoglet currently in the wild bucket. The
+   * caller (renderer) is responsible for the upstream "suppress" call to
+   * the Inbox signals API; this service intentionally doesn't reach across
+   * that boundary. Audit log capture for the underlying signal happens via
+   * the Inbox lifecycle, not Hedgemony.
    */
   dismissSignal(input: DismissSignalHogletInput): void {
     const existing = this.hoglets.findById(input.hogletId);

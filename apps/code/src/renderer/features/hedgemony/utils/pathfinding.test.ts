@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { findPath, type Obstacle, type Vec2 } from "./pathfinding";
+import {
+  findPath,
+  type Obstacle,
+  snapPointOutsideObstacles,
+  type Vec2,
+} from "./pathfinding";
 
 const BUILDER_RADIUS = 36;
 
@@ -81,6 +86,24 @@ describe("findPath", () => {
     expect(dEnd).toBeLessThan(inflatedRadius(obstacle) + 5);
   });
 
+  it("snaps a hoglet target off another hoglet obstacle", () => {
+    const hogletRadius = 24;
+    const from = { x: -200, y: 0 };
+    const occupied = { x: 0, y: 0 };
+    const obstacle: Obstacle = {
+      x: occupied.x,
+      y: occupied.y,
+      radius: hogletRadius,
+    };
+
+    const path = findPath(from, occupied, [obstacle], hogletRadius);
+
+    const end = path[path.length - 1];
+    expect(distance(end, occupied)).toBeGreaterThanOrEqual(
+      hogletRadius * 2 - 1e-6,
+    );
+  });
+
   it("returns a reachable approach point when target is encircled", () => {
     const from = { x: -400, y: 0 };
     const to = { x: 300, y: 0 };
@@ -123,6 +146,57 @@ describe("findPath", () => {
     }
   });
 
+  it("escapes radially outward, not across the obstacle, when start is just inside the inflated boundary", () => {
+    // Regression: when the builder's visual position sat at (0, 130) — just
+    // inside the Hedgehouse's inflated radius of 100 + 36 = 136 — the old
+    // "walk toward the goal" escape ran a step toward the far side until
+    // it cleared the inflation, producing a path[1] near (0, -136). The
+    // first visible segment cut straight south through the building.
+    //
+    // The escape must instead push *radially outward* from the obstacle
+    // center, so the segment from → escape stays on the near side of the
+    // obstacle. Verify by checking that the escape segment never dips into
+    // the painted obstacle footprint (radius 100).
+    const from = { x: 0, y: 130 };
+    const to = { x: 0, y: -400 };
+    const obstacles: Obstacle[] = [{ x: 0, y: 0, radius: 100 }];
+
+    const path = findPath(from, to, obstacles);
+
+    expect(path.length).toBeGreaterThanOrEqual(2);
+    expect(path[0]).toEqual(from);
+    // Sample every segment densely — no point of any segment may fall
+    // inside the painted obstacle.
+    for (let i = 1; i < path.length; i++) {
+      const a = path[i - 1];
+      const b = path[i];
+      for (let t = 0; t <= 1; t += 0.02) {
+        const x = a.x + (b.x - a.x) * t;
+        const y = a.y + (b.y - a.y) * t;
+        expect(Math.hypot(x, y)).toBeGreaterThanOrEqual(99);
+      }
+    }
+  });
+
+  it("backs out locally when a rapid replan starts inside an obstacle buffer", () => {
+    const agentRadius = 24;
+    const obstacle: Obstacle = { x: 0, y: 0, radius: 24 };
+    const from = { x: -30, y: 0 };
+    const to = { x: 120, y: 0 };
+
+    const path = findPath(from, to, [obstacle], agentRadius);
+
+    expect(path.length).toBeGreaterThanOrEqual(3);
+    expect(path[0]).toEqual(from);
+    // The old escape walked toward the target and crossed through the unit at
+    // x=0 before routing. A rapid re-click must first back out on the same
+    // side it came from, then plan around the blocker.
+    expect(path[1].x).toBeLessThan(from.x);
+    expect(distance(path[1], obstacle)).toBeGreaterThanOrEqual(
+      obstacle.radius + agentRadius - 1e-6,
+    );
+  });
+
   it("routes around multiple obstacles that both block the straight line", () => {
     const from = { x: -300, y: 0 };
     const to = { x: 300, y: 0 };
@@ -145,5 +219,13 @@ describe("findPath", () => {
     for (const p of path) {
       expect(pointOutsideInflated(p, obstacles)).toBe(true);
     }
+  });
+
+  it("snaps a resting point outside an inflated obstacle", () => {
+    const obstacle: Obstacle = { x: 0, y: 0, radius: 86 };
+
+    const point = snapPointOutsideObstacles({ x: 20, y: 0 }, [obstacle], 36);
+
+    expect(distance(point, obstacle)).toBeGreaterThanOrEqual(122);
   });
 });

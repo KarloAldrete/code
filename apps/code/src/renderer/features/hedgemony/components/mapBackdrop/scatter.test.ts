@@ -14,6 +14,7 @@ function makeNest(id: string, mapX: number, mapY: number): Nest {
     health: "ok",
     targetMetricId: null,
     loadoutJson: null,
+    primaryRepository: null,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
   };

@@ -11,6 +11,7 @@ import {
   useHogletPositionStore,
 } from "../stores/hogletPositionStore";
 import { selectTaskSummary, useHogletStore } from "../stores/hogletStore";
+import { useRegisterHogletVisualPosition } from "../utils/hogletVisualPositions";
 import { HOGLET_RADIUS } from "../utils/worldObstacles";
 import { AnimatedHedgehog } from "./AnimatedHedgehog";
 import { HogletHammer } from "./HogletHammer";
@@ -30,6 +31,7 @@ interface WildHogletProps {
   x: number;
   y: number;
   selected: boolean;
+  dimmed?: boolean;
   onSelect: (hogletId: string, additive: boolean) => void;
 }
 
@@ -39,6 +41,7 @@ export function WildHoglet({
   x,
   y,
   selected,
+  dimmed: dimmedByAffiliation,
   onSelect,
 }: WildHogletProps) {
   const summary = useHogletStore(selectTaskSummary(hoglet.taskId));
@@ -58,12 +61,14 @@ export function WildHoglet({
     y,
     HOGLET_RADIUS,
     walkPath === undefined,
+    hoglet.id,
   );
   const { motionX, motionY, isWalking, facing } = useWalkTo(
     x,
     y,
     walkPath ?? computedPath,
   );
+  useRegisterHogletVisualPosition(hoglet.id, motionX, motionY);
 
   const prStatusQuery = useQuery(
     trpc.workspace.getTaskPrStatus.queryOptions(
@@ -87,7 +92,7 @@ export function WildHoglet({
       : "walk"
     : statusAnimationKey;
   const fps = isWalking ? 14 : FPS_BY_TASK_STATUS[status ?? "not_started"];
-  const dimmed = status === "cancelled";
+  const cancelled = status === "cancelled";
 
   const handleClick = (event: React.MouseEvent) => {
     event.stopPropagation();
@@ -100,7 +105,13 @@ export function WildHoglet({
       style={{
         x: motionX,
         y: motionY,
-        opacity: isDragging ? 0.4 : dimmed ? 0.55 : 1,
+        opacity: isDragging
+          ? 0.4
+          : dimmedByAffiliation
+            ? 0.32
+            : cancelled
+              ? 0.55
+              : 1,
       }}
     >
       <Tooltip content={`${title} — drag onto a nest to adopt`} side="bottom">

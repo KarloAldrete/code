@@ -77,6 +77,22 @@ function pushOutOf(p: Vec2, infl: InflatedObstacle[]): Vec2 {
   return current;
 }
 
+// Pushes a point out of every inflated obstacle it's inside, iteratively, so
+// the result sits on (or just outside) the nearest perimeter. Used by callers
+// to self-heal a unit's resting or starting position before passing it
+// downstream: hoglet layouts call this so brood/wild positions never overlap
+// the nests they're orbiting, and useBuilderCoordinator calls it before
+// findPath so a stale visualPosRef (HMR-preserved, etc.) inside an obstacle
+// doesn't flow into the planner and become a visibly-inside-the-building
+// path[0].
+export function snapPointOutsideObstacles(
+  point: Vec2,
+  obstacles: Obstacle[],
+  agentRadius: number = DEFAULT_AGENT_RADIUS,
+): Vec2 {
+  return pushOutOf(point, inflate(obstacles, agentRadius));
+}
+
 // Walks from `to` toward `from`, returning the first point that's outside
 // every inflated obstacle. Used so a click that lands inside a building snaps
 // to the perimeter on the side the builder is approaching from — instead of
@@ -113,32 +129,30 @@ export function snapGoal(
   return nearestFreePointOnLine(from, to, infl);
 }
 
-// Walks from `from` toward `to` step by step, returning the first point that
-// is outside every inflated obstacle. Used when the agent starts inside an
-// obstacle (e.g. builder spawning at the Hedgehouse) — we need a free point
-// to hand to A*, ideally on the side of the obstacle facing the goal so the
-// resulting motion looks like a natural exit.
+// Returns a nearby free perimeter point when a plan starts inside an
+// inflated obstacle. This happens naturally with rapid re-orders: a sprite can
+// be close enough to a unit/building that its center is inside the avoidance
+// buffer even though the art does not visibly overlap. The escape must be a
+// local push-out, not a walk toward the new goal, otherwise a target on the far
+// side makes the first segment cut straight through the blocker before A* gets
+// to route around it.
 function firstFreePointTowards(
   from: Vec2,
   to: Vec2,
   infl: InflatedObstacle[],
 ): Vec2 | null {
   if (!pointBlocked(from, infl)) return from;
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const dist = Math.hypot(dx, dy);
-  if (dist > 0) {
-    const steps = Math.max(1, Math.ceil(dist / (CELL / 4)));
-    for (let i = 1; i <= steps; i++) {
-      const t = i / steps;
-      const c = { x: from.x + dx * t, y: from.y + dy * t };
-      if (!pointBlocked(c, infl)) return c;
-    }
-  }
-  // Fallback: radial sweep outward. Useful when the goal is also inside the
-  // same obstacle cluster — we still need *some* free perimeter point.
+
+  const pushed = pushOutOf(from, infl);
+  if (!pointBlocked(pushed, infl)) return pushed;
+
+  // Last-resort radial sweep — used for pathological overlapping obstacle
+  // clusters where iterative push-out still cannot find a free point. Start
+  // near the goal direction for determinism, but keep the sweep local.
+  const goalAngle = Math.atan2(to.y - from.y, to.x - from.x);
   for (let r = CELL; r < 4096; r += CELL) {
-    for (let theta = 0; theta < Math.PI * 2; theta += Math.PI / 8) {
+    for (let step = 0; step < 16; step++) {
+      const theta = goalAngle + step * (Math.PI / 8);
       const c = {
         x: from.x + Math.cos(theta) * r,
         y: from.y + Math.sin(theta) * r,

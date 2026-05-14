@@ -187,7 +187,6 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
     try {
       const hoglets = [
         ...this.hoglets.list({ wildOnly: true }),
-        ...this.hoglets.list({ signalStagingOnly: true }),
         ...this.nestHogletsAll(),
       ].filter((h) => h.deletedAt === null);
 

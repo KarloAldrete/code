@@ -15,6 +15,7 @@ function makeNest(overrides: Partial<Nest> = {}): Nest {
     health: "ok",
     targetMetricId: null,
     loadoutJson: null,
+    primaryRepository: null,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
     ...overrides,
@@ -32,12 +33,16 @@ describe("useBuilderCoordinator", () => {
   });
 
   it("starts idle at the initial position", () => {
+    // Pick a position safely outside the Hedgehouse (which is always in the
+    // obstacle list at world origin, radius 100, inflated 136). The
+    // self-heal effect pushes any inside-obstacle initial position to the
+    // perimeter, so this test would fail if we used e.g. (10, 20).
     const { result } = renderHook(() =>
-      useBuilderCoordinator({ nests: [], initialPos: { x: 10, y: 20 } }),
+      useBuilderCoordinator({ nests: [], initialPos: { x: 300, y: 300 } }),
     );
     expect(result.current.animation).toBe("idle");
-    expect(result.current.pos).toEqual({ x: 10, y: 20 });
-    expect(result.current.path).toEqual([{ x: 10, y: 20 }]);
+    expect(result.current.pos).toEqual({ x: 300, y: 300 });
+    expect(result.current.path).toEqual([{ x: 300, y: 300 }]);
   });
 
   it("transitions idle -> walking on startWalk to a reachable target", () => {
@@ -104,30 +109,30 @@ describe("useBuilderCoordinator", () => {
 
   it("startWalk with a zero-distance target into build immediately enters building", () => {
     const { result } = renderHook(() =>
-      useBuilderCoordinator({ nests: [], initialPos: { x: 0, y: 0 } }),
+      useBuilderCoordinator({ nests: [], initialPos: { x: 300, y: 300 } }),
     );
     act(() => {
-      result.current.startWalk({ x: 0, y: 0 }, "build");
+      result.current.startWalk({ x: 300, y: 300 }, "build");
     });
     expect(result.current.animation).toBe("building");
   });
 
   it("startWalk with a zero-distance target into idle stays idle", () => {
     const { result } = renderHook(() =>
-      useBuilderCoordinator({ nests: [], initialPos: { x: 0, y: 0 } }),
+      useBuilderCoordinator({ nests: [], initialPos: { x: 300, y: 300 } }),
     );
     act(() => {
-      result.current.startWalk({ x: 0, y: 0 }, "idle");
+      result.current.startWalk({ x: 300, y: 300 }, "idle");
     });
     expect(result.current.animation).toBe("idle");
   });
 
   it("handleSegmentComplete advances pos to the reached waypoint", () => {
     const { result } = renderHook(() =>
-      useBuilderCoordinator({ nests: [], initialPos: { x: 0, y: 0 } }),
+      useBuilderCoordinator({ nests: [], initialPos: { x: -500, y: 300 } }),
     );
     act(() => {
-      result.current.startWalk({ x: 400, y: 0 }, "idle");
+      result.current.startWalk({ x: 400, y: 300 }, "idle");
     });
     const path = result.current.path;
     expect(path.length).toBeGreaterThanOrEqual(2);
@@ -138,16 +143,108 @@ describe("useBuilderCoordinator", () => {
   });
 
   it("paths around a nest obstacle that sits on the straight line", () => {
-    const nest = makeNest({ id: "n1", mapX: 200, mapY: 0 });
+    // Set up well clear of the Hedgehouse at origin: spawn south, walk
+    // south, with a test nest blocking the straight line south of the
+    // Hedgehouse so we exercise nest-avoidance specifically.
+    const nest = makeNest({ id: "n1", mapX: 200, mapY: 300 });
     const { result } = renderHook(() =>
-      useBuilderCoordinator({ nests: [nest], initialPos: { x: 0, y: 0 } }),
+      useBuilderCoordinator({ nests: [nest], initialPos: { x: 0, y: 300 } }),
     );
     act(() => {
-      result.current.startWalk({ x: 400, y: 0 }, "idle");
+      result.current.startWalk({ x: 400, y: 300 }, "idle");
     });
     // Direct line passes through the obstacle, so the planner must add at
     // least one intermediate waypoint.
     expect(result.current.path.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("never plans a path that crosses the Hedgehouse from the default spawn", () => {
+    // Regression: the prior (0, 130) default sat inside the inflated
+    // Hedgehouse (raw radius 100 + builder radius 36 = 136), so findPath's
+    // escape-from-inside logic walked the builder straight through the
+    // building on any walk to the north side. The default must stay clear
+    // of the inflated obstacle so that no segment of any plan crosses the
+    // painted Hedgehouse footprint (raw radius 100).
+    const { result } = renderHook(() => useBuilderCoordinator({ nests: [] }));
+    act(() => {
+      result.current.startWalk({ x: 0, y: -300 }, "idle");
+    });
+    const path = result.current.path;
+    expect(path.length).toBeGreaterThanOrEqual(2);
+    // Every waypoint stays outside the painted Hedgehouse.
+    for (const p of path) {
+      expect(Math.hypot(p.x, p.y)).toBeGreaterThanOrEqual(99);
+    }
+    // Every segment midpoint stays outside too — catches the case where
+    // adjacent waypoints straddle the obstacle.
+    for (let i = 1; i < path.length; i++) {
+      const a = path[i - 1];
+      const b = path[i];
+      for (let t = 0; t <= 1; t += 0.05) {
+        const x = a.x + (b.x - a.x) * t;
+        const y = a.y + (b.y - a.y) * t;
+        expect(Math.hypot(x, y)).toBeGreaterThanOrEqual(99);
+      }
+    }
+  });
+
+  it("paths around extra unit obstacles supplied by the caller", () => {
+    // Set up away from the Hedgehouse so the test exercises the extra
+    // obstacle blocking specifically, not Hedgehouse routing.
+    const { result } = renderHook(() =>
+      useBuilderCoordinator({ nests: [], initialPos: { x: 0, y: 300 } }),
+    );
+    act(() => {
+      result.current.startWalk({ x: 400, y: 300 }, "idle", undefined, [
+        { x: 200, y: 300, radius: 24 },
+      ]);
+    });
+    expect(result.current.path.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("self-heals a stranded visualPosRef before planning a walk", () => {
+    // Simulates Vite Fast Refresh / HMR leaving visualPosRef stuck at a
+    // position inside an obstacle. When the user clicks somewhere, the
+    // coordinator must push the builder to the perimeter BEFORE planning,
+    // so path[0] never lands inside a building. Without the heal, findPath
+    // prepends the original blocked `from` and BuilderSprite snaps the
+    // sprite visibly to inside the obstacle on the next render.
+    const { result } = renderHook(() =>
+      useBuilderCoordinator({ nests: [], initialPos: { x: 50, y: -50 } }),
+    );
+    act(() => {
+      result.current.startWalk({ x: 400, y: -400 }, "idle");
+    });
+    const path = result.current.path;
+    expect(path.length).toBeGreaterThanOrEqual(2);
+    // Every waypoint — including path[0] — must be outside the painted
+    // Hedgehouse footprint (radius 100).
+    for (const p of path) {
+      expect(Math.hypot(p.x, p.y)).toBeGreaterThanOrEqual(99);
+    }
+  });
+
+  it("self-heals at rest when the obstacle set engulfs the builder", () => {
+    // If a nest is built right on top of the builder, the coordinator must
+    // push the builder out of the new obstacle without waiting for the user
+    // to click somewhere. Same mechanism handles HMR-preserved bad state on
+    // initial mount.
+    const { result, rerender } = renderHook(
+      ({ nests }: { nests: Nest[] }) =>
+        useBuilderCoordinator({ nests, initialPos: { x: 300, y: 300 } }),
+      { initialProps: { nests: [] as Nest[] } },
+    );
+    expect(result.current.pos).toEqual({ x: 300, y: 300 });
+    const swallower = makeNest({ id: "swallower", mapX: 300, mapY: 300 });
+    act(() => {
+      rerender({ nests: [swallower] });
+    });
+    const repaired = result.current.pos;
+    // Nest painted radius is 78. Repaired position must be at least past
+    // that footprint.
+    expect(
+      Math.hypot(repaired.x - swallower.mapX, repaired.y - swallower.mapY),
+    ).toBeGreaterThanOrEqual(77);
   });
 
   it("handleArrive is a no-op when not walking", () => {

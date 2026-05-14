@@ -92,6 +92,7 @@ function makeNest(overrides: Partial<Nest> = {}): Nest {
     health: "ok",
     targetMetricId: null,
     loadoutJson: null,
+    primaryRepository: null,
     createdAt: "2026-05-13T00:00:00.000Z",
     updatedAt: "2026-05-13T00:00:00.000Z",
     ...overrides,
@@ -856,6 +857,7 @@ describe("HedgehogTickService", () => {
 
   it("defaults spawned hoglets to the nest primary repository", async () => {
     const mocks = setupMocks({
+      nest: makeNest({ primaryRepository: "Brooker-Fam/nexus-game" }),
       recentChat: [
         makeMessage({
           kind: "user_message",

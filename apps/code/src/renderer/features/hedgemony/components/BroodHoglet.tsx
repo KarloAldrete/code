@@ -11,6 +11,8 @@ import {
   useHogletPositionStore,
 } from "../stores/hogletPositionStore";
 import { selectTaskSummary, useHogletStore } from "../stores/hogletStore";
+import { useRegisterHogletVisualPosition } from "../utils/hogletVisualPositions";
+import { nestAccentColor } from "../utils/nestColors";
 import { HOGLET_RADIUS } from "../utils/worldObstacles";
 import { AnimatedHedgehog } from "./AnimatedHedgehog";
 import { HogletHammer } from "./HogletHammer";
@@ -31,6 +33,7 @@ interface BroodHogletProps {
   x: number;
   y: number;
   selected: boolean;
+  dimmed?: boolean;
   onSelect: (hogletId: string, additive: boolean) => void;
 }
 
@@ -41,6 +44,7 @@ export function BroodHoglet({
   x,
   y,
   selected,
+  dimmed: dimmedByAffiliation,
   onSelect,
 }: BroodHogletProps) {
   const summary = useHogletStore(selectTaskSummary(hoglet.taskId));
@@ -60,12 +64,14 @@ export function BroodHoglet({
     y,
     HOGLET_RADIUS,
     walkPath === undefined,
+    hoglet.id,
   );
   const { motionX, motionY, isWalking, facing } = useWalkTo(
     x,
     y,
     walkPath ?? computedPath,
   );
+  useRegisterHogletVisualPosition(hoglet.id, motionX, motionY);
 
   const prStatusQuery = useQuery(
     trpc.workspace.getTaskPrStatus.queryOptions(
@@ -89,7 +95,8 @@ export function BroodHoglet({
       : "walk"
     : statusAnimationKey;
   const fps = isWalking ? 14 : FPS_BY_TASK_STATUS[status ?? "not_started"];
-  const dimmed = status === "cancelled";
+  const cancelled = status === "cancelled";
+  const accentColor = nestAccentColor(nestId);
 
   const handleClick = (event: React.MouseEvent) => {
     event.stopPropagation();
@@ -102,7 +109,13 @@ export function BroodHoglet({
       style={{
         x: motionX,
         y: motionY,
-        opacity: isDragging ? 0.4 : dimmed ? 0.55 : 1,
+        opacity: isDragging
+          ? 0.4
+          : dimmedByAffiliation
+            ? 0.32
+            : cancelled
+              ? 0.55
+              : 1,
       }}
     >
       <Tooltip
@@ -157,8 +170,13 @@ export function BroodHoglet({
             )}
           </div>
           {hoglet.name && (
-            <div className="mt-1 max-w-[100px] truncate rounded-(--radius-2) bg-(--gray-3) px-2 py-0.5 font-medium text-(--gray-11) text-[11px] shadow-sm">
-              {hoglet.name}
+            <div className="mt-1 flex max-w-[100px] items-center gap-1 rounded-(--radius-2) bg-(--gray-3) px-2 py-0.5 font-medium text-(--gray-11) text-[11px] shadow-sm">
+              <span
+                aria-hidden
+                className="size-1.5 shrink-0 rounded-full"
+                style={{ background: accentColor }}
+              />
+              <span className="truncate">{hoglet.name}</span>
             </div>
           )}
         </button>

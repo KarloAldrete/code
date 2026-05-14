@@ -39,6 +39,7 @@ function makeNest(overrides: Partial<Nest> = {}): Nest {
     health: "ok",
     targetMetricId: null,
     loadoutJson: "{}",
+    primaryRepository: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -195,6 +196,7 @@ describe("NestService", () => {
       definitionOfDone: input.definitionOfDone,
       mapX: input.mapX,
       mapY: input.mapY,
+      primaryRepository: null,
     });
     expect(nestChat.recordCreationContext).toHaveBeenCalledWith(nest, input);
     expect(nest).toMatchObject({

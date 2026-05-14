@@ -9,7 +9,6 @@ import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { useEffect, useRef } from "react";
-import { SIGNAL_STAGING_BUCKET } from "../constants/buckets";
 import { useHogletStore } from "../stores/hogletStore";
 import { buildSignalPrompt } from "../utils/signalPrompt";
 
@@ -24,8 +23,18 @@ const INGESTION_REFETCH_MS = 30_000;
  *  a backlog. Remaining reports are picked up on the next refetch. */
 const MAX_INGESTIONS_PER_TICK = 5;
 
-const SIGNAL_QUERY_PARAMS = {
-  status: "needs_review" as const,
+// In dev, ingest reports still in research (in_progress) and candidate state
+// alongside ready ones so the map can be exercised end-to-end without waiting
+// for the full research pipeline to land a `ready` report. Production keeps
+// the original filter so behaviour ships unchanged.
+//
+// Exported so consumers that need to look up the same cached report payload
+// (e.g. SignalHogletCard) read from the exact key this hook writes to. If
+// the two diverge, the card silently misses the cached report data.
+export const SIGNAL_QUERY_PARAMS = {
+  status: import.meta.env.DEV
+    ? ("ready,in_progress,candidate" as const)
+    : ("needs_review" as const),
   ordering: "-created_at" as const,
   limit: 50,
 };
@@ -50,7 +59,7 @@ export function useSignalIngestion(): void {
 
   // Tracks reports currently mid-ingestion so a fast second refetch tick
   // doesn't double-spawn before the first round-trip lands. A successful
-  // ingestion adds the row to `byBucket[SIGNAL_STAGING_BUCKET]` via the watch
+  // ingestion adds the row to `byBucket[WILD_BUCKET]` via the watch
   // subscription, which is then the durable source of truth.
   const inFlight = useRef<Set<string>>(new Set());
 
@@ -65,11 +74,17 @@ async function ingestNewReports(
   reports: ReadonlyArray<SignalReport>,
   inFlight: Set<string>,
 ): Promise<void> {
-  const existingSignalIds = new Set(
-    (useHogletStore.getState().byBucket[SIGNAL_STAGING_BUCKET] ?? [])
-      .map((h) => h.signalReportId)
-      .filter((id): id is string => id !== null),
-  );
+  // Signal-backed hoglets without a nest live in the wild bucket alongside
+  // ad-hoc operator spawns. Auto-routed hoglets live inside their nest's
+  // bucket. Walk every bucket so we don't re-ingest reports that already
+  // have a hoglet anywhere in the system.
+  const buckets = useHogletStore.getState().byBucket;
+  const existingSignalIds = new Set<string>();
+  for (const bucket of Object.values(buckets)) {
+    for (const h of bucket) {
+      if (h.signalReportId !== null) existingSignalIds.add(h.signalReportId);
+    }
+  }
 
   const candidates = reports.filter((r) => {
     if (existingSignalIds.has(r.id)) return false;

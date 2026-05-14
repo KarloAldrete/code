@@ -7,8 +7,10 @@ import { useEffect, useState } from "react";
 import { selectHedgehogState, useNestStore } from "../stores/nestStore";
 import { AnimatedHedgehog } from "./AnimatedHedgehog";
 
+const NEST_SIZE = 140;
 const HOG_SIZE_IDLE = 44;
 const HOG_SIZE_MOVING = 88;
+const SELECTION_RING_SIZE = NEST_SIZE + 24;
 const TERRITORY_SIZE = 220;
 const TERRITORY_SIZE_SELECTED = 260;
 const TERRITORY_SIZE_DROP_TARGET = 280;
@@ -33,6 +35,12 @@ function residentAnimation({
 interface NestSpriteProps {
   nest: Nest;
   selected?: boolean;
+  /**
+   * True when this nest is the parent of the currently selected hoglet(s) but
+   * is not itself the selection target. Draws a softer dashed ring so the
+   * link between a selected hoglet and its home nest is visible at a glance.
+   */
+  affiliated?: boolean;
   dimmed?: boolean;
   onSelect?: (nest: Nest) => void;
   onFocus?: (nest: Nest) => void;
@@ -54,6 +62,7 @@ function territoryBackground(nest: Nest): string {
 export function NestSprite({
   nest,
   selected,
+  affiliated,
   dimmed,
   onSelect,
   onFocus,
@@ -186,6 +195,19 @@ export function NestSprite({
                 className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 h-[164px] w-[164px] rounded-full border-(--accent-9) border-2"
                 initial={{ opacity: 0, scale: 0.85 }}
                 animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.18, ease: "easeOut" }}
+              />
+            )}
+            {affiliated && !selected && !isDropTarget && (
+              <motion.span
+                aria-hidden
+                className="-translate-x-1/2 -translate-y-1/2 pointer-events-none absolute top-1/2 left-1/2 rounded-full border border-(--accent-9) border-dashed opacity-60"
+                style={{
+                  width: SELECTION_RING_SIZE,
+                  height: SELECTION_RING_SIZE,
+                }}
+                initial={{ opacity: 0, scale: 0.85 }}
+                animate={{ opacity: 0.6, scale: 1 }}
                 transition={{ duration: 0.18, ease: "easeOut" }}
               />
             )}

@@ -22,7 +22,6 @@ describe("hedgemonyViewStore", () => {
       zoom: 1,
       fullscreen: false,
       osFullscreen: false,
-      holdingPanel: { open: true, collapsed: false, x: -1, y: -1 },
       bookmarks: {},
     });
   });
@@ -43,19 +42,6 @@ describe("hedgemonyViewStore", () => {
       panX: 10,
       panY: 20,
       zoom: HEDGEMONY_ZOOM_MIN,
-    });
-  });
-
-  it("updates holding panel state", () => {
-    useHedgemonyViewStore.getState().setHoldingPanelOpen(false);
-    useHedgemonyViewStore.getState().toggleHoldingPanelCollapsed();
-    useHedgemonyViewStore.getState().setHoldingPanelPosition(120, 240);
-
-    expect(useHedgemonyViewStore.getState().holdingPanel).toEqual({
-      open: false,
-      collapsed: true,
-      x: 120,
-      y: 240,
     });
   });
 });

@@ -31,7 +31,7 @@ import {
 import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
 import type { KeyboardEvent, ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { loadNestChatMessages } from "../service/nestChatService";
 import { selectNestMessages, useNestChatStore } from "../stores/nestChatStore";
@@ -72,6 +72,8 @@ export function NestDetailPanel({
   const [sending, setSending] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
 
+  const bottomRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     setName(nest.name);
     setGoalPrompt(nest.goalPrompt);
@@ -81,6 +83,14 @@ export function NestDetailPanel({
     setChatError(null);
     void loadNestChatMessages(nest.id);
   }, [nest]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on nest open and once messages finish loading
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ block: "end" });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [nest.id, loadingMessages, messages.length]);
 
   const handleSendChat = async () => {
     const body = chatDraft.trim();
@@ -272,6 +282,7 @@ export function NestDetailPanel({
               )}
             </Flex>
           </div>
+          <div ref={bottomRef} />
         </Flex>
       </ScrollArea>
 

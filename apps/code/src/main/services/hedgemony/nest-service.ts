@@ -55,12 +55,16 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
   }
 
   async create(input: CreateNestInput): Promise<Nest> {
+    const bootstrap = input.creationBootstrap;
+    const primaryRepository =
+      bootstrap?.primaryRepository ?? bootstrap?.repositories[0] ?? null;
     const created = this.nests.create({
       name: input.name,
       goalPrompt: input.goalPrompt,
       definitionOfDone: input.definitionOfDone ?? null,
       mapX: input.mapX,
       mapY: input.mapY,
+      primaryRepository,
     });
     const creationMessages = this.nestChat.recordCreationContext(
       created,

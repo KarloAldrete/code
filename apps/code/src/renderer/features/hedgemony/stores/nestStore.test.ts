@@ -13,6 +13,7 @@ function makeNest(overrides: Partial<Nest> = {}): Nest {
     mapY: 0,
     status: "active",
     health: "ok",
+    primaryRepository: null,
     targetMetricId: null,
     loadoutJson: null,
     createdAt: now,

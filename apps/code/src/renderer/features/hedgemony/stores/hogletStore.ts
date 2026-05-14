@@ -1,7 +1,7 @@
 import type { Hoglet } from "@main/services/hedgemony/schemas";
 import type { Schemas } from "@renderer/api/generated";
 import { create } from "zustand";
-import { SIGNAL_STAGING_BUCKET, WILD_BUCKET } from "../constants/buckets";
+import { WILD_BUCKET } from "../constants/buckets";
 
 export interface DyingHogletEntry {
   hogletId: string;
@@ -97,12 +97,6 @@ export const selectWildHoglets = (state: HogletStore): Hoglet[] =>
 
 export const selectWildLoaded = (state: HogletStore): boolean =>
   state.loaded[WILD_BUCKET] ?? false;
-
-export const selectSignalStagingHoglets = (state: HogletStore): Hoglet[] =>
-  state.byBucket[SIGNAL_STAGING_BUCKET] ?? [];
-
-export const selectSignalStagingLoaded = (state: HogletStore): boolean =>
-  state.loaded[SIGNAL_STAGING_BUCKET] ?? false;
 
 export const selectNestHoglets =
   (nestId: string) =>

@@ -88,6 +88,12 @@ export interface MapSurfaceHandle {
 interface HedgemonyMapSurfaceProps {
   nests: Nest[];
   selectedNestId: string | null;
+  /**
+   * Nests considered "in focus" via the current selection — used to highlight
+   * the parent nest of a selected hoglet and dim the rest of the map. `null`
+   * means there is no nest-scoped selection; render every nest normally.
+   */
+  affiliatedNestIds?: ReadonlySet<string> | null;
   relocatingNestId: string | null;
   builderPath: Vec2[];
   builderPos: Vec2;
@@ -117,6 +123,7 @@ function HedgemonyMapSurfaceImpl(
   {
     nests,
     selectedNestId,
+    affiliatedNestIds,
     relocatingNestId,
     builderPath,
     builderPos,
@@ -329,9 +336,9 @@ function HedgemonyMapSurfaceImpl(
 
   const handleResetView = useCallback(() => {
     animateToView(0, 0, 1);
-    // resetView() also resets holding-panel/bookmark sentinel state that
-    // animateToView doesn't touch. Run it alongside so the rest stays in sync;
-    // the pan/zoom store fields will get re-set by animateToView's commit.
+    // resetView() also resets bookmark sentinel state that animateToView
+    // doesn't touch. Run it alongside so the rest stays in sync; the
+    // pan/zoom store fields will get re-set by animateToView's commit.
     resetView();
   }, [animateToView, resetView]);
 
@@ -583,16 +590,24 @@ function HedgemonyMapSurfaceImpl(
           selected={hedgehouseSelected}
           onSelect={onHedgehouseSelect}
         />
-        {nests.map((nest) => (
-          <NestSprite
-            key={nest.id}
-            nest={nest}
-            selected={nest.id === selectedNestId}
-            dimmed={nest.id === relocatingNestId}
-            onSelect={onNestSelect}
-            onFocus={focusNest}
-          />
-        ))}
+        {nests.map((nest) => {
+          const isAffiliated = affiliatedNestIds?.has(nest.id) ?? false;
+          // When there's an affiliation set, anything outside it dims so the
+          // user can see at a glance which nest the selected hoglet belongs to.
+          const dimmedByAffiliation =
+            affiliatedNestIds != null && !isAffiliated;
+          return (
+            <NestSprite
+              key={nest.id}
+              nest={nest}
+              selected={nest.id === selectedNestId}
+              affiliated={isAffiliated && nest.id !== selectedNestId}
+              dimmed={nest.id === relocatingNestId || dimmedByAffiliation}
+              onSelect={onNestSelect}
+              onFocus={focusNest}
+            />
+          );
+        })}
         {pendingNest && builderAnimation === "building" && (
           <NestConstructionSite
             key={pendingNest.id}

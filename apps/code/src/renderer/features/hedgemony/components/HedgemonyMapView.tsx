@@ -20,6 +20,7 @@ import {
   type HogletDragTarget,
   handleHogletDrop,
 } from "../service/hogletMutations";
+import { initializeWildHogletStore } from "../service/hogletSubscriptionService";
 import { moveNest } from "../service/nestMutations";
 import { initializeNestStore } from "../service/nestSubscriptionService";
 import { initializePrGraphForNest } from "../service/prGraphSubscriptionService";
@@ -37,12 +38,17 @@ import { selectHogletById, useHogletStore } from "../stores/hogletStore";
 import { selectNests, useNestStore } from "../stores/nestStore";
 import { useSpawnDialogStore } from "../stores/spawnDialogStore";
 import { collectHogletWorldPositions } from "../utils/hogletPositions";
-import { findPath } from "../utils/pathfinding";
-import { HOGLET_RADIUS, worldObstacles } from "../utils/worldObstacles";
+import { applyHogletVisualPositions } from "../utils/hogletVisualPositions";
+import { findPath, type Obstacle } from "../utils/pathfinding";
+import {
+  BUILDER_OBSTACLE_RADIUS,
+  HOGLET_RADIUS,
+  hogletObstacles,
+  worldObstacles,
+} from "../utils/worldObstacles";
 import { BuilderCommandPanel } from "./BuilderCommandPanel";
 import { DyingHogletLayer } from "./DyingHogletLayer";
 import { HedgehouseCommandPanel } from "./HedgehouseCommandPanel";
-import { HedgemonyHoldingPanel } from "./HedgemonyHoldingPanel";
 import { HedgemonyHotkeyHelper } from "./HedgemonyHotkeyHelper";
 import {
   HedgemonyMapSurface,
@@ -100,13 +106,6 @@ export function HedgemonyMapView() {
   const setOsFullscreen = useHedgemonyViewStore((s) => s.setOsFullscreen);
   const setView = useHedgemonyViewStore((s) => s.setView);
   const saveBookmark = useHedgemonyViewStore((s) => s.saveBookmark);
-  const holdingPanel = useHedgemonyViewStore((s) => s.holdingPanel);
-  const setHoldingPanelOpen = useHedgemonyViewStore(
-    (s) => s.setHoldingPanelOpen,
-  );
-  const toggleHoldingPanelCollapsed = useHedgemonyViewStore(
-    (s) => s.toggleHoldingPanelCollapsed,
-  );
   const toggleBgmMute = useBgmStore((s) => s.toggleMute);
   const toggleSfxMute = useSfxStore((s) => s.toggleMute);
   const [helperOpen, setHelperOpen] = useState(false);
@@ -119,6 +118,13 @@ export function HedgemonyMapView() {
   // Mirrors Signals Inbox reports into Hedgemony as signal-backed hoglets
   // while the map view is mounted. Tears down with the view.
   useSignalIngestion();
+
+  // Subscribe to the wild bucket while the map is mounted. Both ad-hoc
+  // operator spawns and unrouted signal-backed hoglets live here, and the
+  // wild flock renders directly on the map.
+  useEffect(() => {
+    return initializeWildHogletStore();
+  }, []);
 
   useEffect(() => {
     return initializeNestStore();
@@ -329,21 +335,6 @@ export function HedgemonyMapView() {
   useHotkeys("shift+m", () => toggleSfxMute(), { preventDefault: true }, [
     toggleSfxMute,
   ]);
-
-  // Holding panel toggle. `T` collapses/expands inline; if closed entirely,
-  // open it first so a single press always produces a visible change.
-  useHotkeys(
-    "t",
-    () => {
-      if (!holdingPanel.open) {
-        setHoldingPanelOpen(true);
-        return;
-      }
-      toggleHoldingPanelCollapsed();
-    },
-    mapHotkeyOptions,
-    [holdingPanel.open, setHoldingPanelOpen, toggleHoldingPanelCollapsed],
-  );
 
   // RTS-style keyboard selection. Without this the map has no way to pick a
   // unit without a mouse. F1/F2 grab the two fixed-position structures; F3
@@ -594,119 +585,157 @@ export function HedgemonyMapView() {
     }, 600);
   }, []);
 
-  const handleMapClick = useCallback(
-    (x: number, y: number) => {
-      switch (mode.kind) {
-        case "relocatingNest": {
-          const nest = nests.find((candidate) => candidate.id === mode.nestId);
-          setMode({ kind: "browsing" });
-          if (!nest) return;
-          const targetX = Math.round(x);
-          const targetY = Math.round(y);
-          flashMoveMarker(targetX, targetY);
-          playSfx("order");
-          playVoice("hoglet:order_move");
-          void moveNest(nest, targetX, targetY, {
-            undoable: true,
-            flashMoveMarker,
-          });
-          return;
-        }
-        case "placingNest": {
-          const creationMode = mode.creationMode;
-          setMode({ kind: "browsing" });
-          setPendingPlacement({ x, y, creationMode });
-          return;
-        }
-        case "browsing":
-          setSelection(null);
-          return;
+  const collectLiveHogletPositions = useCallback(() => {
+    return applyHogletVisualPositions(
+      collectHogletWorldPositions(
+        selectNests(useNestStore.getState()),
+        useHogletStore.getState().byBucket,
+        useHogletPositionStore.getState().positions,
+      ),
+    );
+  }, []);
+
+  const unitObstacles = useCallback(
+    ({
+      excludeHogletIds,
+      includeBuilder,
+    }: {
+      excludeHogletIds?: ReadonlySet<string>;
+      includeBuilder: boolean;
+    }): Obstacle[] => {
+      const obstacles = hogletObstacles(
+        collectLiveHogletPositions(),
+        excludeHogletIds,
+      );
+      if (includeBuilder) {
+        const pos = builder.visualPosRef.current;
+        obstacles.push({
+          x: pos.x,
+          y: pos.y,
+          radius: BUILDER_OBSTACLE_RADIUS,
+        });
       }
+      return obstacles;
     },
-    [flashMoveMarker, mode, nests],
+    [builder.visualPosRef, collectLiveHogletPositions],
   );
 
-  const handleMapRightClick = useCallback(
-    (x: number, y: number) => {
-      if (mode.kind !== "browsing") {
+  const handleMapClick = (x: number, y: number) => {
+    switch (mode.kind) {
+      case "relocatingNest": {
+        const nest = nests.find((n) => n.id === mode.nestId);
         setMode({ kind: "browsing" });
-        return;
-      }
-      if (!selection || selection.type === "nest") return;
-
-      const targetX = Math.round(x);
-      const targetY = Math.round(y);
-
-      if (selection.type === "hoglets") {
-        const positionStore = useHogletPositionStore.getState();
-        const obstacles = worldObstacles(nests);
-        const positionsNow = collectHogletWorldPositions(
-          nests,
-          useHogletStore.getState().byBucket,
-          positionStore.positions,
-        );
-        const currentById = new Map(
-          positionsNow.map((position) => [
-            position.hogletId,
-            { x: position.x, y: position.y },
-          ]),
-        );
-        const desired: { id: string; x: number; y: number }[] =
-          selection.ids.length === 1
-            ? [{ id: selection.ids[0], x: targetX, y: targetY }]
-            : selection.ids.map((id, index) => {
-                const ringRadius = 28 + selection.ids.length * 4;
-                const angle = (2 * Math.PI * index) / selection.ids.length;
-                return {
-                  id,
-                  x: targetX + Math.cos(angle) * ringRadius,
-                  y: targetY + Math.sin(angle) * ringRadius,
-                };
-              });
-        let resolvedX = targetX;
-        let resolvedY = targetY;
-        for (const slot of desired) {
-          const from = currentById.get(slot.id) ?? { x: slot.x, y: slot.y };
-          const path = findPath(
-            from,
-            { x: slot.x, y: slot.y },
-            obstacles,
-            HOGLET_RADIUS,
-          );
-          if (path.length === 0) continue;
-          positionStore.setWalkPath(slot.id, path);
-          if (selection.ids.length === 1) {
-            const last = path[path.length - 1];
-            resolvedX = Math.round(last.x);
-            resolvedY = Math.round(last.y);
-          }
-        }
-        if (selection.includeBuilder) {
-          builder.startWalk({ x: targetX, y: targetY }, "idle");
-        }
+        if (!nest) return;
+        const targetX = Math.round(x);
+        const targetY = Math.round(y);
+        flashMoveMarker(targetX, targetY);
         playSfx("order");
         playVoice("hoglet:order_move");
-        flashMoveMarker(resolvedX, resolvedY);
+        void moveNest(nest, targetX, targetY, {
+          undoable: true,
+          flashMoveMarker,
+        });
         return;
       }
+      case "placingNest": {
+        const creationMode = mode.creationMode;
+        setMode({ kind: "browsing" });
+        setPendingPlacement({ x, y, creationMode });
+        return;
+      }
+      case "browsing":
+        setSelection(null);
+        return;
+    }
+  };
 
+  const handleMapRightClick = (x: number, y: number) => {
+    if (mode.kind !== "browsing") {
+      setMode({ kind: "browsing" });
+      return;
+    }
+    if (!selection || selection.type === "nest") return;
+
+    const targetX = Math.round(x);
+    const targetY = Math.round(y);
+
+    if (selection.type === "hoglets") {
+      const positionStore = useHogletPositionStore.getState();
+      const staticObstacles = worldObstacles(nests);
+      const positionsNow = collectLiveHogletPositions();
+      const currentById = new Map(
+        positionsNow.map((p) => [p.hogletId, { x: p.x, y: p.y }]),
+      );
+      const desired: { id: string; x: number; y: number }[] =
+        selection.ids.length === 1
+          ? [{ id: selection.ids[0], x: targetX, y: targetY }]
+          : selection.ids.map((id, i) => {
+              const ringRadius =
+                HOGLET_RADIUS / Math.sin(Math.PI / selection.ids.length) + 12;
+              const angle = (2 * Math.PI * i) / selection.ids.length;
+              return {
+                id,
+                x: targetX + Math.cos(angle) * ringRadius,
+                y: targetY + Math.sin(angle) * ringRadius,
+              };
+            });
+      let resolvedX = targetX;
+      let resolvedY = targetY;
+      for (const slot of desired) {
+        const from = currentById.get(slot.id) ?? { x: slot.x, y: slot.y };
+        const obstacles = [
+          ...staticObstacles,
+          ...unitObstacles({
+            excludeHogletIds: new Set([slot.id]),
+            includeBuilder: true,
+          }),
+        ];
+        const path = findPath(
+          from,
+          { x: slot.x, y: slot.y },
+          obstacles,
+          HOGLET_RADIUS,
+        );
+        if (path.length === 0) continue;
+        positionStore.setWalkPath(slot.id, path);
+        if (selection.ids.length === 1) {
+          const last = path[path.length - 1];
+          resolvedX = Math.round(last.x);
+          resolvedY = Math.round(last.y);
+        }
+      }
+      if (selection.includeBuilder) {
+        builder.startWalk(
+          { x: targetX, y: targetY },
+          "idle",
+          undefined,
+          unitObstacles({ includeBuilder: false }),
+        );
+      }
       playSfx("order");
       playVoice("hoglet:order_move");
-      const resolved = builder.startWalk({ x: targetX, y: targetY }, "idle");
-      flashMoveMarker(Math.round(resolved.x), Math.round(resolved.y));
-    },
-    [builder, flashMoveMarker, mode.kind, nests, selection],
-  );
+      flashMoveMarker(resolvedX, resolvedY);
+      return;
+    }
+
+    playSfx("order");
+    playVoice("hoglet:order_move");
+    const resolved = builder.startWalk(
+      { x: targetX, y: targetY },
+      "idle",
+      undefined,
+      unitObstacles({ includeBuilder: false }),
+    );
+    flashMoveMarker(Math.round(resolved.x), Math.round(resolved.y));
+  };
 
   const handleBoxSelect = useCallback(
     ({ minX, minY, maxX, maxY, additive }: MapBoxSelection) => {
       const nestsNow = selectNests(useNestStore.getState());
       const byBucket = useHogletStore.getState().byBucket;
       const overrides = useHogletPositionStore.getState().positions;
-      const positions = collectHogletWorldPositions(
-        nestsNow,
-        byBucket,
-        overrides,
+      const positions = applyHogletVisualPositions(
+        collectHogletWorldPositions(nestsNow, byBucket, overrides),
       );
       const hit = positions
         .filter((p) => p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY)
@@ -768,6 +797,47 @@ export function HedgemonyMapView() {
       ? selection.ids[0]
       : null;
   const activeHoglet = useHogletStore(selectHogletById(singleSelectedHogletId));
+  const hogletBuckets = useHogletStore((s) => s.byBucket);
+
+  // Selection-sync focus: when the user picks a nest, that nest's brood stays
+  // bright and everything else dims; when they pick a hoglet, its parent nest
+  // is highlighted alongside the hoglet so the relationship is obvious. A
+  // `null` affiliation set means "no focus, render everything at full opacity".
+  const { affiliatedNestIds, dimWildFlock } = useMemo(() => {
+    if (selection?.type === "nest") {
+      return {
+        affiliatedNestIds: new Set<string>([
+          selection.id,
+        ]) as ReadonlySet<string>,
+        dimWildFlock: true,
+      };
+    }
+    if (selection?.type === "hoglets") {
+      const parents = new Set<string>();
+      let hasWildSelected = false;
+      for (const id of selection.ids) {
+        let nestIdForHoglet: string | null | undefined;
+        for (const bucket of Object.values(hogletBuckets)) {
+          const found = bucket.find((h) => h.id === id);
+          if (found) {
+            nestIdForHoglet = found.nestId;
+            break;
+          }
+        }
+        if (nestIdForHoglet === undefined) continue;
+        if (nestIdForHoglet === null) hasWildSelected = true;
+        else parents.add(nestIdForHoglet);
+      }
+      return {
+        affiliatedNestIds: parents as ReadonlySet<string>,
+        dimWildFlock: !hasWildSelected,
+      };
+    }
+    return {
+      affiliatedNestIds: null as ReadonlySet<string> | null,
+      dimWildFlock: false,
+    };
+  }, [selection, hogletBuckets]);
   const buildMode = mode.kind === "placingNest";
   const relocatingNestId = mode.kind === "relocatingNest" ? mode.nestId : null;
 
@@ -815,16 +885,6 @@ export function HedgemonyMapView() {
     setMode({ kind: "relocatingNest", nestId: id });
   };
 
-  const handleDragStart = useCallback<DragDropEvents["dragstart"]>((event) => {
-    const source = event.operation.source?.data;
-    if (source?.type === "hoglet" && typeof source.sourceNestId === "string") {
-      // Brood hoglet drag — make the release target visible if hidden.
-      const view = useHedgemonyViewStore.getState();
-      if (!view.holdingPanel.open) view.setHoldingPanelOpen(true);
-      if (view.holdingPanel.collapsed) view.toggleHoldingPanelCollapsed();
-    }
-  }, []);
-
   const handleDragEnd = useCallback<DragDropEvents["dragend"]>((event) => {
     if (event.canceled) return;
     const source = event.operation.source?.data as HogletDragSource | undefined;
@@ -844,6 +904,7 @@ export function HedgemonyMapView() {
         ref={surfaceRef}
         nests={nests}
         selectedNestId={activeNest?.id ?? null}
+        affiliatedNestIds={affiliatedNestIds}
         relocatingNestId={relocatingNestId}
         builderPath={builder.path}
         builderPos={builder.pos}
@@ -883,11 +944,15 @@ export function HedgemonyMapView() {
             key={nest.id}
             nest={nest}
             selectedHogletIds={selectedHogletIds}
+            dimmed={
+              affiliatedNestIds != null && !affiliatedNestIds.has(nest.id)
+            }
             onHogletSelect={handleHogletSelect}
           />
         ))}
         <WildHogletFlock
           selectedHogletIds={selectedHogletIds}
+          dimmed={dimWildFlock}
           onHogletSelect={handleHogletSelect}
         />
         <DyingHogletLayer />
@@ -944,7 +1009,6 @@ export function HedgemonyMapView() {
         onOpenChange={setHelperOpen}
         activeContext={activeHotkeyContext}
       />
-      <HedgemonyHoldingPanel />
       <AnimatePresence>
         {spawnHogletOpen && (
           <SpawnHogletPanel
@@ -960,7 +1024,6 @@ export function HedgemonyMapView() {
 
   return (
     <DragDropProvider
-      onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       sensors={[
         {
@@ -1018,6 +1081,7 @@ export function HedgemonyMapView() {
             { x: created.mapX, y: created.mapY },
             "build",
             created,
+            unitObstacles({ includeBuilder: false }),
           );
         }}
       />

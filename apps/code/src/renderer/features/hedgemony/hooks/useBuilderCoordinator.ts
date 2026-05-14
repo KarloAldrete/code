@@ -6,17 +6,27 @@ import {
   useRef,
   useState,
 } from "react";
-import { findPath, snapGoal, type Vec2 } from "../utils/pathfinding";
+import {
+  findPath,
+  type Obstacle,
+  snapGoal,
+  snapPointOutsideObstacles,
+  type Vec2,
+} from "../utils/pathfinding";
 import { worldObstacles } from "../utils/worldObstacles";
 
 const DEFAULT_BUILD_ANIMATION_MS = 1500;
-// Park the builder just south of the Hedgehouse (which sits at world origin
-// with a ~100px obstacle radius). Spawning the builder inside the Hedgehouse
-// obstacle meant every walk had to "escape" through the building first,
-// which read visually as the builder clipping straight through it. (0, 130)
-// puts the sprite at the doorway, outside the obstacle, so pathfinding can
-// route cleanly from the start.
-const DEFAULT_INITIAL_POS: Vec2 = { x: 0, y: 130 };
+// Park the builder just south of the Hedgehouse. The previous attempt at
+// (0, 130) was still broken: pathfinding inflates the Hedgehouse obstacle
+// (raw radius 100) by the agent's pathfinding radius (36 for the builder)
+// before testing intersections, giving an effective avoid-radius of 136.
+// Any spawn at distance < 136 from origin is treated as "inside the
+// obstacle" and triggers findPath's escape logic — which walks straight
+// toward the goal until it clears the inflation. From (0, 130) heading
+// north of the Hedgehouse, that escape cuts straight through the building.
+// y=160 keeps the spawn comfortably outside the 136 inflation with a 24px
+// buffer so any future radius tweak still leaves headroom.
+const DEFAULT_INITIAL_POS: Vec2 = { x: 0, y: 160 };
 
 export type BuilderAnimation = "idle" | "walking" | "building";
 
@@ -60,6 +70,7 @@ export interface BuilderCoordinator {
     target: Vec2,
     onArrive: "idle" | "build",
     buildingFor?: Nest,
+    extraObstacles?: Obstacle[],
   ) => Vec2;
   /** Called by BuilderSprite when it reaches the final waypoint. */
   handleArrive: () => void;
@@ -102,6 +113,25 @@ export function useBuilderCoordinator({
     };
   }, []);
 
+  // Self-heal a stranded builder. Runs on mount and whenever the obstacle set
+  // (the nest list) changes: if visualPosRef has somehow landed inside an
+  // obstacle — Vite Fast Refresh preserving a pre-fix motionX/Y, a nest being
+  // built right on top of the builder, etc. — push it to the nearest
+  // perimeter and emit a single-waypoint path so BuilderSprite snaps motionX/Y
+  // there. Without this, the builder can sit visibly inside a building at rest
+  // until the user manually clicks somewhere.
+  useEffect(() => {
+    const obstacles = worldObstacles(nests, {
+      pendingNest: pendingBuildRef.current,
+    });
+    const rawFrom = visualPosRef.current;
+    const safe = snapPointOutsideObstacles(rawFrom, obstacles);
+    if (safe.x === rawFrom.x && safe.y === rawFrom.y) return;
+    visualPosRef.current = safe;
+    setPath([safe]);
+    setLastReachedIndex(0);
+  }, [nests]);
+
   const commitPendingBuild = useCallback(() => {
     const pending = pendingBuildRef.current;
     if (!pending) return;
@@ -120,7 +150,12 @@ export function useBuilderCoordinator({
   }, [buildAnimationMs, commitPendingBuild]);
 
   const startWalk = useCallback(
-    (target: Vec2, onArrive: "idle" | "build", buildingFor?: Nest): Vec2 => {
+    (
+      target: Vec2,
+      onArrive: "idle" | "build",
+      buildingFor?: Nest,
+      extraObstacles: Obstacle[] = [],
+    ): Vec2 => {
       if (buildingTimerRef.current) {
         clearTimeout(buildingTimerRef.current);
         buildingTimerRef.current = null;
@@ -138,7 +173,24 @@ export function useBuilderCoordinator({
         }
         setPending(buildingFor);
       }
-      const from = visualPosRef.current;
+      const pendingObstacle = buildingFor ?? pendingBuildRef.current;
+      const obstacles = [
+        ...worldObstacles(nests, { pendingNest: pendingObstacle }),
+        ...extraObstacles,
+      ];
+      // Self-heal a stranded visual position. Vite Fast Refresh / HMR can
+      // leave motionX/motionY (and therefore visualPosRef) stuck at a stale
+      // point inside an obstacle from a previous buggy build. If we hand
+      // that point straight to findPath, the planner correctly escapes —
+      // but it prepends the original blocked `from` as path[0], and the
+      // sprite snaps motionX/Y to path[0] on the next render, *committing*
+      // the visual to the inside-obstacle position. Push the position to
+      // the nearest perimeter first so path[0] is always safe.
+      const rawFrom = visualPosRef.current;
+      const from = snapPointOutsideObstacles(rawFrom, obstacles);
+      if (from.x !== rawFrom.x || from.y !== rawFrom.y) {
+        visualPosRef.current = from;
+      }
       const dxFromTarget = target.x - from.x;
       const dyFromTarget = target.y - from.y;
       if (dxFromTarget * dxFromTarget + dyFromTarget * dyFromTarget < 0.01) {
@@ -150,8 +202,6 @@ export function useBuilderCoordinator({
         else setState({ kind: "idle" });
         return from;
       }
-      const pendingObstacle = buildingFor ?? pendingBuildRef.current;
-      const obstacles = worldObstacles(nests, { pendingNest: pendingObstacle });
       const snapped = snapGoal(from, target, obstacles);
       const plan = findPath(from, snapped, obstacles);
       const resolvedGoal = plan[plan.length - 1] ?? snapped;
