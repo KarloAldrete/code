@@ -6,6 +6,7 @@ import { WILD_BUCKET } from "../constants/buckets";
 import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import { useHogletStore } from "../stores/hogletStore";
 import { wildHogletPosition } from "../utils/hogletPositions";
+import { getHogletVisualPosition } from "../utils/hogletVisualPositions";
 
 const log = logger.scope("hoglet-subscription-service");
 
@@ -14,6 +15,11 @@ const TASK_SUMMARY_REFRESH_MS = 10_000;
 type WatchHandle = { unsubscribe: () => void };
 
 function resolveHogletPosition(hogletId: string): { x: number; y: number } {
+  // Prefer the live sprite position so death animations land where the hoglet
+  // is actually rendered — the position store holds the walk *destination*,
+  // which diverges from the visible sprite while a walk is in flight.
+  const visual = getHogletVisualPosition(hogletId);
+  if (visual) return visual;
   const override = useHogletPositionStore.getState().positions[hogletId];
   if (override) return override;
   return wildHogletPosition(hogletId);

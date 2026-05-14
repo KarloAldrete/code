@@ -36,6 +36,7 @@ import { WILD_BUCKET } from "../constants/buckets";
 import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import { selectTaskSummary, useHogletStore } from "../stores/hogletStore";
 import { wildHogletPosition } from "../utils/hogletPositions";
+import { getHogletVisualPosition } from "../utils/hogletVisualPositions";
 import { CommandConsole } from "./CommandConsole";
 import { STATUS_BADGE_COLOR, type TaskStatus } from "./hogletStatus";
 
@@ -175,8 +176,9 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
     const store = useHogletStore.getState();
     const original = store.byBucket[bucketKey]?.find((h) => h.id === hoglet.id);
 
+    const visualPos = getHogletVisualPosition(hoglet.id);
     const posOverride = useHogletPositionStore.getState().positions[hoglet.id];
-    const pos = posOverride ?? wildHogletPosition(hoglet.id);
+    const pos = visualPos ?? posOverride ?? wildHogletPosition(hoglet.id);
     store.startDying(hoglet.id, pos.x, pos.y);
     store.remove(bucketKey, hoglet.id);
     clearPosition(hoglet.id);
