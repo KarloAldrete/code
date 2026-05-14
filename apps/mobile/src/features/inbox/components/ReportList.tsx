@@ -14,9 +14,13 @@ import { ReportListRow } from "./ReportListRow";
 
 interface ReportListProps {
   onReportPress?: (report: SignalReport) => void;
+  contentInsetTop?: number;
 }
 
-export function ReportList({ onReportPress }: ReportListProps) {
+export function ReportList({
+  onReportPress,
+  contentInsetTop = 0,
+}: ReportListProps) {
   const { reports, totalCount, isLoading, error, refetch } = useInboxReports();
   const themeColors = useThemeColors();
 
@@ -75,9 +79,13 @@ export function ReportList({ onReportPress }: ReportListProps) {
           refreshing={isLoading}
           onRefresh={() => refetch()}
           tintColor={themeColors.accent[9]}
+          progressViewOffset={contentInsetTop}
         />
       }
-      contentContainerStyle={{ paddingBottom: 100 }}
+      contentContainerStyle={{
+        paddingTop: contentInsetTop,
+        paddingBottom: 100,
+      }}
     />
   );
 }
