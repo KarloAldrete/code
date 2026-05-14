@@ -18,6 +18,7 @@ import { trpcClient } from "@renderer/trpc/client";
 import { toast } from "@renderer/utils/toast";
 import type { ExecutionMode, Task } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
+import type { CloudRunSource, PrAuthorshipMode } from "@shared/types/cloud";
 import { useNavigationStore } from "@stores/navigationStore";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
@@ -42,6 +43,8 @@ interface UseTaskCreationOptions {
   environmentId?: string | null;
   sandboxEnvironmentId?: string;
   signalReportId?: string;
+  cloudPrAuthorshipMode?: PrAuthorshipMode;
+  cloudRunSource?: CloudRunSource;
   onTaskCreated?: (task: Task) => void;
 }
 
@@ -67,6 +70,8 @@ function prepareTaskInput(
     environmentId?: string | null;
     sandboxEnvironmentId?: string;
     signalReportId?: string;
+    cloudPrAuthorshipMode?: PrAuthorshipMode;
+    cloudRunSource?: CloudRunSource;
   },
 ): TaskCreationInput {
   const serializedContent = contentToXml(content).trim();
@@ -96,13 +101,15 @@ function prepareTaskInput(
     environmentId: options.environmentId ?? undefined,
     sandboxEnvironmentId: options.sandboxEnvironmentId,
     cloudPrAuthorshipMode:
-      options.signalReportId && options.workspaceMode === "cloud"
+      options.cloudPrAuthorshipMode ??
+      (options.signalReportId && options.workspaceMode === "cloud"
         ? "user"
-        : undefined,
+        : undefined),
     cloudRunSource:
-      options.signalReportId && options.workspaceMode === "cloud"
+      options.cloudRunSource ??
+      (options.signalReportId && options.workspaceMode === "cloud"
         ? "signal_report"
-        : undefined,
+        : undefined),
     signalReportId: options.signalReportId,
   };
 }
@@ -183,6 +190,8 @@ export function useTaskCreation({
   environmentId,
   sandboxEnvironmentId,
   signalReportId,
+  cloudPrAuthorshipMode,
+  cloudRunSource,
   onTaskCreated,
 }: UseTaskCreationOptions): UseTaskCreationReturn {
   const [isCreatingTask, setIsCreatingTask] = useState(false);
@@ -232,6 +241,8 @@ export function useTaskCreation({
         environmentId,
         sandboxEnvironmentId,
         signalReportId,
+        cloudPrAuthorshipMode,
+        cloudRunSource,
       });
 
       if (executionMode) {
@@ -289,6 +300,8 @@ export function useTaskCreation({
     environmentId,
     sandboxEnvironmentId,
     signalReportId,
+    cloudPrAuthorshipMode,
+    cloudRunSource,
     clearTaskInputReportAssociation,
     invalidateTasks,
     navigateToTask,
