@@ -124,8 +124,10 @@ function createMockRepositoryRepository() {
         updatedAt: "2026-05-13T00:00:00.000Z",
       },
     ]),
+    findMostRecentlyAccessed: vi.fn(() => null),
   } as unknown as RepositoryRepository & {
     findAll: ReturnType<typeof vi.fn>;
+    findMostRecentlyAccessed: ReturnType<typeof vi.fn>;
   };
 }
 
@@ -213,6 +215,78 @@ describe("NestService", () => {
       nestId: nest.id,
       event: { kind: "status", nest },
     });
+  });
+
+  it("falls back to the most-recently-accessed repository when no bootstrap is provided", async () => {
+    repositoryRepository.findMostRecentlyAccessed.mockReturnValue({
+      id: "repo-recent",
+      path: "/tmp/posthog",
+      remoteUrl: "https://github.com/posthog/posthog.git",
+      lastAccessedAt: "2026-05-13T00:00:00.000Z",
+      createdAt: "2026-05-13T00:00:00.000Z",
+      updatedAt: "2026-05-13T00:00:00.000Z",
+    });
+
+    await service.create({
+      name: "Quick nest",
+      goalPrompt: "Add a feature",
+      definitionOfDone: null,
+      mapX: 0,
+      mapY: 0,
+      creationMode: "simple",
+    });
+
+    expect(nestRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ primaryRepository: "posthog/posthog" }),
+    );
+  });
+
+  it("prefers bootstrap primaryRepository over the most-recently-accessed fallback", async () => {
+    repositoryRepository.findMostRecentlyAccessed.mockReturnValue({
+      id: "repo-recent",
+      path: "/tmp/elsewhere",
+      remoteUrl: "https://github.com/posthog/other.git",
+      lastAccessedAt: "2026-05-13T00:00:00.000Z",
+      createdAt: "2026-05-13T00:00:00.000Z",
+      updatedAt: "2026-05-13T00:00:00.000Z",
+    });
+
+    await service.create({
+      name: "Bootstrapped",
+      goalPrompt: "Work on a specific repo",
+      definitionOfDone: null,
+      mapX: 0,
+      mapY: 0,
+      creationMode: "guided",
+      creationBootstrap: {
+        mode: "agent_bootstrap",
+        repositories: ["posthog/posthog"],
+        primaryRepository: "posthog/posthog",
+        prompt: "go",
+        handoffInstructions: "ok",
+      },
+    });
+
+    expect(nestRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ primaryRepository: "posthog/posthog" }),
+    );
+  });
+
+  it("leaves primaryRepository null when no bootstrap and no local repos exist", async () => {
+    repositoryRepository.findMostRecentlyAccessed.mockReturnValue(null);
+
+    await service.create({
+      name: "Empty",
+      goalPrompt: "do something",
+      definitionOfDone: null,
+      mapX: 0,
+      mapY: 0,
+      creationMode: "simple",
+    });
+
+    expect(nestRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ primaryRepository: null }),
+    );
   });
 
   it("records a local bootstrap handoff when creation includes bootstrap context", async () => {

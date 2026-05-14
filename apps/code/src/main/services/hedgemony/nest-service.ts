@@ -1,4 +1,6 @@
+import { parseGithubUrl } from "@posthog/git/utils";
 import { inject, injectable } from "inversify";
+import { normalizeRepoKey } from "../../../shared/utils/repo";
 import type { NestRepository } from "../../db/repositories/nest-repository";
 import type { RepositoryRepository } from "../../db/repositories/repository-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
@@ -57,7 +59,9 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
   async create(input: CreateNestInput): Promise<Nest> {
     const bootstrap = input.creationBootstrap;
     const primaryRepository =
-      bootstrap?.primaryRepository ?? bootstrap?.repositories[0] ?? null;
+      bootstrap?.primaryRepository ??
+      bootstrap?.repositories[0] ??
+      this.pickFallbackPrimaryRepository();
     const created = this.nests.create({
       name: input.name,
       goalPrompt: input.goalPrompt,
@@ -184,6 +188,34 @@ export class NestService extends TypedEventEmitter<HedgemonyEvents> {
 
   private emitChange(nest: Nest, event: NestWatchEvent): void {
     this.emit(HedgemonyEvent.NestChanged, { nestId: nest.id, event });
+  }
+
+  /**
+   * Best-effort fallback used when nest creation doesn't carry a bootstrap
+   * context. Picks the operator's most-recently-accessed local repository so
+   * the hedgehog isn't left guessing which repo to scope its hoglets to.
+   * Returns null when no repository has a usable remote URL.
+   */
+  private pickFallbackPrimaryRepository(): string | null {
+    let recent: Awaited<
+      ReturnType<RepositoryRepository["findMostRecentlyAccessed"]>
+    >;
+    try {
+      recent = this.repositories.findMostRecentlyAccessed();
+    } catch (error) {
+      log.warn("findMostRecentlyAccessed failed; no fallback repo", {
+        error: stringifyError(error),
+      });
+      return null;
+    }
+    const remote = recent?.remoteUrl;
+    if (!remote) return null;
+    const parsed = parseGithubUrl(remote);
+    if (parsed && parsed.kind === "repo") {
+      return `${parsed.owner}/${parsed.repo}`;
+    }
+    const normalised = normalizeRepoKey(remote);
+    return normalised.includes("/") ? normalised : null;
   }
 
   private async buildBootstrapHandoffMessage(
