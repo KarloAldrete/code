@@ -6,17 +6,15 @@ import {
   useRef,
   useState,
 } from "react";
-import { HEDGEMONY_CONFIG } from "../config";
 import {
-  findPath,
-  type Obstacle,
-  snapGoal,
-  snapPointOutsideObstacles,
-  type Vec2,
-} from "../utils/pathfinding";
-import { worldObstacles } from "../utils/worldObstacles";
+  type BuilderAnimation,
+  type BuilderSnapshot,
+  BuilderStateMachine,
+} from "../state/BuilderStateMachine";
+import type { Obstacle, Vec2 } from "../utils/pathfinding";
 
-const DEFAULT_BUILD_ANIMATION_MS = HEDGEMONY_CONFIG.animation.buildMs;
+export type { BuilderAnimation };
+
 // Park the builder just south of the Hedgehouse. The previous attempt at
 // (0, 130) was still broken: pathfinding inflates the Hedgehouse obstacle
 // (raw radius 100) by the agent's pathfinding radius (36 for the builder)
@@ -28,13 +26,6 @@ const DEFAULT_BUILD_ANIMATION_MS = HEDGEMONY_CONFIG.animation.buildMs;
 // y=160 keeps the spawn comfortably outside the 136 inflation with a 24px
 // buffer so any future radius tweak still leaves headroom.
 const DEFAULT_INITIAL_POS: Vec2 = { x: 0, y: 160 };
-
-export type BuilderAnimation = "idle" | "walking" | "building";
-
-type BuilderState =
-  | { kind: "idle" }
-  | { kind: "walking"; onArrive: "idle" | "build" }
-  | { kind: "building" };
 
 export interface UseBuilderCoordinatorOptions {
   nests: Nest[];
@@ -79,76 +70,71 @@ export interface BuilderCoordinator {
   handleSegmentComplete: (index: number) => void;
 }
 
+function deriveAnimation(snapshot: BuilderSnapshot): BuilderAnimation {
+  switch (snapshot.state.kind) {
+    case "walking":
+      return "walking";
+    case "building":
+      return "building";
+    default:
+      return "idle";
+  }
+}
+
 /**
- * Owns the builder hedgehog's path, state machine (idle / walking / building),
- * and the build-completion timer. Extracted from HedgemonyMapView so the
- * state transitions are testable in isolation and so the view doesn't grow a
- * second copy for hedgerows / wild hoglets later.
+ * Thin React adapter over BuilderStateMachine. Owns nothing of substance —
+ * forwards calls to the machine, wires the machine's snapshot stream into
+ * useState, and disposes the machine on unmount. The actual state logic
+ * (transitions, build timer, pending-nest commit, obstacle-stranded heal)
+ * lives in BuilderStateMachine and is testable without React.
  */
 export function useBuilderCoordinator({
   nests,
-  buildAnimationMs = DEFAULT_BUILD_ANIMATION_MS,
+  buildAnimationMs,
   initialPos = DEFAULT_INITIAL_POS,
   onPendingBuildCommit,
 }: UseBuilderCoordinatorOptions): BuilderCoordinator {
-  const [path, setPath] = useState<Vec2[]>([initialPos]);
-  const [lastReachedIndex, setLastReachedIndex] = useState(0);
-  const [state, setState] = useState<BuilderState>({ kind: "idle" });
-  const buildingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const visualPosRef = useRef<Vec2>({ ...initialPos });
-  // Ref + state mirror: internal logic needs synchronous reads inside the same
-  // `startWalk` call, while consumers need re-renders when the pending nest
-  // changes (to show/hide the construction site).
-  const pendingBuildRef = useRef<Nest | null>(null);
-  const [pendingNest, setPendingNest] = useState<Nest | null>(null);
-  const setPending = useCallback((next: Nest | null) => {
-    pendingBuildRef.current = next;
-    setPendingNest(next);
-  }, []);
   const onPendingBuildCommitRef = useRef(onPendingBuildCommit);
   onPendingBuildCommitRef.current = onPendingBuildCommit;
 
+  // The machine is created once. React StrictMode double-invokes effects
+  // but not lazy refs, so this initializer runs exactly once per mount.
+  const machineRef = useRef<BuilderStateMachine | null>(null);
+  const [snapshot, setSnapshot] = useState<BuilderSnapshot>(() => ({
+    state: { kind: "idle" },
+    path: [initialPos],
+    lastReachedIndex: 0,
+    pendingNest: null,
+  }));
+
+  if (machineRef.current === null) {
+    machineRef.current = new BuilderStateMachine({
+      initialPos,
+      buildAnimationMs,
+      onChange: setSnapshot,
+      onCommitPendingBuild: (nest) => onPendingBuildCommitRef.current?.(nest),
+    });
+  }
+
   useEffect(() => {
+    const machine = machineRef.current;
     return () => {
-      if (buildingTimerRef.current) clearTimeout(buildingTimerRef.current);
+      machine?.dispose();
     };
   }, []);
 
-  // Self-heal a stranded builder. Runs on mount and whenever the obstacle set
-  // (the nest list) changes: if visualPosRef has somehow landed inside an
-  // obstacle — Vite Fast Refresh preserving a pre-fix motionX/Y, a nest being
-  // built right on top of the builder, etc. — push it to the nearest
-  // perimeter and emit a single-waypoint path so BuilderSprite snaps motionX/Y
-  // there. Without this, the builder can sit visibly inside a building at rest
+  // Self-heal a stranded builder. Runs whenever the obstacle set (the nest
+  // list) changes: if visualPosRef has somehow landed inside an obstacle —
+  // Vite Fast Refresh preserving a pre-fix motionX/Y, a nest being built
+  // right on top of the builder, etc. — push it to the nearest perimeter and
+  // emit a single-waypoint path so BuilderSprite snaps motionX/Y there.
+  // Without this, the builder can sit visibly inside a building at rest
   // until the user manually clicks somewhere.
   useEffect(() => {
-    const obstacles = worldObstacles(nests, {
-      pendingNest: pendingBuildRef.current,
-    });
-    const rawFrom = visualPosRef.current;
-    const safe = snapPointOutsideObstacles(rawFrom, obstacles);
-    if (safe.x === rawFrom.x && safe.y === rawFrom.y) return;
-    visualPosRef.current = safe;
-    setPath([safe]);
-    setLastReachedIndex(0);
+    const safe = machineRef.current?.healAt(visualPosRef.current, nests);
+    if (safe) visualPosRef.current = safe;
   }, [nests]);
-
-  const commitPendingBuild = useCallback(() => {
-    const pending = pendingBuildRef.current;
-    if (!pending) return;
-    setPending(null);
-    onPendingBuildCommitRef.current?.(pending);
-  }, [setPending]);
-
-  const enterBuilding = useCallback(() => {
-    if (buildingTimerRef.current) clearTimeout(buildingTimerRef.current);
-    setState({ kind: "building" });
-    buildingTimerRef.current = setTimeout(() => {
-      setState({ kind: "idle" });
-      buildingTimerRef.current = null;
-      commitPendingBuild();
-    }, buildAnimationMs);
-  }, [buildAnimationMs, commitPendingBuild]);
 
   const startWalk = useCallback(
     (
@@ -157,99 +143,43 @@ export function useBuilderCoordinator({
       buildingFor?: Nest,
       extraObstacles: Obstacle[] = [],
     ): Vec2 => {
-      if (buildingTimerRef.current) {
-        clearTimeout(buildingTimerRef.current);
-        buildingTimerRef.current = null;
+      const machine = machineRef.current;
+      if (!machine) return target;
+      const result = machine.startWalk({
+        target,
+        from: visualPosRef.current,
+        onArrive,
+        nests,
+        buildingFor,
+        extraObstacles,
+      });
+      if (
+        result.resolvedFrom.x !== visualPosRef.current.x ||
+        result.resolvedFrom.y !== visualPosRef.current.y
+      ) {
+        visualPosRef.current = result.resolvedFrom;
       }
-      // Any non-build walk interrupts an in-flight build. Commit the pending
-      // nest now so it doesn't get stuck invisible forever.
-      if (onArrive !== "build") commitPendingBuild();
-      // Queue the new pending build (committing any prior one first).
-      if (buildingFor) {
-        if (
-          pendingBuildRef.current &&
-          pendingBuildRef.current !== buildingFor
-        ) {
-          commitPendingBuild();
-        }
-        setPending(buildingFor);
-      }
-      const pendingObstacle = buildingFor ?? pendingBuildRef.current;
-      const obstacles = [
-        ...worldObstacles(nests, { pendingNest: pendingObstacle }),
-        ...extraObstacles,
-      ];
-      // Self-heal a stranded visual position. Vite Fast Refresh / HMR can
-      // leave motionX/motionY (and therefore visualPosRef) stuck at a stale
-      // point inside an obstacle from a previous buggy build. If we hand
-      // that point straight to findPath, the planner correctly escapes —
-      // but it prepends the original blocked `from` as path[0], and the
-      // sprite snaps motionX/Y to path[0] on the next render, *committing*
-      // the visual to the inside-obstacle position. Push the position to
-      // the nearest perimeter first so path[0] is always safe.
-      const rawFrom = visualPosRef.current;
-      const from = snapPointOutsideObstacles(rawFrom, obstacles);
-      if (from.x !== rawFrom.x || from.y !== rawFrom.y) {
-        visualPosRef.current = from;
-      }
-      const dxFromTarget = target.x - from.x;
-      const dyFromTarget = target.y - from.y;
-      if (dxFromTarget * dxFromTarget + dyFromTarget * dyFromTarget < 0.01) {
-        // Already at the target — skip planning + walking, transition straight
-        // to the post-arrival state.
-        setPath([from]);
-        setLastReachedIndex(0);
-        if (onArrive === "build") enterBuilding();
-        else setState({ kind: "idle" });
-        return from;
-      }
-      const snapped = snapGoal(from, target, obstacles);
-      const plan = findPath(from, snapped, obstacles);
-      const resolvedGoal = plan[plan.length - 1] ?? snapped;
-      if (plan.length < 2) {
-        setPath(plan.length === 1 ? plan : [from]);
-        setLastReachedIndex(0);
-        if (onArrive === "build") enterBuilding();
-        else setState({ kind: "idle" });
-        return resolvedGoal;
-      }
-      setPath(plan);
-      setLastReachedIndex(0);
-      setState({ kind: "walking", onArrive });
-      return resolvedGoal;
+      return result.resolvedGoal;
     },
-    [nests, enterBuilding, commitPendingBuild, setPending],
+    [nests],
   );
 
   const handleArrive = useCallback(() => {
-    setState((current) => {
-      if (current.kind !== "walking") return current;
-      if (current.onArrive === "build") {
-        enterBuilding();
-        return { kind: "building" };
-      }
-      return { kind: "idle" };
-    });
-  }, [enterBuilding]);
-
-  const handleSegmentComplete = useCallback((index: number) => {
-    setLastReachedIndex(index);
+    machineRef.current?.handleArrive();
   }, []);
 
-  const animation: BuilderAnimation =
-    state.kind === "walking"
-      ? "walking"
-      : state.kind === "building"
-        ? "building"
-        : "idle";
+  const handleSegmentComplete = useCallback((index: number) => {
+    machineRef.current?.handleSegmentComplete(index);
+  }, []);
 
-  const pos: Vec2 = path[lastReachedIndex] ?? initialPos;
+  const animation = deriveAnimation(snapshot);
+  const pos: Vec2 = snapshot.path[snapshot.lastReachedIndex] ?? initialPos;
 
   return {
-    path,
+    path: snapshot.path,
     pos,
     animation,
-    pendingNest,
+    pendingNest: snapshot.pendingNest,
     visualPosRef,
     startWalk,
     handleArrive,
