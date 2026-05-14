@@ -6,9 +6,9 @@ import type {
 } from "@main/services/hedgemony/schemas";
 import {
   Archive,
+  ArrowsOutCardinal,
   ChatCircle,
   FloppyDisk,
-  PaperPlaneRight,
   Warning,
 } from "@phosphor-icons/react";
 import {
@@ -171,7 +171,7 @@ export function NestDetailPanel({
                 disabled={saving || archiving}
                 aria-label="Relocate nest"
               >
-                <PaperPlaneRight size={14} />
+                <ArrowsOutCardinal size={14} />
               </IconButton>
             </Tooltip>
           )
