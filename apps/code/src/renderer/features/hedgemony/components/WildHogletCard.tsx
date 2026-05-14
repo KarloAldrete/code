@@ -9,6 +9,12 @@ import { useNavigationStore } from "@stores/navigationStore";
 import { useQuery } from "@tanstack/react-query";
 import { logger } from "@utils/logger";
 import { selectTaskSummary, useHogletStore } from "../stores/hogletStore";
+import {
+  PR_BADGE_COLOR,
+  PR_STATE_LABEL,
+  STATUS_BADGE_COLOR,
+  type TaskStatus,
+} from "./hogletStatus";
 
 const log = logger.scope("wild-hoglet-card");
 
@@ -16,44 +22,6 @@ interface WildHogletCardProps {
   hoglet: Hoglet;
   index: number;
 }
-
-type TaskStatus =
-  | "not_started"
-  | "queued"
-  | "in_progress"
-  | "completed"
-  | "failed"
-  | "cancelled"
-  | null;
-
-const STATUS_COLOR: Record<
-  NonNullable<TaskStatus>,
-  "gray" | "blue" | "green" | "red"
-> = {
-  not_started: "gray",
-  queued: "gray",
-  in_progress: "blue",
-  completed: "green",
-  failed: "red",
-  cancelled: "gray",
-};
-
-const PR_STATE_LABEL: Record<"open" | "draft" | "merged" | "closed", string> = {
-  open: "open PR",
-  draft: "draft PR",
-  merged: "merged",
-  closed: "closed",
-};
-
-const PR_STATE_COLOR: Record<
-  "open" | "draft" | "merged" | "closed",
-  "green" | "gray" | "purple" | "red"
-> = {
-  open: "green",
-  draft: "gray",
-  merged: "purple",
-  closed: "red",
-};
 
 export function WildHogletCard({ hoglet, index }: WildHogletCardProps) {
   const summary = useHogletStore(selectTaskSummary(hoglet.taskId));
@@ -103,11 +71,11 @@ export function WildHogletCard({ hoglet, index }: WildHogletCardProps) {
         {title}
       </Text>
       <Flex align="center" gap="2" wrap="wrap">
-        <Badge size="1" color={status ? STATUS_COLOR[status] : "gray"}>
+        <Badge size="1" color={status ? STATUS_BADGE_COLOR[status] : "gray"}>
           {status ?? "not_started"}
         </Badge>
         {prState && (
-          <Badge size="1" color={PR_STATE_COLOR[prState]}>
+          <Badge size="1" color={PR_BADGE_COLOR[prState]}>
             <GitPullRequest size={10} weight="bold" />
             {PR_STATE_LABEL[prState]}
           </Badge>

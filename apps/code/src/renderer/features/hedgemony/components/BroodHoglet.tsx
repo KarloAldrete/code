@@ -9,49 +9,18 @@ import { useQuery } from "@tanstack/react-query";
 import { logger } from "@utils/logger";
 import { motion } from "framer-motion";
 import { selectTaskSummary, useHogletStore } from "../stores/hogletStore";
-import { AnimatedHedgehog, type HedgehogAnimation } from "./AnimatedHedgehog";
+import { AnimatedHedgehog } from "./AnimatedHedgehog";
 import { HogletHammer } from "./HogletHammer";
+import {
+  ANIMATION_BY_TASK_STATUS,
+  FPS_BY_TASK_STATUS,
+  PR_DOT_COLOR,
+  type TaskStatus,
+} from "./hogletStatus";
 
 const log = logger.scope("brood-hoglet");
 
 const SPRITE_SIZE = 44;
-
-type TaskStatus =
-  | "not_started"
-  | "queued"
-  | "in_progress"
-  | "completed"
-  | "failed"
-  | "cancelled"
-  | null;
-
-const ANIMATION_BY_STATUS: Record<
-  NonNullable<TaskStatus>,
-  HedgehogAnimation
-> = {
-  not_started: "idle",
-  queued: "idle",
-  in_progress: "action",
-  completed: "wave",
-  failed: "fall",
-  cancelled: "idle",
-};
-
-const FPS_BY_STATUS: Record<NonNullable<TaskStatus>, number> = {
-  not_started: 8,
-  queued: 8,
-  in_progress: 12,
-  completed: 10,
-  failed: 10,
-  cancelled: 8,
-};
-
-const PR_DOT_COLOR: Record<"open" | "draft" | "merged" | "closed", string> = {
-  open: "var(--green-9)",
-  draft: "var(--gray-8)",
-  merged: "var(--purple-9)",
-  closed: "var(--red-9)",
-};
 
 interface BroodHogletProps {
   hoglet: Hoglet;
@@ -85,8 +54,8 @@ export function BroodHoglet({ hoglet, nestId, index, x, y }: BroodHogletProps) {
     "not_started") as TaskStatus;
   const title = summary?.title ?? hoglet.taskId.slice(0, 8);
   const prState = prStatusQuery.data?.prState ?? null;
-  const animationKey = ANIMATION_BY_STATUS[status ?? "not_started"];
-  const fps = FPS_BY_STATUS[status ?? "not_started"];
+  const animationKey = ANIMATION_BY_TASK_STATUS[status ?? "not_started"];
+  const fps = FPS_BY_TASK_STATUS[status ?? "not_started"];
   const dimmed = status === "cancelled";
 
   const handleClick = async (event: React.MouseEvent) => {
