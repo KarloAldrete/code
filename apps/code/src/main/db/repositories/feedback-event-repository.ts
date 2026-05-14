@@ -59,14 +59,6 @@ export class FeedbackEventRepository {
     inserted: boolean;
     row: FeedbackEvent;
   } {
-    const existing = this.findByDedupeKey({
-      hogletTaskId: data.hogletTaskId,
-      source: data.source,
-      payloadHash: data.payloadHash,
-    });
-    if (existing) {
-      return { inserted: false, row: existing };
-    }
     const id = crypto.randomUUID();
     const injectedAt = new Date().toISOString();
     const row: NewFeedbackEvent = {
@@ -80,16 +72,32 @@ export class FeedbackEventRepository {
       routedOutcome: data.routedOutcome,
       injectedAt,
     };
-    this.db.insert(hedgemonyFeedbackEvents).values(row).run();
-    const created = this.findByDedupeKey({
+    const returned = this.db
+      .insert(hedgemonyFeedbackEvents)
+      .values(row)
+      .onConflictDoNothing({
+        target: [
+          hedgemonyFeedbackEvents.hogletTaskId,
+          hedgemonyFeedbackEvents.source,
+          hedgemonyFeedbackEvents.payloadHash,
+        ],
+      })
+      .returning()
+      .all();
+    if (returned.length > 0) {
+      return { inserted: true, row: returned[0] };
+    }
+    const existing = this.findByDedupeKey({
       hogletTaskId: data.hogletTaskId,
       source: data.source,
       payloadHash: data.payloadHash,
     });
-    if (!created) {
-      throw new Error(`Failed to insert feedback event ${id}`);
+    if (!existing) {
+      throw new Error(
+        `Insert conflict but no existing row for feedback event ${id}`,
+      );
     }
-    return { inserted: true, row: created };
+    return { inserted: false, row: existing };
   }
 
   listForNest(nestId: string, limit: number): FeedbackEvent[] {

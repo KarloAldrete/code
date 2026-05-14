@@ -39,7 +39,7 @@ next tick, creating the "whack-a-mole" loop the spec explicitly warns about.
 - Add service-level enforcement: `spawn_hoglet` cross-checks `signal_report_id`
   against suppress decisions; `kill_hoglet` is a no-op if operator already revived
 
-### 3. `feedbackRepo.insertIgnoreOnDuplicate` is not truly atomic
+### 3. `feedbackRepo.insertIgnoreOnDuplicate` is not truly atomic — DONE
 
 **File:** `feedback-event-repository.ts` (~line 58-93)
 
@@ -93,7 +93,7 @@ later. A second poll cycle can emit a duplicate before the row lands.
 The renderer's `recordRoutedOutcome` then updates the row's status to
 "delivered". This makes the dedup check atomic with the intent to route.
 
-### 7. PR dependency table missing UNIQUE constraint
+### 7. PR dependency table missing UNIQUE constraint — DONE
 
 **File:** `schema.ts` (~line 217-236)
 

@@ -233,6 +233,11 @@ export const hedgemonyPrDependencies = sqliteTable(
   (t) => [
     index("hedgemony_pr_dependency_nest_idx").on(t.nestId),
     index("hedgemony_pr_dependency_child_idx").on(t.childTaskId),
+    uniqueIndex("hedgemony_pr_dependency_triple_idx").on(
+      t.nestId,
+      t.parentTaskId,
+      t.childTaskId,
+    ),
   ],
 );
 

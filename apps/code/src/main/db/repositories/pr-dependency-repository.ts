@@ -58,23 +58,51 @@ export class PrDependencyRepository {
   /**
    * Idempotent insert. Returns the existing row if a `(nestId, parentTaskId,
    * childTaskId)` edge already exists, otherwise inserts a new `pending` (or
-   * caller-provided) row. The schema has no UNIQUE constraint on this triple
-   * yet, so we enforce it here. Slice 8's hedgehog can safely call
-   * `link_pr_dependency` more than once without producing duplicates.
+   * caller-provided) row. The schema enforces a UNIQUE index on this triple
+   * (migration 0014), so the conflict resolution happens inside sqlite and
+   * `link_pr_dependency` is race-free even under concurrent ticks.
    */
   insertOrIgnore(data: CreatePrDependencyData): {
     inserted: boolean;
     row: PrDependency;
   } {
+    const timestamp = new Date().toISOString();
+    const id = crypto.randomUUID();
+    const row: NewPrDependency = {
+      id,
+      nestId: data.nestId,
+      parentTaskId: data.parentTaskId,
+      childTaskId: data.childTaskId,
+      state: data.state,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    const returned = this.db
+      .insert(hedgemonyPrDependencies)
+      .values(row)
+      .onConflictDoNothing({
+        target: [
+          hedgemonyPrDependencies.nestId,
+          hedgemonyPrDependencies.parentTaskId,
+          hedgemonyPrDependencies.childTaskId,
+        ],
+      })
+      .returning()
+      .all();
+    if (returned.length > 0) {
+      return { inserted: true, row: returned[0] };
+    }
     const existing = this.findByTriple({
       nestId: data.nestId,
       parentTaskId: data.parentTaskId,
       childTaskId: data.childTaskId,
     });
-    if (existing) {
-      return { inserted: false, row: existing };
+    if (!existing) {
+      throw new Error(
+        `Insert conflict but no existing pr dependency for ${data.parentTaskId} → ${data.childTaskId}`,
+      );
     }
-    return { inserted: true, row: this.insert(data) };
+    return { inserted: false, row: existing };
   }
 
   findById(id: string): PrDependency | null {
