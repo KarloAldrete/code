@@ -2,12 +2,17 @@ import { inject, injectable } from "inversify";
 import type { HedgehogStateRepository } from "../../db/repositories/hedgehog-state-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
-import type {
-  AnthropicToolUseBlock,
-  PromptWithToolsOutput,
-} from "../llm-gateway/schemas";
+import type { PromptWithToolsOutput } from "../llm-gateway/schemas";
 import type { LlmGatewayService } from "../llm-gateway/service";
 import type { CloudTaskClient } from "./cloud-task-client";
+import { HEDGEHOG_HANDLERS } from "./hedgehog-handlers/registry";
+import {
+  type HedgehogToolDeps,
+  TickBudget,
+  type TickContext,
+  type WriteNestMessageInput,
+} from "./hedgehog-handlers/types";
+import { stringifyError } from "./hedgehog-handlers/utils";
 import {
   appendScratchpad,
   buildUserPrompt,
@@ -15,14 +20,7 @@ import {
   type HogletWithState,
   type ScratchpadEntry,
 } from "./hedgehog-prompts";
-import {
-  HEDGEHOG_TOOLS,
-  type HedgehogToolName,
-  killHogletArgs,
-  messageHogletArgs,
-  raiseHogletArgs,
-  writeAuditEntryArgs,
-} from "./hedgehog-tools";
+import { HEDGEHOG_TOOLS } from "./hedgehog-tools";
 import type { HogletService } from "./hoglet-service";
 import type { NestChatService } from "./nest-chat-service";
 import type { NestService } from "./nest-service";
@@ -38,14 +36,8 @@ const log = logger.scope("hedgehog-tick-service");
 
 const MIN_TICK_INTERVAL_MS = 30_000;
 const HEARTBEAT_INTERVAL_MS = 5 * 60_000;
-const MAX_RAISE_CALLS_PER_TICK = 3;
 const HEDGEHOG_MODEL = "claude-sonnet-4-5";
 const MAX_TOKENS = 2_000;
-
-interface TickContext {
-  nest: Nest;
-  hoglets: HogletWithState[];
-}
 
 /**
  * Slice 6 of Hedgemony — the hedgehog. A per-nest ephemeral orchestrator that
@@ -222,10 +214,11 @@ export class HedgehogTickService {
     });
 
     const newScratchpadEntries: ScratchpadEntry[] = [];
-    let raiseCount = 0;
+    const budget = new TickBudget();
+    const deps = this.buildHandlerDeps();
 
     try {
-      const context = await this.buildContext(nest);
+      const context = await this.buildContext(nest, budget);
       const recentChat = this.nestChat.list({ nestId, detail: false });
       const scratchpad = this.loadScratchpad(nestId);
       const userPrompt = buildUserPrompt({
@@ -250,10 +243,19 @@ export class HedgehogTickService {
       newScratchpadEntries.push(...this.summariseLlmResponse(reason, response));
 
       for (const block of response.toolUseBlocks) {
-        const result = await this.dispatchTool(context, block, raiseCount);
-        if (block.name === "raise_hoglet" && result.success) {
-          raiseCount += 1;
+        const handler = HEDGEHOG_HANDLERS.get(
+          block.name as Parameters<typeof HEDGEHOG_HANDLERS.get>[0],
+        );
+        if (!handler) {
+          log.warn("unknown tool name from hedgehog", { name: block.name });
+          newScratchpadEntries.push({
+            ts: new Date().toISOString(),
+            kind: "decision",
+            summary: `Ignored unknown tool ${block.name}`,
+          });
+          continue;
         }
+        const result = await handler.handle(context, block, deps);
         newScratchpadEntries.push({
           ts: new Date().toISOString(),
           kind: "decision",
@@ -305,295 +307,17 @@ export class HedgehogTickService {
     }
   }
 
-  private async dispatchTool(
-    context: TickContext,
-    block: AnthropicToolUseBlock,
-    raiseCount: number,
-  ): Promise<{ success: boolean; scratchpadSummary: string }> {
-    const toolName = block.name as HedgehogToolName;
-    switch (toolName) {
-      case "raise_hoglet":
-        return this.handleRaiseHoglet(context, block, raiseCount);
-      case "kill_hoglet":
-        return this.handleKillHoglet(context, block);
-      case "message_hoglet":
-        return this.handleMessageHoglet(context, block);
-      case "write_audit_entry":
-        return this.handleWriteAuditEntry(context, block);
-      default:
-        log.warn("unknown tool name from hedgehog", { name: block.name });
-        return {
-          success: false,
-          scratchpadSummary: `Ignored unknown tool ${block.name}`,
-        };
-    }
-  }
-
-  private async handleRaiseHoglet(
-    context: TickContext,
-    block: AnthropicToolUseBlock,
-    raiseCount: number,
-  ): Promise<{ success: boolean; scratchpadSummary: string }> {
-    if (raiseCount >= MAX_RAISE_CALLS_PER_TICK) {
-      this.writeNestMessage(context.nest.id, {
-        kind: "audit",
-        body: `Hedgehog tried to raise another hoglet but per-tick cap (${MAX_RAISE_CALLS_PER_TICK}) was reached.`,
-        payloadJson: { type: "raise_capped", attempted: block.input },
-      });
-      return { success: false, scratchpadSummary: "raise_hoglet capped" };
-    }
-    const parsed = raiseHogletArgs.safeParse(block.input);
-    if (!parsed.success) {
-      return this.recordToolValidationError(
-        context.nest.id,
-        "raise_hoglet",
-        parsed.error.message,
-      );
-    }
-    const args = parsed.data;
-    const entry = context.hoglets.find((h) => h.hoglet.id === args.hoglet_id);
-    if (!entry) {
-      return this.recordToolValidationError(
-        context.nest.id,
-        "raise_hoglet",
-        `hoglet ${args.hoglet_id} not in this nest`,
-      );
-    }
-    if (
-      entry.taskRunStatus === "in_progress" ||
-      entry.taskRunStatus === "queued"
-    ) {
-      this.writeNestMessage(context.nest.id, {
-        kind: "audit",
-        body: `Skipped raising hoglet ${args.hoglet_id}: latest run is ${entry.taskRunStatus}.`,
-        payloadJson: { type: "raise_skipped_active", hogletId: args.hoglet_id },
-      });
-      return {
-        success: false,
-        scratchpadSummary: `raise_hoglet skipped (${entry.taskRunStatus})`,
-      };
-    }
-
-    try {
-      const run = await this.cloudTasks.createTaskRun(entry.hoglet.taskId, {
-        environment: "cloud",
-        mode: "background",
-      });
-      await this.cloudTasks.startTaskRun(entry.hoglet.taskId, run.id, {
-        pendingUserMessage: args.prompt,
-      });
-      this.writeNestMessage(context.nest.id, {
-        kind: "audit",
-        sourceTaskId: entry.hoglet.taskId,
-        body: `Raised hoglet ${args.hoglet_id}${args.prompt ? ` with prompt: ${truncate(args.prompt, 200)}` : ""}.`,
-        payloadJson: {
-          type: "raised_hoglet",
-          hogletId: args.hoglet_id,
-          taskId: entry.hoglet.taskId,
-          taskRunId: run.id,
-          prompt: args.prompt ?? null,
-        },
-      });
-      return {
-        success: true,
-        scratchpadSummary: `Raised hoglet ${args.hoglet_id}`,
-      };
-    } catch (error) {
-      this.writeNestMessage(context.nest.id, {
-        kind: "audit",
-        body: `Failed to raise hoglet ${args.hoglet_id}: ${stringifyError(error)}.`,
-        payloadJson: {
-          type: "raise_failed",
-          hogletId: args.hoglet_id,
-          error: stringifyError(error),
-        },
-      });
-      return {
-        success: false,
-        scratchpadSummary: `raise_hoglet errored: ${stringifyError(error)}`,
-      };
-    }
-  }
-
-  private async handleKillHoglet(
-    context: TickContext,
-    block: AnthropicToolUseBlock,
-  ): Promise<{ success: boolean; scratchpadSummary: string }> {
-    const parsed = killHogletArgs.safeParse(block.input);
-    if (!parsed.success) {
-      return this.recordToolValidationError(
-        context.nest.id,
-        "kill_hoglet",
-        parsed.error.message,
-      );
-    }
-    const args = parsed.data;
-    const entry = context.hoglets.find((h) => h.hoglet.id === args.hoglet_id);
-    if (!entry) {
-      return this.recordToolValidationError(
-        context.nest.id,
-        "kill_hoglet",
-        `hoglet ${args.hoglet_id} not in this nest`,
-      );
-    }
-    if (
-      entry.taskRunStatus === "completed" ||
-      entry.taskRunStatus === "failed" ||
-      entry.taskRunStatus === "cancelled" ||
-      entry.taskRunStatus === "no_run"
-    ) {
-      this.writeNestMessage(context.nest.id, {
-        kind: "audit",
-        body: `Skipped killing hoglet ${args.hoglet_id}: not currently active (${entry.taskRunStatus}).`,
-        payloadJson: {
-          type: "kill_skipped_inactive",
-          hogletId: args.hoglet_id,
-        },
-      });
-      return {
-        success: false,
-        scratchpadSummary: `kill_hoglet skipped (already ${entry.taskRunStatus})`,
-      };
-    }
-    if (!entry.latestRunId) {
-      this.writeNestMessage(context.nest.id, {
-        kind: "audit",
-        body: `Cannot kill hoglet ${args.hoglet_id}: no latest_run_id resolved.`,
-        payloadJson: {
-          type: "kill_no_run_id",
-          hogletId: args.hoglet_id,
-        },
-      });
-      return {
-        success: false,
-        scratchpadSummary: "kill_hoglet missing latest_run_id",
-      };
-    }
-
-    try {
-      await this.cloudTasks.updateTaskRun(
-        entry.hoglet.taskId,
-        entry.latestRunId,
-        { status: "cancelled" },
-      );
-      this.writeNestMessage(context.nest.id, {
-        kind: "audit",
-        sourceTaskId: entry.hoglet.taskId,
-        body: `Killed hoglet ${args.hoglet_id}: ${args.reason}`,
-        payloadJson: {
-          type: "killed_hoglet",
-          hogletId: args.hoglet_id,
-          reason: args.reason,
-        },
-      });
-      return {
-        success: true,
-        scratchpadSummary: `Killed hoglet ${args.hoglet_id}: ${args.reason}`,
-      };
-    } catch (error) {
-      this.writeNestMessage(context.nest.id, {
-        kind: "audit",
-        body: `Failed to kill hoglet ${args.hoglet_id}: ${stringifyError(error)}.`,
-        payloadJson: {
-          type: "kill_failed",
-          hogletId: args.hoglet_id,
-          error: stringifyError(error),
-        },
-      });
-      return {
-        success: false,
-        scratchpadSummary: `kill_hoglet errored: ${stringifyError(error)}`,
-      };
-    }
-  }
-
-  private async handleMessageHoglet(
-    context: TickContext,
-    block: AnthropicToolUseBlock,
-  ): Promise<{ success: boolean; scratchpadSummary: string }> {
-    const parsed = messageHogletArgs.safeParse(block.input);
-    if (!parsed.success) {
-      return this.recordToolValidationError(
-        context.nest.id,
-        "message_hoglet",
-        parsed.error.message,
-      );
-    }
-    const args = parsed.data;
-    const entry = context.hoglets.find((h) => h.hoglet.id === args.hoglet_id);
-    if (!entry) {
-      return this.recordToolValidationError(
-        context.nest.id,
-        "message_hoglet",
-        `hoglet ${args.hoglet_id} not in this nest`,
-      );
-    }
-    this.writeNestMessage(context.nest.id, {
-      kind: "audit",
-      sourceTaskId: entry.hoglet.taskId,
-      body: `Noted message for hoglet ${args.hoglet_id}: ${truncate(args.prompt, 300)} (Slice 6 — prompt is not yet injected into the live session).`,
-      payloadJson: {
-        type: "message_hoglet_recorded",
-        hogletId: args.hoglet_id,
-        prompt: args.prompt,
-      },
-    });
+  private buildHandlerDeps(): HedgehogToolDeps {
     return {
-      success: true,
-      scratchpadSummary: `message_hoglet recorded for ${args.hoglet_id}`,
+      cloudTasks: this.cloudTasks,
+      writeNestMessage: (nestId, input) => this.writeNestMessage(nestId, input),
     };
   }
 
-  private async handleWriteAuditEntry(
-    context: TickContext,
-    block: AnthropicToolUseBlock,
-  ): Promise<{ success: boolean; scratchpadSummary: string }> {
-    const parsed = writeAuditEntryArgs.safeParse(block.input);
-    if (!parsed.success) {
-      return this.recordToolValidationError(
-        context.nest.id,
-        "write_audit_entry",
-        parsed.error.message,
-      );
-    }
-    const { summary, detail } = parsed.data;
-    this.writeNestMessage(context.nest.id, {
-      kind: "audit",
-      body: summary,
-      payloadJson: detail ? { type: "audit_with_detail", detail } : null,
-      visibility: "summary",
-    });
-    if (detail) {
-      this.writeNestMessage(context.nest.id, {
-        kind: "audit",
-        body: detail,
-        visibility: "detail",
-        payloadJson: { type: "audit_detail" },
-      });
-    }
-    return {
-      success: true,
-      scratchpadSummary: `audit: ${truncate(summary, 80)}`,
-    };
-  }
-
-  private recordToolValidationError(
-    nestId: string,
-    toolName: string,
-    error: string,
-  ): { success: boolean; scratchpadSummary: string } {
-    this.writeNestMessage(nestId, {
-      kind: "audit",
-      body: `Hedgehog tool ${toolName} rejected: ${error}`,
-      payloadJson: { type: "tool_validation_error", tool: toolName, error },
-    });
-    return {
-      success: false,
-      scratchpadSummary: `${toolName} validation failed`,
-    };
-  }
-
-  private async buildContext(nest: Nest): Promise<TickContext> {
+  private async buildContext(
+    nest: Nest,
+    budget: TickBudget,
+  ): Promise<TickContext> {
     const hoglets = this.hogletService
       .list({ nestId: nest.id })
       .filter((h): h is Hoglet => !h.deletedAt);
@@ -622,7 +346,7 @@ export class HedgehogTickService {
         });
       }
     }
-    return { nest, hoglets: enriched };
+    return { nest, hoglets: enriched, budget };
   }
 
   private loadScratchpad(nestId: string): ScratchpadEntry[] {
@@ -652,16 +376,7 @@ export class HedgehogTickService {
     ];
   }
 
-  private writeNestMessage(
-    nestId: string,
-    input: {
-      kind: "hedgehog_message" | "audit" | "tool_result";
-      body: string;
-      visibility?: "summary" | "detail";
-      sourceTaskId?: string | null;
-      payloadJson?: Record<string, unknown> | null;
-    },
-  ): void {
+  private writeNestMessage(nestId: string, input: WriteNestMessageInput): void {
     const message = this.nestChat.recordHedgehogMessage({
       nestId,
       kind: input.kind,
@@ -671,20 +386,5 @@ export class HedgehogTickService {
       payloadJson: input.payloadJson ?? null,
     });
     this.nestService.emitMessageAppended(message);
-  }
-}
-
-function truncate(value: string, max: number): string {
-  if (value.length <= max) return value;
-  return `${value.slice(0, max)}…`;
-}
-
-function stringifyError(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return String(error);
   }
 }
