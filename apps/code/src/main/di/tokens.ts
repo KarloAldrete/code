@@ -41,6 +41,7 @@ export const MAIN_TOKENS = Object.freeze({
   FeedbackEventRepository: Symbol.for("Main.FeedbackEventRepository"),
   PrDependencyRepository: Symbol.for("Main.PrDependencyRepository"),
   TickLogRepository: Symbol.for("Main.TickLogRepository"),
+  OperatorDecisionRepository: Symbol.for("Main.OperatorDecisionRepository"),
 
   // Services
   AgentAuthAdapter: Symbol.for("Main.AgentAuthAdapter"),

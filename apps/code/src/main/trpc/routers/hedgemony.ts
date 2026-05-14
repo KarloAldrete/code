@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { FeedbackEventRepository } from "../../db/repositories/feedback-event-repository";
+import type { OperatorDecisionRepository } from "../../db/repositories/operator-decision-repository";
 import { container } from "../../di/container";
 import { MAIN_TOKENS } from "../../di/tokens";
 import {
@@ -38,6 +39,8 @@ import {
   listNestChatInput,
   listNestChatOutput,
   listNestsOutput,
+  listOperatorDecisionsInput,
+  listOperatorDecisionsOutput,
   listPrDependenciesForNestInput,
   listPrDependenciesForNestOutput,
   markValidatedInput,
@@ -45,6 +48,7 @@ import {
   nestIdInput,
   nestMessage,
   nestWatchEvent,
+  operatorDecision,
   prDependency,
   prGraphWatchEvent,
   rebaseChildEventPayload,
@@ -56,8 +60,10 @@ import {
   releaseHogletInput,
   retireHogletByTaskIdInput,
   retireHogletInput,
+  reviveHogletInput,
   sendNestMessageInput,
   spawnFollowUpHogletInput,
+  suppressSignalReportInput,
   unlinkPrDependencyInput,
   updateNestInput,
 } from "../../services/hedgemony/schemas";
@@ -80,6 +86,10 @@ const getFeedbackRoutingService = () =>
   container.get<FeedbackRoutingService>(MAIN_TOKENS.FeedbackRoutingService);
 const getFeedbackEventRepository = () =>
   container.get<FeedbackEventRepository>(MAIN_TOKENS.FeedbackEventRepository);
+const getOperatorDecisionRepository = () =>
+  container.get<OperatorDecisionRepository>(
+    MAIN_TOKENS.OperatorDecisionRepository,
+  );
 const getPrGraphService = () =>
   container.get<PrGraphService>(MAIN_TOKENS.PrGraphService);
 const getSignalIngestionService = () =>
@@ -304,6 +314,47 @@ export const hedgemonyRouter = router({
       .output(listFeedbackForNestOutput)
       .query(({ input }) =>
         getFeedbackEventRepository().listForNest(input.nestId, input.limit),
+      ),
+  }),
+  operatorDecisions: router({
+    /**
+     * Record that the operator has suppressed a signal report — the hedgehog
+     * must not spawn a hoglet for it again. Upsert keyed on
+     * (nestId, kind, signalReportId).
+     */
+    suppressSignalReport: publicProcedure
+      .input(suppressSignalReportInput)
+      .output(operatorDecision)
+      .mutation(({ input }) =>
+        getOperatorDecisionRepository().recordSuppressSignalReport({
+          nestId: input.nestId,
+          signalReportId: input.signalReportId,
+          reason: input.reason ?? null,
+        }),
+      ),
+
+    /**
+     * Record that the operator has revived a hoglet — the hedgehog must not
+     * kill it again. `subjectKey` accepts either the hoglet id or the task
+     * id; the kill handler matches against both so callers can record
+     * whichever they have at hand.
+     */
+    reviveHoglet: publicProcedure
+      .input(reviveHogletInput)
+      .output(operatorDecision)
+      .mutation(({ input }) =>
+        getOperatorDecisionRepository().recordReviveHoglet({
+          nestId: input.nestId,
+          subjectKey: input.subjectKey,
+          reason: input.reason ?? null,
+        }),
+      ),
+
+    listForNest: publicProcedure
+      .input(listOperatorDecisionsInput)
+      .output(listOperatorDecisionsOutput)
+      .query(({ input }) =>
+        getOperatorDecisionRepository().listForNest(input.nestId),
       ),
   }),
   prGraph: router({

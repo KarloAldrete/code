@@ -29,6 +29,11 @@ export const HEDGEHOG_TOOLS: AnthropicToolDefinition[] = [
           description:
             "Repository slug (e.g. 'org/repo') the hoglet should work in. Required unless the nest has a primary_repository or there is exactly one entry in known_repositories — in those cases the dispatcher fills it for you. Must be a repo from known_repositories or one previously granted via request_repository_access.",
         },
+        signal_report_id: {
+          type: "string",
+          description:
+            "Optional id of the signal report this hoglet is following up on. Set this when you are spawning in response to a specific signal so the dispatcher can honor any operator suppression of that report.",
+        },
       },
       required: ["prompt"],
     },
@@ -216,6 +221,12 @@ export type HedgehogToolName =
 export const spawnHogletArgs = z.object({
   prompt: z.string().trim().min(1).max(8000),
   repository: z.string().trim().min(1).optional(),
+  /**
+   * Optional reference to a signal report this spawn is following up on.
+   * When set, the dispatcher cross-checks the operator's override memory and
+   * refuses the spawn if the operator previously suppressed this report.
+   */
+  signal_report_id: z.string().trim().min(1).max(128).optional(),
 });
 
 export const raiseHogletArgs = z.object({

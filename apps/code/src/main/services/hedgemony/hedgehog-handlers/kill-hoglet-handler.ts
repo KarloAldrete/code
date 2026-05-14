@@ -24,6 +24,30 @@ export const killHogletHandler: HedgehogToolHandler = {
         `hoglet ${args.hoglet_id} not in this nest`,
       );
     }
+    const revived = ctx.operatorDecisions.find(
+      (d) =>
+        d.kind === "revive_hoglet" &&
+        (d.subjectKey === args.hoglet_id ||
+          d.subjectKey === entry.hoglet.taskId),
+    );
+    if (revived) {
+      deps.writeNestMessage(ctx.nest.id, {
+        kind: "audit",
+        sourceTaskId: entry.hoglet.taskId,
+        body: `Skipped kill_hoglet ${args.hoglet_id}: operator revived this hoglet.`,
+        payloadJson: {
+          type: "kill_suppressed_by_operator",
+          hogletId: args.hoglet_id,
+          taskId: entry.hoglet.taskId,
+          reason: revived.reason,
+          decisionId: revived.id,
+        },
+      });
+      return {
+        success: false,
+        scratchpadSummary: `Operator revived hoglet ${revived.subjectKey}; skipping kill.`,
+      };
+    }
     if (
       entry.taskRunStatus === "completed" ||
       entry.taskRunStatus === "failed" ||

@@ -49,6 +49,8 @@ vi.mock("./hoglet-runtime-preferences", async () => {
 
 import type { HedgehogStateRepository } from "../../db/repositories/hedgehog-state-repository";
 import { createMockHedgehogStateRepository } from "../../db/repositories/hedgehog-state-repository.mock";
+import type { OperatorDecisionRepository } from "../../db/repositories/operator-decision-repository";
+import { createMockOperatorDecisionRepository } from "../../db/repositories/operator-decision-repository.mock";
 import type {
   PrDependency,
   PrDependencyRepository,
@@ -160,6 +162,7 @@ interface Mocks {
   feedbackRouting: FeedbackRoutingService;
   repositoryRepo: RepositoryRepository;
   tickLog: ReturnType<typeof createMockTickLogRepository>;
+  operatorDecisions: ReturnType<typeof createMockOperatorDecisionRepository>;
   emittedNestChanged: HedgemonyEvents["nest-changed"][];
 }
 
@@ -352,6 +355,7 @@ function setupMocks(input: {
   } as unknown as RepositoryRepository;
 
   const tickLog = createMockTickLogRepository();
+  const operatorDecisions = createMockOperatorDecisionRepository();
 
   return {
     llm,
@@ -366,6 +370,7 @@ function setupMocks(input: {
     feedbackRouting,
     repositoryRepo,
     tickLog,
+    operatorDecisions,
     emittedNestChanged,
   };
 }
@@ -384,6 +389,7 @@ function buildService(mocks: Mocks): HedgehogTickService {
     mocks.feedbackRouting,
     mocks.repositoryRepo,
     mocks.tickLog as unknown as TickLogRepository,
+    mocks.operatorDecisions as unknown as OperatorDecisionRepository,
   );
 }
 

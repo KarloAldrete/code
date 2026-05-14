@@ -606,6 +606,55 @@ export type ListFeedbackForNestInput = z.infer<typeof listFeedbackForNestInput>;
 
 export const listFeedbackForNestOutput = z.array(feedbackEvent);
 
+/**
+ * The operator override memory. When the operator manually undoes the
+ * hedgehog's decision (revives a killed hoglet, suppresses a signal report
+ * that the hedgehog kept respawning), we persist a row so the next tick
+ * doesn't whack the same mole. Kinds are extensible — add new entries as we
+ * find more "do-not-redo this" decisions worth remembering.
+ */
+export const operatorDecisionKind = z.enum([
+  "suppress_signal_report",
+  "revive_hoglet",
+]);
+export type OperatorDecisionKind = z.infer<typeof operatorDecisionKind>;
+
+export const operatorDecision = z.object({
+  id: z.string(),
+  nestId: z.string(),
+  kind: operatorDecisionKind,
+  subjectKey: z.string(),
+  reason: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type OperatorDecision = z.infer<typeof operatorDecision>;
+
+export const suppressSignalReportInput = z.object({
+  nestId: z.string().min(1),
+  signalReportId: z.string().min(1),
+  reason: z.string().trim().min(1).max(2000).optional(),
+});
+export type SuppressSignalReportInput = z.infer<
+  typeof suppressSignalReportInput
+>;
+
+export const reviveHogletInput = z.object({
+  nestId: z.string().min(1),
+  subjectKey: z.string().min(1),
+  reason: z.string().trim().min(1).max(2000).optional(),
+});
+export type ReviveHogletInput = z.infer<typeof reviveHogletInput>;
+
+export const listOperatorDecisionsInput = z.object({
+  nestId: z.string().min(1),
+});
+export type ListOperatorDecisionsInput = z.infer<
+  typeof listOperatorDecisionsInput
+>;
+
+export const listOperatorDecisionsOutput = z.array(operatorDecision);
+
 export const prDependencyState = z.enum([
   "pending",
   "satisfied",

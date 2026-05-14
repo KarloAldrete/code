@@ -9,6 +9,7 @@ import { HedgehogStateRepository } from "../db/repositories/hedgehog-state-repos
 import { HogletRepository } from "../db/repositories/hoglet-repository";
 import { NestMessageRepository } from "../db/repositories/nest-message-repository";
 import { NestRepository } from "../db/repositories/nest-repository";
+import { OperatorDecisionRepository } from "../db/repositories/operator-decision-repository";
 import { PrDependencyRepository } from "../db/repositories/pr-dependency-repository";
 import { RepositoryRepository } from "../db/repositories/repository-repository";
 import { SuspensionRepositoryImpl } from "../db/repositories/suspension-repository";
@@ -121,6 +122,9 @@ container.bind(MAIN_TOKENS.HedgehogStateRepository).to(HedgehogStateRepository);
 container.bind(MAIN_TOKENS.FeedbackEventRepository).to(FeedbackEventRepository);
 container.bind(MAIN_TOKENS.PrDependencyRepository).to(PrDependencyRepository);
 container.bind(MAIN_TOKENS.TickLogRepository).to(TickLogRepository);
+container
+  .bind(MAIN_TOKENS.OperatorDecisionRepository)
+  .to(OperatorDecisionRepository);
 container.bind(MAIN_TOKENS.AgentAuthAdapter).to(AgentAuthAdapter);
 container.bind(MAIN_TOKENS.AgentService).to(AgentService);
 container.bind(MAIN_TOKENS.AuthService).to(AuthService);

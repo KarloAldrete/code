@@ -35,6 +35,29 @@ export const spawnHogletHandler: HedgehogToolHandler = {
       );
     }
     const args = parsed.data;
+    if (args.signal_report_id) {
+      const suppressed = ctx.operatorDecisions.find(
+        (d) =>
+          d.kind === "suppress_signal_report" &&
+          d.subjectKey === args.signal_report_id,
+      );
+      if (suppressed) {
+        deps.writeNestMessage(ctx.nest.id, {
+          kind: "audit",
+          body: `Skipped spawn_hoglet: operator suppressed signal report ${args.signal_report_id}.`,
+          payloadJson: {
+            type: "spawn_suppressed_by_operator",
+            signalReportId: args.signal_report_id,
+            reason: suppressed.reason,
+            decisionId: suppressed.id,
+          },
+        });
+        return {
+          success: false,
+          scratchpadSummary: `Operator suppressed signal report ${args.signal_report_id}; skipping spawn.`,
+        };
+      }
+    }
     const available = ctx.repositoryContext.availableRepositories;
     const availableSet = new Set(available);
     if (args.repository && !availableSet.has(args.repository)) {

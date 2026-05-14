@@ -1,3 +1,4 @@
+import type { OperatorDecision } from "../../db/repositories/operator-decision-repository";
 import type { PrDependency } from "../../db/repositories/pr-dependency-repository";
 import {
   clampReasoningEffortForAdapter,
@@ -71,6 +72,12 @@ interface BuildUserPromptInput {
   prDependencies: PrDependency[];
   loadout: NestLoadout;
   repositoryContext: NestRepositoryContext;
+  /**
+   * Decisions the operator has explicitly made and that the hedgehog must
+   * not undo. Omitted from the prompt entirely when empty so neutral ticks
+   * don't carry the section noise.
+   */
+  operatorDecisions?: OperatorDecision[];
 }
 
 export function buildUserPrompt(input: BuildUserPromptInput): string {
@@ -83,6 +90,7 @@ export function buildUserPrompt(input: BuildUserPromptInput): string {
     prDependencies,
     loadout,
     repositoryContext,
+    operatorDecisions,
   } = input;
   const runtimeAdapter =
     loadout.runtimeAdapter ?? DEFAULT_HOGLET_RUNTIME_ADAPTER;
@@ -237,6 +245,28 @@ export function buildUserPrompt(input: BuildUserPromptInput): string {
           }),
         ].join("\n");
 
+  const operatorDecisionsSection = (() => {
+    if (!operatorDecisions || operatorDecisions.length === 0) return null;
+    const lines = [
+      "<operator_decisions>",
+      "The operator has overridden you on the following items. Do NOT redo these:",
+    ];
+    for (const decision of operatorDecisions) {
+      const reason = decision.reason ? ` (reason: ${decision.reason})` : "";
+      if (decision.kind === "suppress_signal_report") {
+        lines.push(
+          `- Suppressed signal report "${decision.subjectKey}"${reason} — do not spawn a hoglet for it again.`,
+        );
+      } else if (decision.kind === "revive_hoglet") {
+        lines.push(
+          `- Revived hoglet "${decision.subjectKey}"${reason} — do not kill it again.`,
+        );
+      }
+    }
+    lines.push("</operator_decisions>");
+    return lines.join("\n");
+  })();
+
   const repoGuidance = (() => {
     if (nest.primaryRepository) {
       return ` The nest's primary_repository (${nest.primaryRepository}) is used automatically when you omit the spawn_hoglet repository field — override it only when a hoglet needs to touch a different repo.`;
@@ -264,8 +294,11 @@ export function buildUserPrompt(input: BuildUserPromptInput): string {
     prGraphSection,
     chatSection,
     scratchpadSection,
+    operatorDecisionsSection,
     actionGuidance,
-  ].join("\n\n");
+  ]
+    .filter((section): section is string => section !== null)
+    .join("\n\n");
 }
 
 function truncate(value: string, max: number): string {

@@ -241,6 +241,31 @@ export const hedgemonyPrDependencies = sqliteTable(
   ],
 );
 
+export const hedgemonyOperatorDecisions = sqliteTable(
+  "hedgemony_operator_decision",
+  {
+    id: id(),
+    nestId: text()
+      .notNull()
+      .references(() => hedgemonyNests.id, { onDelete: "cascade" }),
+    kind: text({
+      enum: ["suppress_signal_report", "revive_hoglet"],
+    }).notNull(),
+    subjectKey: text().notNull(),
+    reason: text(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("hedgemony_operator_decision_nest_idx").on(t.nestId),
+    uniqueIndex("hedgemony_operator_decision_subject_idx").on(
+      t.nestId,
+      t.kind,
+      t.subjectKey,
+    ),
+  ],
+);
+
 export const hedgemonyTickLog = sqliteTable(
   "hedgemony_tick_log",
   {

@@ -2,6 +2,7 @@ import { parseGithubUrl } from "@posthog/git/utils";
 import { inject, injectable } from "inversify";
 import { normalizeRepoKey } from "../../../shared/utils/repo";
 import type { HedgehogStateRepository } from "../../db/repositories/hedgehog-state-repository";
+import type { OperatorDecisionRepository } from "../../db/repositories/operator-decision-repository";
 import type { PrDependencyRepository } from "../../db/repositories/pr-dependency-repository";
 import type { RepositoryRepository } from "../../db/repositories/repository-repository";
 import type {
@@ -124,6 +125,8 @@ export class HedgehogTickService {
     private readonly repositoryRepo: RepositoryRepository,
     @inject(MAIN_TOKENS.TickLogRepository)
     private readonly tickLog: TickLogRepository,
+    @inject(MAIN_TOKENS.OperatorDecisionRepository)
+    private readonly operatorDecisions: OperatorDecisionRepository,
   ) {}
 
   /**
@@ -350,6 +353,7 @@ export class HedgehogTickService {
         prDependencies: tickContext.prDependencies,
         loadout: tickContext.loadout,
         repositoryContext,
+        operatorDecisions: tickContext.operatorDecisions,
       });
 
       const response = await this.llm.promptWithTools(
@@ -528,12 +532,14 @@ export class HedgehogTickService {
       }
     }
     const prDeps = this.prDependencies.listForNest(nest.id);
+    const operatorDecisions = this.operatorDecisions.listForNest(nest.id);
     return {
       nest,
       hoglets: enriched,
       budget,
       prDependencies: prDeps,
       loadout,
+      operatorDecisions,
       repositoryContext: {
         repositories: [],
         primaryRepository: null,

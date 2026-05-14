@@ -1,3 +1,4 @@
+import type { OperatorDecision } from "../../../db/repositories/operator-decision-repository";
 import type { PrDependency } from "../../../db/repositories/pr-dependency-repository";
 import type { AnthropicToolUseBlock } from "../../llm-gateway/schemas";
 import type { CloudTaskClient } from "../cloud-task-client";
@@ -28,6 +29,14 @@ export interface TickContext {
   readonly prDependencies: PrDependency[];
   readonly loadout: NestLoadout;
   readonly repositoryContext: NestRepositoryContext;
+  /**
+   * Operator-override memory — decisions the operator explicitly made that
+   * gate future ticks (e.g. revived hoglets the hedgehog must not kill again,
+   * suppressed signal reports she must not respawn). The dispatcher
+   * cross-checks each spawn/kill tool call against this list to prevent
+   * whack-a-mole loops where the hedgehog keeps undoing the operator.
+   */
+  readonly operatorDecisions: OperatorDecision[];
 }
 
 export interface WriteNestMessageInput {

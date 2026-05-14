@@ -23,7 +23,7 @@ wrapped — but it isn't here.
 prompt string. Match the pattern used in `hedgehog-prompts.ts` for signal report
 content.
 
-### 2. `hedgemony_operator_decision` entirely missing
+### 2. `hedgemony_operator_decision` entirely missing — DONE
 
 **Files:** All service files, `schema.ts`
 
