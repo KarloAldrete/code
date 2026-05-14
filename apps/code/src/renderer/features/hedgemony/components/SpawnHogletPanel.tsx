@@ -126,13 +126,14 @@ export function SpawnHogletPanel({ onClose }: SpawnHogletPanelProps) {
       <div className="flex items-start justify-between gap-3 border-(--gray-5) border-b px-4 py-3">
         <div className="min-w-0">
           <Text size="1" color="gray" className="block">
-            Spawn
+            Hedgehouse
           </Text>
           <Text size="3" weight="bold" className="block truncate">
-            Wild hoglet
+            Send out a wild hog
           </Text>
           <Text size="1" color="gray" className="mt-0.5 block">
-            One-off agent — lands in the holding area, no nest required.
+            Dispatched from the town hall of the wilds — lands in the holding
+            area, no nest required.
           </Text>
         </div>
         <button
@@ -228,7 +229,7 @@ export function SpawnHogletPanel({ onClose }: SpawnHogletPanelProps) {
           disabled={!canSubmit || submitting}
           loading={submitting}
         >
-          Spawn hoglet
+          Send wild hog
         </Button>
       </Flex>
     </motion.aside>

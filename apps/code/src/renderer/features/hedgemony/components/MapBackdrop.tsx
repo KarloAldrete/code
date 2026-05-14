@@ -1,5 +1,10 @@
 import type { Nest } from "@main/services/hedgemony/schemas";
 import { useMemo } from "react";
+import {
+  HEDGEHOUSE_AVOID_RADIUS,
+  HEDGEHOUSE_MAP_X,
+  HEDGEHOUSE_MAP_Y,
+} from "./HedgehouseSprite";
 
 const WORLD = 4000;
 const HALF = WORLD / 2;
@@ -169,6 +174,12 @@ function scatterProps(nests: Nest[]): PropInstance[] {
       const inActive = insideEllipse(x, y, 0, 0, 950, 640);
       if (inActive && rng() < 0.55) continue;
       if (nests.some((n) => Math.hypot(n.mapX - x, n.mapY - y) < 150)) continue;
+      if (
+        Math.hypot(x - HEDGEHOUSE_MAP_X, y - HEDGEHOUSE_MAP_Y) <
+        HEDGEHOUSE_AVOID_RADIUS
+      ) {
+        continue;
+      }
       const inWilds = insideEllipse(x, y, -1220, 860, 440, 260);
       const inStaging = insideEllipse(x, y, 1180, -820, 450, 270);
       const roll = rng();

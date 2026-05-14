@@ -22,6 +22,7 @@ import type { Vec2 } from "../utils/pathfinding";
 import { usePanCamera } from "../utils/usePanCamera";
 import { BgmControl } from "./BgmControl";
 import { type BuilderAnimation, BuilderSprite } from "./BuilderSprite";
+import { HedgehouseSprite } from "./HedgehouseSprite";
 import { HedgemonyMinimap } from "./HedgemonyMinimap";
 import { MapBackdrop } from "./MapBackdrop";
 import { NestConstructionSite } from "./NestConstructionSite";
@@ -260,7 +261,9 @@ export function HedgemonyMapSurface({
     if (event.button !== 0) return;
     if (!start || !onMapClick) return;
     if (
-      (event.target as HTMLElement).closest("[data-hedgemony-nest]") &&
+      (event.target as HTMLElement).closest(
+        "[data-hedgemony-nest], [data-hedgemony-hedgehouse]",
+      ) &&
       !placementMode
     ) {
       return;
@@ -288,7 +291,9 @@ export function HedgemonyMapSurface({
   const handleContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
     if (
-      (event.target as HTMLElement).closest("[data-hedgemony-nest]") &&
+      (event.target as HTMLElement).closest(
+        "[data-hedgemony-nest], [data-hedgemony-hedgehouse]",
+      ) &&
       !placementMode
     ) {
       return;
@@ -317,6 +322,7 @@ export function HedgemonyMapSurface({
         className="absolute inset-0 origin-center"
       >
         <MapBackdrop nests={nests} />
+        <HedgehouseSprite />
         {nests.map((nest) => (
           <NestSprite
             key={nest.id}
