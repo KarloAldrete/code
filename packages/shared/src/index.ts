@@ -1,4 +1,10 @@
 export {
+  isMethod,
+  isNotification,
+  POSTHOG_METHODS,
+  POSTHOG_NOTIFICATIONS,
+} from "./acp-extensions";
+export {
   CLOUD_PROMPT_PREFIX,
   deserializeCloudPrompt,
   promptBlocksToText,

@@ -9,7 +9,7 @@ import {
   extractSkillButtonId,
   type SkillButtonId,
 } from "@features/skill-buttons/prompts";
-import { isNotification, POSTHOG_NOTIFICATIONS } from "@posthog/agent";
+import { isNotification, POSTHOG_NOTIFICATIONS } from "@posthog/shared";
 import {
   type AcpMessage,
   isJsonRpcNotification,
