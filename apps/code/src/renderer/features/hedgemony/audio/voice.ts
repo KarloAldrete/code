@@ -44,6 +44,9 @@ const ALL_INTENTS: VoiceIntent[] = [
   "system:signal_arrived",
 ];
 
+const ALL_MODES: VoiceMode[] = ["none", "pirate", "lolcat"];
+const ALL_GENDERS: HogletGender[] = ["male", "female"];
+
 const REGISTRY = buildRegistry();
 const lastPlayedAt = new Map<VoiceIntent, number>();
 const lastUrl = new Map<VoiceIntent, string>();
@@ -117,9 +120,6 @@ type ModedRegistry = Record<
   VoiceMode,
   Record<HogletGender, Record<VoiceIntent, string[]>>
 >;
-
-const ALL_MODES: VoiceMode[] = ["none", "pirate", "lolcat"];
-const ALL_GENDERS: HogletGender[] = ["male", "female"];
 
 function buildRegistry(): ModedRegistry {
   const emptyIntents = (): Record<VoiceIntent, string[]> => {
