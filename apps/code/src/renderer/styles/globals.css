@@ -306,6 +306,57 @@
   animation: zen-float 3.5s ease-in-out infinite;
 }
 
+/* Nest construction animation for cloud initializing view */
+@keyframes nest-builder-bob {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-4px) rotate(2deg);
+  }
+}
+
+.nest-builder-bob {
+  animation: nest-builder-bob 0.9s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+
+@keyframes nest-twig-drop {
+  0% {
+    transform: translate(var(--twig-x-from, 0), -90px)
+      rotate(var(--twig-rot-from, 0deg));
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  35%,
+  85% {
+    transform: translate(var(--twig-x-to, 0), 0)
+      rotate(var(--twig-rot-to, 0deg));
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--twig-x-to, 0), 0)
+      rotate(var(--twig-rot-to, 0deg));
+    opacity: 0;
+  }
+}
+
+.nest-twig {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 56px;
+  height: 6px;
+  margin-left: -28px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #a07248 0%, #6b4a2b 100%);
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+  animation: nest-twig-drop 4s ease-in infinite;
+}
+
 /* Pulse animation for generating indicator */
 @keyframes ph-pulse {
   0%,
