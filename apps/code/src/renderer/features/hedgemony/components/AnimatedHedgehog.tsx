@@ -6,6 +6,7 @@ import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import spritesData from "@renderer/assets/hedgehog-mode/sprites.json";
 import spritesImage from "@renderer/assets/hedgehog-mode/sprites.png";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { sceneTicker } from "../runtime/SceneTicker";
 
 type Frame = { x: number; y: number; w: number; h: number };
 
@@ -103,13 +104,10 @@ export function AnimatedHedgehog({
   useEffect(() => {
     if (frames.length === 0) return;
     const frameDurationMs = 1000 / fps;
-    let last = performance.now();
     let acc = 0;
-    let raf = 0;
 
-    const tick = (now: number) => {
-      acc += now - last;
-      last = now;
+    return sceneTicker.on((deltaMs) => {
+      acc += deltaMs;
       while (acc >= frameDurationMs) {
         acc -= frameDurationMs;
         setFrameIndex((idx) => {
@@ -125,11 +123,7 @@ export function AnimatedHedgehog({
           return next;
         });
       }
-      raf = requestAnimationFrame(tick);
-    };
-
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    });
   }, [frames, fps, loop, onComplete]);
 
   if (frames.length === 0) return null;
