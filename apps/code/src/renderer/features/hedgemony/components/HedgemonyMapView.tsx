@@ -18,6 +18,7 @@ import {
 } from "../service/hogletMutations";
 import { moveNest } from "../service/nestMutations";
 import { initializeNestStore } from "../service/nestSubscriptionService";
+import { initializePrGraphForNest } from "../service/prGraphSubscriptionService";
 import {
   type BookmarkSlot,
   useHedgemonyViewStore,
@@ -40,6 +41,7 @@ import { HogletDetailPanel } from "./HogletDetailPanel";
 import { MultiHogletDetailPanel } from "./MultiHogletDetailPanel";
 import { NestBroodCluster } from "./NestBroodCluster";
 import { NestDetailPanel } from "./NestDetailPanel";
+import { NestPrGraphOverlay } from "./NestPrGraphOverlay";
 import { type NestCreationMode, PlaceNestDialog } from "./PlaceNestDialog";
 import { SpawnHogletPanel } from "./SpawnHogletPanel";
 import { WildHogletFlock } from "./WildHogletFlock";
@@ -97,6 +99,15 @@ export function HedgemonyMapView() {
   useEffect(() => {
     return initializeNestStore();
   }, []);
+
+  // Slice 8 — bootstrap a PR-graph edge subscription per nest. Each nest
+  // disposer is keyed by id so adding/removing nests cleans up cleanly.
+  useEffect(() => {
+    const disposers = nests.map((nest) => initializePrGraphForNest(nest.id));
+    return () => {
+      for (const dispose of disposers) dispose();
+    };
+  }, [nests]);
 
   // Keep the store flag in sync with the DOM's actual fullscreen state — the
   // OS may exit fullscreen via its own controls (Esc from the browser, the
@@ -503,6 +514,9 @@ export function HedgemonyMapView() {
           setSelection({ type: "hedgehouse" });
         }}
       >
+        {nests.map((nest) => (
+          <NestPrGraphOverlay key={`pr-graph-${nest.id}`} nest={nest} />
+        ))}
         {nests.map((nest) => (
           <NestBroodCluster
             key={nest.id}

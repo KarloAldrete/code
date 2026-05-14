@@ -7,6 +7,7 @@ import { TypedEventEmitter } from "../../utils/typed-event-emitter";
 import type { AffinityRouterService } from "./affinity-router";
 import type { CloudTaskClient } from "./cloud-task-client";
 import { HOGLET_NAMES } from "./hoglet-names";
+import type { PrGraphService } from "./pr-graph-service";
 import {
   type AdoptHogletInput,
   type DismissSignalHogletInput,
@@ -52,6 +53,8 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
     private readonly prDependencies: PrDependencyRepository,
     @inject(MAIN_TOKENS.CloudTaskClient)
     private readonly cloudTasks: CloudTaskClient,
+    @inject(MAIN_TOKENS.PrGraphService)
+    private readonly prGraph: PrGraphService,
   ) {
     super();
   }
@@ -278,6 +281,10 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
     const bucket = bucketForHoglet(existing);
     const deleted = this.hoglets.softDelete(input.hogletId);
     if (!deleted) throw new Error("hoglet_update_failed");
+
+    // Cascade: remove any PR-graph edges that reference this hoglet's task so
+    // stale arrows don't linger on the map (Slice 8).
+    this.prGraph.unlinkAllForTask(deleted.taskId);
 
     this.emitChange(bucket, { kind: "removed", hogletId: deleted.id });
     log.info("Signal-backed hoglet dismissed", {

@@ -216,7 +216,7 @@ export function HedgemonyHoldingPanel() {
             onToggle={() => setWildSectionOpen((v) => !v)}
             loaded={wildLoaded}
             emptyMessage={t(
-              'No wild hoglets. Use "Spawn hoglet" to dispatch a one-off agent, or drop an adopted hoglet here to release it.',
+              'No wild hoglets. Use "Spawn hoglet" to dispatch a short-lived agent for a task, question, or PR, or drop an adopted hoglet here to release it.',
             )}
             hogletCount={wildHoglets.length}
           >

@@ -372,9 +372,89 @@ export type ListFeedbackForNestInput = z.infer<typeof listFeedbackForNestInput>;
 
 export const listFeedbackForNestOutput = z.array(feedbackEvent);
 
+export const prDependencyState = z.enum([
+  "pending",
+  "satisfied",
+  "broken",
+  "follow_up",
+]);
+export type PrDependencyStateValue = z.infer<typeof prDependencyState>;
+
+export const prDependency = z.object({
+  id: z.string(),
+  nestId: z.string(),
+  parentTaskId: z.string(),
+  childTaskId: z.string(),
+  state: prDependencyState,
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type PrDependencyView = z.infer<typeof prDependency>;
+
+export const linkPrDependencyInput = z.object({
+  nestId: z.string().min(1),
+  parentTaskId: z.string().min(1),
+  childTaskId: z.string().min(1),
+});
+export type LinkPrDependencyInput = z.infer<typeof linkPrDependencyInput>;
+
+export const unlinkPrDependencyInput = z.object({
+  id: z.string().min(1),
+});
+export type UnlinkPrDependencyInput = z.infer<typeof unlinkPrDependencyInput>;
+
+export const listPrDependenciesForNestInput = z.object({
+  nestId: z.string().min(1),
+});
+export type ListPrDependenciesForNestInput = z.infer<
+  typeof listPrDependenciesForNestInput
+>;
+
+export const listPrDependenciesForNestOutput = z.array(prDependency);
+
+export const rebaseChildEventPayload = z.object({
+  edgeId: z.string(),
+  nestId: z.string(),
+  parentTaskId: z.string(),
+  childTaskId: z.string(),
+  childHogletId: z.string(),
+  parentPrUrl: z.string(),
+  parentBranch: z.string().nullable(),
+  prompt: z.string(),
+  fallbackPrompt: z.string(),
+});
+export type RebaseChildEventPayload = z.infer<typeof rebaseChildEventPayload>;
+
+export const rebaseOutcome = z.enum([
+  "injected",
+  "follow_up_spawned",
+  "failed",
+  "broken",
+]);
+export type RebaseOutcome = z.infer<typeof rebaseOutcome>;
+
+export const recordRebaseOutcomeInput = z.object({
+  edgeId: z.string().min(1),
+  outcome: rebaseOutcome,
+  note: z.string().trim().min(1).max(2000).optional(),
+});
+export type RecordRebaseOutcomeInput = z.infer<typeof recordRebaseOutcomeInput>;
+
+/**
+ * Per-nest PR-graph watch event. Mirrors `hogletWatchEvent` shape — flat with
+ * a `kind` discriminator — so renderer subscriptions can react to edge
+ * upserts and removals identically.
+ */
+export const prGraphWatchEvent = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("upsert"), edge: prDependency }),
+  z.object({ kind: z.literal("removed"), edgeId: z.string() }),
+]);
+export type PrGraphWatchEvent = z.infer<typeof prGraphWatchEvent>;
+
 export const HedgemonyEvent = {
   NestChanged: "nest-changed",
   HogletChanged: "hoglet-changed",
+  PrGraphChanged: "pr-graph-changed",
 } as const;
 
 /**
@@ -407,7 +487,17 @@ export interface HogletChangedEvent {
   event: HogletWatchEvent;
 }
 
+/**
+ * Internal service-bus event for PR-graph edge changes. The router filters
+ * subscriptions by `nestId` so per-nest watchers only see their own edges.
+ */
+export interface PrGraphChangedEvent {
+  nestId: string;
+  event: PrGraphWatchEvent;
+}
+
 export interface HedgemonyEvents {
   [HedgemonyEvent.NestChanged]: NestChangedEvent;
   [HedgemonyEvent.HogletChanged]: HogletChangedEvent;
+  [HedgemonyEvent.PrGraphChanged]: PrGraphChangedEvent;
 }

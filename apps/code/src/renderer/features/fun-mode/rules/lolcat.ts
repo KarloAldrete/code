@@ -8,16 +8,16 @@ export const LOLCAT_OVERRIDES: Record<string, string> = {
   "Quick nest": "kwik nest",
   "Create a nest": "i can has nest?",
   "Create nest": "buildz nest",
-  "One-off kthxbai · no orkestrashun": "One-off kthxbai · no orkestrashun",
-  "One-off hoglets · no orchestration": "wun-off hoglets · no orkestrashun",
-  "Nests for orchestrated work": "nests for big werk",
+  "Short-lived hoglets · no nest, no goal":
+    "shorty hogletz · no nest, no kwest",
+  "Builds nests": "buildz nestz",
   "No messages yet — talk to the hedgehog below.":
     "no mesages yet — talk to teh hedgehog belo.",
   "Message the hedgehog…": "tell teh hedgehog…",
   "No unnested signals. Signal reports from Inbox will appear here for grouping.":
     "no homeless signals. signal reportz from inbox iz comin here 4 groupin.",
-  'No wild hoglets. Use "Spawn hoglet" to dispatch a one-off agent, or drop an adopted hoglet here to release it.':
-    'no wild hoglets. uze "spawn hoglet" 2 send wun-off agentz, or drop adopted hoglet here 2 setz him free.',
+  'No wild hoglets. Use "Spawn hoglet" to dispatch a short-lived agent for a task, question, or PR, or drop an adopted hoglet here to release it.':
+    'no wild hoglets. uze "spawn hoglet" 4 a task, kwestion, or PR, or drop adopted hoglet here 2 setz him free.',
   Builder: "buildz0r",
   Hedgehouse: "haus of cheez",
   "Holding area": "kitteh corner",

@@ -12,6 +12,10 @@ import type { HogletService } from "../../services/hedgemony/hoglet-service";
 import type { NestChatService } from "../../services/hedgemony/nest-chat-service";
 import type { NestService } from "../../services/hedgemony/nest-service";
 import {
+  type PrGraphService,
+  PrGraphServiceEvent,
+} from "../../services/hedgemony/pr-graph-service";
+import {
   adoptHogletInput,
   completeNestInput,
   createNestInput,
@@ -24,6 +28,7 @@ import {
   hoglet,
   hogletWatchScope,
   injectPromptEventPayload,
+  linkPrDependencyInput,
   listFeedbackForNestInput,
   listFeedbackForNestOutput,
   listHogletsInput,
@@ -31,17 +36,24 @@ import {
   listNestChatInput,
   listNestChatOutput,
   listNestsOutput,
+  listPrDependenciesForNestInput,
+  listPrDependenciesForNestOutput,
   nest,
   nestIdInput,
   nestMessage,
+  prDependency,
+  prGraphWatchEvent,
+  rebaseChildEventPayload,
   recordAdhocHogletInput,
   recordBootstrapHandoffInput,
+  recordRebaseOutcomeInput,
   recordRoutedFeedbackInput,
   recordSignalBackedHogletInput,
   releaseHogletInput,
   retireHogletInput,
   sendNestMessageInput,
   spawnFollowUpHogletInput,
+  unlinkPrDependencyInput,
   updateNestInput,
 } from "../../services/hedgemony/schemas";
 import { publicProcedure, router } from "../trpc";
@@ -59,6 +71,8 @@ const getFeedbackRoutingService = () =>
   container.get<FeedbackRoutingService>(MAIN_TOKENS.FeedbackRoutingService);
 const getFeedbackEventRepository = () =>
   container.get<FeedbackEventRepository>(MAIN_TOKENS.FeedbackEventRepository);
+const getPrGraphService = () =>
+  container.get<PrGraphService>(MAIN_TOKENS.PrGraphService);
 
 export const hedgemonyRouter = router({
   goalDraft: router({
@@ -270,5 +284,77 @@ export const hedgemonyRouter = router({
       .query(({ input }) =>
         getFeedbackEventRepository().listForNest(input.nestId, input.limit),
       ),
+  }),
+  prGraph: router({
+    /**
+     * Returns every edge in the nest (any state). The renderer overlay reads
+     * this once on mount and patches via `watch` afterwards.
+     */
+    listForNest: publicProcedure
+      .input(listPrDependenciesForNestInput)
+      .output(listPrDependenciesForNestOutput)
+      .query(({ input }) => getPrGraphService().listForNest(input.nestId)),
+
+    /** Idempotent edge create. Used by hedgehog tool dispatch and operator UI. */
+    link: publicProcedure
+      .input(linkPrDependencyInput)
+      .output(prDependency)
+      .mutation(({ input }) => getPrGraphService().link(input)),
+
+    unlink: publicProcedure
+      .input(unlinkPrDependencyInput)
+      .mutation(({ input }) => {
+        getPrGraphService().unlink(input);
+      }),
+
+    /**
+     * Per-nest edge watch. Emits on upsert (link or state change) and removed
+     * (unlink, cascade-cleanup, dismiss).
+     */
+    watch: publicProcedure.input(nestIdInput).subscription(async function* ({
+      input,
+      signal,
+    }) {
+      const service = getPrGraphService();
+      for await (const data of service.toIterable(
+        HedgemonyEvent.PrGraphChanged,
+        { signal },
+      )) {
+        if (data.nestId === input.id) {
+          yield prGraphWatchEvent.parse(data.event);
+        }
+      }
+    }),
+
+    /**
+     * Live stream of `rebaseChild` events. The renderer hook
+     * `useHedgemonyPrGraphRouter` subscribes once at app level and either
+     * injects the prompt into a connected session or spawns a follow-up
+     * hoglet for closed ones — same shape as the feedback router.
+     */
+    onRebaseChild: publicProcedure.subscription(async function* ({ signal }) {
+      const service = getPrGraphService();
+      for await (const data of service.toIterable(
+        PrGraphServiceEvent.RebaseChild,
+        { signal },
+      )) {
+        yield data;
+      }
+    }),
+
+    /** Drains any rebase events emitted before the subscription attached. */
+    getPendingRebases: publicProcedure
+      .output(z.array(rebaseChildEventPayload))
+      .query(() => getPrGraphService().consumePending()),
+
+    /**
+     * Records the outcome of a routed rebase event. Writes the edge state
+     * transition (`pending → satisfied | broken`) and a
+     * `pr_graph_rebase_routed` audit row to nest chat.
+     */
+    recordRebaseOutcome: publicProcedure
+      .input(recordRebaseOutcomeInput)
+      .output(prDependency)
+      .mutation(({ input }) => getPrGraphService().recordRebaseOutcome(input)),
   }),
 });

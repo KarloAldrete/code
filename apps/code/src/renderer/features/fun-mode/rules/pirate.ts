@@ -4,15 +4,15 @@ export const PIRATE_OVERRIDES: Record<string, string> = {
   "Spawn wild hog": "Loose a wild boar",
   "Send wild hog": "Set sail with a wild boar",
   "Send out a wild hog": "Set sail with a wild boar",
-  "One-off hoglets · no orchestration": "Lone boars · no flagship",
-  "Nests for orchestrated work": "Harbors for a coordinated fleet",
+  "Short-lived hoglets · no nest, no goal": "Lone boars · no harbor, no quest",
+  "Builds nests": "Builds harbors",
   "No messages yet — talk to the hedgehog below.":
     "No missives yet — parley with the hog below.",
   "Message the hedgehog…": "Send a missive to the hog…",
   "No unnested signals. Signal reports from Inbox will appear here for grouping.":
     "No driftin' signals. Reports from the crow's nest will land here for sortin'.",
-  'No wild hoglets. Use "Spawn hoglet" to dispatch a one-off agent, or drop an adopted hoglet here to release it.':
-    'No wild boars. Use "Loose a wild boar" to send one off, or drop an adopted hog here to set \'em free.',
+  'No wild hoglets. Use "Spawn hoglet" to dispatch a short-lived agent for a task, question, or PR, or drop an adopted hoglet here to release it.':
+    'No wild boars. Use "Loose a wild boar" for a task, question, or PR, or drop an adopted hog here to set \'em free.',
   Builder: "Shipwright",
   Hedgehouse: "Tavern",
   "Holding area": "Cargo hold",

@@ -21,7 +21,14 @@ import {
   MAX_SIGNAL_STAGING_HOGLETS,
   MAX_WILD_HOGLETS,
 } from "./hoglet-service";
+import type { PrGraphService } from "./pr-graph-service";
 import { HedgemonyEvent, type Hoglet } from "./schemas";
+
+function createMockPrGraphService(): PrGraphService {
+  return {
+    unlinkAllForTask: vi.fn(),
+  } as unknown as PrGraphService;
+}
 
 type CreateHogletData = Parameters<HogletRepository["create"]>[0];
 type UpdateHogletData = Parameters<HogletRepository["update"]>[1];
@@ -201,6 +208,7 @@ describe("HogletService", () => {
       router,
       prDeps as unknown as PrDependencyRepository,
       cloudTasks,
+      createMockPrGraphService(),
     );
   });
 
@@ -434,6 +442,7 @@ describe("HogletService", () => {
         router,
         prDeps as unknown as PrDependencyRepository,
         cloudTasks,
+        createMockPrGraphService(),
       );
       const listener = vi.fn();
       service.on(HedgemonyEvent.HogletChanged, listener);
@@ -471,6 +480,7 @@ describe("HogletService", () => {
         router,
         prDeps as unknown as PrDependencyRepository,
         cloudTasks,
+        createMockPrGraphService(),
       );
       const routed = await service.recordSignalBacked({
         taskId: "task-routed",
@@ -550,6 +560,7 @@ describe("HogletService", () => {
         router,
         prDeps as unknown as PrDependencyRepository,
         cloudTasks,
+        createMockPrGraphService(),
       );
       const routed = await service.recordSignalBacked({
         taskId: "task-1",
@@ -573,6 +584,7 @@ describe("HogletService", () => {
         router,
         prDeps as unknown as PrDependencyRepository,
         cloudTasks,
+        createMockPrGraphService(),
       );
       const routed = await service.recordSignalBacked({
         taskId: "task-1",
@@ -692,6 +704,7 @@ describe("HogletService", () => {
         router,
         prDeps as unknown as PrDependencyRepository,
         cloudTasks,
+        createMockPrGraphService(),
       );
 
       const listener = vi.fn();

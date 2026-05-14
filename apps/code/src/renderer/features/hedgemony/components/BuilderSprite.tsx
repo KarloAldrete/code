@@ -142,8 +142,7 @@ export function BuilderSprite({
           <div className="flex flex-col gap-1">
             <span className="font-medium">Builder hedgehog</span>
             <span className="text-[11px] opacity-80">
-              Build nests — multi-step goals orchestrated by a hedgehog.
-              Right-click to move.
+              Builds nests — homes for long-running goals. Right-click to move.
             </span>
           </div>
         }

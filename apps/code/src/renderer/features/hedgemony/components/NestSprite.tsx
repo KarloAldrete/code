@@ -110,7 +110,15 @@ export function NestSprite({
       className="absolute top-1/2 left-1/2"
       style={{ x: motionX, y: motionY, opacity: dimmed ? 0.42 : 1 }}
     >
-      <Tooltip content={nest.goalPrompt} side="bottom">
+      <Tooltip
+        content={
+          <div className="flex max-w-[260px] flex-col gap-1">
+            <span className="font-medium">{nest.name}</span>
+            <span className="text-[11px] opacity-80">{nest.goalPrompt}</span>
+          </div>
+        }
+        side="bottom"
+      >
         <motion.button
           ref={dropRef}
           type="button"

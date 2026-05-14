@@ -144,7 +144,7 @@ export function SpawnHogletPanel({ onClose }: SpawnHogletPanelProps) {
           </Text>
           <TextArea
             id="hoglet-prompt"
-            placeholder="Describe what this agent should do."
+            placeholder="Describe a task, question, or PR for the hoglet."
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             rows={4}

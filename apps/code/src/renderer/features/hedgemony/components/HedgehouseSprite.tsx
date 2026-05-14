@@ -34,8 +34,8 @@ export function HedgehouseSprite({
           <div className="flex flex-col gap-1">
             <span className="font-medium">Hedgehouse</span>
             <span className="text-[11px] opacity-80">
-              Spawn wild hoglets — one-off agent tasks. No nest, no
-              orchestration.
+              Dispatches wild hoglets — short-lived agents for tasks, questions,
+              or PR work. No nest, no goal.
             </span>
           </div>
         }

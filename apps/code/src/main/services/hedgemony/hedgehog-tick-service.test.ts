@@ -14,6 +14,12 @@ vi.mock("../../utils/logger.js", () => ({
 import type { HedgehogStateRepository } from "../../db/repositories/hedgehog-state-repository";
 import { createMockHedgehogStateRepository } from "../../db/repositories/hedgehog-state-repository.mock";
 import type {
+  PrDependency,
+  PrDependencyRepository,
+} from "../../db/repositories/pr-dependency-repository";
+import { createMockPrDependencyRepository } from "../../db/repositories/pr-dependency-repository.mock";
+import type { GitService } from "../git/service";
+import type {
   AnthropicToolUseBlock,
   PromptWithToolsOutput,
 } from "../llm-gateway/schemas";
@@ -23,6 +29,7 @@ import { HedgehogTickService } from "./hedgehog-tick-service";
 import type { HogletService } from "./hoglet-service";
 import type { NestChatService } from "./nest-chat-service";
 import type { NestService } from "./nest-service";
+import type { PrGraphService } from "./pr-graph-service";
 import {
   HedgemonyEvent,
   type HedgemonyEvents,
@@ -100,6 +107,9 @@ interface Mocks {
   nestChat: NestChatService;
   cloudTasks: CloudTaskClient;
   stateRepo: HedgehogStateRepository;
+  prDependencies: PrDependencyRepository;
+  prGraph: PrGraphService;
+  git: GitService;
   emittedNestChanged: HedgemonyEvents["nest-changed"][];
 }
 
@@ -117,7 +127,11 @@ function setupMocks(input: {
         | "failed"
         | "cancelled";
       runId: string | null;
+      prUrl?: string | null;
     }
+  >;
+  prDependencies?: Array<
+    Pick<PrDependency, "nestId" | "parentTaskId" | "childTaskId" | "state">
   >;
   promptResponse?: PromptWithToolsOutput;
   promptThrows?: Error;
@@ -221,6 +235,27 @@ function setupMocks(input: {
   const stateRepo =
     createMockHedgehogStateRepository() as unknown as HedgehogStateRepository;
 
+  const prDepsMock = createMockPrDependencyRepository();
+  for (const edge of input.prDependencies ?? []) {
+    prDepsMock.insert(edge);
+  }
+  const prDependencies = prDepsMock as unknown as PrDependencyRepository;
+
+  const prGraph = {
+    link: vi.fn(
+      (dep: { nestId: string; parentTaskId: string; childTaskId: string }) =>
+        prDepsMock.insertOrIgnore({ ...dep, state: "pending" }).row,
+    ),
+    unlink: vi.fn(({ id }: { id: string }) => prDepsMock.delete(id)),
+    unlinkAllForTask: vi.fn(),
+    requestRebase: vi.fn(async () => {}),
+    recordRebaseOutcome: vi.fn(),
+  } as unknown as PrGraphService;
+
+  const git = {
+    getPrDetailsByUrl: vi.fn(async () => null),
+  } as unknown as GitService;
+
   return {
     llm,
     nestService,
@@ -228,6 +263,9 @@ function setupMocks(input: {
     nestChat,
     cloudTasks,
     stateRepo,
+    prDependencies,
+    prGraph,
+    git,
     emittedNestChanged,
   };
 }
@@ -240,6 +278,9 @@ function buildService(mocks: Mocks): HedgehogTickService {
     mocks.nestChat,
     mocks.stateRepo,
     mocks.cloudTasks,
+    mocks.prDependencies,
+    mocks.prGraph,
+    mocks.git,
   );
 }
 
@@ -449,5 +490,158 @@ describe("HedgehogTickService", () => {
         (e.event.state.state as string) === "idle",
     );
     expect(idleEmits.length).toBeGreaterThan(0);
+  });
+
+  it("dispatches link_pr_dependency, validating both task_ids belong to the nest", async () => {
+    const mocks = setupMocks({
+      hoglets: [
+        makeHoglet({ id: "h1", taskId: "task-parent" }),
+        makeHoglet({ id: "h2", taskId: "task-child" }),
+      ],
+      hogletStates: {
+        "task-parent": { status: "completed", runId: "r1" },
+        "task-child": { status: "in_progress", runId: "r2" },
+      },
+      promptResponse: makePromptWithToolsResponse([
+        {
+          id: "t-1",
+          name: "link_pr_dependency",
+          input: {
+            parent_task_id: "task-parent",
+            child_task_id: "task-child",
+            reason: "child branched off parent",
+          },
+        },
+      ]),
+    });
+
+    const service = buildService(mocks);
+    await service.tick("nest-1", "test");
+
+    expect(mocks.prGraph.link).toHaveBeenCalledWith({
+      nestId: "nest-1",
+      parentTaskId: "task-parent",
+      childTaskId: "task-child",
+    });
+    const audits = (
+      mocks.nestChat.recordHedgehogMessage as ReturnType<typeof vi.fn>
+    ).mock.calls
+      .map(([args]) => args)
+      .filter((m) => m.kind === "audit");
+    expect(audits.some((m) => m.body.startsWith("Linked PR dependency"))).toBe(
+      true,
+    );
+  });
+
+  it("rejects link_pr_dependency when a task is not in the nest", async () => {
+    const mocks = setupMocks({
+      hoglets: [makeHoglet({ id: "h1", taskId: "task-parent" })],
+      hogletStates: {
+        "task-parent": { status: "completed", runId: "r1" },
+      },
+      promptResponse: makePromptWithToolsResponse([
+        {
+          id: "t-1",
+          name: "link_pr_dependency",
+          input: {
+            parent_task_id: "task-parent",
+            child_task_id: "task-not-in-nest",
+            reason: "stacked",
+          },
+        },
+      ]),
+    });
+
+    const service = buildService(mocks);
+    await service.tick("nest-1", "test");
+
+    expect(mocks.prGraph.link).not.toHaveBeenCalled();
+    const audits = (
+      mocks.nestChat.recordHedgehogMessage as ReturnType<typeof vi.fn>
+    ).mock.calls
+      .map(([args]) => args)
+      .filter((m) => m.kind === "audit");
+    expect(
+      audits.some(
+        (m) =>
+          typeof m.body === "string" && m.body.includes("link_pr_dependency"),
+      ),
+    ).toBe(true);
+  });
+
+  it("dispatches unlink_pr_dependency only for edges in the nest", async () => {
+    const mocks = setupMocks({
+      hoglets: [
+        makeHoglet({ id: "h1", taskId: "task-parent" }),
+        makeHoglet({ id: "h2", taskId: "task-child" }),
+      ],
+      prDependencies: [
+        {
+          nestId: "nest-1",
+          parentTaskId: "task-parent",
+          childTaskId: "task-child",
+          state: "pending",
+        },
+      ],
+    });
+    const edgeId = mocks.prDependencies.listForNest("nest-1")[0].id;
+    // Re-issue the prompt now that we know the assigned id.
+    mocks.llm.promptWithTools = vi.fn(async () =>
+      makePromptWithToolsResponse([
+        {
+          id: "t-1",
+          name: "unlink_pr_dependency",
+          input: { edge_id: edgeId, reason: "not stacked anymore" },
+        },
+      ]),
+    ) as never;
+
+    const service = buildService(mocks);
+    await service.tick("nest-1", "test");
+
+    expect(mocks.prGraph.unlink).toHaveBeenCalledWith({ id: edgeId });
+  });
+
+  it("dispatches rebase_child by calling requestRebase on the service", async () => {
+    const mocks = setupMocks({
+      hoglets: [
+        makeHoglet({ id: "h1", taskId: "task-parent" }),
+        makeHoglet({ id: "h2", taskId: "task-child" }),
+      ],
+      prDependencies: [
+        {
+          nestId: "nest-1",
+          parentTaskId: "task-parent",
+          childTaskId: "task-child",
+          state: "pending",
+        },
+      ],
+    });
+    const edgeId = mocks.prDependencies.listForNest("nest-1")[0].id;
+    mocks.llm.promptWithTools = vi.fn(async () =>
+      makePromptWithToolsResponse([
+        {
+          id: "t-1",
+          name: "rebase_child",
+          input: { edge_id: edgeId, prompt: "rebase now please" },
+        },
+      ]),
+    ) as never;
+
+    const service = buildService(mocks);
+    await service.tick("nest-1", "test");
+
+    expect(mocks.prGraph.requestRebase).toHaveBeenCalledWith({
+      edgeId,
+      promptOverride: "rebase now please",
+    });
+    const audits = (
+      mocks.nestChat.recordHedgehogMessage as ReturnType<typeof vi.fn>
+    ).mock.calls
+      .map(([args]) => args)
+      .filter((m) => m.kind === "audit");
+    expect(audits.some((m) => m.body.startsWith("Requested rebase"))).toBe(
+      true,
+    );
   });
 });

@@ -59,6 +59,7 @@ import { HedgehogTickService } from "../services/hedgemony/hedgehog-tick-service
 import { HogletService } from "../services/hedgemony/hoglet-service";
 import { NestChatService } from "../services/hedgemony/nest-chat-service";
 import { NestService } from "../services/hedgemony/nest-service";
+import { PrGraphService } from "../services/hedgemony/pr-graph-service";
 import { InboxLinkService } from "../services/inbox-link/service";
 import { LinearIntegrationService } from "../services/linear-integration/service";
 import { LlmGatewayService } from "../services/llm-gateway/service";
@@ -168,6 +169,7 @@ container.bind(MAIN_TOKENS.NestService).to(NestService);
 container.bind(MAIN_TOKENS.AffinityRouterService).to(AffinityRouterService);
 container.bind(MAIN_TOKENS.HogletService).to(HogletService);
 container.bind(MAIN_TOKENS.CloudTaskClient).to(CloudTaskClient);
+container.bind(MAIN_TOKENS.PrGraphService).to(PrGraphService);
 container.bind(MAIN_TOKENS.HedgehogTickService).to(HedgehogTickService);
 container.bind(MAIN_TOKENS.FeedbackRoutingService).to(FeedbackRoutingService);
 

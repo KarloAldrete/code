@@ -1,7 +1,9 @@
 import { inject, injectable } from "inversify";
 import type { HedgehogStateRepository } from "../../db/repositories/hedgehog-state-repository";
+import type { PrDependencyRepository } from "../../db/repositories/pr-dependency-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
+import type { GitService } from "../git/service";
 import type { PromptWithToolsOutput } from "../llm-gateway/schemas";
 import type { LlmGatewayService } from "../llm-gateway/service";
 import type { CloudTaskClient } from "./cloud-task-client";
@@ -17,6 +19,7 @@ import {
   appendScratchpad,
   buildUserPrompt,
   HEDGEHOG_SYSTEM_PROMPT,
+  type HogletPrState,
   type HogletWithState,
   type ScratchpadEntry,
 } from "./hedgehog-prompts";
@@ -24,6 +27,7 @@ import { HEDGEHOG_TOOLS } from "./hedgehog-tools";
 import type { HogletService } from "./hoglet-service";
 import type { NestChatService } from "./nest-chat-service";
 import type { NestService } from "./nest-service";
+import type { PrGraphService } from "./pr-graph-service";
 import {
   HedgemonyEvent,
   type Hoglet,
@@ -70,6 +74,12 @@ export class HedgehogTickService {
     private readonly stateRepo: HedgehogStateRepository,
     @inject(MAIN_TOKENS.CloudTaskClient)
     private readonly cloudTasks: CloudTaskClient,
+    @inject(MAIN_TOKENS.PrDependencyRepository)
+    private readonly prDependencies: PrDependencyRepository,
+    @inject(MAIN_TOKENS.PrGraphService)
+    private readonly prGraph: PrGraphService,
+    @inject(MAIN_TOKENS.GitService)
+    private readonly git: GitService,
   ) {}
 
   /**
@@ -227,6 +237,7 @@ export class HedgehogTickService {
         recentChat,
         scratchpad,
         triggerReason: reason,
+        prDependencies: context.prDependencies,
       });
 
       const response = await this.llm.promptWithTools(
@@ -310,6 +321,7 @@ export class HedgehogTickService {
   private buildHandlerDeps(): HedgehogToolDeps {
     return {
       cloudTasks: this.cloudTasks,
+      prGraph: this.prGraph,
       writeNestMessage: (nestId, input) => this.writeNestMessage(nestId, input),
     };
   }
@@ -322,16 +334,27 @@ export class HedgehogTickService {
       .list({ nestId: nest.id })
       .filter((h): h is Hoglet => !h.deletedAt);
     const enriched: HogletWithState[] = [];
+    const prStateCache = new Map<string, HogletPrState>();
     for (const hoglet of hoglets) {
       try {
         const { latestRun } = await this.cloudTasks.getTaskWithLatestRun(
           hoglet.taskId,
         );
+        const prUrlCandidate = latestRun?.output?.pr_url;
+        const prUrl =
+          typeof prUrlCandidate === "string" && prUrlCandidate.length > 0
+            ? prUrlCandidate
+            : null;
+        const prState = prUrl
+          ? await this.resolvePrState(prUrl, prStateCache)
+          : null;
         enriched.push({
           hoglet,
           taskRunStatus: latestRun?.status ?? "no_run",
           latestRunId: latestRun?.id ?? null,
           branch: latestRun?.branch ?? null,
+          prUrl,
+          prState,
         });
       } catch (error) {
         log.warn("could not load task state — flagging as unknown", {
@@ -343,10 +366,42 @@ export class HedgehogTickService {
           taskRunStatus: "unknown",
           latestRunId: null,
           branch: null,
+          prUrl: null,
+          prState: null,
         });
       }
     }
-    return { nest, hoglets: enriched, budget };
+    const prDependencies = this.prDependencies.listForNest(nest.id);
+    return { nest, hoglets: enriched, budget, prDependencies };
+  }
+
+  private async resolvePrState(
+    prUrl: string,
+    cache: Map<string, HogletPrState>,
+  ): Promise<HogletPrState> {
+    const cached = cache.get(prUrl);
+    if (cached !== undefined) return cached;
+    try {
+      const status = await this.git.getPrDetailsByUrl(prUrl);
+      const resolved: HogletPrState = status
+        ? status.merged
+          ? "merged"
+          : status.draft
+            ? "draft"
+            : status.state === "closed"
+              ? "closed"
+              : "open"
+        : "unknown";
+      cache.set(prUrl, resolved);
+      return resolved;
+    } catch (error) {
+      log.debug("getPrDetailsByUrl failed inside hedgehog tick", {
+        prUrl,
+        error: stringifyError(error),
+      });
+      cache.set(prUrl, "unknown");
+      return "unknown";
+    }
   }
 
   private loadScratchpad(nestId: string): ScratchpadEntry[] {

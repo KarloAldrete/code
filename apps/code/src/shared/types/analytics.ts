@@ -455,6 +455,7 @@ export const ANALYTICS_EVENTS = {
   HEDGEMONY_HOGLET_DISMISSED: "hedgemony.hoglet_dismissed",
   HEDGEMONY_HOGLET_RETIRED: "hedgemony.hoglet_retired",
   HEDGEMONY_FEEDBACK_ROUTED: "hedgemony.feedback_routed",
+  HEDGEMONY_PR_GRAPH_REBASE: "hedgemony.pr_graph_rebase",
 } as const;
 
 export interface HedgemonyHogletSpawnedProperties {
@@ -487,6 +488,10 @@ export interface HedgemonyHogletRetiredProperties {
 export interface HedgemonyFeedbackRoutedProperties {
   source: "pr_review" | "ci";
   outcome: "injected" | "follow_up_spawned" | "failed";
+}
+
+export interface HedgemonyPrGraphRebaseProperties {
+  outcome: "injected" | "follow_up_spawned" | "failed" | "broken";
 }
 
 // Event property mapping
@@ -583,4 +588,5 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_DISMISSED]: HedgemonyHogletDismissedProperties;
   [ANALYTICS_EVENTS.HEDGEMONY_HOGLET_RETIRED]: HedgemonyHogletRetiredProperties;
   [ANALYTICS_EVENTS.HEDGEMONY_FEEDBACK_ROUTED]: HedgemonyFeedbackRoutedProperties;
+  [ANALYTICS_EVENTS.HEDGEMONY_PR_GRAPH_REBASE]: HedgemonyPrGraphRebaseProperties;
 };

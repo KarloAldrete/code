@@ -3,15 +3,21 @@ import type {
   Nest,
   NestMessage,
   NestMessageKind,
+  PrDependencyView,
 } from "@main/services/hedgemony/schemas";
 import {
   Archive,
+  ArrowsClockwise,
   ArrowsOutCardinal,
   ChatCircle,
   FloppyDisk,
+  GitMerge,
+  PaperPlaneRight,
   Warning,
+  X,
 } from "@phosphor-icons/react";
 import {
+  Badge,
   Button,
   Flex,
   IconButton,
@@ -27,6 +33,7 @@ import type { KeyboardEvent, ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { selectNestMessages, useNestChatStore } from "../stores/nestChatStore";
 import { selectHedgehogState, useNestStore } from "../stores/nestStore";
+import { selectEdgesForNest, usePrGraphStore } from "../stores/prGraphStore";
 import { CommandConsole } from "./CommandConsole";
 
 const log = logger.scope("nest-detail-panel");
@@ -224,6 +231,8 @@ export function NestDetailPanel({
             </Text>
           )}
 
+          <PrGraphSection nestId={nest.id} />
+
           <div className="border-(--accent-a5) border-t pt-3">
             <Flex direction="column" gap="2">
               <Text
@@ -344,10 +353,36 @@ function parseFeedbackRoutedPayload(
   }
 }
 
+interface PrGraphRoutedPayload {
+  type: "pr_graph_rebase_routed";
+  edgeId: string;
+  outcome: "injected" | "follow_up_spawned" | "failed" | "broken";
+  parentTaskId: string;
+  childTaskId: string;
+  note: string | null;
+}
+
+function parsePrGraphRoutedPayload(
+  payloadJson: string | null,
+): PrGraphRoutedPayload | null {
+  if (!payloadJson) return null;
+  try {
+    const parsed = JSON.parse(payloadJson) as Record<string, unknown>;
+    if (parsed.type !== "pr_graph_rebase_routed") return null;
+    return parsed as unknown as PrGraphRoutedPayload;
+  } catch {
+    return null;
+  }
+}
+
 function NestChatMessage({ message }: { message: NestMessage }) {
   const routed = parseFeedbackRoutedPayload(message.payloadJson);
   if (routed) {
     return <FeedbackRoutedMessage message={message} payload={routed} />;
+  }
+  const rebase = parsePrGraphRoutedPayload(message.payloadJson);
+  if (rebase) {
+    return <PrGraphRebasedMessage message={message} payload={rebase} />;
   }
   const label = KIND_LABEL[message.kind] ?? message.kind;
   const accent = KIND_ACCENT[message.kind] ?? "text-(--gray-11)";
@@ -365,6 +400,136 @@ function NestChatMessage({ message }: { message: NestMessage }) {
         {message.body}
       </Text>
     </div>
+  );
+}
+
+function PrGraphRebasedMessage({
+  message,
+  payload,
+}: {
+  message: NestMessage;
+  payload: PrGraphRoutedPayload;
+}) {
+  const tone =
+    payload.outcome === "broken" || payload.outcome === "failed"
+      ? "border-(--red-6) bg-(--red-2) text-(--red-11)"
+      : payload.outcome === "injected"
+        ? "border-(--green-6) bg-(--green-2) text-(--green-11)"
+        : "border-(--purple-6) bg-(--purple-2) text-(--purple-11)";
+  return (
+    <div className={`rounded-(--radius-2) border ${tone} p-2`}>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <Flex align="center" gap="1">
+          <GitMerge size={12} weight="bold" />
+          <Text size="1" weight="medium">
+            PR rebase routed
+          </Text>
+        </Flex>
+        <Text size="1" color="gray">
+          {new Date(message.createdAt).toLocaleString()}
+        </Text>
+      </div>
+      <Text as="p" size="2" className="whitespace-pre-wrap text-(--gray-12)">
+        {message.body}
+      </Text>
+    </div>
+  );
+}
+
+function PrGraphSection({ nestId }: { nestId: string }) {
+  const t = useFunSpeak();
+  const edges = usePrGraphStore(selectEdgesForNest(nestId));
+  const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
+
+  const handleUnlink = async (edgeId: string) => {
+    setUnlinkingId(edgeId);
+    try {
+      await trpcClient.hedgemony.prGraph.unlink.mutate({ id: edgeId });
+    } catch (e) {
+      log.error("Failed to unlink pr dependency", { edgeId, error: e });
+    } finally {
+      setUnlinkingId(null);
+    }
+  };
+
+  if (edges.length === 0) return null;
+
+  return (
+    <div className="border-(--gray-5) border-t pt-4">
+      <Flex direction="column" gap="2">
+        <Text size="2" weight="medium">
+          {t("PR graph")}
+        </Text>
+        {edges.map((edge) => (
+          <PrGraphEdgeRow
+            key={edge.id}
+            edge={edge}
+            onUnlink={handleUnlink}
+            disabled={unlinkingId === edge.id}
+          />
+        ))}
+      </Flex>
+    </div>
+  );
+}
+
+function PrGraphEdgeRow({
+  edge,
+  onUnlink,
+  disabled,
+}: {
+  edge: PrDependencyView;
+  onUnlink: (edgeId: string) => void | Promise<void>;
+  disabled: boolean;
+}) {
+  return (
+    <Flex
+      align="center"
+      gap="2"
+      className="rounded-(--radius-2) border border-(--gray-4) bg-(--gray-2) p-2"
+    >
+      <ArrowsClockwise size={12} className="text-(--gray-10)" />
+      <Flex direction="column" gap="1" className="min-w-0 flex-1">
+        <Text size="1" className="truncate font-mono text-(--gray-11)">
+          {edge.parentTaskId.slice(0, 8)} → {edge.childTaskId.slice(0, 8)}
+        </Text>
+        <Text size="1" color="gray">
+          updated {new Date(edge.updatedAt).toLocaleString()}
+        </Text>
+      </Flex>
+      <PrGraphStateBadge state={edge.state} />
+      <IconButton
+        type="button"
+        variant="ghost"
+        color="gray"
+        size="1"
+        title="Unlink"
+        disabled={disabled}
+        onClick={() => onUnlink(edge.id)}
+      >
+        <X size={12} />
+      </IconButton>
+    </Flex>
+  );
+}
+
+function PrGraphStateBadge({ state }: { state: PrDependencyView["state"] }) {
+  const color: "amber" | "green" | "red" | "purple" = (() => {
+    switch (state) {
+      case "pending":
+        return "amber";
+      case "satisfied":
+        return "green";
+      case "broken":
+        return "red";
+      case "follow_up":
+        return "purple";
+    }
+  })();
+  return (
+    <Badge color={color} size="1" variant="soft">
+      {state}
+    </Badge>
   );
 }
 

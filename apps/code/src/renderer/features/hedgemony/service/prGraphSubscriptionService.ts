@@ -1,0 +1,51 @@
+import type { PrGraphWatchEvent } from "@main/services/hedgemony/schemas";
+import { trpcClient } from "@renderer/trpc/client";
+import { logger } from "@utils/logger";
+import { usePrGraphStore } from "../stores/prGraphStore";
+
+const log = logger.scope("pr-graph-subscription-service");
+
+type WatchHandle = { unsubscribe: () => void };
+
+function applyWatchEvent(nestId: string, event: PrGraphWatchEvent): void {
+  const store = usePrGraphStore.getState();
+  if (event.kind === "upsert") store.upsert(nestId, event.edge);
+  else store.remove(nestId, event.edgeId);
+}
+
+/**
+ * Bootstraps PR-graph edges for a single nest: fetches the current edge list,
+ * opens a watch subscription, and returns a disposer.
+ *
+ * Mounted from `HedgemonyMapView` (or `NestBroodCluster`) per active nest so
+ * `NestPrGraphOverlay` can read edges out of `usePrGraphStore` without
+ * orchestrating its own fetch lifecycle.
+ */
+export function initializePrGraphForNest(nestId: string): () => void {
+  let disposed = false;
+
+  const watch: WatchHandle = trpcClient.hedgemony.prGraph.watch.subscribe(
+    { id: nestId },
+    {
+      onData: (event) => applyWatchEvent(nestId, event),
+      onError: (error) =>
+        log.error("pr-graph watch subscription error", { nestId, error }),
+    },
+  );
+
+  trpcClient.hedgemony.prGraph.listForNest
+    .query({ nestId })
+    .then((edges) => {
+      if (disposed) return;
+      usePrGraphStore.getState().setForNest(nestId, edges);
+    })
+    .catch((error) =>
+      log.error("Failed to load nest pr-graph edges", { nestId, error }),
+    );
+
+  return () => {
+    if (disposed) return;
+    disposed = true;
+    watch.unsubscribe();
+  };
+}

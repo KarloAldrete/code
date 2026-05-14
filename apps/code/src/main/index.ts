@@ -16,6 +16,7 @@ import type { ExternalAppsService } from "./services/external-apps/service";
 import type { GitHubIntegrationService } from "./services/github-integration/service";
 import type { FeedbackRoutingService } from "./services/hedgemony/feedback-routing-service";
 import type { HedgehogTickService } from "./services/hedgemony/hedgehog-tick-service";
+import type { PrGraphService } from "./services/hedgemony/pr-graph-service";
 import type { InboxLinkService } from "./services/inbox-link/service";
 import type { NotificationService } from "./services/notification/service";
 import type { OAuthService } from "./services/oauth/service";
@@ -182,6 +183,15 @@ async function initializeServices(): Promise<void> {
     MAIN_TOKENS.FeedbackRoutingService,
   );
   feedbackRoutingService.start();
+
+  // Boot the PR-graph poller. Polls each `pending` edge's parent PR; when the
+  // parent merges, emits a `rebaseChild` event the renderer hook routes to the
+  // child hoglet's live session (or spawns a follow-up). Inert until edges
+  // exist — safe regardless of feature flag.
+  const prGraphService = container.get<PrGraphService>(
+    MAIN_TOKENS.PrGraphService,
+  );
+  prGraphService.start();
 
   // Track app started event
   trackAppEvent(ANALYTICS_EVENTS.APP_STARTED);

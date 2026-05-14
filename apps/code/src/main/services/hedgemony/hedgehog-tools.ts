@@ -2,12 +2,12 @@ import { z } from "zod";
 import type { AnthropicToolDefinition } from "../llm-gateway/schemas";
 
 /**
- * The hedgehog's Slice 6 tool list. **Intentionally tiny.** Per
- * notes/hedgemony/user-stories.md Slice 6: brood management only. No code
- * authoring, no PR graph, no goal judgment. Spawning new hoglets is also out
- * of scope — the hedgehog can only operate on hoglets already in her nest.
+ * The hedgehog's tool list. Slice 6 added the brood-management primitives;
+ * Slice 8 added PR-graph orchestration (`link_pr_dependency`,
+ * `unlink_pr_dependency`, `rebase_child`). The hedgehog still cannot author
+ * code — these tools only declare relationships and route rebase prompts.
  *
- * `message_hoglet` is audit-only in Slice 6; Slice 7 (FeedbackRoutingService +
+ * `message_hoglet` is audit-only; Slice 7 (FeedbackRoutingService +
  * useHedgemonyPromptRouter hook) wires real prompt injection into live
  * sessions on the same channel.
  */
@@ -92,13 +92,82 @@ export const HEDGEHOG_TOOLS: AnthropicToolDefinition[] = [
       required: ["summary"],
     },
   },
+  {
+    name: "link_pr_dependency",
+    description:
+      "Declare that one hoglet's PR is stacked on top of another's. Use when child_task's branch was branched off parent_task's branch, so a merged parent should trigger a rebase on the child. Idempotent — calling twice with the same pair is harmless.",
+    input_schema: {
+      type: "object",
+      properties: {
+        parent_task_id: {
+          type: "string",
+          description:
+            "The task_id whose PR is the BASE of the stack (the one that will merge first).",
+        },
+        child_task_id: {
+          type: "string",
+          description:
+            "The task_id whose PR depends on the parent (the one that will need a rebase).",
+        },
+        reason: {
+          type: "string",
+          description:
+            "Why you're declaring this dependency; surfaced to the operator in the audit log.",
+        },
+      },
+      required: ["parent_task_id", "child_task_id", "reason"],
+    },
+  },
+  {
+    name: "unlink_pr_dependency",
+    description:
+      "Remove a previously-declared PR dependency edge. Use when you decide the child no longer depends on the parent (e.g. you reassigned scope or the relationship was wrong).",
+    input_schema: {
+      type: "object",
+      properties: {
+        edge_id: {
+          type: "string",
+          description: "The id of the dependency edge to remove.",
+        },
+        reason: {
+          type: "string",
+          description: "Why the edge is being removed.",
+        },
+      },
+      required: ["edge_id", "reason"],
+    },
+  },
+  {
+    name: "rebase_child",
+    description:
+      "Proactively route a 'rebase your branch' prompt to a child hoglet, without waiting for the parent-merge poll. Use when you can see the parent has merged (its `pr_state` is `merged`) but the poll hasn't fired yet, or when the operator asked you to push a rebase manually.",
+    input_schema: {
+      type: "object",
+      properties: {
+        edge_id: {
+          type: "string",
+          description:
+            "The id of the PR dependency edge whose child should be rebased.",
+        },
+        prompt: {
+          type: "string",
+          description:
+            "Optional custom prompt to deliver to the child. Defaults to a standard rebase instruction that names the parent branch.",
+        },
+      },
+      required: ["edge_id"],
+    },
+  },
 ];
 
 export type HedgehogToolName =
   | "raise_hoglet"
   | "kill_hoglet"
   | "message_hoglet"
-  | "write_audit_entry";
+  | "write_audit_entry"
+  | "link_pr_dependency"
+  | "unlink_pr_dependency"
+  | "rebase_child";
 
 export const raiseHogletArgs = z.object({
   hoglet_id: z.string().min(1),
@@ -120,7 +189,26 @@ export const writeAuditEntryArgs = z.object({
   detail: z.string().trim().min(1).max(8000).optional(),
 });
 
+export const linkPrDependencyArgs = z.object({
+  parent_task_id: z.string().min(1),
+  child_task_id: z.string().min(1),
+  reason: z.string().trim().min(1).max(2000),
+});
+
+export const unlinkPrDependencyArgs = z.object({
+  edge_id: z.string().min(1),
+  reason: z.string().trim().min(1).max(2000),
+});
+
+export const rebaseChildArgs = z.object({
+  edge_id: z.string().min(1),
+  prompt: z.string().trim().min(1).max(2000).optional(),
+});
+
 export type RaiseHogletArgs = z.infer<typeof raiseHogletArgs>;
 export type KillHogletArgs = z.infer<typeof killHogletArgs>;
 export type MessageHogletArgs = z.infer<typeof messageHogletArgs>;
 export type WriteAuditEntryArgs = z.infer<typeof writeAuditEntryArgs>;
+export type LinkPrDependencyArgs = z.infer<typeof linkPrDependencyArgs>;
+export type UnlinkPrDependencyArgs = z.infer<typeof unlinkPrDependencyArgs>;
+export type RebaseChildArgs = z.infer<typeof rebaseChildArgs>;
