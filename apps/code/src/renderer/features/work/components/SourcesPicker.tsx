@@ -114,7 +114,7 @@ export function SourcesPicker({
           if (option.installed) return <Box key={option.id}>{chip}</Box>;
 
           const tooltipContent = isSelected
-            ? "Saved but not connected — click to remove, or connect it from MCP servers."
+            ? "Saved but not connected – click to remove, or connect it from MCP servers."
             : "Not connected. Connect this from the MCP servers screen first.";
 
           return (

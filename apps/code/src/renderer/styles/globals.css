@@ -49,6 +49,10 @@
 /* Edge-fade utilities (`scroll-mask-*`) used by quill scrollable lists. */
 @import "tailwindcss-scroll-mask";
 
+/* react-grid-layout: powers the draggable/resizable widgets on Project pages. */
+@import "react-grid-layout/css/styles.css";
+@import "react-resizable/css/styles.css";
+
 /*
  * Explicit @source directive alongside the import above. Tailwind v4's
  * `@config` legacy-compat mode (loading tailwind.config.js) appears to

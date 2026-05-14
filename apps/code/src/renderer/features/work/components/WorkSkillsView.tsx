@@ -97,7 +97,7 @@ const SKILLS: Record<SkillScope, { active: Skill[]; library: Skill[] }> = {
         icon: ChatsTeardrop,
         title: "Overnight Slack triage",
         description:
-          "Surfaces high-signal Slack messages from overnight — mentions, thread replies, urgent priority-channel pings",
+          "Surfaces high-signal Slack messages from overnight – mentions, thread replies, urgent priority-channel pings",
         tags: ["reporting"],
       },
     ],

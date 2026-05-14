@@ -18,7 +18,7 @@ export interface PendingEditDraft {
 }
 
 interface WorkStoreState {
-  /** Draft seed for a brand-new scheduled-task editor session — cleared once consumed. */
+  /** Draft seed for a brand-new scheduled-task editor session – cleared once consumed. */
   pendingCreateDraft: PendingCreateDraft | null;
   /** In-flight edits for an existing scheduled task, preserved across navigation (e.g. when the user jumps to MCP servers to connect a source). Cleared once consumed. */
   pendingEditDraft: PendingEditDraft | null;

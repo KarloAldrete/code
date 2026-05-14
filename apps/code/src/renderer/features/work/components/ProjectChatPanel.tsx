@@ -21,6 +21,7 @@ import { useTasks } from "@features/tasks/hooks/useTasks";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import { ChatCircleText } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
+import blankPersonality from "@renderer/assets/images/personalities/blank.png";
 import { get as getDi } from "@renderer/di/container";
 import { RENDERER_TOKENS } from "@renderer/di/tokens";
 import type { Task } from "@shared/types";
@@ -55,7 +56,7 @@ function buildProjectContext(project: Project): string {
     lines.push("");
     lines.push(`## Dashboards`);
     for (const d of project.dashboards) {
-      lines.push(`- **${d.name}** (owner: ${d.owner}) — ${d.description}`);
+      lines.push(`- **${d.name}** (owner: ${d.owner}) – ${d.description}`);
       lines.push(`  ${d.url}`);
     }
   }
@@ -65,7 +66,7 @@ function buildProjectContext(project: Project): string {
     lines.push(`## Automations`);
     for (const a of project.automations) {
       lines.push(
-        `- **${a.title}** (${a.enabled ? "on" : "off"}, ${a.schedule}) — ${a.description}`,
+        `- **${a.title}** (${a.enabled ? "on" : "off"}, ${a.schedule}) – ${a.description}`,
       );
     }
   }
@@ -230,10 +231,19 @@ function ProjectChatLanding({ project }: { project: Project }) {
         className="overflow-y-auto px-4 pb-4"
       >
         <Flex direction="column" gap="3" className="w-full max-w-[560px]">
-          <Text as="div" className="text-(--gray-11) text-[13px]">
-            Ask anything about {project.name} — I have its dashboards,
-            automations, and files in context.
-          </Text>
+          <Flex align="start" gap="2">
+            <img
+              src={blankPersonality}
+              alt=""
+              aria-hidden="true"
+              className="h-9 w-9 shrink-0 select-none"
+              draggable={false}
+            />
+            <Text as="div" className="text-(--gray-11) text-[13px]">
+              Ask anything about {project.name} – I have its dashboards,
+              automations, and files in context.
+            </Text>
+          </Flex>
           <PromptInput
             ref={editorRef}
             sessionId={`project-chat-landing-${project.id}`}

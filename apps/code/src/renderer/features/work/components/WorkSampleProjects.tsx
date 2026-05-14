@@ -22,7 +22,7 @@ const PROJECTS: SampleProject[] = [
     title: "Weekly status",
     description: "What you shipped, what's next, what's stuck",
     prompt:
-      "Draft my weekly status update — what I shipped, what's next, what I'm stuck on.",
+      "Draft my weekly status update – what I shipped, what's next, what I'm stuck on.",
   },
   {
     icon: Megaphone,
@@ -43,7 +43,7 @@ const PROJECTS: SampleProject[] = [
     title: "Pipeline brief",
     description: "Top deals, risk, and momentum",
     prompt:
-      "Pull together this week's pipeline brief — top deals, risk signals, and where momentum is shifting.",
+      "Pull together this week's pipeline brief – top deals, risk signals, and where momentum is shifting.",
   },
 ];
 

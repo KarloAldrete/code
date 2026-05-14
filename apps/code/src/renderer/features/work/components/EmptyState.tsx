@@ -24,7 +24,7 @@ export function EmptyState({ onCreate }: EmptyStateProps) {
           No scheduled tasks yet
         </Text>
         <Text size="2" align="center" className="text-(--gray-11)">
-          Set up a task that runs on its own schedule — describe what you want
+          Set up a task that runs on its own schedule – describe what you want
           done in plain English and pick how often.
         </Text>
       </Flex>

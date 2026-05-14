@@ -133,7 +133,7 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
   // Sync the draft when the editor is pointed at a different existing
   // automation. If we have a pending edit-mode override for this id, apply it
   // once and then fall through to normal resync behaviour.
-  // The id is what should trigger a reset — other field changes from polling
+  // The id is what should trigger a reset – other field changes from polling
   // shouldn't clobber user edits.
   // biome-ignore lint/correctness/useExhaustiveDependencies: see comment above
   useEffect(() => {
@@ -279,7 +279,7 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
     if (!isEditing) return;
     try {
       await runScheduledTaskNow.mutateAsync(existing.id);
-      toast.success("Running now — opening the task to follow along");
+      toast.success("Running now – opening the task to follow along");
       // After the run is triggered the automation row gets new last_task_id /
       // last_task_run_id values on the next refetch. We don't deep-link
       // immediately because the task may take a moment to appear in cache.
@@ -378,7 +378,7 @@ export function ScheduledTaskEditor({ editingId }: ScheduledTaskEditorProps) {
               />
               <Text size="1" className="text-(--gray-10)">
                 The agent picks the right skill from your request when the task
-                runs — no need to specify one.
+                runs – no need to specify one.
               </Text>
             </Flex>
 

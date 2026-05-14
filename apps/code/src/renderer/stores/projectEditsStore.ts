@@ -1,3 +1,4 @@
+import type { ProjectIconId } from "@features/work/data/projectIcons";
 import { electronStorage } from "@utils/electronStorage";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
@@ -5,6 +6,7 @@ import { persist } from "zustand/middleware";
 export interface ProjectEdit {
   name?: string;
   description?: string;
+  iconId?: ProjectIconId;
 }
 
 interface ProjectEditsStoreState {

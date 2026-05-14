@@ -1,10 +1,10 @@
+import { Badge } from "@components/ui/Badge";
 import {
   BookOpen,
   Brain,
   ClockClockwise,
   FolderSimple,
   type IconProps,
-  Notebook,
   Plugs,
   Plus,
 } from "@phosphor-icons/react";
@@ -29,7 +29,6 @@ const STATIC_ITEMS: WorkSidebarItemSpec[] = [
     label: "Scheduled",
     workView: "scheduled-section",
   },
-  { icon: Notebook, label: "Artifacts" },
   { icon: Plugs, label: "Data sources" },
   { icon: Brain, label: "Memory" },
 ];
@@ -99,6 +98,11 @@ export function WorkSidebarMenu() {
                   label={item.label}
                   isActive={isActive}
                   onClick={onClick}
+                  endContent={
+                    isProjects ? (
+                      <Badge color="amber">Pre-alpha</Badge>
+                    ) : undefined
+                  }
                 />
               </Box>
             );

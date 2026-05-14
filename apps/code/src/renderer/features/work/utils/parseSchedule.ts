@@ -2,7 +2,7 @@
  * Small natural-language → cron parser for the scheduled-task editor.
  *
  * Supports common patterns a non-engineer would type. Returns null when it
- * can't make sense of the input — the caller surfaces "couldn't understand"
+ * can't make sense of the input – the caller surfaces "couldn't understand"
  * and blocks save in that case. Raw 5-field cron expressions pass through.
  */
 
@@ -187,7 +187,7 @@ export function parseSchedule(input: string): ParseResult | null {
 }
 
 /**
- * Inverse — best effort. Used to seed the schedule field with friendly
+ * Inverse – best effort. Used to seed the schedule field with friendly
  * text when an existing automation's cron matches a known pattern.
  * Returns the original cron string when nothing matches (the parser
  * accepts raw cron pass-through, so the UI still works either way).

@@ -1,8 +1,10 @@
 /**
  * Demo project data. The "posthog-code-launch" entry is anchored on real
- * PostHog Cloud dashboards in project 2 — IDs, names and recent counts were
+ * PostHog Cloud dashboards in project 2 – IDs, names and recent counts were
  * pulled live via the PostHog MCP. The other two are placeholders.
  */
+
+import type { ProjectIconId } from "./projectIcons";
 
 export interface ProjectDashboardRef {
   id: number;
@@ -82,7 +84,7 @@ export interface ProjectMember {
 export interface Project {
   id: string;
   name: string;
-  iconId: "rocket" | "microphone" | "megaphone";
+  iconId: ProjectIconId;
   tagline: string;
   description: string;
   updatedLabel: string;
@@ -104,7 +106,7 @@ export const PROJECTS: Project[] = [
     iconId: "rocket",
     tagline: "Launch week",
     description:
-      "Coordinated launch of PostHog Code — waitlist conversion, ICP targeting, feedback monitoring, and billing health.",
+      "Coordinated launch of PostHog Code – waitlist conversion, ICP targeting, feedback monitoring, and billing health.",
     updatedLabel: "Updated just now",
     members: [
       { name: "Cleo Lant", initials: "CL" },
@@ -167,7 +169,7 @@ export const PROJECTS: Project[] = [
         id: 1472805,
         name: "PostHog Code ICP targets",
         description:
-          "Three org segments that look like strong fits — small teams, error-tracking users, YC cohort.",
+          "Three org segments that look like strong fits – small teams, error-tracking users, YC cohort.",
         url: "https://us.posthog.com/project/2/dashboard/1472805",
         owner: "Cleo",
       },
@@ -263,7 +265,7 @@ export const PROJECTS: Project[] = [
       {
         id: "gh-2",
         kind: "release",
-        text: "v0.42.0 — Work mode projects, Chat mode for quick model conversations",
+        text: "v0.42.0 – Work mode projects, Chat mode for quick model conversations",
         when: "5h ago",
         actor: "github-actions",
         url: "https://github.com/PostHog/code/releases/tag/v0.42.0",
@@ -315,7 +317,7 @@ export const PROJECTS: Project[] = [
     iconId: "megaphone",
     tagline: "Planning",
     description:
-      "Cross-channel campaign plan for Q3 — owned dashboards, briefs, and the rollout calendar.",
+      "Cross-channel campaign plan for Q3 – owned dashboards, briefs, and the rollout calendar.",
     updatedLabel: "Updated 1 week ago",
     members: [{ name: "Cleo Lant", initials: "CL" }],
     isPlaceholder: true,

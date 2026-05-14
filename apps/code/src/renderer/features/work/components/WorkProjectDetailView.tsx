@@ -2,6 +2,8 @@ import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import {
   ArrowLeft,
   ArrowSquareOut,
+  ArrowsCounterClockwise,
+  ArrowsOutCardinal,
   ChartLineUp,
   Check,
   DotsThree,
@@ -11,22 +13,30 @@ import {
   GitCommit,
   GitMerge,
   GitPullRequest,
-  type IconProps,
   Lightbulb,
   Lightning,
-  Megaphone,
-  Microphone,
+  PencilSimple,
   Plus,
-  Rocket,
   Tag,
   WarningCircle,
+  X,
 } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useProjectEditsStore } from "@stores/projectEditsStore";
+import {
+  DEFAULT_PROJECT_LAYOUT,
+  PROJECT_GRID_BREAKPOINTS,
+  PROJECT_GRID_COLS,
+  PROJECT_GRID_ROW_HEIGHT,
+  PROJECT_WIDGET_IDS,
+  type ProjectGridBreakpoint,
+  type ProjectWidgetId,
+  useProjectLayoutStore,
+} from "@stores/projectLayoutStore";
+import { useWorkSkillsStore } from "@stores/workSkillsStore";
 import { openUrlInBrowser } from "@utils/browser";
 import {
-  type ComponentType,
   type ReactNode,
   useCallback,
   useEffect,
@@ -35,6 +45,12 @@ import {
   useState,
 } from "react";
 import {
+  type Layout,
+  Responsive,
+  WidthProvider,
+} from "react-grid-layout/legacy";
+import { getProjectIcon } from "../data/projectIcons";
+import {
   getProject,
   type Project,
   type ProjectActivityEntry,
@@ -42,6 +58,8 @@ import {
   type ProjectHeadlineStat,
 } from "../data/projects";
 import { ProjectChatPanel } from "./ProjectChatPanel";
+
+const ResponsiveGridLayout = WidthProvider(Responsive);
 
 interface TrendsResult {
   data: number[];
@@ -102,12 +120,6 @@ function useLiveHeadline(headline: ProjectHeadlineStat | undefined) {
     },
   );
 }
-
-const ICON_MAP: Record<Project["iconId"], ComponentType<IconProps>> = {
-  rocket: Rocket,
-  microphone: Microphone,
-  megaphone: Megaphone,
-};
 
 function SparklineBars({
   values,
@@ -494,9 +506,9 @@ function GitHubSummaryChips({
     });
   if (chips.length === 0) return null;
   return (
-    <Flex gap="3" wrap="wrap" className="px-3 py-2">
+    <Flex gap="5" wrap="wrap" className="px-3 py-2">
       {chips.map((c) => (
-        <Flex key={c.label} align="baseline" gap="1.5">
+        <Flex key={c.label} align="baseline" gap="2">
           <Text
             as="span"
             weight="medium"
@@ -578,7 +590,11 @@ function ActivityCard({ project }: { project: Project }) {
 }
 
 function PinnedSkillsCard({ project }: { project: Project }) {
+  const skills = useWorkSkillsStore((s) => s.skills);
+  const navigateToWorkSkill = useNavigationStore((s) => s.navigateToWorkSkill);
+
   if (!project.pinnedSkills?.length) return null;
+
   return (
     <Box>
       <SectionHeader
@@ -587,25 +603,328 @@ function PinnedSkillsCard({ project }: { project: Project }) {
         count={project.pinnedSkills.length}
       />
       <Flex direction="column" gap="1.5">
-        {project.pinnedSkills.map((s) => (
-          <Flex
-            key={s}
-            align="center"
-            gap="2"
-            className="rounded-(--radius-2) border border-(--gray-5) bg-(--gray-1) px-3 py-2"
-          >
-            <Lightbulb
-              size={13}
-              weight="regular"
-              className="text-(--gray-10)"
-            />
-            <Text as="span" className="text-(--gray-12) text-[12px]">
-              {s}
-            </Text>
-          </Flex>
-        ))}
+        {project.pinnedSkills.map((name) => {
+          const match = skills.find(
+            (s) => s.name.toLowerCase() === name.toLowerCase(),
+          );
+          const onClick = match
+            ? () => navigateToWorkSkill(match.id)
+            : undefined;
+          const baseClasses =
+            "flex w-full items-center gap-2 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-1) px-3 py-2 text-left";
+          const interactiveClasses = match
+            ? "cursor-pointer transition-colors hover:border-(--gray-7) hover:bg-(--gray-2)"
+            : "cursor-default";
+          return (
+            <button
+              key={name}
+              type="button"
+              onClick={onClick}
+              disabled={!match}
+              className={`${baseClasses} ${interactiveClasses}`}
+              title={
+                match
+                  ? `Open "${match.name}" in the skills library`
+                  : "Not in your skills library yet"
+              }
+            >
+              <Lightbulb
+                size={13}
+                weight="regular"
+                className="shrink-0 text-(--gray-10)"
+              />
+              <Text
+                as="span"
+                className={`flex-1 truncate text-[12px] ${
+                  match ? "text-(--gray-12)" : "text-(--gray-11)"
+                }`}
+              >
+                {name}
+              </Text>
+              {!match && (
+                <Text as="span" className="text-(--gray-9) text-[11px]">
+                  Not added
+                </Text>
+              )}
+            </button>
+          );
+        })}
       </Flex>
     </Box>
+  );
+}
+
+interface WidgetMeta {
+  title: string;
+  render: (project: Project) => ReactNode;
+  isEmpty: (project: Project) => boolean;
+}
+
+const WIDGET_REGISTRY: Record<ProjectWidgetId, WidgetMeta> = {
+  headline: {
+    title: "Headline metric",
+    render: (project) =>
+      project.headline ? <HeadlineCard headline={project.headline} /> : null,
+    isEmpty: (project) => !project.headline,
+  },
+  activity: {
+    title: "GitHub activity",
+    render: (project) => <ActivityCard project={project} />,
+    isEmpty: (project) => !project.activity?.length && !project.githubRepo,
+  },
+  dashboards: {
+    title: "Dashboards",
+    render: (project) => <DashboardsCard project={project} />,
+    isEmpty: (project) => !project.dashboards?.length,
+  },
+  automations: {
+    title: "Automations",
+    render: (project) => <AutomationsCard project={project} />,
+    isEmpty: (project) => !project.automations?.length,
+  },
+  files: {
+    title: "Files",
+    render: (project) => <FilesCard project={project} />,
+    isEmpty: (project) => !project.files?.length,
+  },
+  pinnedSkills: {
+    title: "Frequently used skills",
+    render: (project) => <PinnedSkillsCard project={project} />,
+    isEmpty: (project) => !project.pinnedSkills?.length,
+  },
+};
+
+function WidgetShell({
+  title,
+  isEditing,
+  onHide,
+  children,
+}: {
+  title: string;
+  isEditing: boolean;
+  onHide: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Box
+      className={`flex h-full w-full flex-col overflow-hidden ${
+        isEditing
+          ? "rounded-(--radius-3) border border-(--gray-6) border-dashed bg-(--gray-1)/40"
+          : ""
+      }`}
+    >
+      {isEditing && (
+        <Flex
+          align="center"
+          justify="between"
+          gap="2"
+          className="widget-drag-handle shrink-0 cursor-grab border-(--gray-5) border-b bg-(--gray-2) px-2 py-1 active:cursor-grabbing"
+        >
+          <Flex align="center" gap="1.5" className="min-w-0 text-(--gray-11)">
+            <ArrowsOutCardinal size={11} weight="bold" />
+            <Text
+              as="span"
+              className="truncate text-(--gray-11) text-[11px] uppercase tracking-wide"
+            >
+              {title}
+            </Text>
+          </Flex>
+          <button
+            type="button"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={onHide}
+            title="Hide widget"
+            aria-label={`Hide ${title}`}
+            className="flex h-5 w-5 items-center justify-center rounded-(--radius-1) text-(--gray-10) hover:bg-(--gray-3) hover:text-(--gray-12)"
+          >
+            <X size={11} weight="bold" />
+          </button>
+        </Flex>
+      )}
+      <Box
+        className={`min-h-0 flex-1 overflow-y-auto ${isEditing ? "p-2" : ""}`}
+      >
+        {children}
+      </Box>
+    </Box>
+  );
+}
+
+function ProjectWidgetsGrid({
+  project,
+  isEditing,
+}: {
+  project: Project;
+  isEditing: boolean;
+}) {
+  const projectId = project.id;
+  const stored = useProjectLayoutStore((s) => s.layoutsByProjectId[projectId]);
+  const setBreakpointLayout = useProjectLayoutStore(
+    (s) => s.setBreakpointLayout,
+  );
+  const hideWidget = useProjectLayoutStore((s) => s.hideWidget);
+
+  const hidden = stored?.hidden ?? [];
+
+  const visibleIds = useMemo(
+    () =>
+      PROJECT_WIDGET_IDS.filter((id) => {
+        if (hidden.includes(id)) return false;
+        if (!isEditing && WIDGET_REGISTRY[id].isEmpty(project)) return false;
+        return true;
+      }),
+    [hidden, isEditing, project],
+  );
+
+  const layouts = useMemo(() => {
+    const breakpoints: ProjectGridBreakpoint[] = ["lg", "md", "sm"];
+    const result: Partial<Record<ProjectGridBreakpoint, Layout>> = {};
+    for (const bp of breakpoints) {
+      const saved = stored?.layouts[bp];
+      result[bp] = visibleIds.map((id) => {
+        const rect = saved?.[id] ?? DEFAULT_PROJECT_LAYOUT[bp][id];
+        return {
+          i: id,
+          x: rect.x,
+          y: rect.y,
+          w: rect.w,
+          h: rect.h,
+          minW: 3,
+          minH: 3,
+        };
+      });
+    }
+    return result as Record<ProjectGridBreakpoint, Layout>;
+  }, [stored, visibleIds]);
+
+  const handleLayoutChange = useCallback(
+    (_current: Layout, all: Partial<Record<string, Layout>>) => {
+      if (!isEditing) return;
+      for (const bp of ["lg", "md", "sm"] as ProjectGridBreakpoint[]) {
+        const items = all[bp];
+        if (!items) continue;
+        const next: Record<
+          ProjectWidgetId,
+          { x: number; y: number; w: number; h: number }
+        > = { ...DEFAULT_PROJECT_LAYOUT[bp] };
+        for (const item of items) {
+          const id = item.i as ProjectWidgetId;
+          if (!PROJECT_WIDGET_IDS.includes(id)) continue;
+          next[id] = { x: item.x, y: item.y, w: item.w, h: item.h };
+        }
+        setBreakpointLayout(projectId, bp, next);
+      }
+    },
+    [isEditing, projectId, setBreakpointLayout],
+  );
+
+  if (visibleIds.length === 0) {
+    return (
+      <Box className="rounded-(--radius-3) border border-(--gray-5) border-dashed bg-(--gray-1) p-6 text-center">
+        <Text as="div" className="text-(--gray-10) text-[12px]">
+          No widgets to show. Use Customize to bring widgets back.
+        </Text>
+      </Box>
+    );
+  }
+
+  return (
+    <ResponsiveGridLayout
+      className="layout"
+      layouts={layouts}
+      breakpoints={PROJECT_GRID_BREAKPOINTS}
+      cols={PROJECT_GRID_COLS}
+      rowHeight={PROJECT_GRID_ROW_HEIGHT}
+      margin={[16, 16]}
+      containerPadding={[0, 0]}
+      isDraggable={isEditing}
+      isResizable={isEditing}
+      draggableHandle=".widget-drag-handle"
+      compactType="vertical"
+      preventCollision={false}
+      onLayoutChange={handleLayoutChange}
+    >
+      {visibleIds.map((id) => {
+        const meta = WIDGET_REGISTRY[id];
+        const content = meta.render(project);
+        const empty = meta.isEmpty(project);
+        return (
+          <div key={id}>
+            <WidgetShell
+              title={meta.title}
+              isEditing={isEditing}
+              onHide={() => hideWidget(projectId, id)}
+            >
+              {empty && isEditing ? (
+                <Flex
+                  align="center"
+                  justify="center"
+                  className="h-full w-full p-3 text-center"
+                >
+                  <Text as="span" className="text-(--gray-10) text-[12px]">
+                    No data yet
+                  </Text>
+                </Flex>
+              ) : (
+                content
+              )}
+            </WidgetShell>
+          </div>
+        );
+      })}
+    </ResponsiveGridLayout>
+  );
+}
+
+function HiddenWidgetsTray({ projectId }: { projectId: string }) {
+  const hidden = useProjectLayoutStore(
+    (s) => s.layoutsByProjectId[projectId]?.hidden ?? [],
+  );
+  const showWidget = useProjectLayoutStore((s) => s.showWidget);
+  const resetLayout = useProjectLayoutStore((s) => s.resetLayout);
+
+  return (
+    <Flex
+      align="center"
+      gap="2"
+      wrap="wrap"
+      className="rounded-(--radius-3) border border-(--gray-5) border-dashed bg-(--gray-2) px-3 py-2"
+    >
+      <Text
+        as="span"
+        className="text-(--gray-11) text-[11px] uppercase tracking-wide"
+      >
+        Hidden widgets
+      </Text>
+      {hidden.length === 0 ? (
+        <Text as="span" className="text-(--gray-10) text-[11px]">
+          None – everything is on the board.
+        </Text>
+      ) : (
+        hidden.map((id) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => showWidget(projectId, id)}
+            className="flex items-center gap-1 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-1) px-2 py-1 text-(--gray-12) text-[11px] hover:border-(--gray-7) hover:bg-(--gray-3)"
+          >
+            <Plus size={10} weight="bold" />
+            {WIDGET_REGISTRY[id].title}
+          </button>
+        ))
+      )}
+      <Box className="ml-auto">
+        <button
+          type="button"
+          onClick={() => resetLayout(projectId)}
+          className="flex items-center gap-1 text-(--gray-10) text-[11px] hover:text-(--gray-12)"
+          title="Reset layout to defaults"
+        >
+          <ArrowsCounterClockwise size={10} weight="bold" />
+          Reset layout
+        </button>
+      </Box>
+    </Flex>
   );
 }
 
@@ -635,6 +954,7 @@ export function WorkProjectDetailView() {
   );
 
   const [isEditingMeta, setIsEditingMeta] = useState(false);
+  const [isEditingLayout, setIsEditingLayout] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [descDraft, setDescDraft] = useState("");
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -725,7 +1045,7 @@ export function WorkProjectDetailView() {
     );
   }
 
-  const Icon = ICON_MAP[project.iconId];
+  const Icon = getProjectIcon(project.iconId);
 
   return (
     <Box height="100%" ref={containerRef}>
@@ -798,6 +1118,39 @@ export function WorkProjectDetailView() {
                     >
                       Open in PostHog
                       <ArrowSquareOut size={11} weight="bold" />
+                    </button>
+                  )}
+                  {!isEditingMeta && (
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingLayout((v) => !v)}
+                      title={
+                        isEditingLayout
+                          ? "Done customizing"
+                          : "Customize layout"
+                      }
+                      aria-label={
+                        isEditingLayout
+                          ? "Done customizing layout"
+                          : "Customize layout"
+                      }
+                      className={`flex h-8 items-center gap-1.5 rounded-(--radius-2) border px-3 text-[12px] transition-colors ${
+                        isEditingLayout
+                          ? "border-(--accent-7) bg-(--accent-3) text-(--accent-11) hover:bg-(--accent-4)"
+                          : "border-(--gray-5) bg-(--gray-1) text-(--gray-11) hover:border-(--gray-7) hover:bg-(--gray-2) hover:text-(--gray-12)"
+                      }`}
+                    >
+                      {isEditingLayout ? (
+                        <>
+                          <Check size={12} weight="bold" />
+                          Done
+                        </>
+                      ) : (
+                        <>
+                          <PencilSimple size={12} weight="bold" />
+                          Customize
+                        </>
+                      )}
                     </button>
                   )}
                   {isEditingMeta && (
@@ -874,17 +1227,9 @@ export function WorkProjectDetailView() {
               </Flex>
             </Flex>
 
-            {project.headline && <HeadlineCard headline={project.headline} />}
+            <ProjectWidgetsGrid project={project} isEditing={isEditingLayout} />
 
-            <ActivityCard project={project} />
-
-            <Box className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <DashboardsCard project={project} />
-              <AutomationsCard project={project} />
-              <FilesCard project={project} />
-            </Box>
-
-            <PinnedSkillsCard project={project} />
+            {isEditingLayout && <HiddenWidgetsTray projectId={project.id} />}
           </Flex>
         </Box>
 

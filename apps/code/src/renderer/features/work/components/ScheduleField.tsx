@@ -44,7 +44,7 @@ export function ScheduleField({ value, onChange }: ScheduleFieldProps) {
         <Flex align="center" gap="2" className="text-(--amber-11)">
           <WarningCircle size={12} />
           <Text size="1">
-            Couldn't understand that — try "every Tuesday at 5pm", "daily at
+            Couldn't understand that – try "every Tuesday at 5pm", "daily at
             9am", "weekdays at 9am", or a cron expression.
           </Text>
         </Flex>
