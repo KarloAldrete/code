@@ -13,8 +13,9 @@ import hackerHog from "@renderer/assets/images/hedgehogs/hacker-hog.png";
 import happyHog from "@renderer/assets/images/hedgehogs/happy-hog.png";
 import magicBookHog from "@renderer/assets/images/hedgehogs/magic-book-hog.png";
 import partyHog from "@renderer/assets/images/hedgehogs/party-hog.png";
+import meepUrl from "@renderer/assets/sounds/meep.mp3";
 import type { CSSProperties } from "react";
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 import { WorkTemplateRail } from "../templates/WorkTemplateRail";
 import { WorkHomePrompt } from "./WorkHomePrompt";
 import { WorkPinnedProjects, WorkRecentProjects } from "./WorkRecentProjects";
@@ -30,7 +31,7 @@ const HOGS: { image: string; messages: string[] }[] = [
       "Aloha normie — what are we cooking up before the tide turns?",
       "Tide's coming in, normie. Where do we paddle out?",
       "Out of office, normie. Let's make something worth coming back to.",
-      "Towels down, normie. Let's build something that earns the vacation.",
+      "Tide's high, normie — give me a click.",
     ],
   },
   {
@@ -42,7 +43,7 @@ const HOGS: { image: string; messages: string[] }[] = [
       "Howdy normie, what wing of the empire shall we frame today?",
       "Tools sharpened, normie. What are we putting up?",
       "I'm fully caffeinated, normie. What are we constructing?",
-      "Hand me the hammer, normie. I'll build anything you can describe.",
+      "Tap me, normie. We'll break ground after.",
     ],
   },
   {
@@ -54,7 +55,7 @@ const HOGS: { image: string; messages: string[] }[] = [
       "Howdy normie, where's the next click taking us?",
       "Locked in, normie. What's the first click?",
       "Aim me, normie. I'll click anything that moves.",
-      "Just tell me where to click, normie. I'm in the zone.",
+      "Hey normie, click me.",
     ],
   },
   {
@@ -66,7 +67,7 @@ const HOGS: { image: string; messages: string[] }[] = [
       "Howdy normie, where do you want this cursor parked?",
       "Cursor's hot, normie. Where do I go?",
       "Steady your hand, normie. I'll follow wherever you point.",
-      "Aim the cursor, normie. I'll dive into anything.",
+      "Aim the cursor here, normie. Click.",
     ],
   },
   {
@@ -78,7 +79,7 @@ const HOGS: { image: string; messages: string[] }[] = [
       "Pipe lit, normie. What's the case?",
       "The trail is warm, normie. Where do we start digging?",
       "Talk, normie — who did it and why?",
-      "Put the kettle on, normie. We've got a mystery to crack open.",
+      "Click me, normie. Let's crack the case.",
     ],
   },
   {
@@ -90,7 +91,7 @@ const HOGS: { image: string; messages: string[] }[] = [
       "Lab's open, normie — what are we A/B-ing?",
       "Goggles on, normie. What are we testing?",
       "Step into the lab, normie. Let's run something bold.",
-      "Coat's on, normie. Let's make the control group jealous.",
+      "Click me, normie. You might be in the test group.",
     ],
   },
   {
@@ -102,7 +103,7 @@ const HOGS: { image: string; messages: string[] }[] = [
       "Howdy normie, which corner of the map are we filling in?",
       "Pack's loaded, normie. Where to?",
       "Compass is spinning, normie. Let's head somewhere new.",
-      "Boots laced, normie. Let's chart something nobody's seen.",
+      "Tap me, normie. Let's see what's over the ridge.",
     ],
   },
   {
@@ -114,7 +115,7 @@ const HOGS: { image: string; messages: string[] }[] = [
       "Howdy normie, who are we rolling out to today?",
       "Flag's in my hand, normie. Where do we ship it?",
       "Roll the dice, normie — who gets the new toy first?",
-      "Tell me which flag to flip, normie. I'll ship it to the world.",
+      "Click me, normie. You hold the flag.",
     ],
   },
   {
@@ -126,7 +127,7 @@ const HOGS: { image: string; messages: string[] }[] = [
       "Howdy normie, what document needs taming?",
       "Drawers are open, normie. What are we filing?",
       "Hand me the folder, normie. I'll sort the lot.",
-      "Pile the papers up, normie. I'll bend them to your will.",
+      "Click me, normie. Top of the inbox.",
     ],
   },
   {
@@ -138,7 +139,7 @@ const HOGS: { image: string; messages: string[] }[] = [
       "Howdy normie, which metric is misbehaving?",
       "Pull up the dashboard, normie. What's odd?",
       "Point at the spike, normie — let's figure out what happened.",
-      "Hand me the data, normie. I'll find the truth in the noise.",
+      "Click me, normie. The line goes up from here.",
     ],
   },
   {
@@ -150,7 +151,7 @@ const HOGS: { image: string; messages: string[] }[] = [
       "Yo normie, terminal's open — what's the play?",
       "Boot's hot, normie. What's the target?",
       "I'm in, normie. Now what?",
-      "Crack the keyboard, normie. We're rewriting the rules tonight.",
+      "Click me, normie. We're in.",
     ],
   },
   {
@@ -162,7 +163,7 @@ const HOGS: { image: string; messages: string[] }[] = [
       "Howdy normie, what's the play?",
       "Bring it on, normie. What's first?",
       "I'm wide awake, normie. Where do we start?",
-      "Tell me anything, normie. I'm ready.",
+      "Psst normie, give me a click.",
     ],
   },
   {
@@ -174,7 +175,7 @@ const HOGS: { image: string; messages: string[] }[] = [
       "Howdy normie, which page shall we turn?",
       "Robes on, normie. What incantation today?",
       "Open the tome, normie. We're summoning something big.",
-      "Hand me the wand, normie. Let's bend reality a little.",
+      "Click me, normie. The book is open.",
     ],
   },
   {
@@ -186,10 +187,13 @@ const HOGS: { image: string; messages: string[] }[] = [
       "Howdy normie, who are we throwing this for?",
       "Cake's in the oven, normie. What's the occasion?",
       "Bring the streamers, normie. Tonight we ship and toast.",
-      "Hold my drink, normie. Let's light this room up.",
+      "Go on, normie — click me, I won't bite.",
     ],
   },
 ];
+
+const HOG_CLICK_COOLDOWN_MS = 5000;
+const HOG_SPIN_DURATION_MS = 700;
 
 export function WorkHome() {
   const { hog, message, floatStyle } = useMemo(() => {
@@ -210,6 +214,20 @@ export function WorkHome() {
     };
   }, []);
 
+  const [spinning, setSpinning] = useState(false);
+  const lastClickRef = useRef(0);
+
+  const handleHogClick = () => {
+    const now = Date.now();
+    if (now - lastClickRef.current < HOG_CLICK_COOLDOWN_MS) return;
+    lastClickRef.current = now;
+    setSpinning(true);
+    const audio = new Audio(meepUrl);
+    audio.volume = 0.7;
+    audio.play().catch(() => {});
+    window.setTimeout(() => setSpinning(false), HOG_SPIN_DURATION_MS);
+  };
+
   return (
     <Box className="scrollbar-overlay-y h-full w-full overflow-y-auto">
       <Flex
@@ -224,18 +242,25 @@ export function WorkHome() {
           gap="3"
           className="work-enter work-enter-1"
         >
-          <img
-            src={hog}
-            alt=""
-            className="pool-float h-28 w-auto select-none"
+          <button
+            type="button"
+            onClick={handleHogClick}
+            aria-label="Pet the hedgehog"
+            className="pool-float cursor-pointer border-0 bg-transparent p-0 outline-none [perspective:600px]"
             style={floatStyle}
-            draggable={false}
-          />
+          >
+            <img
+              src={hog}
+              alt=""
+              className={`h-28 w-auto select-none ${spinning ? "hog-spin" : ""}`}
+              draggable={false}
+            />
+          </button>
           <Box className="text-center">
             <Text
               as="div"
               weight="medium"
-              className="text-(--gray-12) text-[22px]"
+              className="whitespace-nowrap text-(--gray-12) text-[22px]"
             >
               {message}
             </Text>
