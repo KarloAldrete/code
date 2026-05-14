@@ -1,0 +1,42 @@
+You're creating a growth review app that tracks monthly metrics.
+
+The metrics are organized into the following sections. Each metric below includes the PostHog insight (or survey/dashboard) link it should pull from.
+
+Revenue
+
+- Total MRR — https://us.posthog.com/project/2/insights/Y2bqQQSZ
+- Total Paying Customers — https://us.posthog.com/project/2/insights/Y2bqQQSZ
+- Product Analytics MRR — https://us.posthog.com/project/2/insights/Y2bqQQSZ
+- Product Analytics Paying Customers — https://us.posthog.com/project/2/insights/Y2bqQQSZ
+- Enhanced Persons MRR — https://us.posthog.com/project/2/insights/Y2bqQQSZ
+- Enhanced Persons Paying Customers — https://us.posthog.com/project/2/insights/Y2bqQQSZ
+- Group Analytics MRR — https://us.posthog.com/project/2/insights/Y2bqQQSZ
+- Group Analytics Paying Customers — https://us.posthog.com/project/2/insights/Y2bqQQSZ
+
+Events
+
+- Ingested Events — https://us.posthog.com/project/2/insights/u1byeLof
+- Events Per Day — derived (Ingested Events ÷ days in month)
+
+Activation
+
+- Activation Rate (≥4 unique active days in first 14) — https://us.posthog.com/project/2/dashboard/1528943 (insight: https://us.posthog.com/project/2/insights/qBZKXLcn)
+
+Onboarding Funnel
+
+- New Org Sign-ups — https://us.posthog.com/project/2/insights/gpAfsMkW
+- First Team Event Ingested (Intent) — https://us.posthog.com/project/2/insights/agN6bTfR
+- First MRR Month (Unique Orgs) — https://us.posthog.com/project/2/insights/Y2bqQQSZ
+
+Usage
+
+- Monthly Active Users — https://us.posthog.com/project/2/insights/iGhZR9Kg
+- MCP Tool Call — unique users — https://us.posthog.com/project/2/insights/Cfqb3uCT
+- PostHog AI Chats — unique users — https://us.posthog.com/project/2/insights/lRgF8sWc
+- Insight Saves (web only) — unique users — https://us.posthog.com/project/2/insights/QZQRicAn
+
+Usage Retention
+
+- User Retention (1-month) — https://us.posthog.com/project/2/insights/9iodbUXC
+- User Retention (3-month) — https://us.posthog.com/project/2/insights/9iodbUXC
+- User Retention (6-month) — https://us.posthog.com/project/2/insights/9iodbUXC

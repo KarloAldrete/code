@@ -47,8 +47,9 @@ export function TestCanvasButton() {
         </button>
       </Dialog.Trigger>
       <Dialog.Content
-        maxWidth="720px"
-        style={{ height: 520, padding: 0, overflow: "hidden" }}
+        maxWidth="90vw"
+        width="90vw"
+        style={{ height: "90vh", padding: 0, overflow: "hidden" }}
       >
         <Flex direction="column" className="h-full w-full">
           <Flex
