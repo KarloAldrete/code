@@ -1,11 +1,26 @@
 import type { Nest } from "@main/services/hedgemony/schemas";
-import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
-import { toast } from "sonner";
+import { sonnerToastSink } from "../adapters/sonnerToastSink";
+import { trpcNestRemoteService } from "../adapters/trpcNestRemoteService";
+import { zustandNestRepository } from "../adapters/zustandNestRepository";
 import { playSfx } from "../audio/sfx";
-import { useNestStore } from "../stores/nestStore";
+import type { NestRemoteService } from "../domain/NestRemoteService";
+import type { NestRepository } from "../domain/NestRepository";
+import type { ToastSink } from "../domain/ToastSink";
 
 const log = logger.scope("nest-mutations");
+
+export interface MoveNestDeps {
+  nests: NestRepository;
+  remote: NestRemoteService;
+  toast?: ToastSink;
+}
+
+export const defaultMoveNestDeps: MoveNestDeps = {
+  nests: zustandNestRepository,
+  remote: trpcNestRemoteService,
+  toast: sonnerToastSink,
+};
 
 export interface MoveNestOptions {
   /**
@@ -32,33 +47,38 @@ export async function moveNest(
   mapX: number,
   mapY: number,
   options: MoveNestOptions = {},
+  deps: MoveNestDeps = defaultMoveNestDeps,
 ): Promise<void> {
   const previous = nest;
-  useNestStore.getState().upsert({ ...nest, mapX, mapY });
+  deps.nests.upsert({ ...nest, mapX, mapY });
   try {
-    const updated = await trpcClient.hedgemony.nests.update.mutate({
+    const updated = await deps.remote.update({
       id: nest.id,
       mapX,
       mapY,
     });
-    useNestStore.getState().upsert(updated);
+    deps.nests.upsert(updated);
     if (options.undoable) {
-      toast("Nest moved", {
+      deps.toast?.info("Nest moved", {
         action: {
           label: "Undo",
           onClick: () => {
             options.flashMoveMarker?.(previous.mapX, previous.mapY);
-            void moveNest(updated, previous.mapX, previous.mapY, {
-              flashMoveMarker: options.flashMoveMarker,
-            });
+            void moveNest(
+              updated,
+              previous.mapX,
+              previous.mapY,
+              { flashMoveMarker: options.flashMoveMarker },
+              deps,
+            );
           },
         },
       });
     }
   } catch (error) {
     log.error("Failed to move nest", { id: nest.id, error });
-    useNestStore.getState().upsert(previous);
-    toast.error("Could not move nest");
+    deps.nests.upsert(previous);
+    deps.toast?.error("Could not move nest");
     playSfx("error");
   }
 }
