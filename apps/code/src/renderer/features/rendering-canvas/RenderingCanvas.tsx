@@ -3,9 +3,12 @@ import {
   type CanvasApiResolver,
   CanvasRenderer,
 } from "@features/rendering-canvas/CanvasRenderer";
-import { useCanvasChatStore } from "@features/rendering-canvas/canvasChatStore";
+import {
+  useCanvasActiveTask,
+  useCanvasChatStore,
+} from "@features/rendering-canvas/canvasChatStore";
 import { useExportCanvasPdf } from "@features/rendering-canvas/useExportCanvasPdf";
-import { ChatCircle, DotsThree } from "@phosphor-icons/react";
+import { ChatCircle, DotsThree, Spinner } from "@phosphor-icons/react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,9 +34,13 @@ export function RenderingCanvas({
   onApiCall,
 }: RenderingCanvasProps) {
   const client = useAuthenticatedClient();
+  const activeTask = useCanvasActiveTask(canvasId);
+  const isTaskActive = !!activeTask;
   const { data, isLoading, error } = useQuery({
     queryKey: ["rendering-canvas", canvasId],
     queryFn: () => client.getRenderingCanvas(canvasId),
+    retry: false,
+    refetchInterval: (query) => (query.state.data ? false : 2000),
   });
   const { exportPdf, isExporting } = useExportCanvasPdf();
   const chatOpen = useCanvasChatStore((s) => s.open);
@@ -46,7 +53,21 @@ export function RenderingCanvas({
       </div>
     );
   }
-  if (error || !data) {
+  if (!data) {
+    if (isTaskActive) {
+      return (
+        <Flex
+          direction="column"
+          align="center"
+          justify="center"
+          gap="3"
+          className={`h-full w-full ${className ?? ""}`}
+        >
+          <Spinner size={32} className="animate-spin text-(--gray-11)" />
+          <span className="text-(--gray-11) text-sm">Creating canvas…</span>
+        </Flex>
+      );
+    }
     return (
       <div className={`p-3 text-(--red-11) text-xs ${className ?? ""}`}>
         Failed to load canvas:{" "}
