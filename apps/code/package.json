@@ -20,6 +20,7 @@
     "build": "pnpm package",
     "build-native": "bash scripts/build-native-modules.sh",
     "build-icons": "bash scripts/generate-icns.sh",
+    "build-hedgehog-icon": "node scripts/generate-hedgehog-icon.mjs && bash scripts/generate-icns.sh && bash scripts/compile-glass-icon.sh",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "generate-client": "tsx scripts/update-openapi-client.ts",
     "test": "vitest run",
