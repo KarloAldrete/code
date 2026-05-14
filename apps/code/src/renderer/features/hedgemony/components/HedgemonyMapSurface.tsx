@@ -90,7 +90,12 @@ export function HedgemonyMapSurface({
     [setPan],
   );
 
-  usePanCamera({ containerRef: outerRef, panX: x, panY: y, onCommit: commitPan });
+  usePanCamera({
+    containerRef: outerRef,
+    panX: x,
+    panY: y,
+    onCommit: commitPan,
+  });
   const [placementPointer, setPlacementPointer] = useState<{
     x: number;
     y: number;

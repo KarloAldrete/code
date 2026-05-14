@@ -11,7 +11,12 @@ const KEYS_LEFT = new Set(["ArrowLeft", "KeyA"]);
 const KEYS_RIGHT = new Set(["ArrowRight", "KeyD"]);
 const KEYS_UP = new Set(["ArrowUp", "KeyW"]);
 const KEYS_DOWN = new Set(["ArrowDown", "KeyS"]);
-const PAN_KEYS = new Set([...KEYS_LEFT, ...KEYS_RIGHT, ...KEYS_UP, ...KEYS_DOWN]);
+const PAN_KEYS = new Set([
+  ...KEYS_LEFT,
+  ...KEYS_RIGHT,
+  ...KEYS_UP,
+  ...KEYS_DOWN,
+]);
 
 function anyHeld(pressed: Set<string>, keys: Set<string>) {
   for (const key of keys) if (pressed.has(key)) return true;

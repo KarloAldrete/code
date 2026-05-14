@@ -31,18 +31,29 @@ const log = logger.scope("hedgemony-map-view");
 
 type Selection = { type: "nest"; id: string } | { type: "builder" } | null;
 
+/**
+ * Top-level interaction modes for the map. At most one is active at a time;
+ * collapsing the prior `buildMode`/`relocatingNestId`/`pendingMode` booleans
+ * into a discriminated union so handlers switch once with exhaustive checks
+ * instead of hand-rolling the same priority ladder. Selection lives outside
+ * the mode — it persists across mode transitions.
+ */
+type ViewMode =
+  | { kind: "browsing" }
+  | { kind: "placingNest"; creationMode: NestCreationMode }
+  | { kind: "relocatingNest"; nestId: string };
+
 export function HedgemonyMapView() {
   const nests = useNestStore(selectNests);
   const loaded = useNestStore((s) => s.loaded);
 
+  const [mode, setMode] = useState<ViewMode>({ kind: "browsing" });
   const [pendingPlacement, setPendingPlacement] = useState<{
     x: number;
     y: number;
+    creationMode: NestCreationMode;
   } | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
-  const [buildMode, setBuildMode] = useState(false);
-  const [relocatingNestId, setRelocatingNestId] = useState<string | null>(null);
-  const [pendingMode, setPendingMode] = useState<NestCreationMode>("guided");
   const [moveMarker, setMoveMarker] = useState<MoveMarker | null>(null);
   const spawnHogletOpen = useSpawnDialogStore((s) => s.spawnHogletOpen);
   const closeSpawnHoglet = useSpawnDialogStore((s) => s.closeSpawnHoglet);
@@ -59,19 +70,15 @@ export function HedgemonyMapView() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      if (relocatingNestId) {
-        setRelocatingNestId(null);
-        return;
-      }
-      if (buildMode) {
-        setBuildMode(false);
+      if (mode.kind !== "browsing") {
+        setMode({ kind: "browsing" });
         return;
       }
       if (selection) setSelection(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [buildMode, relocatingNestId, selection]);
+  }, [mode, selection]);
 
   const flashMoveMarker = useCallback((x: number, y: number) => {
     const id = Date.now();
@@ -115,43 +122,38 @@ export function HedgemonyMapView() {
   }
 
   const handleMapClick = (x: number, y: number) => {
-    if (relocatingNestId) {
-      const nest = nests.find((n) => n.id === relocatingNestId);
-      if (!nest) {
-        setRelocatingNestId(null);
+    switch (mode.kind) {
+      case "relocatingNest": {
+        const nest = nests.find((n) => n.id === mode.nestId);
+        setMode({ kind: "browsing" });
+        if (!nest) return;
+        const targetX = Math.round(x);
+        const targetY = Math.round(y);
+        flashMoveMarker(targetX, targetY);
+        void moveNest(nest, targetX, targetY, { undoable: true });
         return;
       }
-      const targetX = Math.round(x);
-      const targetY = Math.round(y);
-      setRelocatingNestId(null);
-      flashMoveMarker(targetX, targetY);
-      void moveNest(nest, targetX, targetY, { undoable: true });
-      return;
+      case "placingNest": {
+        const creationMode = mode.creationMode;
+        setMode({ kind: "browsing" });
+        setPendingPlacement({ x, y, creationMode });
+        return;
+      }
+      case "browsing":
+        setSelection(null);
+        return;
     }
-    if (buildMode) {
-      setBuildMode(false);
-      setPendingPlacement({ x, y });
-      return;
-    }
-    setSelection(null);
   };
 
   const handleMapRightClick = (x: number, y: number) => {
-    if (relocatingNestId) {
-      setRelocatingNestId(null);
+    if (mode.kind !== "browsing") {
+      setMode({ kind: "browsing" });
       return;
     }
-    if (buildMode) {
-      setBuildMode(false);
-      return;
-    }
-    if (!selection) return;
+    if (!selection || selection.type === "nest") return;
 
     const targetX = Math.round(x);
     const targetY = Math.round(y);
-
-    if (selection.type === "nest") return;
-
     const resolved = builder.startWalk({ x: targetX, y: targetY }, "idle");
     flashMoveMarker(Math.round(resolved.x), Math.round(resolved.y));
   };
@@ -162,24 +164,21 @@ export function HedgemonyMapView() {
       ? (nests.find((nest) => nest.id === selection.id) ?? null)
       : null;
   const builderSelected = selection?.type === "builder";
+  const buildMode = mode.kind === "placingNest";
+  const relocatingNestId = mode.kind === "relocatingNest" ? mode.nestId : null;
 
   const beginBuildNest = () => {
-    setRelocatingNestId(null);
-    setPendingMode("guided");
-    setBuildMode(true);
+    setMode({ kind: "placingNest", creationMode: "guided" });
     setSelection({ type: "builder" });
   };
 
   const beginQuickNest = () => {
-    setRelocatingNestId(null);
-    setPendingMode("simple");
-    setBuildMode(true);
+    setMode({ kind: "placingNest", creationMode: "simple" });
     setSelection({ type: "builder" });
   };
 
   const beginRelocateNest = (id: string) => {
-    setBuildMode(false);
-    setRelocatingNestId(id);
+    setMode({ kind: "relocatingNest", nestId: id });
   };
 
   const handleDragStart = useCallback<DragDropEvents["dragstart"]>((event) => {
@@ -271,7 +270,7 @@ export function HedgemonyMapView() {
         <NestDetailPanel
           nest={activeNest}
           onClose={() => {
-            setRelocatingNestId(null);
+            setMode({ kind: "browsing" });
             setSelection(null);
           }}
           onRelocate={() => beginRelocateNest(activeNest.id)}
@@ -290,7 +289,7 @@ export function HedgemonyMapView() {
         open={pendingPlacement !== null}
         mapX={pendingPlacement?.x ?? 0}
         mapY={pendingPlacement?.y ?? 0}
-        initialMode={pendingMode}
+        initialMode={pendingPlacement?.creationMode ?? "guided"}
         onClose={() => setPendingPlacement(null)}
         onCreated={(created) => {
           builder.startWalk(
