@@ -224,3 +224,90 @@ describe("prependQueuedMessages", () => {
     expect(queue.map((m) => m.content)).toEqual(["rolled-back", "live"]);
   });
 });
+
+describe("clearPendingOptimisticItems", () => {
+  beforeEach(() => {
+    useSessionStore.setState((state) => {
+      state.sessions = {};
+      state.taskIdIndex = {};
+    });
+    sessionStoreSetters.setSession({
+      taskRunId: "run-pending",
+      taskId: "task-pending",
+      taskTitle: "Pending",
+      channel: "agent-event:run-pending",
+      events: [],
+      startedAt: 0,
+      status: "connecting",
+      isPromptPending: false,
+      isCompacting: false,
+      promptStartedAt: null,
+      pendingPermissions: new Map(),
+      pausedDurationMs: 0,
+      messageQueue: [],
+      optimisticItems: [],
+    });
+  });
+
+  it("removes only user_message items flagged as pending", () => {
+    sessionStoreSetters.appendOptimisticItem("run-pending", {
+      type: "user_message",
+      content: "live message",
+      timestamp: 1,
+    });
+    sessionStoreSetters.appendOptimisticItem("run-pending", {
+      type: "user_message",
+      content: "queued message",
+      timestamp: 2,
+      pending: true,
+    });
+    sessionStoreSetters.appendOptimisticItem("run-pending", {
+      type: "user_message",
+      content: "second queued message",
+      timestamp: 3,
+      pending: true,
+    });
+
+    sessionStoreSetters.clearPendingOptimisticItems("run-pending");
+
+    const remaining =
+      useSessionStore.getState().sessions["run-pending"].optimisticItems;
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]).toMatchObject({
+      type: "user_message",
+      content: "live message",
+    });
+  });
+
+  it("is a no-op when no pending items exist", () => {
+    sessionStoreSetters.appendOptimisticItem("run-pending", {
+      type: "user_message",
+      content: "live",
+      timestamp: 1,
+    });
+
+    sessionStoreSetters.clearPendingOptimisticItems("run-pending");
+
+    expect(
+      useSessionStore.getState().sessions["run-pending"].optimisticItems,
+    ).toHaveLength(1);
+  });
+
+  it("preserves the pending flag through append round-trip", () => {
+    sessionStoreSetters.appendOptimisticItem("run-pending", {
+      type: "user_message",
+      content: "hello",
+      timestamp: 1,
+      pending: true,
+    });
+
+    const items =
+      useSessionStore.getState().sessions["run-pending"].optimisticItems;
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      type: "user_message",
+      content: "hello",
+      pending: true,
+    });
+  });
+});

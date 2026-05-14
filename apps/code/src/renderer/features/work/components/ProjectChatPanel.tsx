@@ -7,7 +7,10 @@ import { SessionView } from "@features/sessions/components/SessionView";
 import { UnifiedModelSelector } from "@features/sessions/components/UnifiedModelSelector";
 import { useSessionCallbacks } from "@features/sessions/hooks/useSessionCallbacks";
 import { useSessionConnection } from "@features/sessions/hooks/useSessionConnection";
-import { useSessionForTask } from "@features/sessions/stores/sessionStore";
+import {
+  sessionStoreSetters,
+  useSessionForTask,
+} from "@features/sessions/stores/sessionStore";
 import {
   type AgentAdapter,
   useSettingsStore,
@@ -31,6 +34,7 @@ import { logger } from "@utils/logger";
 import { queryClient } from "@utils/queryClient";
 import { toast } from "@utils/toast";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ProjectChatEcho } from "./ProjectChatEcho";
 
 const log = logger.scope("project-chat-panel");
 
@@ -430,9 +434,15 @@ function ProjectChatSession({
   const task = taskFromList ?? taskFromApi;
   const session = useSessionForTask(chatId);
 
+  // Render the panel even before task data has resolved so the input is
+  // interactive on the very first frame. `useSessionConnection` and
+  // `useSessionCallbacks` already accept a placeholder shape during that
+  // brief window.
+  const taskOrPlaceholder = task ?? ({ id: chatId } as Task);
+
   useSessionConnection({
     taskId: chatId,
-    task: task ?? ({ id: chatId } as never),
+    task: taskOrPlaceholder,
     session,
     repoPath: repoPath ?? null,
     isCloud: false,
@@ -446,18 +456,10 @@ function ProjectChatSession({
     handleBashCommand,
   } = useSessionCallbacks({
     taskId: chatId,
-    task: task ?? ({ id: chatId } as never),
+    task: taskOrPlaceholder,
     session,
     repoPath: repoPath ?? null,
   });
-
-  if (!task) {
-    return (
-      <Flex align="center" justify="center" height="100%">
-        <Text className="text-(--gray-11) text-[13px]">Loading chat…</Text>
-      </Flex>
-    );
-  }
 
   const events = session?.events ?? [];
   const isPromptPending = session?.isPromptPending ?? false;
@@ -469,23 +471,65 @@ function ProjectChatSession({
     (session.status === "connecting" && events.length === 0) ||
     (session.status === "connected" &&
       events.length === 0 &&
-      (isPromptPending || !!task.latest_run?.id));
+      (isPromptPending || !!task?.latest_run?.id));
 
-  const handleNextStepClick = (prompt: string) => {
-    if (!isRunning || isPromptPending) {
-      log.warn("Ignoring next-step click while session not ready", {
-        projectId: project.id,
-        isRunning,
-        isPromptPending,
-      });
+  // Pre-connection queue: messages submitted while the session is not yet
+  // `"connected"` are held here, rendered as faded ghost bubbles, and
+  // flushed once the agent comes online. With pre-warming this queue is
+  // usually empty; it covers the cold-start gap when the user beats the
+  // connection.
+  const [pendingPreConnect, setPendingPreConnect] = useState<string[]>([]);
+
+  const handleSendPromptOrQueue = useCallback(
+    async (text: string) => {
+      const prompt = text.trim();
+      if (!prompt) return;
+      if (isRunning) {
+        await handleSendPrompt(prompt);
+        return;
+      }
+      setPendingPreConnect((prev) => [...prev, prompt]);
+      const taskRunId = session?.taskRunId;
+      if (taskRunId) {
+        sessionStoreSetters.appendOptimisticItem(taskRunId, {
+          type: "user_message",
+          content: prompt,
+          timestamp: Date.now(),
+          pending: true,
+        });
+      }
+    },
+    [isRunning, handleSendPrompt, session?.taskRunId],
+  );
+
+  // Drain the pre-connection queue the moment the agent reports connected.
+  // Uses a ref + the `pendingPreConnect` length so the effect doesn't loop
+  // when the optimistic items are cleared.
+  const drainGuardRef = useRef(false);
+  useEffect(() => {
+    if (!isRunning) {
+      drainGuardRef.current = false;
       return;
     }
+    if (drainGuardRef.current) return;
+    if (pendingPreConnect.length === 0) return;
+    drainGuardRef.current = true;
+    const combined = pendingPreConnect.join("\n\n");
+    setPendingPreConnect([]);
+    const taskRunId = session?.taskRunId;
+    if (taskRunId) {
+      sessionStoreSetters.clearPendingOptimisticItems(taskRunId);
+    }
+    void handleSendPrompt(combined);
+  }, [isRunning, pendingPreConnect, session?.taskRunId, handleSendPrompt]);
+
+  const handleNextStepClick = (prompt: string) => {
     void trpcClient.workProjects.clearNextSteps
       .mutate({ projectId: project.id })
       .catch((err: unknown) => {
         log.warn("Failed to clear next steps", { err });
       });
-    void handleSendPrompt(prompt);
+    void handleSendPromptOrQueue(prompt);
   };
 
   return (
@@ -535,7 +579,7 @@ function ProjectChatSession({
             ))}
           </Flex>
         )}
-      <Box flexGrow="1" overflow="hidden">
+      <Box flexGrow="1" overflow="hidden" position="relative">
         <SessionView
           events={events}
           taskId={chatId}
@@ -543,7 +587,7 @@ function ProjectChatSession({
           isRunning={isRunning}
           isPromptPending={isPromptPending}
           promptStartedAt={promptStartedAt}
-          onSendPrompt={handleSendPrompt}
+          onSendPrompt={handleSendPromptOrQueue}
           onBashCommand={handleBashCommand}
           onCancelPrompt={handleCancelPrompt}
           repoPath={repoPath ?? undefined}
@@ -556,7 +600,15 @@ function ProjectChatSession({
           isCloud={false}
           compact
           isActiveSession
+          instantInteractive
         />
+        {events.length === 0 &&
+          !isRunning &&
+          pendingPreConnect.length === 0 && (
+            <Box className="pointer-events-none absolute inset-x-0 top-0">
+              <ProjectChatEcho project={project} />
+            </Box>
+          )}
       </Box>
     </Flex>
   );
