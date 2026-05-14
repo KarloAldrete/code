@@ -17,7 +17,7 @@ import {
 import { trpcClient } from "@renderer/trpc/client";
 import { logger } from "@utils/logger";
 import type { ReactNode } from "react";
-import { useEffect, useReducer } from "react";
+import { useEffect, useReducer, useState } from "react";
 import {
   buildSimpleTranscript,
   initialPlaceNestDialogState,
@@ -27,6 +27,15 @@ import {
 } from "./placeNestDialogReducer";
 
 const log = logger.scope("place-nest-dialog");
+
+const DRAFTING_STATUS_WORDS = [
+  "Sniffing out scope",
+  "Gathering twigs",
+  "Sorting sharp edges",
+  "Lining the nest",
+  "Checking the done-ness",
+  "Shaping the goal",
+];
 
 export type { NestCreationMode };
 
@@ -142,10 +151,15 @@ export function PlaceNestDialog({
   const handleAnswer = () => {
     const content = answer.trim();
     if (!content || drafting) return;
-    void requestDraft(
-      [...transcript, { role: "user", content }],
-      draft ?? undefined,
-    );
+    const currentDraft = draft
+      ? {
+          ...draft,
+          name,
+          goalPrompt,
+          definitionOfDone,
+        }
+      : undefined;
+    void requestDraft([...transcript, { role: "user", content }], currentDraft);
   };
 
   const handleSubmit = async () => {
@@ -344,6 +358,10 @@ function GoalDraftFlow({
   onDefinitionOfDoneChange: (value: string) => void;
 }) {
   const disabled = drafting || submitting;
+  const latestMessage = transcript.at(-1);
+  const isAnsweringQuestion =
+    latestMessage?.role === "assistant" &&
+    !latestMessage.content.startsWith("Proposed spec");
 
   return (
     <>
@@ -384,40 +402,7 @@ function GoalDraftFlow({
         <Transcript transcript={transcript} />
       )}
 
-      {transcript.length > 0 && !draft && (
-        <div>
-          <Text
-            as="label"
-            htmlFor="nest-draft-answer"
-            size="2"
-            mb="1"
-            weight="medium"
-            className="block"
-          >
-            Answer
-          </Text>
-          <TextArea
-            id="nest-draft-answer"
-            placeholder="Add the missing context"
-            value={answer}
-            onChange={(e) => onAnswerChange(e.target.value)}
-            rows={3}
-            disabled={disabled}
-            autoFocus
-          />
-          <Flex mt="2" justify="end">
-            <Button
-              size="2"
-              variant="soft"
-              onClick={onAnswer}
-              disabled={!answer.trim() || disabled}
-              loading={drafting}
-            >
-              Continue
-            </Button>
-          </Flex>
-        </div>
-      )}
+      {drafting && <DraftingStatus />}
 
       {draft && (
         <>
@@ -435,7 +420,111 @@ function GoalDraftFlow({
           />
         </>
       )}
+
+      {transcript.length > 0 && (
+        <DraftReplyBox
+          value={answer}
+          disabled={disabled}
+          loading={drafting}
+          hasDraft={Boolean(draft)}
+          isAnsweringQuestion={isAnsweringQuestion}
+          onChange={onAnswerChange}
+          onSubmit={onAnswer}
+        />
+      )}
     </>
+  );
+}
+
+function DraftingStatus() {
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setIndex((current) => (current + 1) % DRAFTING_STATUS_WORDS.length);
+    }, 1200);
+
+    return () => window.clearInterval(id);
+  }, []);
+
+  return (
+    <div
+      aria-live="polite"
+      className="rounded-(--radius-2) border border-(--accent-5) bg-(--accent-2) px-3 py-2 text-(--accent-12)"
+    >
+      <Flex align="center" gap="2">
+        <span
+          aria-hidden="true"
+          className="block h-2 w-2 shrink-0 animate-pulse rounded-full bg-(--accent-9)"
+        />
+        <Text size="2" weight="medium">
+          {DRAFTING_STATUS_WORDS[index]}
+        </Text>
+      </Flex>
+    </div>
+  );
+}
+
+function DraftReplyBox({
+  value,
+  disabled,
+  loading,
+  hasDraft,
+  isAnsweringQuestion,
+  onChange,
+  onSubmit,
+}: {
+  value: string;
+  disabled: boolean;
+  loading: boolean;
+  hasDraft: boolean;
+  isAnsweringQuestion: boolean;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  const label = isAnsweringQuestion ? "Answer" : "Feedback";
+  const placeholder = isAnsweringQuestion
+    ? "Add the missing context"
+    : "Make Pong keyboard-only and keep scoring simple";
+  const buttonLabel = isAnsweringQuestion
+    ? "Continue"
+    : hasDraft
+      ? "Refine spec"
+      : "Continue";
+
+  return (
+    <div>
+      <Text
+        as="label"
+        htmlFor="nest-draft-answer"
+        size="2"
+        mb="1"
+        weight="medium"
+        className="block"
+      >
+        {label}
+      </Text>
+      <TextArea
+        id="nest-draft-answer"
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={3}
+        disabled={disabled}
+        autoFocus={!hasDraft}
+      />
+      <Flex mt="2" justify="end">
+        <Button
+          size="2"
+          variant="soft"
+          onClick={onSubmit}
+          disabled={!value.trim() || disabled}
+          loading={loading}
+        >
+          {buttonLabel}
+        </Button>
+      </Flex>
+    </div>
   );
 }
 

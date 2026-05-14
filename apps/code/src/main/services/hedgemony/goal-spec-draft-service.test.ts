@@ -76,6 +76,9 @@ describe("GoalSpecDraftService", () => {
     expect(llmGateway.prompt.mock.calls[0][0][0].content).toContain(
       "prioritized user stories",
     );
+    expect(llmGateway.prompt.mock.calls[0][1].system).toContain(
+      "Treat this as planning mode",
+    );
   });
 
   it("returns an editable draft spec when enough context exists", async () => {
