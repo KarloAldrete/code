@@ -107,6 +107,17 @@ export function HedgemonyMapSurface({
 
   const outerRef = useRef<HTMLDivElement>(null);
   const pointerDown = useRef<{ x: number; y: number } | null>(null);
+  // Middle-button drag-pan: anchors the world point under the cursor at the
+  // moment middle-down fires, then moves the camera with pointer delta. Stored
+  // in a ref so we can read/clear it from window-level listeners without
+  // re-rendering the surface on every pointer event.
+  const middleDragRef = useRef<{
+    startClientX: number;
+    startClientY: number;
+    startPanX: number;
+    startPanY: number;
+    pointerId: number;
+  } | null>(null);
 
   const commitPan = useCallback(
     (nextX: number, nextY: number) => {
@@ -255,11 +266,35 @@ export function HedgemonyMapSurface({
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button === 1) {
+      // Middle-click: start drag-pan. Capture the pointer on the surface so
+      // we keep getting events even if the cursor leaves the element.
+      event.preventDefault();
+      const target = event.currentTarget;
+      target.setPointerCapture(event.pointerId);
+      middleDragRef.current = {
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startPanX: x.get(),
+        startPanY: y.get(),
+        pointerId: event.pointerId,
+      };
+      return;
+    }
     if (event.button !== 0) return;
     pointerDown.current = { x: event.clientX, y: event.clientY };
   };
 
   const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (middleDragRef.current?.pointerId === event.pointerId) {
+      const target = event.currentTarget;
+      if (target.hasPointerCapture(event.pointerId)) {
+        target.releasePointerCapture(event.pointerId);
+      }
+      setPan(x.get(), y.get());
+      middleDragRef.current = null;
+      return;
+    }
     const start = pointerDown.current;
     pointerDown.current = null;
     if (event.button !== 0) return;
@@ -283,6 +318,12 @@ export function HedgemonyMapSurface({
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = middleDragRef.current;
+    if (drag && drag.pointerId === event.pointerId) {
+      x.set(drag.startPanX + (event.clientX - drag.startClientX));
+      y.set(drag.startPanY + (event.clientY - drag.startClientY));
+      return;
+    }
     if (!placementMode) return;
     const world = toWorldCoords(event.clientX, event.clientY);
     if (world) setPlacementPointer(world);
