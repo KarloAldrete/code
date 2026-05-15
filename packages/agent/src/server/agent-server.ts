@@ -1125,7 +1125,7 @@ export class AgentServer {
         this.logger.debug("Failed to set task run to in_progress", err),
       );
 
-    await this.sendInitialTaskMessage(payload, preTaskRun);
+    await this.sendInitialTaskMessage(payload, preTaskRun, preTask);
   }
 
   private extractErrorClassification(error: unknown): {
@@ -1165,6 +1165,7 @@ export class AgentServer {
   private async sendInitialTaskMessage(
     payload: JwtPayload,
     prefetchedRun?: TaskRun | null,
+    prefetchedTask?: Task | null,
   ): Promise<void> {
     if (!this.session) return;
 
@@ -1203,7 +1204,11 @@ export class AgentServer {
     }
 
     try {
-      const task = await this.posthogAPI.getTask(payload.task_id);
+      // Reuse the task fetched during session init when available; it was
+      // fetched milliseconds ago in the same boot path, so re-fetching it
+      // here is a redundant sandbox->PostHog round trip on the hot path.
+      const task =
+        prefetchedTask ?? (await this.posthogAPI.getTask(payload.task_id));
 
       const initialPromptOverride = taskRun
         ? this.getInitialPromptOverride(taskRun)
