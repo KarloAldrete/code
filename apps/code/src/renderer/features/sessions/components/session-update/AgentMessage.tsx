@@ -149,12 +149,14 @@ export const AgentMessage = memo(function AgentMessage({
   }, [content]);
 
   return (
-    <Box className="group/msg relative py-1 pl-3 text-[13px] [&>*:last-child]:mb-0">
-      <MarkdownRenderer
-        content={content}
-        componentsOverride={agentComponents}
-      />
-      <Box className="absolute top-1 right-1 opacity-0 transition-opacity group-hover/msg:opacity-100">
+    <Box className="py-1 pl-3 text-[13px]">
+      <div className="[&>*:last-child]:mb-0">
+        <MarkdownRenderer
+          content={content}
+          componentsOverride={agentComponents}
+        />
+      </div>
+      <Box className="flex justify-end pt-1">
         <Tooltip content={copied ? "Copied!" : "Copy message"}>
           <IconButton
             size="1"
