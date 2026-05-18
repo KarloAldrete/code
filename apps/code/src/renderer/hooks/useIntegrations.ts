@@ -5,6 +5,7 @@ import {
   useIntegrationSelectors,
   useIntegrationStore,
 } from "@features/integrations/stores/integrationStore";
+import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import type { UserGitHubIntegration } from "@renderer/api/posthogClient";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import {
@@ -503,6 +504,13 @@ export function useUserRepositoryIntegration() {
     useUserGithubIntegrations();
   const [isRefreshingRepos, setIsRefreshingRepos] = useState(false);
 
+  const cachedCloudRepositoryMap = useSettingsStore(
+    (s) => s.cachedCloudRepositoryMap,
+  );
+  const setCachedCloudRepositoryMap = useSettingsStore(
+    (s) => s.setCachedCloudRepositoryMap,
+  );
+
   const {
     repositoryMap,
     reposByInstallationId,
@@ -510,25 +518,68 @@ export function useUserRepositoryIntegration() {
     failedInstallationIds,
   } = useAllUserGithubRepositories(githubIntegrations);
 
+  // Keep the persisted cache in sync with the freshly fetched map so that the
+  // next cold start can render the picker without waiting on the network.
+  // Clear the cache when the user has no integrations; otherwise only write
+  // once everything has loaded so we don't blow it away with partial data.
+  useEffect(() => {
+    if (integrationsPending) return;
+    if (githubIntegrations.length === 0) {
+      if (Object.keys(cachedCloudRepositoryMap).length > 0) {
+        setCachedCloudRepositoryMap({});
+      }
+      return;
+    }
+    if (reposPending) return;
+    if (Object.keys(repositoryMap).length === 0) return;
+    setCachedCloudRepositoryMap(repositoryMap);
+  }, [
+    integrationsPending,
+    reposPending,
+    githubIntegrations.length,
+    repositoryMap,
+    cachedCloudRepositoryMap,
+    setCachedCloudRepositoryMap,
+  ]);
+
+  // Use the cached map as a stand-in while the live queries are loading so
+  // the picker can render the last-used repo immediately on a cold start.
+  const effectiveRepositoryMap = useMemo(() => {
+    const liveLoading = integrationsPending || reposPending;
+    const hasLiveData = Object.keys(repositoryMap).length > 0;
+    if (hasLiveData) return repositoryMap;
+    if (liveLoading && Object.keys(cachedCloudRepositoryMap).length > 0) {
+      return cachedCloudRepositoryMap;
+    }
+    return repositoryMap;
+  }, [
+    integrationsPending,
+    reposPending,
+    repositoryMap,
+    cachedCloudRepositoryMap,
+  ]);
+
   const repositories = useMemo(
-    () => Object.keys(repositoryMap),
-    [repositoryMap],
+    () => Object.keys(effectiveRepositoryMap),
+    [effectiveRepositoryMap],
   );
 
   const getUserIntegrationIdForRepo = useCallback(
     (repoKey: string) =>
-      repositoryMap[repoKey?.toLowerCase()]?.userIntegrationId,
-    [repositoryMap],
+      effectiveRepositoryMap[repoKey?.toLowerCase()]?.userIntegrationId,
+    [effectiveRepositoryMap],
   );
 
   const getInstallationIdForRepo = useCallback(
-    (repoKey: string) => repositoryMap[repoKey?.toLowerCase()]?.installationId,
-    [repositoryMap],
+    (repoKey: string) =>
+      effectiveRepositoryMap[repoKey?.toLowerCase()]?.installationId,
+    [effectiveRepositoryMap],
   );
 
   const isRepoInIntegration = useCallback(
-    (repoKey: string) => !repoKey || repoKey.toLowerCase() in repositoryMap,
-    [repositoryMap],
+    (repoKey: string) =>
+      !repoKey || repoKey.toLowerCase() in effectiveRepositoryMap,
+    [effectiveRepositoryMap],
   );
 
   const refreshRepositories = useCallback(async () => {
@@ -564,15 +615,23 @@ export function useUserRepositoryIntegration() {
     }
   }, [client, githubIntegrations, queryClient]);
 
+  const liveLoading = integrationsPending || reposPending;
+  const servingFromCache =
+    liveLoading &&
+    Object.keys(repositoryMap).length === 0 &&
+    Object.keys(cachedCloudRepositoryMap).length > 0;
+
   return {
     repositories,
     getUserIntegrationIdForRepo,
     getInstallationIdForRepo,
     isRepoInIntegration,
-    isLoadingRepos: integrationsPending || reposPending,
-    isRefreshingRepos,
+    isLoadingRepos: liveLoading && !servingFromCache,
+    isRefreshingRepos: isRefreshingRepos || servingFromCache,
     refreshRepositories,
-    hasGithubIntegration: githubIntegrations.length > 0,
+    hasGithubIntegration:
+      githubIntegrations.length > 0 ||
+      (integrationsPending && Object.keys(cachedCloudRepositoryMap).length > 0),
     failedInstallationIds,
     reposByInstallationId,
   };

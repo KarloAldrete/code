@@ -25,6 +25,11 @@ export type AgentAdapter = "claude" | "codex";
 export type AutoConvertLongText = "off" | "1000" | "2500" | "5000" | "10000";
 export type DefaultInitialTaskMode = "plan" | "last_used";
 
+export interface CachedCloudRepositoryRef {
+  userIntegrationId: string;
+  installationId: string;
+}
+
 export interface HintState {
   count: number;
   learned: boolean;
@@ -40,6 +45,7 @@ interface SettingsStore {
   lastUsedModel: string | null;
   lastUsedReasoningEffort: string | null;
   lastUsedCloudRepository: string | null;
+  cachedCloudRepositoryMap: Record<string, CachedCloudRepositoryRef>;
   lastUsedEnvironments: Record<string, string>;
   desktopNotifications: boolean;
   dockBadgeNotifications: boolean;
@@ -74,6 +80,9 @@ interface SettingsStore {
   setLastUsedModel: (model: string) => void;
   setLastUsedReasoningEffort: (effort: string) => void;
   setLastUsedCloudRepository: (repo: string | null) => void;
+  setCachedCloudRepositoryMap: (
+    map: Record<string, CachedCloudRepositoryRef>,
+  ) => void;
   setLastUsedEnvironment: (
     repoPath: string,
     environmentId: string | null,
@@ -107,6 +116,7 @@ export const useSettingsStore = create<SettingsStore>()(
       lastUsedModel: null,
       lastUsedReasoningEffort: null,
       lastUsedCloudRepository: null,
+      cachedCloudRepositoryMap: {},
       lastUsedEnvironments: {},
       desktopNotifications: true,
       dockBadgeNotifications: true,
@@ -166,6 +176,8 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ lastUsedReasoningEffort: effort }),
       setLastUsedCloudRepository: (repo) =>
         set({ lastUsedCloudRepository: repo }),
+      setCachedCloudRepositoryMap: (map) =>
+        set({ cachedCloudRepositoryMap: map }),
       setLastUsedEnvironment: (repoPath, environmentId) =>
         set((state) => {
           const next = { ...state.lastUsedEnvironments };
@@ -215,6 +227,7 @@ export const useSettingsStore = create<SettingsStore>()(
         lastUsedModel: state.lastUsedModel,
         lastUsedReasoningEffort: state.lastUsedReasoningEffort,
         lastUsedCloudRepository: state.lastUsedCloudRepository,
+        cachedCloudRepositoryMap: state.cachedCloudRepositoryMap,
         lastUsedEnvironments: state.lastUsedEnvironments,
         desktopNotifications: state.desktopNotifications,
         dockBadgeNotifications: state.dockBadgeNotifications,
