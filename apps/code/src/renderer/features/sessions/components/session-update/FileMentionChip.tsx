@@ -1,6 +1,6 @@
 import { FileIcon } from "@components/ui/FileIcon";
 import { usePanelLayoutStore } from "@features/panels";
-import { useCwd } from "@features/sidebar/hooks/useCwd";
+import { useDisplayRepoPath } from "@features/sessions/hooks/useDisplayRepoPath";
 import { useTaskStore } from "@features/tasks/stores/taskStore";
 import { useWorkspace } from "@features/workspace/hooks/useWorkspace";
 import { Flex, Text } from "@radix-ui/themes";
@@ -33,7 +33,7 @@ export const FileMentionChip = memo(function FileMentionChip({
   filePath,
 }: FileMentionChipProps) {
   const taskId = useTaskStore((s) => s.selectedTaskId);
-  const repoPath = useCwd(taskId ?? "");
+  const repoPath = useDisplayRepoPath(taskId ?? undefined);
   const workspace = useWorkspace(taskId ?? undefined);
   const openFileInSplit = usePanelLayoutStore((s) => s.openFileInSplit);
 
