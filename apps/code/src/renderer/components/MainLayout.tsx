@@ -45,6 +45,8 @@ import { GlobalEventHandlers } from "./GlobalEventHandlers";
 
 const log = logger.scope("main-layout");
 
+const TOURS_ENABLED = false;
+
 export function MainLayout() {
   const {
     view,
@@ -150,7 +152,7 @@ export function MainLayout() {
   const settingsOpen = useSettingsDialogStore((s) => s.isOpen);
 
   useEffect(() => {
-    if (isFirstTaskTourDone || settingsOpen) return;
+    if (!TOURS_ENABLED || isFirstTaskTourDone || settingsOpen) return;
     const timer = setTimeout(() => startTour(createFirstTaskTour.id), 600);
     return () => clearTimeout(timer);
   }, [isFirstTaskTourDone, settingsOpen, startTour]);
