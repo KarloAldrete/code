@@ -73,7 +73,7 @@ export function useTaskDeepLink() {
         // Invalidate to ensure sync with server
         queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
 
-        markAsViewed(taskId);
+        markAsViewed({ taskId });
         navigateToTask(task);
 
         log.info(

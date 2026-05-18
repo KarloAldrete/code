@@ -26,6 +26,14 @@ export interface IWorkspaceRepository {
   updatePinnedAt(taskId: string, pinnedAt: string | null): void;
   updateLastViewedAt(taskId: string, lastViewedAt: string): void;
   updateLastActivityAt(taskId: string, lastActivityAt: string): void;
+  markUserSend(
+    taskId: string,
+    timestamps: {
+      lastViewedAt: string;
+      lastActivityAt: string;
+      lastUserMessageAt: string;
+    },
+  ): void;
   updateLinkedBranch(taskId: string, linkedBranch: string | null): void;
   updateMode(taskId: string, mode: WorkspaceMode): void;
   setModeAndRepository(
@@ -126,6 +134,21 @@ export class WorkspaceRepository implements IWorkspaceRepository {
     this.db
       .update(workspaces)
       .set({ lastActivityAt, updatedAt: now() })
+      .where(byTaskId(taskId))
+      .run();
+  }
+
+  markUserSend(
+    taskId: string,
+    timestamps: {
+      lastViewedAt: string;
+      lastActivityAt: string;
+      lastUserMessageAt: string;
+    },
+  ): void {
+    this.db
+      .update(workspaces)
+      .set({ ...timestamps, updatedAt: now() })
       .where(byTaskId(taskId))
       .run();
   }

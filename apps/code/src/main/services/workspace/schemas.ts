@@ -217,6 +217,10 @@ export const markActivityInput = z.object({
   taskId: z.string(),
 });
 
+export const markUserSendInput = z.object({
+  taskId: z.string(),
+});
+
 export const getPinnedTaskIdsOutput = z.array(z.string());
 
 export const getTaskTimestampsInput = z.object({
@@ -227,6 +231,7 @@ export const getTaskTimestampsOutput = z.object({
   pinnedAt: z.string().nullable(),
   lastViewedAt: z.string().nullable(),
   lastActivityAt: z.string().nullable(),
+  lastUserMessageAt: z.string().nullable(),
 });
 
 export const getAllTaskTimestampsOutput = z.record(
@@ -235,6 +240,7 @@ export const getAllTaskTimestampsOutput = z.record(
     pinnedAt: z.string().nullable(),
     lastViewedAt: z.string().nullable(),
     lastActivityAt: z.string().nullable(),
+    lastUserMessageAt: z.string().nullable(),
   }),
 );
 

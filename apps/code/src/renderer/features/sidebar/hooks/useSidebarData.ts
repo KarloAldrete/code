@@ -24,6 +24,7 @@ export interface TaskData {
   title: string;
   createdAt: number;
   lastActivityAt: number;
+  lastUserMessageAt: number;
   isGenerating: boolean;
   isUnread: boolean;
   isPinned: boolean;
@@ -77,7 +78,7 @@ interface UseSidebarDataProps {
 }
 
 function getSortValue(task: TaskData, sortMode: SortMode): number {
-  return sortMode === "updated" ? task.lastActivityAt : task.createdAt;
+  return sortMode === "updated" ? task.lastUserMessageAt : task.createdAt;
 }
 
 function sortTasks(tasks: TaskData[], sortMode: SortMode): TaskData[] {
@@ -216,6 +217,7 @@ export function useSidebarData({
         ? Math.max(apiUpdatedAt, localActivity)
         : apiUpdatedAt;
       const createdAt = new Date(task.created_at).getTime();
+      const lastUserMessageAt = taskTimestamps?.lastUserMessageAt ?? createdAt;
 
       const taskLastViewedAt = taskTimestamps?.lastViewedAt;
       const isUnread =
@@ -231,6 +233,7 @@ export function useSidebarData({
         title: task.title,
         createdAt,
         lastActivityAt,
+        lastUserMessageAt,
         isGenerating: session?.isPromptPending ?? false,
         isUnread,
         isPinned: pinnedTaskIds.has(task.id),

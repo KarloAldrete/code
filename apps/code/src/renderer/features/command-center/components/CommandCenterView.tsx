@@ -21,7 +21,7 @@ export function CommandCenterView() {
   useEffect(() => {
     if (!visibleTaskIdsKey) return;
     for (const taskId of visibleTaskIdsKey.split(",")) {
-      markAsViewed(taskId);
+      markAsViewed({ taskId });
     }
   }, [visibleTaskIdsKey, markAsViewed]);
 

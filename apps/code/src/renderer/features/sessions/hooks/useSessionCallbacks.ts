@@ -30,7 +30,7 @@ export function useSessionCallbacks({
   session,
   repoPath,
 }: UseSessionCallbacksOptions) {
-  const { markActivity, markAsViewed } = useTaskViewed();
+  const { markAsViewed, markUserSend } = useTaskViewed();
   const { requestFocus, setPendingContent } = useDraftStore((s) => s.actions);
 
   const sessionRef = useRef(session);
@@ -55,15 +55,14 @@ export function useSessionCallbacks({
       if (handled) return;
 
       try {
-        markAsViewed(taskId);
-        markActivity(taskId);
+        markUserSend({ taskId });
         await getSessionService().sendPrompt(taskId, text);
 
         const view = useNavigationStore.getState().view;
         const isViewingTask =
           view?.type === "task-detail" && view?.data?.id === taskId;
         if (isViewingTask) {
-          markAsViewed(taskId);
+          markAsViewed({ taskId });
         }
       } catch (error) {
         const message =
@@ -72,7 +71,7 @@ export function useSessionCallbacks({
         log.error("Failed to send prompt", error);
       }
     },
-    [taskId, repoPath, markActivity, markAsViewed, task.latest_run],
+    [taskId, repoPath, markAsViewed, markUserSend, task.latest_run],
   );
 
   const handleCancelPrompt = useCallback(async () => {

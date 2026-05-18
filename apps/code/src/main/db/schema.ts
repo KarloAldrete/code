@@ -31,6 +31,7 @@ export const workspaces = sqliteTable(
     pinnedAt: text(),
     lastViewedAt: text(),
     lastActivityAt: text(),
+    lastUserMessageAt: text(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

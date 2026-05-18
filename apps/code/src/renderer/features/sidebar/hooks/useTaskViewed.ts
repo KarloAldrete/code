@@ -1,22 +1,30 @@
 import { trpcClient, useTRPC } from "@renderer/trpc";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo, useRef } from "react";
+import { useMemo } from "react";
 
 interface TaskTimestamps {
   lastViewedAt: number | null;
   lastActivityAt: number | null;
+  lastUserMessageAt: number | null;
 }
 
-function parseTimestamps(
-  raw: Record<
-    string,
-    {
-      pinnedAt: string | null;
-      lastViewedAt: string | null;
-      lastActivityAt: string | null;
-    }
-  >,
-): Record<string, TaskTimestamps> {
+type RawEntry = {
+  pinnedAt: string | null;
+  lastViewedAt: string | null;
+  lastActivityAt: string | null;
+  lastUserMessageAt: string | null;
+};
+
+type Raw = Record<string, RawEntry>;
+
+const EMPTY_ENTRY: RawEntry = {
+  pinnedAt: null,
+  lastViewedAt: null,
+  lastActivityAt: null,
+  lastUserMessageAt: null,
+};
+
+function parseTimestamps(raw: Raw): Record<string, TaskTimestamps> {
   const result: Record<string, TaskTimestamps> = {};
   for (const [taskId, ts] of Object.entries(raw)) {
     result[taskId] = {
@@ -26,19 +34,28 @@ function parseTimestamps(
       lastActivityAt: ts.lastActivityAt
         ? new Date(ts.lastActivityAt).getTime()
         : null,
+      lastUserMessageAt: ts.lastUserMessageAt
+        ? new Date(ts.lastUserMessageAt).getTime()
+        : null,
     };
   }
   return result;
 }
 
+function computeBumpedActivity(existing: RawEntry | undefined): string {
+  const lastViewedMs = existing?.lastViewedAt
+    ? new Date(existing.lastViewedAt).getTime()
+    : 0;
+  return new Date(Math.max(Date.now(), lastViewedMs + 1)).toISOString();
+}
+
 export function useTaskViewed() {
-  const trpcReact = useTRPC();
+  const trpc = useTRPC();
   const queryClient = useQueryClient();
-  const timestampsQueryKey =
-    trpcReact.workspace.getAllTaskTimestamps.queryKey();
+  const queryKey = trpc.workspace.getAllTaskTimestamps.queryKey();
 
   const { data: rawTimestamps = {}, isLoading } = useQuery(
-    trpcReact.workspace.getAllTaskTimestamps.queryOptions(undefined, {
+    trpc.workspace.getAllTaskTimestamps.queryOptions(undefined, {
       staleTime: 30_000,
     }),
   );
@@ -48,111 +65,61 @@ export function useTaskViewed() {
     [rawTimestamps],
   );
 
+  const optimisticOptions = (
+    patcher: (existing: RawEntry | undefined) => Partial<RawEntry>,
+  ) => ({
+    onMutate: async ({ taskId }: { taskId: string }) => {
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<Raw>(queryKey);
+      const patch = patcher(previous?.[taskId]);
+      queryClient.setQueryData<Raw>(queryKey, (old) => ({
+        ...(old ?? {}),
+        [taskId]: { ...EMPTY_ENTRY, ...old?.[taskId], ...patch },
+      }));
+      return { previous };
+    },
+    onError: (
+      _err: unknown,
+      _vars: unknown,
+      ctx: { previous: Raw | undefined } | undefined,
+    ) => {
+      if (ctx?.previous) queryClient.setQueryData(queryKey, ctx.previous);
+    },
+  });
+
   const markViewedMutation = useMutation(
-    trpcReact.workspace.markViewed.mutationOptions({
-      onMutate: async ({ taskId }) => {
-        await queryClient.cancelQueries({ queryKey: timestampsQueryKey });
-        const previous =
-          queryClient.getQueryData<typeof rawTimestamps>(timestampsQueryKey);
-        const now = new Date().toISOString();
-        queryClient.setQueryData<typeof rawTimestamps>(
-          timestampsQueryKey,
-          (old) => {
-            if (!old)
-              return {
-                [taskId]: {
-                  pinnedAt: null,
-                  lastViewedAt: now,
-                  lastActivityAt: null,
-                },
-              };
-            return {
-              ...old,
-              [taskId]: { ...old[taskId], lastViewedAt: now },
-            };
-          },
-        );
-        return { previous };
-      },
-      onError: (_, __, context) => {
-        if (context?.previous) {
-          queryClient.setQueryData(timestampsQueryKey, context.previous);
-        }
-      },
-    }),
+    trpc.workspace.markViewed.mutationOptions(
+      optimisticOptions(() => ({ lastViewedAt: new Date().toISOString() })),
+    ),
   );
 
   const markActivityMutation = useMutation(
-    trpcReact.workspace.markActivity.mutationOptions({
-      onMutate: async ({ taskId }) => {
-        await queryClient.cancelQueries({ queryKey: timestampsQueryKey });
-        const previous =
-          queryClient.getQueryData<typeof rawTimestamps>(timestampsQueryKey);
-        const existing = previous?.[taskId];
-        const lastViewedAt = existing?.lastViewedAt
-          ? new Date(existing.lastViewedAt).getTime()
-          : 0;
-        const now = Date.now();
-        const activityTime = Math.max(now, lastViewedAt + 1);
-        const activityIso = new Date(activityTime).toISOString();
-        queryClient.setQueryData<typeof rawTimestamps>(
-          timestampsQueryKey,
-          (old) => {
-            if (!old)
-              return {
-                [taskId]: {
-                  pinnedAt: null,
-                  lastViewedAt: null,
-                  lastActivityAt: activityIso,
-                },
-              };
-            return {
-              ...old,
-              [taskId]: { ...old[taskId], lastActivityAt: activityIso },
-            };
-          },
-        );
-        return { previous };
-      },
-      onError: (_, __, context) => {
-        if (context?.previous) {
-          queryClient.setQueryData(timestampsQueryKey, context.previous);
-        }
-      },
-    }),
+    trpc.workspace.markActivity.mutationOptions(
+      optimisticOptions((existing) => ({
+        lastActivityAt: computeBumpedActivity(existing),
+      })),
+    ),
   );
 
-  const markViewedMutationRef = useRef(markViewedMutation);
-  markViewedMutationRef.current = markViewedMutation;
-
-  const markActivityMutationRef = useRef(markActivityMutation);
-  markActivityMutationRef.current = markActivityMutation;
-
-  const markAsViewed = useCallback((taskId: string) => {
-    markViewedMutationRef.current.mutate({ taskId });
-  }, []);
-
-  const markActivity = useCallback((taskId: string) => {
-    markActivityMutationRef.current.mutate({ taskId });
-  }, []);
-
-  const getLastViewedAt = useCallback(
-    (taskId: string) => timestamps[taskId]?.lastViewedAt ?? undefined,
-    [timestamps],
-  );
-
-  const getLastActivityAt = useCallback(
-    (taskId: string) => timestamps[taskId]?.lastActivityAt ?? undefined,
-    [timestamps],
+  const markUserSendMutation = useMutation(
+    trpc.workspace.markUserSend.mutationOptions(
+      optimisticOptions((existing) => {
+        const nowIso = new Date().toISOString();
+        return {
+          lastViewedAt: nowIso,
+          lastActivityAt: computeBumpedActivity(existing),
+          lastUserMessageAt: nowIso,
+        };
+      }),
+    ),
   );
 
   return {
     timestamps,
     isLoading,
-    markAsViewed,
-    markActivity,
-    getLastViewedAt,
-    getLastActivityAt,
+    markAsViewed: markViewedMutation.mutate,
+    markActivity: markActivityMutation.mutate,
+    markUserSend: markUserSendMutation.mutate,
   };
 }
 

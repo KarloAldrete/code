@@ -32,6 +32,7 @@ function makeTask(overrides: Partial<TaskData> = {}): TaskData {
     title: "Test task",
     createdAt: Date.now(),
     lastActivityAt: Date.now(),
+    lastUserMessageAt: Date.now(),
     isGenerating: false,
     isUnread: false,
     isPinned: false,

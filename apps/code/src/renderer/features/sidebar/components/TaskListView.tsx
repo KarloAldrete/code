@@ -277,8 +277,8 @@ export function TaskListView({
     useSidebarStore.getState().reorderFolders(sourceIndex, targetIndex);
   }, []);
 
-  const timestampKey: "lastActivityAt" | "createdAt" =
-    sortMode === "updated" ? "lastActivityAt" : "createdAt";
+  const timestampKey: "lastUserMessageAt" | "createdAt" =
+    sortMode === "updated" ? "lastUserMessageAt" : "createdAt";
 
   const dateGroupedTasks = useMemo(() => {
     const groups: { label: string | null; tasks: TaskData[] }[] = [];

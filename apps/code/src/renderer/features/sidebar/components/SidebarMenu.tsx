@@ -111,11 +111,11 @@ function SidebarMenuComponent() {
       previousTaskIdRef.current &&
       previousTaskIdRef.current !== currentTaskId
     ) {
-      markAsViewed(previousTaskIdRef.current);
+      markAsViewed({ taskId: previousTaskIdRef.current });
     }
 
     if (currentTaskId) {
-      markAsViewed(currentTaskId);
+      markAsViewed({ taskId: currentTaskId });
     }
 
     previousTaskIdRef.current = currentTaskId;

@@ -1,3 +1,4 @@
+import type { z } from "zod";
 import type { WorkspaceRepository } from "../../db/repositories/workspace-repository";
 import { container } from "../../di/container";
 import { MAIN_TOKENS } from "../../di/tokens";
@@ -26,6 +27,7 @@ import {
   listGitWorktreesInput,
   listGitWorktreesOutput,
   markActivityInput,
+  markUserSendInput,
   markViewedInput,
   taskPrStatusInput,
   taskPrStatusOutput,
@@ -156,6 +158,24 @@ export const workspaceRouter = router({
       );
     }),
 
+  markUserSend: publicProcedure
+    .input(markUserSendInput)
+    .mutation(({ input }) => {
+      const repo = getWorkspaceRepo();
+      const workspace = repo.findByTaskId(input.taskId);
+      const lastViewedAtMs = workspace?.lastViewedAt
+        ? new Date(workspace.lastViewedAt).getTime()
+        : 0;
+      const nowMs = Date.now();
+      const activityMs = Math.max(nowMs, lastViewedAtMs + 1);
+      const nowIso = new Date(nowMs).toISOString();
+      repo.markUserSend(input.taskId, {
+        lastViewedAt: nowIso,
+        lastActivityAt: new Date(activityMs).toISOString(),
+        lastUserMessageAt: nowIso,
+      });
+    }),
+
   getPinnedTaskIds: publicProcedure.output(getPinnedTaskIdsOutput).query(() => {
     const repo = getWorkspaceRepo();
     return repo.findAllPinned().map((w) => w.taskId);
@@ -171,6 +191,7 @@ export const workspaceRouter = router({
         pinnedAt: workspace?.pinnedAt ?? null,
         lastViewedAt: workspace?.lastViewedAt ?? null,
         lastActivityAt: workspace?.lastActivityAt ?? null,
+        lastUserMessageAt: workspace?.lastUserMessageAt ?? null,
       };
     }),
 
@@ -178,20 +199,13 @@ export const workspaceRouter = router({
     .output(getAllTaskTimestampsOutput)
     .query(() => {
       const repo = getWorkspaceRepo();
-      const workspaces = repo.findAll();
-      const result: Record<
-        string,
-        {
-          pinnedAt: string | null;
-          lastViewedAt: string | null;
-          lastActivityAt: string | null;
-        }
-      > = {};
-      for (const w of workspaces) {
+      const result: z.infer<typeof getAllTaskTimestampsOutput> = {};
+      for (const w of repo.findAll()) {
         result[w.taskId] = {
           pinnedAt: w.pinnedAt,
           lastViewedAt: w.lastViewedAt,
           lastActivityAt: w.lastActivityAt,
+          lastUserMessageAt: w.lastUserMessageAt,
         };
       }
       return result;
