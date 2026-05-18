@@ -7,8 +7,7 @@ import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import { broodHogletPosition } from "../utils/hogletPositions";
 import { nestAccentColor } from "../utils/nestColors";
 import { AnimatedHedgehog } from "./AnimatedHedgehog";
-import { HogletHammer } from "./HogletHammer";
-import { PR_DOT_COLOR } from "./hogletStatus";
+import { PR_DOT_COLOR, TASK_STATUS_DOT_COLOR } from "./hogletStatus";
 
 const SPRITE_SIZE = 44;
 
@@ -116,10 +115,12 @@ export function BroodHoglet({
               facing={facing}
               size={SPRITE_SIZE}
             />
-            {status === "in_progress" && (
-              <span className="-bottom-1 absolute left-0">
-                <HogletHammer size={18} />
-              </span>
+            {status && status !== "not_started" && (
+              <span
+                aria-hidden
+                className="absolute bottom-0 left-0 h-3 w-3 rounded-full border border-(--gray-1) shadow"
+                style={{ backgroundColor: TASK_STATUS_DOT_COLOR[status] }}
+              />
             )}
             {prState && (
               <span

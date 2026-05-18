@@ -198,6 +198,8 @@ function setupMocks(input: {
       runId: string | null;
       prUrl?: string | null;
       repository?: string | null;
+      createdAt?: string | null;
+      completedAt?: string | null;
     }
   >;
   recentChat?: NestMessage[];
@@ -271,6 +273,7 @@ function setupMocks(input: {
     on: vi.fn(() => hogletService),
     off: vi.fn(() => hogletService),
     ensureCloudWorkspace: vi.fn(async () => undefined),
+    emitChanged: vi.fn(),
     spawnInNest: vi.fn(async () => ({
       hoglet: makeHoglet({ taskId: "spawned-task-1" }),
       taskRunId: `run-${crypto.randomUUID().slice(0, 8)}`,
@@ -304,6 +307,8 @@ function setupMocks(input: {
               id: state.runId,
               status: state.status,
               branch: null,
+              created_at: state.createdAt,
+              completed_at: state.completedAt ?? null,
             } as never)
           : null,
       };
@@ -473,6 +478,51 @@ describe("HedgehogTickService", () => {
       nestId: "nest-1",
       outcome: "completed",
     });
+  });
+
+  it("passes run timestamps into the prompt and emits terminal hoglet changes once per run", async () => {
+    const hoglet = makeHoglet({ id: "h1", taskId: "task-1" });
+    const mocks = setupMocks({
+      hoglets: [hoglet],
+      hogletStates: {
+        "task-1": {
+          status: "completed",
+          runId: "run-1",
+          createdAt: "2026-05-13T00:10:00.000Z",
+          completedAt: "2026-05-13T00:20:00.000Z",
+        },
+      },
+      promptResponse: makePromptWithToolsResponse([]),
+    });
+    const service = buildService(mocks);
+
+    await service.tick("nest-1", "test");
+
+    expect(mocks.hogletService.emitChanged).toHaveBeenCalledWith(hoglet);
+    expect(mocks.hogletService.emitChanged).toHaveBeenCalledTimes(1);
+    const prompt = (mocks.llm.promptWithTools as ReturnType<typeof vi.fn>).mock
+      .calls[0][0][0].content;
+    expect(prompt).toContain("run_created_at: 2026-05-13T00:10:00.000Z");
+    expect(prompt).toContain("run_completed_at: 2026-05-13T00:20:00.000Z");
+
+    await service.tick("nest-1", "test_again");
+
+    expect(mocks.hogletService.emitChanged).toHaveBeenCalledTimes(1);
+
+    let persisted = JSON.parse(
+      mocks.stateRepo.findByNestId("nest-1")?.serializedStateJson ?? "{}",
+    ) as { observedTerminalRunKeys?: Record<string, string> };
+    expect(Object.keys(persisted.observedTerminalRunKeys ?? {})).toEqual([
+      "task-1",
+    ]);
+
+    (mocks.hogletService.list as ReturnType<typeof vi.fn>).mockReturnValue([]);
+    await service.tick("nest-1", "after_retire");
+
+    persisted = JSON.parse(
+      mocks.stateRepo.findByNestId("nest-1")?.serializedStateJson ?? "{}",
+    ) as { observedTerminalRunKeys?: Record<string, string> };
+    expect(persisted.observedTerminalRunKeys ?? {}).toEqual({});
   });
 
   it("tick with no hoglets writes audit and ends idle", async () => {

@@ -359,6 +359,7 @@ export const scratchpadEntrySchema = z.object({
  */
 export const scratchpadStateSchema = z.object({
   scratchpad: z.array(scratchpadEntrySchema).max(200).optional(),
+  observedTerminalRunKeys: z.record(z.string(), z.string().max(512)).optional(),
 });
 
 /**

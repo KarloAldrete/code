@@ -9,6 +9,11 @@ import {
 
 const schemaLog = logger.scope("hedgemony-schemas");
 
+export interface HedgehogPersistedState {
+  scratchpad: z.infer<typeof scratchpadEntrySchema>[];
+  observedTerminalRunKeys: Record<string, string>;
+}
+
 /**
  * Loadouts live in `nests.loadoutJson` and are loaded back into the hedgehog
  * tick. We refuse to honour fields we can't validate (a tampered row could
@@ -43,10 +48,10 @@ export function parseNestLoadout(loadoutJson: string | null): NestLoadout {
   return result.data;
 }
 
-export function parseScratchpadState(
+export function parseHedgehogState(
   serializedStateJson: string | null,
-): z.infer<typeof scratchpadEntrySchema>[] {
-  if (!serializedStateJson) return [];
+): HedgehogPersistedState {
+  if (!serializedStateJson) return emptyHedgehogState();
   let raw: unknown;
   try {
     raw = JSON.parse(serializedStateJson);
@@ -54,7 +59,7 @@ export function parseScratchpadState(
     schemaLog.warn("scratchpad JSON.parse failed; starting fresh", {
       error: error instanceof Error ? error.message : String(error),
     });
-    return [];
+    return emptyHedgehogState();
   }
   const result = scratchpadStateSchema.safeParse(raw);
   if (!result.success) {
@@ -64,7 +69,14 @@ export function parseScratchpadState(
         code: issue.code,
       })),
     });
-    return [];
+    return emptyHedgehogState();
   }
-  return result.data.scratchpad ?? [];
+  return {
+    scratchpad: result.data.scratchpad ?? [],
+    observedTerminalRunKeys: result.data.observedTerminalRunKeys ?? {},
+  };
+}
+
+function emptyHedgehogState(): HedgehogPersistedState {
+  return { scratchpad: [], observedTerminalRunKeys: {} };
 }

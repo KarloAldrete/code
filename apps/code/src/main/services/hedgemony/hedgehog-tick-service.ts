@@ -42,7 +42,7 @@ import type { HogletService } from "./hoglet-service";
 import type { NestChatService } from "./nest-chat-service";
 import type { NestService } from "./nest-service";
 import type { PrGraphService } from "./pr-graph-service";
-import { parseNestLoadout, parseScratchpadState } from "./schema-parsers";
+import { parseHedgehogState, parseNestLoadout } from "./schema-parsers";
 import {
   DEFAULT_HOGLET_MODEL,
   HedgemonyEvent,
@@ -59,7 +59,7 @@ import type { UsageAttributionService } from "./usage-attribution-service";
 const log = logger.scope("hedgehog-tick-service");
 
 const MIN_TICK_INTERVAL_MS = 30_000;
-const DEFAULT_HEARTBEAT_INTERVAL_MS = 2 * 60_000;
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 90_000;
 const SCHEDULER_POLL_INTERVAL_MS = 60_000;
 const HEDGEHOG_MODEL = DEFAULT_HOGLET_MODEL;
 const HEDGEHOG_EFFORT = "max";
@@ -333,6 +333,7 @@ export class HedgehogTickService {
     const budget = new TickBudget();
     const deps = this.buildHandlerDeps();
     let outcome: TickOutcome = "completed";
+    let observedTerminalRunKeys: Record<string, string> | null = null;
 
     try {
       const context = await this.buildContext(nest, budget);
@@ -340,6 +341,11 @@ export class HedgehogTickService {
         outcome = "aborted";
         return;
       }
+      const persistedState = this.loadPersistedState(nestId);
+      observedTerminalRunKeys = this.emitNewTerminalHogletChanges(
+        context.hoglets,
+        persistedState.observedTerminalRunKeys,
+      );
       const recentChat = this.nestChat.list({ nestId, detail: false });
       const repositoryContext = this.deriveRepositoryContext(
         nest,
@@ -347,7 +353,7 @@ export class HedgehogTickService {
         context.hoglets,
       );
       const tickContext = { ...context, repositoryContext };
-      const scratchpad = this.loadScratchpad(nestId);
+      const scratchpad = persistedState.scratchpad;
       const userPrompt = buildUserPrompt({
         nest,
         hoglets: tickContext.hoglets,
@@ -462,9 +468,9 @@ export class HedgehogTickService {
         });
       }
       if (!abortSignal?.aborted) {
-        const scratchpad = this.loadScratchpad(nestId);
+        const persistedState = this.loadPersistedState(nestId);
         const nextScratchpad = appendScratchpad(
-          scratchpad,
+          persistedState.scratchpad,
           newScratchpadEntries,
         );
         const lastTickAt = new Date().toISOString();
@@ -472,7 +478,11 @@ export class HedgehogTickService {
           nestId,
           state: "idle",
           lastTickAt,
-          serializedStateJson: JSON.stringify({ scratchpad: nextScratchpad }),
+          serializedStateJson: JSON.stringify({
+            scratchpad: nextScratchpad,
+            observedTerminalRunKeys:
+              observedTerminalRunKeys ?? persistedState.observedTerminalRunKeys,
+          }),
         });
         this.nestService.emitHedgehogTick(nestId, {
           state: "idle",
@@ -534,6 +544,8 @@ export class HedgehogTickService {
           branch: latestRun?.branch ?? null,
           prUrl,
           prState,
+          latestRunCreatedAt: latestRun?.created_at ?? null,
+          latestRunCompletedAt: latestRun?.completed_at ?? null,
         });
       } catch (error) {
         log.warn("could not load task state — flagging as unknown", {
@@ -548,6 +560,8 @@ export class HedgehogTickService {
           branch: null,
           prUrl: null,
           prState: null,
+          latestRunCreatedAt: null,
+          latestRunCompletedAt: null,
         });
       }
     }
@@ -709,9 +723,28 @@ export class HedgehogTickService {
     }
   }
 
-  private loadScratchpad(nestId: string): ScratchpadEntry[] {
+  private loadPersistedState(nestId: string): {
+    scratchpad: ScratchpadEntry[];
+    observedTerminalRunKeys: Record<string, string>;
+  } {
     const row = this.stateRepo.findByNestId(nestId);
-    return parseScratchpadState(row?.serializedStateJson ?? null);
+    return parseHedgehogState(row?.serializedStateJson ?? null);
+  }
+
+  private emitNewTerminalHogletChanges(
+    hoglets: HogletWithState[],
+    previousObservedRunKeys: Record<string, string>,
+  ): Record<string, string> {
+    const nextObservedRunKeys: Record<string, string> = {};
+    for (const entry of hoglets) {
+      const runKey = terminalRunKey(entry);
+      if (!runKey) continue;
+      nextObservedRunKeys[entry.hoglet.taskId] = runKey;
+      if (previousObservedRunKeys[entry.hoglet.taskId] !== runKey) {
+        this.hogletService.emitChanged(entry.hoglet);
+      }
+    }
+    return nextObservedRunKeys;
   }
 
   private summariseLlmResponse(
@@ -752,4 +785,21 @@ function isAbortError(error: unknown): boolean {
   return error instanceof DOMException
     ? error.name === "AbortError"
     : error instanceof Error && error.name === "AbortError";
+}
+
+function isTerminalTaskRunStatus(
+  status: HogletWithState["taskRunStatus"],
+): boolean {
+  return (
+    status === "completed" || status === "failed" || status === "cancelled"
+  );
+}
+
+function terminalRunKey(entry: HogletWithState): string | null {
+  if (!isTerminalTaskRunStatus(entry.taskRunStatus)) return null;
+  return [
+    entry.latestRunId ?? "missing-run-id",
+    entry.taskRunStatus,
+    entry.latestRunCompletedAt ?? "missing-completed-at",
+  ].join(":");
 }

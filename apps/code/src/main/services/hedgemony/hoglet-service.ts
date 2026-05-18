@@ -518,6 +518,10 @@ export class HogletService extends TypedEventEmitter<HedgemonyEvents> {
     this.retire({ hogletId: existing.id });
   }
 
+  emitChanged(hoglet: Hoglet): void {
+    this.emitChange(bucketForHoglet(hoglet), { kind: "upsert", hoglet });
+  }
+
   /**
    * Spawns a new hoglet inside a nest. Creates a cloud Task, creates and
    * starts a TaskRun, then inserts the local sidecar row only after the

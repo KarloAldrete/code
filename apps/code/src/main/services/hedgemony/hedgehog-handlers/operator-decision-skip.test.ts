@@ -57,6 +57,8 @@ function makeHogletWithState(
     branch: overrides.branch ?? null,
     prUrl: overrides.prUrl ?? null,
     prState: overrides.prState ?? null,
+    latestRunCreatedAt: overrides.latestRunCreatedAt ?? null,
+    latestRunCompletedAt: overrides.latestRunCompletedAt ?? null,
   };
 }
 

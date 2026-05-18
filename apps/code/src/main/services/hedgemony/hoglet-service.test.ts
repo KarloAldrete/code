@@ -330,6 +330,19 @@ describe("HogletService", () => {
     });
   });
 
+  it("can emit an upsert change for an existing hoglet", () => {
+    const hoglet = service.recordAdhoc({ taskId: "task-1" });
+    const listener = vi.fn();
+    service.on(HedgemonyEvent.HogletChanged, listener);
+
+    service.emitChanged(hoglet);
+
+    expect(listener).toHaveBeenCalledWith({
+      bucket: { kind: "wild" },
+      event: { kind: "upsert", hoglet },
+    });
+  });
+
   it("is idempotent for the same taskId", () => {
     const first = service.recordAdhoc({ taskId: "task-1" });
     const second = service.recordAdhoc({ taskId: "task-1" });

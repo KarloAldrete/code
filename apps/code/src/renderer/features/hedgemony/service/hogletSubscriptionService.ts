@@ -53,6 +53,9 @@ function applyWatchEvent(
 ): void {
   if (event.kind === "upsert") {
     deps.hoglets.upsert(bucket, event.hoglet);
+    // A roster change often means the main process just observed a fresh run
+    // state. Refresh now so sprites and detail panels don't wait on polling.
+    void refreshTaskSummaries([event.hoglet.taskId], deps.hoglets);
   } else {
     const pos = resolveHogletPosition(event.hogletId, deps.positions);
     deps.hoglets.startDying(event.hogletId, pos.x, pos.y);

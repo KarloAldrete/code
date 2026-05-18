@@ -67,6 +67,16 @@ export const PR_DOT_COLOR: Record<PrState, string> = {
   closed: "var(--red-9)",
 };
 
+/** CSS var color tokens, for task-status dots on map sprites. */
+export const TASK_STATUS_DOT_COLOR: Record<NonNullable<TaskStatus>, string> = {
+  not_started: "var(--gray-8)",
+  queued: "var(--gray-8)",
+  in_progress: "var(--blue-9)",
+  completed: "var(--green-9)",
+  failed: "var(--red-9)",
+  cancelled: "var(--gray-8)",
+};
+
 /** Radix Badge `color` prop values, for `<Badge color={STATUS_BADGE_COLOR[state]}>`. */
 export const STATUS_BADGE_COLOR: Record<
   NonNullable<TaskStatus>,
