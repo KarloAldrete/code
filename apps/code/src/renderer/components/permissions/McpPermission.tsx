@@ -8,7 +8,24 @@ import {
 import { formatInput } from "@features/sessions/components/session-update/toolCallUtils";
 import { Box, Code } from "@radix-ui/themes";
 import { DefaultPermission } from "./DefaultPermission";
-import { type BasePermissionProps, toSelectorOptions } from "./types";
+import {
+  type BasePermissionProps,
+  type PermissionToolCall,
+  toSelectorOptions,
+} from "./types";
+
+export function getMcpPermissionToolName(
+  toolCall: PermissionToolCall,
+): string | undefined {
+  const metaToolName = (
+    toolCall._meta as { claudeCode?: { toolName?: unknown } } | undefined
+  )?.claudeCode?.toolName;
+  if (typeof metaToolName === "string") return metaToolName;
+
+  const rawToolName = (toolCall.rawInput as { toolName?: unknown } | undefined)
+    ?.toolName;
+  return typeof rawToolName === "string" ? rawToolName : undefined;
+}
 
 export function McpPermission({
   toolCall,
@@ -16,9 +33,7 @@ export function McpPermission({
   onSelect,
   onCancel,
 }: BasePermissionProps) {
-  const mcpToolName = (
-    toolCall._meta as { claudeCode?: { toolName?: string } } | undefined
-  )?.claudeCode?.toolName;
+  const mcpToolName = getMcpPermissionToolName(toolCall);
 
   if (!mcpToolName) {
     return (

@@ -74,6 +74,33 @@ describe("canUseTool MCP approval enforcement", () => {
       expect.objectContaining({
         toolCall: expect.objectContaining({
           title: "The agent wants to call search_crm_objects (HubSpot)",
+          _meta: {
+            claudeCode: { toolName: "mcp__HubSpot__search_crm_objects" },
+          },
+        }),
+      }),
+    );
+  });
+
+  it("passes metadata through generic PostHog exec approval requests", async () => {
+    setMcpToolApprovalStates({
+      mcp__posthog__exec: "needs_approval",
+    });
+
+    const context = createContext("mcp__posthog__exec", {
+      toolInput: { command: "info execute-sql" },
+    });
+    const result = await canUseTool(context);
+
+    expect(result.behavior).toBe("allow");
+    expect(context.client.requestPermission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolCall: expect.objectContaining({
+          rawInput: expect.objectContaining({
+            command: "info execute-sql",
+            toolName: "mcp__posthog__exec",
+          }),
+          _meta: { claudeCode: { toolName: "mcp__posthog__exec" } },
         }),
       }),
     );

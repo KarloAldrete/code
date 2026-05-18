@@ -457,6 +457,7 @@ async function handleMcpApprovalFlow(
         ? [{ type: "content" as const, content: text(description) }]
         : [],
       rawInput: { ...(toolInput as Record<string, unknown>), toolName },
+      _meta: { claudeCode: { toolName } },
     },
   });
 

@@ -4,7 +4,7 @@ import { DeletePermission } from "./DeletePermission";
 import { EditPermission } from "./EditPermission";
 import { ExecutePermission } from "./ExecutePermission";
 import { FetchPermission } from "./FetchPermission";
-import { McpPermission } from "./McpPermission";
+import { getMcpPermissionToolName, McpPermission } from "./McpPermission";
 import { MovePermission } from "./MovePermission";
 import { QuestionPermission } from "./QuestionPermission";
 import { ReadPermission } from "./ReadPermission";
@@ -34,7 +34,7 @@ export function PermissionSelector({
   const meta = toolCall._meta as
     | { codeToolKind?: string; claudeCode?: { toolName?: string } }
     | undefined;
-  const agentToolName = meta?.claudeCode?.toolName;
+  const agentToolName = getMcpPermissionToolName(toolCall);
   if (agentToolName?.startsWith("mcp__")) {
     return <McpPermission {...props} />;
   }
