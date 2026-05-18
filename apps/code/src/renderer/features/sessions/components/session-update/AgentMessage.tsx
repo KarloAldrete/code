@@ -163,6 +163,7 @@ export const AgentMessage = memo(function AgentMessage({
             variant="ghost"
             color={copied ? "green" : "gray"}
             onClick={handleCopy}
+            aria-label="Copy message"
           >
             {copied ? <Check size={12} /> : <Copy size={12} />}
           </IconButton>
