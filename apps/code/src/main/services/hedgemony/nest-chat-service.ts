@@ -10,6 +10,7 @@ import type {
   Nest,
   NestMessage,
   RecordBootstrapHandoffInput,
+  RecordHogletFinalOutputInput,
   SendNestMessageInput,
 } from "./schemas";
 import { SPEC_DRIVEN_DEVELOPMENT_METHOD } from "./spec-driven-development";
@@ -184,6 +185,62 @@ export class NestChatService {
           ? null
           : JSON.stringify(input.payloadJson),
     });
+  }
+
+  recordHogletSummary(input: {
+    nestId: string;
+    hogletId: string;
+    taskId: string;
+    runId: string;
+    body: string;
+    terminalReason: "completed" | "final_output";
+  }): { message: NestMessage; created: boolean } {
+    const existing = this.messages.findHogletSummaryByRun(
+      input.nestId,
+      input.taskId,
+      input.runId,
+    );
+    if (existing) return { message: existing, created: false };
+
+    const message = this.messages.create({
+      nestId: input.nestId,
+      kind: "hoglet_summary",
+      visibility: "summary",
+      sourceTaskId: input.taskId,
+      body: input.body,
+      payloadJson: JSON.stringify({
+        hogletId: input.hogletId,
+        runId: input.runId,
+        terminalReason: input.terminalReason,
+      }),
+    });
+    return { message, created: true };
+  }
+
+  recordHogletFinalOutput(input: RecordHogletFinalOutputInput): {
+    message: NestMessage;
+    created: boolean;
+  } {
+    const existing = this.messages.findHogletFinalOutputByRun(
+      input.nestId,
+      input.taskId,
+      input.runId,
+    );
+    if (existing) return { message: existing, created: false };
+
+    const message = this.messages.create({
+      nestId: input.nestId,
+      kind: "tool_result",
+      visibility: "summary",
+      sourceTaskId: input.taskId,
+      body: input.body,
+      payloadJson: JSON.stringify({
+        type: "hoglet_final_output",
+        hogletId: input.hogletId,
+        runId: input.runId,
+      }),
+    });
+    return { message, created: true };
   }
 }
 

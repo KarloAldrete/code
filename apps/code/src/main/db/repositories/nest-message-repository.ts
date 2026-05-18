@@ -54,6 +54,33 @@ export class NestMessageRepository {
       .all();
   }
 
+  findHogletSummaryByRun(
+    nestId: string,
+    sourceTaskId: string,
+    runId: string,
+  ): NestMessage | null {
+    return this.findBySourceTaskRun({
+      nestId,
+      kind: "hoglet_summary",
+      sourceTaskId,
+      runId,
+    });
+  }
+
+  findHogletFinalOutputByRun(
+    nestId: string,
+    sourceTaskId: string,
+    runId: string,
+  ): NestMessage | null {
+    return this.findBySourceTaskRun({
+      nestId,
+      kind: "tool_result",
+      sourceTaskId,
+      runId,
+      payloadType: "hoglet_final_output",
+    });
+  }
+
   create(data: CreateNestMessageData): NestMessage {
     const id = crypto.randomUUID();
     const row: NewNestMessage = {
@@ -80,6 +107,33 @@ export class NestMessageRepository {
     }
 
     return created;
+  }
+
+  private findBySourceTaskRun(input: {
+    nestId: string;
+    kind: NestMessageKind;
+    sourceTaskId: string;
+    runId: string;
+    payloadType?: string;
+  }): NestMessage | null {
+    const candidates = this.db
+      .select()
+      .from(hedgemonyNestMessages)
+      .where(
+        and(
+          byNestId(input.nestId),
+          eq(hedgemonyNestMessages.kind, input.kind),
+          eq(hedgemonyNestMessages.sourceTaskId, input.sourceTaskId),
+        ),
+      )
+      .orderBy(asc(hedgemonyNestMessages.createdAt))
+      .all();
+
+    return (
+      candidates.find((message) =>
+        payloadMatchesRun(message.payloadJson, input.runId, input.payloadType),
+      ) ?? null
+    );
   }
 
   compactCompletedContext(nestId: string): CompactNestContextResult {
@@ -110,5 +164,24 @@ export class NestMessageRepository {
       .run().changes;
 
     return { deletedDetailMessages, compactedContextMessages };
+  }
+}
+
+function payloadMatchesRun(
+  payloadJson: string | null,
+  runId: string,
+  payloadType?: string,
+): boolean {
+  if (!payloadJson) return false;
+  try {
+    const payload = JSON.parse(payloadJson) as {
+      runId?: unknown;
+      type?: unknown;
+    };
+    if (payload.runId !== runId) return false;
+    if (payloadType && payload.type !== payloadType) return false;
+    return true;
+  } catch {
+    return false;
   }
 }

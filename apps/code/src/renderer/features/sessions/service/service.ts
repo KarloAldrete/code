@@ -30,12 +30,12 @@ import {
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { taskViewedApi } from "@features/sidebar/hooks/useTaskViewed";
 import { extractSkillButtonId } from "@features/skill-buttons/prompts";
+import { isNotification, POSTHOG_NOTIFICATIONS } from "@posthog/agent";
 import {
   getAvailableCodexModes,
   getAvailableModes,
 } from "@posthog/agent/execution-mode";
 import { DEFAULT_GATEWAY_MODEL } from "@posthog/agent/gateway-models";
-import { isNotification, POSTHOG_NOTIFICATIONS } from "@posthog/shared";
 import { getIsOnline } from "@renderer/stores/connectivityStore";
 import { trpc } from "@renderer/trpc";
 import { trpcClient } from "@renderer/trpc/client";

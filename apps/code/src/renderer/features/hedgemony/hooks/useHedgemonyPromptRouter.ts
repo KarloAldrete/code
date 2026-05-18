@@ -8,6 +8,8 @@ import { useSubscription } from "@trpc/tanstack-react-query";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { useCallback, useEffect, useRef } from "react";
+import { useHogletStore } from "../stores/hogletStore";
+import { resolveHedgemonyPromptRoute } from "./promptRouting";
 
 const log = logger.scope("hedgemony-prompt-router");
 
@@ -41,12 +43,19 @@ export function useHedgemonyPromptRouter() {
     async (payload: InjectPromptEventPayload) => {
       try {
         const session = sessionStoreSetters.getSessionByTaskId(payload.taskId);
-        const isLive = session?.status === "connected";
+        const latestRunStatus =
+          useHogletStore.getState().taskSummaries[payload.taskId]?.latest_run
+            ?.status ?? null;
+        const route = resolveHedgemonyPromptRoute({
+          payload,
+          sessionStatus: session?.status,
+          latestRunStatus,
+        });
 
         const trustTier =
           payload.source === "hedgehog" ? ("internal" as const) : undefined;
 
-        if (isLive) {
+        if (route === "inject") {
           sendPromptToAgent(payload.taskId, payload.prompt);
           await trpcClient.hedgemony.feedback.recordRouted.mutate({
             nestId: payload.nestId,
@@ -66,7 +75,26 @@ export function useHedgemonyPromptRouter() {
           return;
         }
 
-        if (payload.nestId) {
+        if (route === "suppress_hedgehog_follow_up") {
+          log.warn("Skipped hedgehog prompt fallback for active hoglet run", {
+            taskId: payload.taskId,
+            hogletId: payload.hogletId,
+            targetRunStatus: payload.targetRunStatus ?? latestRunStatus,
+            payloadRef: payload.payloadRef,
+          });
+          await trpcClient.hedgemony.feedback.recordRouted.mutate({
+            nestId: payload.nestId,
+            hogletTaskId: payload.taskId,
+            source: payload.source,
+            payloadHash: payload.payloadHash,
+            payloadRef: payload.payloadRef,
+            routedOutcome: "failed",
+            trustTier,
+          });
+          return;
+        }
+
+        if (route === "spawn_follow_up" && payload.nestId) {
           await trpcClient.hedgemony.nests.spawnFollowUpHoglet.mutate({
             nestId: payload.nestId,
             parentTaskId: payload.taskId,

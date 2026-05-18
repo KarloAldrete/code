@@ -9,6 +9,7 @@ import type {
 } from "../hedgehog-prompts";
 import type { HedgehogToolName } from "../hedgehog-tools";
 import type { HogletService } from "../hoglet-service";
+import type { NestService } from "../nest-service";
 import type { PrGraphService } from "../pr-graph-service";
 import type { Nest, NestLoadout } from "../schemas";
 
@@ -52,12 +53,14 @@ export interface HedgehogToolDeps {
   readonly prGraph: PrGraphService;
   readonly feedbackRouting: FeedbackRoutingService;
   readonly hogletService: HogletService;
+  readonly nestService: NestService;
   writeNestMessage(nestId: string, input: WriteNestMessageInput): void;
 }
 
 export interface HandlerResult {
   readonly success: boolean;
   readonly scratchpadSummary: string;
+  readonly stopDispatch?: boolean;
 }
 
 export interface HedgehogToolHandler {

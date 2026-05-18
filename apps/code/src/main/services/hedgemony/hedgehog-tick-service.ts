@@ -28,6 +28,7 @@ import { stringifyError } from "./hedgehog-handlers/utils";
 import {
   appendScratchpad,
   buildUserPrompt,
+  deriveHogletLastOutput,
   HEDGEHOG_SYSTEM_PROMPT,
   type HogletPrState,
   type HogletWithState,
@@ -336,7 +337,8 @@ export class HedgehogTickService {
     let observedTerminalRunKeys: Record<string, string> | null = null;
 
     try {
-      const context = await this.buildContext(nest, budget);
+      const recentChat = this.nestChat.list({ nestId, detail: false });
+      const context = await this.buildContext(nest, budget, recentChat);
       if (abortSignal?.aborted) {
         outcome = "aborted";
         return;
@@ -346,7 +348,6 @@ export class HedgehogTickService {
         context.hoglets,
         persistedState.observedTerminalRunKeys,
       );
-      const recentChat = this.nestChat.list({ nestId, detail: false });
       const repositoryContext = this.deriveRepositoryContext(
         nest,
         recentChat,
@@ -422,6 +423,7 @@ export class HedgehogTickService {
           kind: "decision",
           summary: result.scratchpadSummary,
         });
+        if (result.stopDispatch) break;
       }
 
       // Free-form text from the model also gets a single scratchpad note so
@@ -498,6 +500,7 @@ export class HedgehogTickService {
       prGraph: this.prGraph,
       feedbackRouting: this.feedbackRouting,
       hogletService: this.hogletService,
+      nestService: this.nestService,
       writeNestMessage: (nestId, input) => this.writeNestMessage(nestId, input),
     };
   }
@@ -505,6 +508,7 @@ export class HedgehogTickService {
   private async buildContext(
     nest: Nest,
     budget: TickBudget,
+    recentChat: NestMessage[],
   ): Promise<TickContext> {
     const rawLoadout = parseNestLoadout(nest.loadoutJson);
     const runtime = resolveHogletRuntime(rawLoadout, readUserTaskPreferences());
@@ -536,7 +540,7 @@ export class HedgehogTickService {
         const prState = prUrl
           ? await this.resolvePrState(prUrl, prStateCache)
           : null;
-        enriched.push({
+        const entry: HogletWithState = {
           hoglet,
           repository: task.repository ?? null,
           taskRunStatus: latestRun?.status ?? "no_run",
@@ -546,13 +550,20 @@ export class HedgehogTickService {
           prState,
           latestRunCreatedAt: latestRun?.created_at ?? null,
           latestRunCompletedAt: latestRun?.completed_at ?? null,
+          lastOutputAt: null,
+          lastOutputKind: null,
+          lastOutputPreview: null,
+        };
+        enriched.push({
+          ...entry,
+          ...deriveHogletLastOutput(entry, recentChat),
         });
       } catch (error) {
         log.warn("could not load task state — flagging as unknown", {
           taskId: hoglet.taskId,
           error: stringifyError(error),
         });
-        enriched.push({
+        const entry: HogletWithState = {
           hoglet,
           repository: null,
           taskRunStatus: "unknown",
@@ -562,6 +573,13 @@ export class HedgehogTickService {
           prState: null,
           latestRunCreatedAt: null,
           latestRunCompletedAt: null,
+          lastOutputAt: null,
+          lastOutputKind: null,
+          lastOutputPreview: null,
+        };
+        enriched.push({
+          ...entry,
+          ...deriveHogletLastOutput(entry, recentChat),
         });
       }
     }

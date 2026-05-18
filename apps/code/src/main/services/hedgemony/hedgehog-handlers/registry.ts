@@ -1,6 +1,7 @@
 import type { HedgehogToolName } from "../hedgehog-tools";
 import { killHogletHandler } from "./kill-hoglet-handler";
 import { linkPrDependencyHandler } from "./link-pr-dependency-handler";
+import { markValidatedHandler } from "./mark-validated-handler";
 import { messageHogletHandler } from "./message-hoglet-handler";
 import { raiseHogletHandler } from "./raise-hoglet-handler";
 import { rebaseChildHandler } from "./rebase-child-handler";
@@ -16,6 +17,7 @@ const handlerList: readonly HedgehogToolHandler[] = [
   killHogletHandler,
   messageHogletHandler,
   writeAuditEntryHandler,
+  markValidatedHandler,
   requestRepositoryAccessHandler,
   linkPrDependencyHandler,
   unlinkPrDependencyHandler,

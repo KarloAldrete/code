@@ -1,4 +1,15 @@
+import type { TaskRunStatus } from "@shared/types";
 import { z } from "zod";
+
+const taskRunStatusValues = [
+  "not_started",
+  "queued",
+  "in_progress",
+  "completed",
+  "failed",
+  "cancelled",
+] as const satisfies readonly TaskRunStatus[];
+export const taskRunStatusEnum = z.enum(taskRunStatusValues);
 
 /**
  * GitHub-style repository slug. Matches what `parseGithubUrl` produces:
@@ -298,6 +309,17 @@ export const sendNestMessageInput = z.object({
 });
 export type SendNestMessageInput = z.infer<typeof sendNestMessageInput>;
 
+export const recordHogletFinalOutputInput = z.object({
+  nestId: z.string().min(1),
+  hogletId: z.string().min(1),
+  taskId: z.string().min(1),
+  runId: z.string().min(1),
+  body: z.string().trim().min(1).max(30000),
+});
+export type RecordHogletFinalOutputInput = z.infer<
+  typeof recordHogletFinalOutputInput
+>;
+
 export const hoglet = z.object({
   id: z.string(),
   name: z.string().nullable(),
@@ -572,6 +594,7 @@ export const injectPromptEventPayload = z.object({
   hogletId: z.string().min(1).max(64),
   nestId: z.string().min(1).max(64).nullable(),
   source: feedbackEventSource,
+  targetRunStatus: taskRunStatusEnum.nullable().optional(),
   payloadRef: z.string().min(1).max(512),
   payloadHash: z.string().min(1).max(128),
   prompt: z.string().max(8000),

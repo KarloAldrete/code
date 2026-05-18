@@ -22,7 +22,7 @@ import {
 import type { HogletService } from "./hoglet-service";
 import type { NestChatService } from "./nest-chat-service";
 import type { NestService } from "./nest-service";
-import type { Hoglet, InjectPromptEventPayload } from "./schemas";
+import type { Hoglet, InjectPromptEventPayload, NestMessage } from "./schemas";
 
 function makeHoglet(overrides: Partial<Hoglet> = {}): Hoglet {
   return {
@@ -75,8 +75,12 @@ function createMockNestService(nestIds: string[] = ["nest-1"]): NestService {
   } as unknown as NestService;
 }
 
-function createMockNestChatService(): NestChatService {
-  return {
+function createMockNestChatService(): NestChatService & {
+  _messages: NestMessage[];
+} {
+  const messages: NestMessage[] = [];
+  const service = {
+    _messages: messages,
     recordHedgehogMessage: vi.fn((input) => ({
       id: crypto.randomUUID(),
       nestId: input.nestId,
@@ -87,7 +91,43 @@ function createMockNestChatService(): NestChatService {
       payloadJson: input.payloadJson ? JSON.stringify(input.payloadJson) : null,
       createdAt: new Date().toISOString(),
     })),
-  } as unknown as NestChatService;
+    list: vi.fn((input: { nestId: string; detail?: boolean }) =>
+      messages.filter(
+        (message) =>
+          message.nestId === input.nestId &&
+          (input.detail || message.visibility === "summary"),
+      ),
+    ),
+    recordHogletSummary: vi.fn((input) => {
+      const existing = messages.find((message) => {
+        if (message.kind !== "hoglet_summary") return false;
+        if (message.sourceTaskId !== input.taskId) return false;
+        const payload = JSON.parse(message.payloadJson ?? "{}") as {
+          runId?: unknown;
+        };
+        return payload.runId === input.runId;
+      });
+      if (existing) return { message: existing, created: false };
+
+      const message: NestMessage = {
+        id: crypto.randomUUID(),
+        nestId: input.nestId,
+        kind: "hoglet_summary",
+        visibility: "summary",
+        sourceTaskId: input.taskId,
+        body: input.body,
+        payloadJson: JSON.stringify({
+          hogletId: input.hogletId,
+          runId: input.runId,
+          terminalReason: input.terminalReason,
+        }),
+        createdAt: new Date().toISOString(),
+      };
+      messages.push(message);
+      return { message, created: true };
+    }),
+  };
+  return service as unknown as NestChatService & { _messages: NestMessage[] };
 }
 
 function createMockGitService(opts: {
@@ -121,9 +161,53 @@ function createMockCloudTaskClient(prUrl: string | null): CloudTaskClient {
   } as unknown as CloudTaskClient;
 }
 
+function createMockCloudTaskClientWithNestedPrUrl(
+  prUrl: string,
+): CloudTaskClient {
+  return {
+    getTaskWithLatestRun: vi.fn(async (taskId: string) => ({
+      task: {
+        id: taskId,
+        latest_run: { output: { output: { pr_url: prUrl } } },
+      },
+      latestRun: null,
+    })),
+  } as unknown as CloudTaskClient;
+}
+
+function createMockCloudTaskClientWithCompletedRun(
+  output: Record<string, unknown>,
+) {
+  return {
+    getTaskWithLatestRun: vi.fn(async (taskId: string) => {
+      const latestRun = {
+        id: "run-1",
+        task: taskId,
+        team: 1,
+        branch: null,
+        status: "completed",
+        log_url: "",
+        error_message: null,
+        output,
+        state: {},
+        created_at: "2026-05-13T00:00:00Z",
+        updated_at: "2026-05-13T00:10:00Z",
+        completed_at: "2026-05-13T00:10:00Z",
+      };
+      return {
+        task: {
+          id: taskId,
+          latest_run: latestRun,
+        },
+        latestRun,
+      };
+    }),
+  } as unknown as CloudTaskClient;
+}
+
 describe("FeedbackRoutingService", () => {
   let feedbackRepo: ReturnType<typeof createMockFeedbackEventRepository>;
-  let nestChat: NestChatService;
+  let nestChat: NestChatService & { _messages: NestMessage[] };
   let nests: NestService;
 
   beforeEach(() => {
@@ -185,6 +269,53 @@ describe("FeedbackRoutingService", () => {
     });
     expect(received[0].prompt).toContain("fix the off-by-one");
     expect(received[0].fallbackPrompt).toContain("alice");
+  });
+
+  it("extracts PR URLs from the cloud structured-output wrapper", async () => {
+    const hoglet = makeHoglet({ taskId: "task-1", nestId: "nest-1" });
+    const hoglets = createMockHogletService([hoglet]);
+    const git = createMockGitService({
+      reviewComments: [
+        {
+          id: 1001,
+          body: "fix the off-by-one",
+          path: "src/foo.ts",
+          line: 42,
+          original_line: null,
+          side: "RIGHT",
+          start_line: null,
+          start_side: null,
+          diff_hunk: "",
+          user: { login: "alice", avatar_url: "" },
+          created_at: "",
+          updated_at: "",
+          subject_type: "line",
+        },
+      ],
+      checkRuns: [],
+    });
+    const cloudTasks = createMockCloudTaskClientWithNestedPrUrl(
+      "https://github.com/org/repo/pull/7",
+    );
+
+    const service = new FeedbackRoutingService(
+      hoglets,
+      nests,
+      git,
+      cloudTasks,
+      feedbackRepo as unknown as FeedbackEventRepository,
+      nestChat,
+    );
+
+    const received: InjectPromptEventPayload[] = [];
+    service.on(FeedbackRoutingEvent.InjectPrompt, (e) => {
+      received.push(e);
+    });
+
+    await service.runPoll();
+
+    expect(received).toHaveLength(1);
+    expect(received[0].prUrl).toBe("https://github.com/org/repo/pull/7");
   });
 
   it("does not re-emit for an already-recorded payload_hash", async () => {
@@ -558,5 +689,178 @@ describe("FeedbackRoutingService", () => {
     expect(feedbackRepo._events).toHaveLength(1);
     expect(nestChat.recordHedgehogMessage).toHaveBeenCalledTimes(1);
     expect(nests.emitMessageAppended).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes a hoglet_summary message from completed terminal output", async () => {
+    const hoglet = makeHoglet({
+      id: "hoglet-1",
+      taskId: "task-1",
+      nestId: "nest-1",
+    });
+    const hoglets = createMockHogletService([hoglet]);
+    const git = createMockGitService({});
+    const cloudTasks = createMockCloudTaskClientWithCompletedRun({
+      pr_url: "https://github.com/org/repo/pull/7",
+    });
+    const service = new FeedbackRoutingService(
+      hoglets,
+      nests,
+      git,
+      cloudTasks,
+      feedbackRepo as unknown as FeedbackEventRepository,
+      nestChat,
+    );
+
+    await service.runPoll();
+
+    expect(nestChat.recordHogletSummary).toHaveBeenCalledWith({
+      nestId: "nest-1",
+      hogletId: "hoglet-1",
+      taskId: "task-1",
+      runId: "run-1",
+      terminalReason: "completed",
+      body: "Run completed and produced a pull request: https://github.com/org/repo/pull/7",
+    });
+    expect(nestChat._messages).toHaveLength(1);
+    expect(nestChat._messages[0]).toMatchObject({
+      kind: "hoglet_summary",
+      sourceTaskId: "task-1",
+    });
+    expect(JSON.parse(nestChat._messages[0].payloadJson ?? "{}")).toEqual({
+      hogletId: "hoglet-1",
+      runId: "run-1",
+      terminalReason: "completed",
+    });
+    expect(nests.emitMessageAppended).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not duplicate hoglet_summary messages for the same task and run", async () => {
+    const hoglet = makeHoglet({
+      id: "hoglet-1",
+      taskId: "task-1",
+      nestId: "nest-1",
+    });
+    const hoglets = createMockHogletService([hoglet]);
+    const git = createMockGitService({});
+    const cloudTasks = createMockCloudTaskClientWithCompletedRun({
+      output: { pr_url: "https://github.com/org/repo/pull/7" },
+    });
+    const service = new FeedbackRoutingService(
+      hoglets,
+      nests,
+      git,
+      cloudTasks,
+      feedbackRepo as unknown as FeedbackEventRepository,
+      nestChat,
+    );
+
+    await service.runPoll();
+    (
+      service as unknown as {
+        lastPolledAt: Map<string, number>;
+      }
+    ).lastPolledAt.clear();
+    await service.runPoll();
+
+    expect(nestChat.recordHogletSummary).toHaveBeenCalledTimes(2);
+    expect(nestChat._messages).toHaveLength(1);
+    expect(nests.emitMessageAppended).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes a hoglet_summary from a final tool_result before run completion", async () => {
+    const hoglet = makeHoglet({
+      id: "hoglet-1",
+      taskId: "task-1",
+      nestId: "nest-1",
+    });
+    nestChat._messages.push({
+      id: "message-1",
+      nestId: "nest-1",
+      kind: "tool_result",
+      visibility: "summary",
+      sourceTaskId: "task-1",
+      body: "Verification complete.\nAll child PRs are open and clean.",
+      payloadJson: JSON.stringify({
+        type: "hoglet_final_output",
+        runId: "run-1",
+        hogletId: "hoglet-1",
+      }),
+      createdAt: "2026-05-13T00:05:00Z",
+    });
+    const hoglets = createMockHogletService([hoglet]);
+    const git = createMockGitService({});
+    const cloudTasks = {
+      getTaskWithLatestRun: vi.fn(async (taskId: string) => {
+        const latestRun = {
+          id: "run-1",
+          task: taskId,
+          team: 1,
+          branch: null,
+          status: "in_progress",
+          log_url: "",
+          error_message: null,
+          output: null,
+          state: {},
+          created_at: "2026-05-13T00:00:00Z",
+          updated_at: "2026-05-13T00:05:00Z",
+          completed_at: null,
+        };
+        return {
+          task: {
+            id: taskId,
+            latest_run: latestRun,
+          },
+          latestRun,
+        };
+      }),
+    } as unknown as CloudTaskClient;
+    const service = new FeedbackRoutingService(
+      hoglets,
+      nests,
+      git,
+      cloudTasks,
+      feedbackRepo as unknown as FeedbackEventRepository,
+      nestChat,
+    );
+
+    await service.runPoll();
+
+    expect(nestChat.recordHogletSummary).toHaveBeenCalledWith({
+      nestId: "nest-1",
+      hogletId: "hoglet-1",
+      taskId: "task-1",
+      runId: "run-1",
+      terminalReason: "final_output",
+      body: "Verification complete. All child PRs are open and clean.",
+    });
+    expect(nestChat._messages).toHaveLength(2);
+    expect(nests.emitMessageAppended).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not write a hoglet_summary for branch-only completed output", async () => {
+    const hoglet = makeHoglet({
+      id: "hoglet-1",
+      taskId: "task-1",
+      nestId: "nest-1",
+    });
+    const hoglets = createMockHogletService([hoglet]);
+    const git = createMockGitService({});
+    const cloudTasks = createMockCloudTaskClientWithCompletedRun({
+      head_branch: "hedgemony/task-1",
+    });
+    const service = new FeedbackRoutingService(
+      hoglets,
+      nests,
+      git,
+      cloudTasks,
+      feedbackRepo as unknown as FeedbackEventRepository,
+      nestChat,
+    );
+
+    await service.runPoll();
+
+    expect(nestChat.recordHogletSummary).not.toHaveBeenCalled();
+    expect(nestChat._messages).toHaveLength(0);
+    expect(nests.emitMessageAppended).not.toHaveBeenCalled();
   });
 });

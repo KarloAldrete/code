@@ -3,7 +3,7 @@ import type { AnthropicToolDefinition } from "../llm-gateway/schemas";
 
 /**
  * The hedgehog's tool list. Brood management (spawn, raise, kill, message,
- * audit) plus Slice 8's PR-graph orchestration (link_pr_dependency,
+ * audit, validation) plus Slice 8's PR-graph orchestration (link_pr_dependency,
  * unlink_pr_dependency, rebase_child). The hedgehog cannot author code —
  * these tools declare relationships and route prompts.
  *
@@ -81,7 +81,7 @@ export const HEDGEHOG_TOOLS: AnthropicToolDefinition[] = [
   {
     name: "message_hoglet",
     description:
-      "Send an instruction to a hoglet. If the hoglet has a live session, the prompt is injected immediately. If the session has ended, a follow-up hoglet is spawned with the prompt. Use for mid-flight course corrections or new context the hoglet needs.",
+      "Send an instruction to a hoglet. If the hoglet has a live session, the prompt is injected immediately. If the session has ended, a follow-up hoglet may be spawned with the prompt. Use for mid-flight course corrections or new context the hoglet needs. Do not use this to stand down or terminate a run.",
     input_schema: {
       type: "object",
       properties: {
@@ -113,6 +113,41 @@ export const HEDGEHOG_TOOLS: AnthropicToolDefinition[] = [
           type: "string",
           description:
             "Optional longer explanation. Persisted at detail visibility — operators can expand to see it.",
+        },
+      },
+      required: ["summary"],
+    },
+  },
+  {
+    name: "mark_validated",
+    description:
+      "Mark the nest validated when the definition of done is satisfied. Use this as the terminal success action instead of messaging hoglets to stand down; existing hoglet runs can finish naturally.",
+    input_schema: {
+      type: "object",
+      properties: {
+        summary: {
+          type: "string",
+          description:
+            "One- to three-sentence validation summary explaining why the nest goal is done.",
+        },
+        pr_urls: {
+          type: "array",
+          description: "Relevant PR URLs that support validation.",
+          items: { type: "string" },
+          maxItems: 25,
+        },
+        task_ids: {
+          type: "array",
+          description: "Hoglet task IDs whose work contributed to validation.",
+          items: { type: "string" },
+          maxItems: 50,
+        },
+        caveats: {
+          type: "array",
+          description:
+            "Known caveats or follow-up notes that do not block validation.",
+          items: { type: "string" },
+          maxItems: 10,
         },
       },
       required: ["summary"],
@@ -213,6 +248,7 @@ export type HedgehogToolName =
   | "kill_hoglet"
   | "message_hoglet"
   | "write_audit_entry"
+  | "mark_validated"
   | "request_repository_access"
   | "link_pr_dependency"
   | "unlink_pr_dependency"
@@ -249,6 +285,13 @@ export const writeAuditEntryArgs = z.object({
   detail: z.string().trim().min(1).max(8000).optional(),
 });
 
+export const markValidatedArgs = z.object({
+  summary: z.string().trim().min(1).max(8000),
+  pr_urls: z.array(z.string().trim().min(1)).max(25).optional(),
+  task_ids: z.array(z.string().trim().min(1)).max(50).optional(),
+  caveats: z.array(z.string().trim().min(1)).max(10).optional(),
+});
+
 export const linkPrDependencyArgs = z.object({
   parent_task_id: z.string().min(1),
   child_task_id: z.string().min(1),
@@ -275,6 +318,7 @@ export type RaiseHogletArgs = z.infer<typeof raiseHogletArgs>;
 export type KillHogletArgs = z.infer<typeof killHogletArgs>;
 export type MessageHogletArgs = z.infer<typeof messageHogletArgs>;
 export type WriteAuditEntryArgs = z.infer<typeof writeAuditEntryArgs>;
+export type MarkValidatedArgs = z.infer<typeof markValidatedArgs>;
 export type RequestRepositoryAccessArgs = z.infer<
   typeof requestRepositoryAccessArgs
 >;

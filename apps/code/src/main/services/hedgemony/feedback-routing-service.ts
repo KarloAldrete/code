@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { inject, injectable } from "inversify";
+import type { TaskRun, TaskRunStatus } from "../../../shared/types";
 import type { FeedbackEventRepository } from "../../db/repositories/feedback-event-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
@@ -23,6 +24,12 @@ const MAX_LOGIN_CHARS = 64;
 const MAX_FILE_PATH_CHARS = 512;
 const MAX_CI_NAME_CHARS = 256;
 const MAX_CI_URL_CHARS = 512;
+const MAX_HOGLET_SUMMARY_CHARS = 1200;
+const FINAL_OUTPUT_PAYLOAD_TYPES = new Set([
+  "final_output",
+  "hoglet_final_output",
+  "hoglet_terminal_output",
+]);
 
 const log = logger.scope("feedback-routing-service");
 
@@ -53,6 +60,7 @@ interface RouteHedgehogPromptInput {
   nestId: string;
   prompt: string;
   toolCallId: string;
+  targetRunStatus?: TaskRunStatus | null;
 }
 
 /**
@@ -186,6 +194,7 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
       prompt: input.prompt,
       prUrl: "",
       fallbackPrompt: input.prompt,
+      targetRunStatus: input.targetRunStatus ?? null,
     });
   }
 
@@ -241,10 +250,14 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
 
     let prUrl: string | null = null;
     try {
-      const { task } = await this.cloudTasks.getTaskWithLatestRun(
+      const { task, latestRun } = await this.cloudTasks.getTaskWithLatestRun(
         hoglet.taskId,
       );
-      const candidate = task.latest_run?.output?.pr_url;
+      const run = latestRun ?? task.latest_run ?? null;
+      this.recordFinalOutputHogletSummary(hoglet, run);
+      this.recordCompletedHogletSummary(hoglet, run);
+
+      const candidate = extractTaskRunPrUrl(run?.output ?? null);
       if (typeof candidate === "string" && candidate.length > 0) {
         prUrl = candidate;
       }
@@ -267,6 +280,101 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
 
     await this.pollPrReviewComments(hoglet, prUrl);
     await this.pollPrCheckRuns(hoglet, prUrl);
+  }
+
+  private recordCompletedHogletSummary(
+    hoglet: { id: string; taskId: string; nestId: string | null },
+    latestRun: Pick<TaskRun, "id" | "status" | "output"> | null,
+  ): void {
+    if (!hoglet.nestId) return;
+    if (!latestRun || latestRun.status !== "completed") return;
+
+    const body = extractDeliverableText(latestRun.output);
+    if (!body) return;
+
+    try {
+      const { message, created } = this.nestChat.recordHogletSummary({
+        nestId: hoglet.nestId,
+        hogletId: hoglet.id,
+        taskId: hoglet.taskId,
+        runId: latestRun.id,
+        terminalReason: "completed",
+        body,
+      });
+      if (created) {
+        this.nests.emitMessageAppended(message);
+      }
+    } catch (error) {
+      log.warn("failed to record hoglet summary", {
+        hogletId: hoglet.id,
+        taskId: hoglet.taskId,
+        runId: latestRun.id,
+        error: stringifyError(error),
+      });
+    }
+  }
+
+  private recordFinalOutputHogletSummary(
+    hoglet: { id: string; taskId: string; nestId: string | null },
+    latestRun: Pick<TaskRun, "id" | "created_at"> | null,
+  ): void {
+    if (!hoglet.nestId) return;
+    if (!latestRun?.id || !latestRun.created_at) return;
+
+    let messages: ReturnType<NestChatService["list"]>;
+    try {
+      messages = this.nestChat.list({ nestId: hoglet.nestId, detail: false });
+    } catch (error) {
+      log.warn("failed to read nest chat for hoglet summary", {
+        hogletId: hoglet.id,
+        taskId: hoglet.taskId,
+        runId: latestRun.id,
+        error: stringifyError(error),
+      });
+      return;
+    }
+
+    const runCreatedMs = Date.parse(latestRun.created_at);
+    const latestFinalOutput = messages.reduce<(typeof messages)[number] | null>(
+      (current, message) => {
+        if (message.kind !== "tool_result") return current;
+        if (message.sourceTaskId !== hoglet.taskId) return current;
+        const createdMs = Date.parse(message.createdAt);
+        if (Number.isNaN(createdMs)) return current;
+        if (!Number.isNaN(runCreatedMs) && createdMs <= runCreatedMs) {
+          return current;
+        }
+        if (!extractFinalOutputText(message, latestRun.id)) return current;
+        if (!current) return message;
+        return createdMs > Date.parse(current.createdAt) ? message : current;
+      },
+      null,
+    );
+
+    if (!latestFinalOutput) return;
+    const body = extractFinalOutputText(latestFinalOutput, latestRun.id);
+    if (!body) return;
+
+    try {
+      const { message, created } = this.nestChat.recordHogletSummary({
+        nestId: hoglet.nestId,
+        hogletId: hoglet.id,
+        taskId: hoglet.taskId,
+        runId: latestRun.id,
+        terminalReason: "final_output",
+        body,
+      });
+      if (created) {
+        this.nests.emitMessageAppended(message);
+      }
+    } catch (error) {
+      log.warn("failed to record hoglet final-output summary", {
+        hogletId: hoglet.id,
+        taskId: hoglet.taskId,
+        runId: latestRun.id,
+        error: stringifyError(error),
+      });
+    }
   }
 
   private async pollPrReviewComments(
@@ -484,6 +592,94 @@ function escapeXmlAttr(value: string): string {
     .replace(/'/g, "&apos;");
 }
 
+function extractDeliverableText(
+  output: Record<string, unknown> | null,
+): string | null {
+  const prUrl = extractTaskRunPrUrl(output);
+  if (prUrl) {
+    return `Run completed and produced a pull request: ${prUrl}`;
+  }
+
+  return null;
+}
+
+function extractFinalOutputText(
+  message: {
+    body: string;
+    payloadJson: string | null;
+  },
+  runId?: string,
+): string | null {
+  const payload = parsePayload(message.payloadJson);
+  const payloadType =
+    payload && typeof payload.type === "string" ? payload.type : null;
+  if (payloadType && FINAL_OUTPUT_PAYLOAD_TYPES.has(payloadType)) {
+    const payloadRunId =
+      payload && typeof payload.runId === "string" ? payload.runId : null;
+    if (payloadRunId && runId && payloadRunId !== runId) return null;
+    return truncateSummary(message.body);
+  }
+
+  if (!looksLikeDeliverable(message.body)) return null;
+  return truncateSummary(message.body);
+}
+
+function looksLikeDeliverable(value: string): boolean {
+  return [
+    /\bverification complete\b/i,
+    /\b(?:done|complete|completed|finished)\b/i,
+    /\bsummary\b/i,
+    /\bfindings?\b/i,
+    /\bno regressions?\b/i,
+    /\ball (?:tests|checks|child PRs)\b.*\b(?:pass|clean|open)\b/i,
+  ].some((pattern) => pattern.test(value));
+}
+
+function parsePayload(
+  payloadJson: string | null,
+): Record<string, unknown> | null {
+  if (!payloadJson) return null;
+  try {
+    const parsed = JSON.parse(payloadJson);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Current agent/cloud paths write task-run output as direct metadata
+ * (`{ pr_url }`, `{ head_branch }`), while structured-output runs can be
+ * wrapped as `{ output: ... }` by the cloud runner. Keep this extraction pinned
+ * to those observed shapes; prose deliverables are surfaced from nest chat.
+ */
+function extractTaskRunPrUrl(
+  output: Record<string, unknown> | null,
+): string | null {
+  if (!output) return null;
+
+  const direct = output.pr_url;
+  if (typeof direct === "string" && isHttpsGithubUrl(direct)) return direct;
+
+  const nested = output.output;
+  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+    const nestedPrUrl = (nested as Record<string, unknown>).pr_url;
+    if (typeof nestedPrUrl === "string" && isHttpsGithubUrl(nestedPrUrl)) {
+      return nestedPrUrl;
+    }
+  }
+
+  return null;
+}
+
+function truncateSummary(value: string): string {
+  const singleLine = value.replace(/\s+/g, " ").trim();
+  if (singleLine.length <= MAX_HOGLET_SUMMARY_CHARS) return singleLine;
+  return `${singleLine.slice(0, MAX_HOGLET_SUMMARY_CHARS)}… (truncated)`;
+}
+
 function describeRoutedFeedback(input: RecordRoutedFeedbackInput): string {
   const sourceLabel: Record<FeedbackEventSource, string> = {
     pr_review: "PR review comment",
@@ -494,7 +690,7 @@ function describeRoutedFeedback(input: RecordRoutedFeedbackInput): string {
   const outcomeLabel: Record<string, string> = {
     injected: "→ injected into live session",
     follow_up_spawned: "→ spawned a follow-up hoglet",
-    failed: "→ no active session, no nest; logged only",
+    failed: "→ could not route automatically; logged only",
   };
   return `Routed ${sourceLabel[input.source]} ${outcomeLabel[input.routedOutcome] ?? ""} (ref: ${input.payloadRef}).`;
 }

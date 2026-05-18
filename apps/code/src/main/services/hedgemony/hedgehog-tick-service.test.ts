@@ -224,6 +224,11 @@ function setupMocks(input: {
       if (found) return found;
       throw new Error(`Nest not found: ${id}`);
     }),
+    markValidated: vi.fn(({ id }: { id: string }) => {
+      const found = nests.find((candidate) => candidate.id === id);
+      if (!found) throw new Error(`Nest not found: ${id}`);
+      return { ...found, status: "validated" };
+    }),
     on: vi.fn((event: string, listener: AnyListener) => {
       const arr = listeners.get(event) ?? [];
       arr.push(listener);
@@ -523,6 +528,43 @@ describe("HedgehogTickService", () => {
       mocks.stateRepo.findByNestId("nest-1")?.serializedStateJson ?? "{}",
     ) as { observedTerminalRunKeys?: Record<string, string> };
     expect(persisted.observedTerminalRunKeys ?? {}).toEqual({});
+  });
+
+  it("passes recent hoglet output from nest chat into the prompt", async () => {
+    const hoglet = makeHoglet({ id: "h1", name: "Jovan", taskId: "task-1" });
+    const mocks = setupMocks({
+      hoglets: [hoglet],
+      hogletStates: {
+        "task-1": {
+          status: "in_progress",
+          runId: "run-1",
+          createdAt: "2026-05-13T00:10:00.000Z",
+        },
+      },
+      recentChat: [
+        makeMessage({
+          kind: "tool_result",
+          sourceTaskId: "task-1",
+          body: "Verification complete.\nAll child PRs are clean.",
+          createdAt: "2026-05-13T00:20:00.000Z",
+        }),
+      ],
+      promptResponse: makePromptWithToolsResponse([]),
+    });
+    const service = buildService(mocks);
+
+    await service.tick("nest-1", "test");
+
+    const prompt = (mocks.llm.promptWithTools as ReturnType<typeof vi.fn>).mock
+      .calls[0][0][0].content;
+    expect(prompt).toContain("last_output_at: 2026-05-13T00:20:00.000Z");
+    expect(prompt).toContain("last_output_kind: tool_result");
+    expect(prompt).toContain(
+      "last_output_preview: Verification complete. All child PRs are clean.",
+    );
+    expect(prompt).toContain(
+      "hoglet=Jovan tool_result: Verification complete.\nAll child PRs are clean.",
+    );
   });
 
   it("tick with no hoglets writes audit and ends idle", async () => {
@@ -1209,6 +1251,7 @@ describe("HedgehogTickService", () => {
         nestId: "nest-1",
         prompt: "Add error handling to the parser",
         toolCallId: "t-1",
+        targetRunStatus: "in_progress",
       }),
     );
 
@@ -1220,6 +1263,44 @@ describe("HedgehogTickService", () => {
     expect(audits.some((m) => m.body.includes("Messaged hoglet h1"))).toBe(
       true,
     );
+  });
+
+  it("mark_validated calls NestService.markValidated", async () => {
+    const hoglet = makeHoglet({ id: "h1", taskId: "task-1" });
+    const mocks = setupMocks({
+      hoglets: [hoglet],
+      promptResponse: makePromptWithToolsResponse([
+        {
+          id: "t-1",
+          name: "mark_validated",
+          input: {
+            summary: "Definition of done is satisfied.",
+            pr_urls: ["https://github.com/org/repo/pull/1"],
+            task_ids: ["task-1"],
+            caveats: ["Follow-up monitoring can happen outside the nest."],
+          },
+        },
+        {
+          id: "t-2",
+          name: "message_hoglet",
+          input: {
+            hoglet_id: "h1",
+            prompt: "Please stand down.",
+          },
+        },
+      ]),
+    });
+    const service = buildService(mocks);
+    await service.tick("nest-1", "test");
+
+    expect(mocks.nestService.markValidated).toHaveBeenCalledWith({
+      id: "nest-1",
+      summary: "Definition of done is satisfied.",
+      prUrls: ["https://github.com/org/repo/pull/1"],
+      taskIds: ["task-1"],
+      caveats: ["Follow-up monitoring can happen outside the nest."],
+    });
+    expect(mocks.feedbackRouting.routeHedgehogPrompt).not.toHaveBeenCalled();
   });
 
   it("counts failed raises toward the per-tick cap", async () => {

@@ -1,6 +1,16 @@
+import type { TaskRunStatus } from "@shared/types";
 import { messageHogletArgs } from "../hedgehog-tools";
 import type { HandlerResult, HedgehogToolHandler } from "./types";
 import { recordToolValidationError, truncate } from "./utils";
+
+const ROUTABLE_RUN_STATUSES = new Set<TaskRunStatus>([
+  "not_started",
+  "queued",
+  "in_progress",
+  "completed",
+  "failed",
+  "cancelled",
+]);
 
 export const messageHogletHandler: HedgehogToolHandler = {
   name: "message_hoglet",
@@ -31,6 +41,11 @@ export const messageHogletHandler: HedgehogToolHandler = {
       nestId: ctx.nest.id,
       prompt: args.prompt,
       toolCallId: block.id,
+      targetRunStatus: ROUTABLE_RUN_STATUSES.has(
+        entry.taskRunStatus as TaskRunStatus,
+      )
+        ? (entry.taskRunStatus as TaskRunStatus)
+        : null,
     });
 
     deps.writeNestMessage(ctx.nest.id, {

@@ -6,6 +6,7 @@ import type { CloudTaskClient } from "../cloud-task-client";
 import type { FeedbackRoutingService } from "../feedback-routing-service";
 import type { HogletWithState } from "../hedgehog-prompts";
 import type { HogletService } from "../hoglet-service";
+import type { NestService } from "../nest-service";
 import type { PrGraphService } from "../pr-graph-service";
 import type { Hoglet, Nest, NestLoadout } from "../schemas";
 import { killHogletHandler } from "./kill-hoglet-handler";
@@ -59,6 +60,9 @@ function makeHogletWithState(
     prState: overrides.prState ?? null,
     latestRunCreatedAt: overrides.latestRunCreatedAt ?? null,
     latestRunCompletedAt: overrides.latestRunCompletedAt ?? null,
+    lastOutputAt: overrides.lastOutputAt ?? null,
+    lastOutputKind: overrides.lastOutputKind ?? null,
+    lastOutputPreview: overrides.lastOutputPreview ?? null,
   };
 }
 
@@ -104,6 +108,7 @@ function makeDeps(overrides: Partial<HedgehogToolDeps> = {}): {
     hogletService: {
       spawnInNest,
     } as unknown as HogletService,
+    nestService: {} as NestService,
     writeNestMessage,
     ...overrides,
   };

@@ -9,6 +9,7 @@ import {
   type Nest,
   type NestLoadout,
   type NestMessage,
+  type NestMessageKind,
 } from "./schemas";
 
 export type HogletPrState = "open" | "closed" | "merged" | "draft" | "unknown";
@@ -31,6 +32,9 @@ export interface HogletWithState {
   prState: HogletPrState | null;
   latestRunCreatedAt: string | null;
   latestRunCompletedAt: string | null;
+  lastOutputAt: string | null;
+  lastOutputPreview: string | null;
+  lastOutputKind: NestMessageKind | null;
 }
 
 export interface ScratchpadEntry {
@@ -48,7 +52,8 @@ export interface NestRepositoryContext {
 const HEDGEHOG_ACTION_GUIDANCE_WITH_HOGLETS = [
   "## Action",
   "Drive the nest forward. For each hoglet:",
-  "- If completed: evaluate output against the goal. Spawn follow-ups or declare success.",
+  "- If completed: evaluate output against the goal. Spawn follow-ups, or call mark_validated if the definition of done is satisfied.",
+  "- If last_output_at is recent (within the tick's window) but run is still in_progress: treat as candidate-complete. Evaluate output, advance the nest, call mark_validated, or message_hoglet to confirm.",
   "- If failed/cancelled: diagnose and raise with a fix prompt, or kill and respawn with better scope.",
   "- If in_progress for a long time (check run_created_at, accounting for queue time): message it for a status update.",
   "- If not_started/queued/no_run: raise it or investigate why it hasn't started.",
@@ -60,7 +65,7 @@ export const HEDGEHOG_SYSTEM_PROMPT = `You are the hedgehog: a per-nest orchestr
 Your job: drive the nest toward its goal by actively orchestrating its hoglets (PostHog Code tasks). You are responsible for forward motion: decompose goals into concrete hoglets, raise idle ones, check on stalled ones, kill off-track ones, manage PR stacking, verify completed work against the definition of done, and record your reasoning so the operator can follow along.
 
 Hard constraints:
-- You have nine tools: spawn_hoglet, raise_hoglet, kill_hoglet, message_hoglet, write_audit_entry, request_repository_access, link_pr_dependency, unlink_pr_dependency, rebase_child. You cannot author code, touch files, push branches, or message the operator outside the nest chat.
+- You have ten tools: spawn_hoglet, raise_hoglet, kill_hoglet, message_hoglet, write_audit_entry, mark_validated, request_repository_access, link_pr_dependency, unlink_pr_dependency, rebase_child. You cannot author code, touch files, push branches, or message the operator outside the nest chat.
 - Operator commands in nest chat outrank your own plans. If the operator just said "raise the checkout one", do that; don't relitigate.
 - Be proactive. When the nest has no hoglets, decompose the goal into concrete work items and spawn hoglets for each. When hoglets complete, evaluate whether the goal is satisfied or more work is needed.
 - A "spawn" creates a brand-new cloud Task + hoglet and immediately starts it. Use detailed, specific prompts — each hoglet is an independent agent working in its own branch.
@@ -72,13 +77,14 @@ Hard constraints:
 - If spawn_hoglet fails because the repository is "not accessible" and the error includes suggestions, retry with the suggested slug. If multiple are listed, pick the one that best matches the nest's goal.
 
 Operational posture (how you should behave):
-- You are the driver, not a passive observer. Every tick, actively assess whether each hoglet is making progress toward the goal.
-- If a hoglet has been in_progress for more than 45 minutes with no PR and no branch, message it to ask for a brief status update. Use run_created_at as an upper bound and account for possible queue time.
-- If a hoglet has been in_progress for more than 60 minutes, message it with a concrete question: "What's blocking you? Do you need the task rescoped?"
-- When a hoglet completes, immediately evaluate: does its output satisfy its piece of the goal? If not, raise it with a follow-up prompt. If yes, check if the overall nest goal needs more work and spawn accordingly.
-- When a hoglet fails, diagnose from context whether to raise it with a fix prompt or kill it and spawn a replacement with a better-scoped prompt.
-- Never write "no action needed" as your only output. If all hoglets are in_progress and healthy, write a brief status assessment acknowledging their progress. If hoglets are idle/completed/failed, take action.
-- Prefer action over observation, but don't interrupt healthy early work based only on the absence of a branch. If a hoglet looks genuinely stalled, message it.
+- You are the driver, not a passive observer. Every tick you must either change state (spawn / raise / kill / message / link / rebase / mark_validated) or query state (message_hoglet) — a bare status summary is not an action.
+- last_output_at is your strongest completion signal, stronger than latest_run_status. Cloud task runs often stay in_progress for minutes after the hoglet has finished talking. If a hoglet's last_output_at is recent and the output reads like a deliverable (verification report, summary, "done"), treat the work as candidate-complete: evaluate against the goal, spawn follow-ups, or message_hoglet to confirm and advance. Do NOT hold just because latest_run_status is still in_progress.
+- If a hoglet has a hoglet_summary message since its run_created_at, its work is complete regardless of latest_run_status.
+- When in doubt about hoglet status, send message_hoglet. The cost of asking is far lower than the cost of a wasted tick. Probe before you wait.
+- If a hoglet has been in_progress for more than 45 minutes with no last_output and no branch, message it for a status update. If more than 60 minutes, message it with a concrete unblocker: "What's blocking you? Do you need the task rescoped?"
+- When a hoglet's run terminates (completed / failed / cancelled), immediately evaluate its output. Spawn follow-ups, raise with a fix prompt, or kill and respawn with better scope. Never leave a terminal hoglet without a follow-up decision.
+- When the definition of done is satisfied by operator confirmation, PR state, or hoglet summaries, call mark_validated and stop. Do not message hoglets to stand down, exit cleanly, or wind down; message_hoglet does not terminate a run. Let active runs finish naturally unless they are harmful, in which case use kill_hoglet with a concrete reason.
+- "All hoglets in_progress and healthy" is NOT a valid stopping condition unless every hoglet's last_output_at is within the last 2 minutes. Otherwise, pick the hoglet you know least about and message_hoglet it.
 
 Output expectations:
 - Emit your decisions as tool_use blocks. The dispatcher executes them in the order you produce.
@@ -208,6 +214,9 @@ export function buildUserPrompt(input: BuildUserPromptInput): string {
               prState,
               latestRunCreatedAt,
               latestRunCompletedAt,
+              lastOutputAt,
+              lastOutputKind,
+              lastOutputPreview,
             } = entry;
             const lines = [
               `- id: ${hoglet.id}`,
@@ -226,6 +235,17 @@ export function buildUserPrompt(input: BuildUserPromptInput): string {
             if (branch) lines.push(`  branch: ${branch}`);
             if (prUrl) lines.push(`  pr_url: ${prUrl}`);
             if (prState) lines.push(`  pr_state: ${prState}`);
+            if (lastOutputAt) {
+              lines.push(`  last_output_at: ${lastOutputAt}`);
+              if (lastOutputKind) {
+                lines.push(`  last_output_kind: ${lastOutputKind}`);
+              }
+              if (lastOutputPreview) {
+                lines.push(
+                  `  last_output_preview: ${formatPromptLine(lastOutputPreview, 200)}`,
+                );
+              }
+            }
             if (hoglet.signalReportId) {
               lines.push(`  signal_report_id: ${hoglet.signalReportId}`);
             }
@@ -254,6 +274,9 @@ export function buildUserPrompt(input: BuildUserPromptInput): string {
           }),
         ].join("\n");
 
+  const hogletByTaskId = new Map(
+    hoglets.map(({ hoglet }) => [hoglet.taskId, hoglet]),
+  );
   const chatSection =
     recentChat.length === 0
       ? "## Recent nest chat\n(empty)"
@@ -261,7 +284,13 @@ export function buildUserPrompt(input: BuildUserPromptInput): string {
           "## Recent nest chat (oldest → newest, last 20)",
           ...recentChat.slice(-20).map((message) => {
             const ts = new Date(message.createdAt).toISOString();
-            return `- [${ts}] ${message.kind}: ${truncate(message.body, 800)}`;
+            const sourceHoglet = message.sourceTaskId
+              ? hogletByTaskId.get(message.sourceTaskId)
+              : undefined;
+            const label = sourceHoglet
+              ? `hoglet=${sourceHoglet.name || sourceHoglet.id} ${message.kind}`
+              : message.kind;
+            return `- [${ts}] ${label}: ${truncate(message.body, 800)}`;
           }),
         ].join("\n");
 
@@ -334,6 +363,53 @@ export function buildUserPrompt(input: BuildUserPromptInput): string {
 function truncate(value: string, max: number): string {
   if (value.length <= max) return value;
   return `${value.slice(0, max)}… (truncated)`;
+}
+
+const HOGLET_OUTPUT_KINDS = new Set<NestMessageKind>([
+  "tool_result",
+  "hoglet_summary",
+]);
+
+export function deriveHogletLastOutput(
+  entry: Pick<HogletWithState, "hoglet" | "latestRunCreatedAt">,
+  recentChat: NestMessage[],
+): Pick<
+  HogletWithState,
+  "lastOutputAt" | "lastOutputKind" | "lastOutputPreview"
+> {
+  const thresholdMs = Date.parse(
+    entry.latestRunCreatedAt ?? entry.hoglet.createdAt,
+  );
+  const newest = recentChat.reduce<NestMessage | null>((current, message) => {
+    if (message.sourceTaskId !== entry.hoglet.taskId) return current;
+    if (!HOGLET_OUTPUT_KINDS.has(message.kind)) return current;
+
+    const createdMs = Date.parse(message.createdAt);
+    if (Number.isNaN(createdMs)) return current;
+    if (!Number.isNaN(thresholdMs) && createdMs <= thresholdMs) return current;
+    if (!current) return message;
+
+    const currentMs = Date.parse(current.createdAt);
+    return createdMs > currentMs ? message : current;
+  }, null);
+
+  if (!newest) {
+    return {
+      lastOutputAt: null,
+      lastOutputKind: null,
+      lastOutputPreview: null,
+    };
+  }
+
+  return {
+    lastOutputAt: new Date(newest.createdAt).toISOString(),
+    lastOutputKind: newest.kind,
+    lastOutputPreview: formatPromptLine(newest.body, 200),
+  };
+}
+
+function formatPromptLine(value: string, max: number): string {
+  return truncate(value.replace(/\s+/g, " ").trim(), max);
 }
 
 export const MAX_SCRATCHPAD_ENTRIES = 32;
