@@ -160,7 +160,7 @@ describe("CloudTaskClient", () => {
         prompt: "Status?",
         authoredBy: "hedgehog",
       }),
-    ).resolves.toEqual({ accepted: true });
+    ).resolves.toEqual({ accepted: true, processed: "unknown" });
 
     expect(auth.authenticatedFetch).toHaveBeenCalledWith(
       fetch,
@@ -224,6 +224,33 @@ describe("CloudTaskClient", () => {
       message: "Agent is busy",
     });
   });
+
+  it.each([
+    [{ processed: "active" }, "active"],
+    [{ result: { processed: "queued" } }, "queued"],
+    [{ result: {} }, "unknown"],
+  ] as const)(
+    "reports prompt processing state %#",
+    async (responseBody, expectedProcessed) => {
+      const auth = createAuthMock(42);
+      (auth.authenticatedFetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+        jsonResponse({ jsonrpc: "2.0", id: "hedgemony-1", ...responseBody }),
+      );
+      const client = new CloudTaskClient(auth);
+
+      await expect(
+        client.injectPrompt({
+          taskId: "task-1",
+          taskRunId: "run-1",
+          prompt: "Status?",
+          authoredBy: "hedgehog",
+        }),
+      ).resolves.toEqual({
+        accepted: true,
+        processed: expectedProcessed,
+      });
+    },
+  );
 
   it("lists accessible repository slugs from the integration cache", async () => {
     const auth = createAuthMock(42);

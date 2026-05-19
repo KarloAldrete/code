@@ -374,6 +374,26 @@ export const scratchpadEntrySchema = z.object({
   summary: z.string().min(1).max(1000),
 });
 
+export const holdNextTrigger = z.enum([
+  "operator_response",
+  "hoglet_output",
+  "pr_status_change",
+  "timeout",
+]);
+export type HoldNextTrigger = z.infer<typeof holdNextTrigger>;
+
+export const activeHoldStateSchema = z.object({
+  reason: z.string().min(1).max(200),
+  nextTrigger: holdNextTrigger,
+  timeoutSeconds: z.number().int().positive().optional(),
+  createdAt: z.string().min(1).max(64),
+  timeoutAt: z.string().min(1).max(64).optional(),
+  lastOperatorMessageAt: z.string().nullable().optional(),
+  lastHogletOutputAt: z.string().nullable().optional(),
+  prStatusFingerprint: z.string().nullable().optional(),
+});
+export type ActiveHoldState = z.infer<typeof activeHoldStateSchema>;
+
 /**
  * Top-level shape of `hedgemony_hedgehog_state.serializedStateJson`. Anything
  * outside this shape is dropped to keep adversarial entries out of the next
@@ -382,6 +402,7 @@ export const scratchpadEntrySchema = z.object({
 export const scratchpadStateSchema = z.object({
   scratchpad: z.array(scratchpadEntrySchema).max(200).optional(),
   observedTerminalRunKeys: z.record(z.string(), z.string().max(512)).optional(),
+  activeHold: activeHoldStateSchema.nullable().optional(),
 });
 
 /**
@@ -562,6 +583,9 @@ export const feedbackEventOutcome = z.enum([
 ]);
 export type FeedbackEventOutcome = z.infer<typeof feedbackEventOutcome>;
 
+export const feedbackProcessingState = z.enum(["active", "queued", "unknown"]);
+export type FeedbackProcessingState = z.infer<typeof feedbackProcessingState>;
+
 /**
  * Outcomes the renderer is allowed to commit via `recordRoutedOutcome`.
  * Excludes `pending`, which is router-internal.
@@ -585,6 +609,7 @@ export const feedbackEvent = z.object({
   payloadRef: z.string(),
   trustTier: feedbackTrustTier,
   routedOutcome: feedbackEventOutcome,
+  processed: feedbackProcessingState,
   injectedAt: z.string(),
 });
 export type FeedbackEvent = z.infer<typeof feedbackEvent>;
@@ -610,6 +635,7 @@ export const recordRoutedFeedbackInput = z.object({
   payloadHash: z.string(),
   payloadRef: z.string(),
   routedOutcome: recordedFeedbackOutcome,
+  processed: feedbackProcessingState.optional(),
   trustTier: feedbackTrustTier.optional(),
 });
 export type RecordRoutedFeedbackInput = z.infer<

@@ -1,4 +1,5 @@
 import type { HedgehogToolName } from "../hedgehog-tools";
+import { holdHandler } from "./hold-handler";
 import { killHogletHandler } from "./kill-hoglet-handler";
 import { linkPrDependencyHandler } from "./link-pr-dependency-handler";
 import { markValidatedHandler } from "./mark-validated-handler";
@@ -17,6 +18,7 @@ const handlerList: readonly HedgehogToolHandler[] = [
   killHogletHandler,
   messageHogletHandler,
   writeAuditEntryHandler,
+  holdHandler,
   markValidatedHandler,
   requestRepositoryAccessHandler,
   linkPrDependencyHandler,

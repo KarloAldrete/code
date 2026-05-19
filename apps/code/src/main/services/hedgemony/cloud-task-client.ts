@@ -14,7 +14,12 @@ import type {
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import type { AuthService } from "../auth/service";
-import { type HedgemonyReasoningEffort, repoSlugSchema } from "./schemas";
+import {
+  type FeedbackProcessingState,
+  feedbackProcessingState,
+  type HedgemonyReasoningEffort,
+  repoSlugSchema,
+} from "./schemas";
 
 const log = logger.scope("hedgemony-cloud-task-client");
 
@@ -193,6 +198,7 @@ const taskRunCommandResponseSchema = z
   .object({
     jsonrpc: z.string().optional(),
     id: z.unknown().optional(),
+    processed: z.unknown().optional(),
     result: z.unknown().optional(),
     error: z.unknown().optional(),
   })
@@ -245,7 +251,7 @@ interface UpdateTaskRunPatch {
 }
 
 export type CloudTaskPromptInjectionResult =
-  | { accepted: true }
+  | { accepted: true; processed: FeedbackProcessingState }
   | {
       accepted: false;
       reason: "run_unavailable" | "rejected";
@@ -515,7 +521,7 @@ export class CloudTaskClient {
       return { accepted: false, reason: "rejected", message };
     }
 
-    return { accepted: true };
+    return { accepted: true, processed: extractProcessedState(data) };
   }
 
   async updateTaskRun(
@@ -777,6 +783,19 @@ function formatInjectedPrompt(input: {
   authoredBy: "hedgehog";
 }): string {
   return `Message from the Hedgemony hedgehog orchestrating this nest:\n\n${input.prompt}`;
+}
+
+function extractProcessedState(
+  data: z.infer<typeof taskRunCommandResponseSchema>,
+): FeedbackProcessingState {
+  const topLevel = feedbackProcessingState.safeParse(data.processed);
+  if (topLevel.success) return topLevel.data;
+  if (data.result && typeof data.result === "object") {
+    const nested = (data.result as { processed?: unknown }).processed;
+    const parsed = feedbackProcessingState.safeParse(nested);
+    if (parsed.success) return parsed.data;
+  }
+  return "unknown";
 }
 
 function commandErrorMessage(error: unknown): string {

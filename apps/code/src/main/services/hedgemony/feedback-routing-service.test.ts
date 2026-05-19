@@ -158,7 +158,7 @@ function createMockCloudTaskClient(prUrl: string | null): CloudTaskClient {
       },
       latestRun: null,
     })),
-    injectPrompt: vi.fn(async () => ({ accepted: true })),
+    injectPrompt: vi.fn(async () => ({ accepted: true, processed: "unknown" })),
   } as unknown as CloudTaskClient;
 }
 
@@ -694,7 +694,10 @@ describe("FeedbackRoutingService", () => {
 
   it("injects hedgehog messages directly into an in-progress cloud run", async () => {
     const cloudTasks = {
-      injectPrompt: vi.fn(async () => ({ accepted: true })),
+      injectPrompt: vi.fn(async () => ({
+        accepted: true,
+        processed: "queued" as const,
+      })),
       getTaskWithLatestRun: vi.fn(),
     } as unknown as CloudTaskClient;
     const service = new FeedbackRoutingService(
@@ -731,10 +734,13 @@ describe("FeedbackRoutingService", () => {
       source: "hedgehog",
       routedOutcome: "injected",
       trustTier: "internal",
+      processed: "queued",
     });
     expect(nestChat.recordHedgehogMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        body: expect.stringContaining("→ delivered to cloud run"),
+        body: expect.stringContaining(
+          "→ delivered to cloud run (queued; will be read at next turn boundary)",
+        ),
       }),
     );
   });
@@ -751,7 +757,7 @@ describe("FeedbackRoutingService", () => {
       injectPrompt: vi
         .fn()
         .mockResolvedValueOnce({ accepted: false, reason: "run_unavailable" })
-        .mockResolvedValueOnce({ accepted: true }),
+        .mockResolvedValueOnce({ accepted: true, processed: "active" }),
       getTaskWithLatestRun: vi.fn(async (taskId: string) => ({
         task: { id: taskId, latest_run: latestRun },
         latestRun,
@@ -798,6 +804,7 @@ describe("FeedbackRoutingService", () => {
       source: "hedgehog",
       routedOutcome: "injected",
       trustTier: "internal",
+      processed: "active",
     });
   });
 

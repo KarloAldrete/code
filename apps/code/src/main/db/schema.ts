@@ -216,6 +216,9 @@ export const hedgemonyFeedbackEvents = sqliteTable(
     routedOutcome: text({
       enum: ["pending", "injected", "follow_up_spawned", "failed"],
     }).notNull(),
+    processed: text({ enum: ["active", "queued", "unknown"] })
+      .notNull()
+      .default("unknown"),
     injectedAt: text().notNull().default(sql`(CURRENT_TIMESTAMP)`),
   },
   (t) => [

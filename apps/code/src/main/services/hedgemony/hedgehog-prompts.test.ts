@@ -71,6 +71,10 @@ function makeHogletState(
     lastOutputAt: overrides.lastOutputAt ?? null,
     lastOutputKind: overrides.lastOutputKind ?? null,
     lastOutputPreview: overrides.lastOutputPreview ?? null,
+    pendingInjections: overrides.pendingInjections ?? {
+      count: 0,
+      oldestAgeMinutes: null,
+    },
   };
 }
 
@@ -91,6 +95,7 @@ function renderPrompt(
       primaryRepository: "posthog/posthog",
       availableRepositories: ["posthog/posthog"],
     },
+    nestAnomalies: {},
   });
 }
 

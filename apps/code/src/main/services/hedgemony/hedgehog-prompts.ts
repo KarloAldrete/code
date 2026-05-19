@@ -35,6 +35,10 @@ export interface HogletWithState {
   lastOutputAt: string | null;
   lastOutputPreview: string | null;
   lastOutputKind: NestMessageKind | null;
+  pendingInjections: {
+    count: number;
+    oldestAgeMinutes: number | null;
+  };
 }
 
 export interface ScratchpadEntry {
@@ -47,6 +51,13 @@ export interface NestRepositoryContext {
   repositories: string[];
   primaryRepository: string | null;
   availableRepositories: string[];
+}
+
+export interface NestAnomalies {
+  lockstepSilence?: {
+    hogletIds: string[];
+    sinceMinutes: number;
+  };
 }
 
 const HEDGEHOG_ACTION_GUIDANCE_WITH_HOGLETS = [
@@ -65,7 +76,7 @@ export const HEDGEHOG_SYSTEM_PROMPT = `You are the hedgehog: a per-nest orchestr
 Your job: drive the nest toward its goal by actively orchestrating its hoglets (PostHog Code tasks). You are responsible for forward motion: decompose goals into concrete hoglets, raise idle ones, check on stalled ones, kill off-track ones, manage PR stacking, verify completed work against the definition of done, and record your reasoning so the operator can follow along.
 
 Hard constraints:
-- You have ten tools: spawn_hoglet, raise_hoglet, kill_hoglet, message_hoglet, write_audit_entry, mark_validated, request_repository_access, link_pr_dependency, unlink_pr_dependency, rebase_child. You cannot author code, touch files, push branches, or message the operator outside the nest chat.
+- You have eleven tools: spawn_hoglet, raise_hoglet, kill_hoglet, message_hoglet, write_audit_entry, hold, mark_validated, request_repository_access, link_pr_dependency, unlink_pr_dependency, rebase_child. You cannot author code, touch files, push branches, or message the operator outside the nest chat.
 - Operator commands in nest chat outrank your own plans. If the operator just said "raise the checkout one", do that; don't relitigate.
 - Be proactive. When the nest has no hoglets, decompose the goal into concrete work items and spawn hoglets for each. When hoglets complete, evaluate whether the goal is satisfied or more work is needed.
 - A "spawn" creates a brand-new cloud Task + hoglet and immediately starts it. Use detailed, specific prompts — each hoglet is an independent agent working in its own branch.
@@ -77,13 +88,18 @@ Hard constraints:
 - If spawn_hoglet fails because the repository is "not accessible" and the error includes suggestions, retry with the suggested slug. If multiple are listed, pick the one that best matches the nest's goal.
 
 Operational posture (how you should behave):
-- You are the driver, not a passive observer. Every tick you must either change state (spawn / raise / kill / message / link / rebase / mark_validated) or query state (message_hoglet) — a bare status summary is not an action.
+- You are the driver, not a passive observer. Every tick you must either change state (spawn / raise / kill / message / link / rebase / mark_validated), query state (message_hoglet), or deliberately wait with hold. A bare status summary is not an action.
+- When no productive action is available — all probes are within don't-re-fire windows, you are awaiting an operator response already escalated, or downstream state is the only meaningful next signal — call hold with a precise nextTrigger. Do not improvise a probe or audit to satisfy the every-tick-must-act constraint.
 - When decomposing an empty nest into hoglets, use the goal prompt's User Stories as the natural decomposition unit. Default to one hoglet per P1 user story, or per cluster of 2-3 tightly-related stories. For any nest with more than 2 user stories, do NOT spawn a single end-to-end hoglet — even when work feels coupled. Manage coupling via link_pr_dependency (when one hoglet's branch genuinely stacks on another's) or by sequencing (spawn the foundational hoglet first, wait for its PR, then parallel-spawn the rest). Coupling-by-fusion is the wrong reflex: prefer coupling-by-sequencing or coupling-by-stack.
 - A single end-to-end hoglet is appropriate only when the nest has 1-2 user stories OR the total work fits in <30 minutes of cloud time. Anything goal-shaped gets multiple hoglets.
 - last_output_at is your strongest completion signal, stronger than latest_run_status. Cloud task runs often stay in_progress for minutes after the hoglet has finished talking. If a hoglet's last_output_at is recent and the output reads like a deliverable (verification report, summary, "done"), treat the work as candidate-complete: evaluate against the goal, spawn follow-ups, or message_hoglet to confirm and advance. Do NOT hold just because latest_run_status is still in_progress.
 - If a hoglet has a hoglet_summary message since its run_created_at, its work is complete regardless of latest_run_status.
 - When in doubt about hoglet status, send message_hoglet. The cost of asking is far lower than the cost of a wasted tick. Probe before you wait.
+- If a hoglet has pending_injections.count >= 2, your prior probes are stacking up in its queue. Do not send another message_hoglet to this hoglet until either a new last_output_at arrives or the run terminates. Use hold or write_audit_entry instead.
 - If a recent message_hoglet delivery audit says the cloud run was not accepting messages (or older history mentions the task tab not being open), that specific message did not reach the hoglet. Do not repeat the same probe blindly. Wait for the run to advance or complete, or — if the question is genuinely time-sensitive — call write_audit_entry to surface the question to the operator in nest chat instead of re-probing.
+- If nest_anomalies.lockstep_silence is present, treat this as evidence of infra trouble (cloud queue saturation, auth blip, runtime error), not independent deep implementation passes. Do not rationalize per-hoglet; surface a single nest-level audit entry once and hold for operator_response or timeout rather than re-probing each hoglet individually.
+- Downstream hoglets stacked on a parent branch can make progress independently of whether the parent PR has merged. They have the parent's code in their worktree. Do not escalate a parent merge as a progress bottleneck — it is only a final landing requirement handled automatically by the PR-graph poller via link_pr_dependency.
+- If you have escalated the same operator request twice and seen no response, do not escalate it a third time. Surface it once via write_audit_entry, mark the next operator-response trigger via hold, and stop. Repeated escalations are noise.
 - If a hoglet has been in_progress for more than 45 minutes with no last_output and no branch, message it for a status update. If more than 60 minutes, message it with a concrete unblocker: "What's blocking you? Do you need the task rescoped?"
 - When a hoglet's run terminates (completed / failed / cancelled), immediately evaluate its output. Spawn follow-ups, raise with a fix prompt, or kill and respawn with better scope. Never leave a terminal hoglet without a follow-up decision.
 - When the definition of done is satisfied by operator confirmation, PR state, or hoglet summaries, call mark_validated and stop. Do not message hoglets to stand down, exit cleanly, or wind down; message_hoglet does not terminate a run. Let active runs finish naturally unless they are harmful, in which case use kill_hoglet with a concrete reason.
@@ -103,6 +119,7 @@ interface BuildUserPromptInput {
   prDependencies: PrDependency[];
   loadout: NestLoadout;
   repositoryContext: NestRepositoryContext;
+  nestAnomalies?: NestAnomalies;
   /**
    * Decisions the operator has explicitly made and that the hedgehog must
    * not undo. Omitted from the prompt entirely when empty so neutral ticks
@@ -121,6 +138,7 @@ export function buildUserPrompt(input: BuildUserPromptInput): string {
     prDependencies,
     loadout,
     repositoryContext,
+    nestAnomalies,
     operatorDecisions,
   } = input;
   const runtimeAdapter =
@@ -201,6 +219,18 @@ export function buildUserPrompt(input: BuildUserPromptInput): string {
     return lines.join("\n");
   })();
 
+  const nestAnomaliesSection = (() => {
+    if (!nestAnomalies?.lockstepSilence) return null;
+    const { hogletIds, sinceMinutes } = nestAnomalies.lockstepSilence;
+    return [
+      "## Nest anomalies",
+      "nest_anomalies:",
+      "  lockstep_silence:",
+      `    hoglet_ids: ${hogletIds.join(", ")}`,
+      `    since_minutes: ${sinceMinutes}`,
+    ].join("\n");
+  })();
+
   const hogletSection =
     hoglets.length === 0
       ? "## Hoglets\n(no hoglets in this nest — use spawn_hoglet to decompose the goal into work items)"
@@ -220,6 +250,7 @@ export function buildUserPrompt(input: BuildUserPromptInput): string {
               lastOutputAt,
               lastOutputKind,
               lastOutputPreview,
+              pendingInjections,
             } = entry;
             const lines = [
               `- id: ${hoglet.id}`,
@@ -249,6 +280,9 @@ export function buildUserPrompt(input: BuildUserPromptInput): string {
                 );
               }
             }
+            lines.push(
+              `  pending_injections: { count: ${pendingInjections.count}, oldest_age_minutes: ${pendingInjections.oldestAgeMinutes ?? "none"} }`,
+            );
             if (hoglet.signalReportId) {
               lines.push(`  signal_report_id: ${hoglet.signalReportId}`);
             }
@@ -352,6 +386,7 @@ export function buildUserPrompt(input: BuildUserPromptInput): string {
     goalSection,
     loadoutSection,
     repositorySection,
+    nestAnomaliesSection,
     hogletSection,
     prGraphSection,
     chatSection,

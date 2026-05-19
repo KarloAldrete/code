@@ -63,6 +63,10 @@ function makeHogletWithState(
     lastOutputAt: overrides.lastOutputAt ?? null,
     lastOutputKind: overrides.lastOutputKind ?? null,
     lastOutputPreview: overrides.lastOutputPreview ?? null,
+    pendingInjections: overrides.pendingInjections ?? {
+      count: 0,
+      oldestAgeMinutes: null,
+    },
   };
 }
 
@@ -79,6 +83,7 @@ function makeContext(overrides: {
     budget: new TickBudget(),
     prDependencies: overrides.prDependencies ?? [],
     loadout: overrides.loadout ?? {},
+    nestAnomalies: {},
     operatorDecisions: overrides.operatorDecisions,
     repositoryContext: {
       repositories: ["org/repo"],

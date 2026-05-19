@@ -1,6 +1,7 @@
 import { parseGithubUrl } from "@posthog/git/utils";
 import { inject, injectable } from "inversify";
 import { normalizeRepoKey } from "../../../shared/utils/repo";
+import type { FeedbackEventRepository } from "../../db/repositories/feedback-event-repository";
 import type { HedgehogStateRepository } from "../../db/repositories/hedgehog-state-repository";
 import type { OperatorDecisionRepository } from "../../db/repositories/operator-decision-repository";
 import type { PrDependencyRepository } from "../../db/repositories/pr-dependency-repository";
@@ -19,6 +20,7 @@ import type { CloudTaskClient } from "./cloud-task-client";
 import type { FeedbackRoutingService } from "./feedback-routing-service";
 import { HEDGEHOG_HANDLERS } from "./hedgehog-handlers/registry";
 import {
+  type HandlerResult,
   type HedgehogToolDeps,
   TickBudget,
   type TickContext,
@@ -45,6 +47,7 @@ import type { NestService } from "./nest-service";
 import type { PrGraphService } from "./pr-graph-service";
 import { parseHedgehogState, parseNestLoadout } from "./schema-parsers";
 import {
+  type ActiveHoldState,
   DEFAULT_HOGLET_MODEL,
   HedgemonyEvent,
   type Hoglet,
@@ -66,6 +69,10 @@ const HEDGEHOG_MODEL = DEFAULT_HOGLET_MODEL;
 const HEDGEHOG_EFFORT = "max";
 const MAX_TOKENS = 4_000;
 const TICK_WINDOW_MS = 60 * 60_000;
+const LOCKSTEP_SILENCE_MIN_HOGLETS = 2;
+const LOCKSTEP_SILENCE_SPAWN_WINDOW_MS = 5 * 60_000;
+const LOCKSTEP_SILENCE_MIN_QUIET_MS = 30 * 60_000;
+const PENDING_INJECTION_LOOKBACK = 100;
 
 function getHeartbeatIntervalMs(): number {
   const envOverride = process.env.HEDGEMONY_HEARTBEAT_INTERVAL_MS;
@@ -124,6 +131,8 @@ export class HedgehogTickService {
     private readonly git: GitService,
     @inject(MAIN_TOKENS.FeedbackRoutingService)
     private readonly feedbackRouting: FeedbackRoutingService,
+    @inject(MAIN_TOKENS.FeedbackEventRepository)
+    private readonly feedbackEvents: FeedbackEventRepository,
     @inject(MAIN_TOKENS.RepositoryRepository)
     private readonly repositoryRepo: RepositoryRepository,
     @inject(MAIN_TOKENS.TickLogRepository)
@@ -295,6 +304,44 @@ export class HedgehogTickService {
       return;
     }
 
+    let releasedHoldScratchpad: ScratchpadEntry | null = null;
+    const initialPersistedState = this.loadPersistedState(nestId);
+    if (initialPersistedState.activeHold) {
+      const holdCheck = await this.evaluateActiveHold(
+        nest,
+        initialPersistedState.activeHold,
+      );
+      if (!holdCheck.released) {
+        const lastTickAt = new Date().toISOString();
+        this.stateRepo.upsert({
+          nestId,
+          state: "idle",
+          lastTickAt,
+          serializedStateJson: JSON.stringify(initialPersistedState),
+        });
+        this.nestService.emitHedgehogTick(nestId, {
+          state: "idle",
+          lastTickAt,
+        });
+        return;
+      }
+
+      releasedHoldScratchpad = {
+        ts: new Date().toISOString(),
+        kind: "observation",
+        summary: `Hold released: ${holdCheck.reason}`,
+      };
+      // Persist the release before the cap check below, which can return
+      // before the final state write runs.
+      this.stateRepo.upsert({
+        nestId,
+        serializedStateJson: JSON.stringify({
+          ...initialPersistedState,
+          activeHold: null,
+        }),
+      });
+    }
+
     // Enforce the hourly cap before doing any work. The window is the last
     // hour from now; `capped` rows count too so a flood of capped attempts
     // self-quenches.
@@ -331,10 +378,14 @@ export class HedgehogTickService {
     });
 
     const newScratchpadEntries: ScratchpadEntry[] = [];
+    if (releasedHoldScratchpad) {
+      newScratchpadEntries.push(releasedHoldScratchpad);
+    }
     const budget = new TickBudget();
     const deps = this.buildHandlerDeps();
     let outcome: TickOutcome = "completed";
     let observedTerminalRunKeys: Record<string, string> | null = null;
+    let nextActiveHold: ActiveHoldState | null = null;
 
     try {
       const recentChat = this.nestChat.list({ nestId, detail: false });
@@ -364,6 +415,7 @@ export class HedgehogTickService {
         prDependencies: tickContext.prDependencies,
         loadout: tickContext.loadout,
         repositoryContext,
+        nestAnomalies: tickContext.nestAnomalies,
         operatorDecisions: tickContext.operatorDecisions,
       });
 
@@ -400,6 +452,7 @@ export class HedgehogTickService {
         });
       }
 
+      let suppressFreeTextMessage = false;
       for (const block of response.toolUseBlocks) {
         if (abortSignal?.aborted) {
           outcome = "aborted";
@@ -423,6 +476,14 @@ export class HedgehogTickService {
           kind: "decision",
           summary: result.scratchpadSummary,
         });
+        if (result.hold) {
+          nextActiveHold = this.buildActiveHoldState(
+            result.hold,
+            tickContext,
+            recentChat,
+          );
+          suppressFreeTextMessage = true;
+        }
         if (result.stopDispatch) break;
       }
 
@@ -433,12 +494,23 @@ export class HedgehogTickService {
         .filter((s) => s.length > 0)
         .join("\n");
       if (combinedText.length > 0) {
-        this.writeNestMessage(nestId, {
-          kind: "hedgehog_message",
-          body: combinedText,
-          visibility: "summary",
-          payloadJson: { tickReason: reason, stopReason: response.stopReason },
-        });
+        if (suppressFreeTextMessage) {
+          newScratchpadEntries.push({
+            ts: new Date().toISOString(),
+            kind: "note",
+            summary: `Hold reasoning: ${truncateForScratchpad(combinedText)}`,
+          });
+        } else {
+          this.writeNestMessage(nestId, {
+            kind: "hedgehog_message",
+            body: combinedText,
+            visibility: "summary",
+            payloadJson: {
+              tickReason: reason,
+              stopReason: response.stopReason,
+            },
+          });
+        }
       }
     } catch (error) {
       if (abortSignal?.aborted || isAbortError(error)) {
@@ -484,6 +556,7 @@ export class HedgehogTickService {
             scratchpad: nextScratchpad,
             observedTerminalRunKeys:
               observedTerminalRunKeys ?? persistedState.observedTerminalRunKeys,
+            activeHold: nextActiveHold,
           }),
         });
         this.nestService.emitHedgehogTick(nestId, {
@@ -502,6 +575,77 @@ export class HedgehogTickService {
       hogletService: this.hogletService,
       nestService: this.nestService,
       writeNestMessage: (nestId, input) => this.writeNestMessage(nestId, input),
+    };
+  }
+
+  private async evaluateActiveHold(
+    nest: Nest,
+    hold: ActiveHoldState,
+  ): Promise<{ released: boolean; reason: string }> {
+    if (hold.nextTrigger === "timeout") {
+      const timeoutAt =
+        hold.timeoutAt ??
+        new Date(
+          Date.parse(hold.createdAt) + (hold.timeoutSeconds ?? 0) * 1000,
+        ).toISOString();
+      // Timeout holds wake on the next heartbeat or external nest event after
+      // timeoutAt; they do not need a separate timer per held nest.
+      if (Date.now() >= Date.parse(timeoutAt)) {
+        return { released: true, reason: "timeout fired" };
+      }
+      return { released: false, reason: "timeout still pending" };
+    }
+
+    const recentChat = this.nestChat.list({ nestId: nest.id, detail: false });
+    if (hold.nextTrigger === "operator_response") {
+      const latest = latestOperatorMessageAt(recentChat);
+      if (
+        isAfterBaseline(latest, hold.lastOperatorMessageAt ?? hold.createdAt)
+      ) {
+        return { released: true, reason: "operator response arrived" };
+      }
+      return { released: false, reason: "awaiting operator response" };
+    }
+
+    if (hold.nextTrigger === "hoglet_output") {
+      const latest = latestHogletOutputAt(recentChat);
+      if (isAfterBaseline(latest, hold.lastHogletOutputAt ?? hold.createdAt)) {
+        return { released: true, reason: "hoglet output arrived" };
+      }
+      return { released: false, reason: "awaiting hoglet output" };
+    }
+
+    const context = await this.buildContext(nest, new TickBudget(), recentChat);
+    const currentFingerprint = prStatusFingerprint(
+      context.hoglets,
+      context.prDependencies,
+    );
+    if (currentFingerprint !== hold.prStatusFingerprint) {
+      return { released: true, reason: "PR status changed" };
+    }
+    return { released: false, reason: "awaiting PR status change" };
+  }
+
+  private buildActiveHoldState(
+    hold: NonNullable<HandlerResult["hold"]>,
+    ctx: TickContext,
+    recentChat: NestMessage[],
+  ): ActiveHoldState {
+    const createdAt = new Date().toISOString();
+    return {
+      reason: hold.reason,
+      nextTrigger: hold.nextTrigger,
+      timeoutSeconds: hold.timeoutSeconds,
+      createdAt,
+      timeoutAt:
+        hold.nextTrigger === "timeout" && hold.timeoutSeconds
+          ? new Date(
+              Date.parse(createdAt) + hold.timeoutSeconds * 1000,
+            ).toISOString()
+          : undefined,
+      lastOperatorMessageAt: latestOperatorMessageAt(recentChat),
+      lastHogletOutputAt: latestHogletOutputAt(recentChat),
+      prStatusFingerprint: prStatusFingerprint(ctx.hoglets, ctx.prDependencies),
     };
   }
 
@@ -525,6 +669,10 @@ export class HedgehogTickService {
     const hoglets = this.hogletService
       .list({ nestId: nest.id })
       .filter((h): h is Hoglet => !h.deletedAt);
+    const feedbackEvents = this.feedbackEvents.listForNest(
+      nest.id,
+      PENDING_INJECTION_LOOKBACK,
+    );
     const enriched: HogletWithState[] = [];
     const prStateCache = new Map<string, HogletPrState>();
     for (const hoglet of hoglets) {
@@ -540,7 +688,7 @@ export class HedgehogTickService {
         const prState = prUrl
           ? await this.resolvePrState(prUrl, prStateCache)
           : null;
-        const entry: HogletWithState = {
+        const entry: Omit<HogletWithState, "pendingInjections"> = {
           hoglet,
           repository: task.repository ?? null,
           taskRunStatus: latestRun?.status ?? "no_run",
@@ -554,16 +702,23 @@ export class HedgehogTickService {
           lastOutputKind: null,
           lastOutputPreview: null,
         };
-        enriched.push({
+        const withOutput = {
           ...entry,
           ...deriveHogletLastOutput(entry, recentChat),
+        };
+        enriched.push({
+          ...withOutput,
+          pendingInjections: computePendingInjections(
+            withOutput,
+            feedbackEvents,
+          ),
         });
       } catch (error) {
         log.warn("could not load task state — flagging as unknown", {
           taskId: hoglet.taskId,
           error: stringifyError(error),
         });
-        const entry: HogletWithState = {
+        const entry: Omit<HogletWithState, "pendingInjections"> = {
           hoglet,
           repository: null,
           taskRunStatus: "unknown",
@@ -577,9 +732,16 @@ export class HedgehogTickService {
           lastOutputKind: null,
           lastOutputPreview: null,
         };
-        enriched.push({
+        const withOutput = {
           ...entry,
           ...deriveHogletLastOutput(entry, recentChat),
+        };
+        enriched.push({
+          ...withOutput,
+          pendingInjections: computePendingInjections(
+            withOutput,
+            feedbackEvents,
+          ),
         });
       }
     }
@@ -591,6 +753,7 @@ export class HedgehogTickService {
       budget,
       prDependencies: prDeps,
       loadout,
+      nestAnomalies: computeNestAnomalies(enriched),
       operatorDecisions,
       repositoryContext: {
         repositories: [],
@@ -744,6 +907,7 @@ export class HedgehogTickService {
   private loadPersistedState(nestId: string): {
     scratchpad: ScratchpadEntry[];
     observedTerminalRunKeys: Record<string, string>;
+    activeHold: ActiveHoldState | null;
   } {
     const row = this.stateRepo.findByNestId(nestId);
     return parseHedgehogState(row?.serializedStateJson ?? null);
@@ -820,4 +984,160 @@ function terminalRunKey(entry: HogletWithState): string | null {
     entry.taskRunStatus,
     entry.latestRunCompletedAt ?? "missing-completed-at",
   ].join(":");
+}
+
+function computePendingInjections(
+  entry: Pick<HogletWithState, "hoglet" | "lastOutputAt">,
+  feedbackEvents: ReturnType<FeedbackEventRepository["listForNest"]>,
+): HogletWithState["pendingInjections"] {
+  const lastOutputMs = parseTimestamp(entry.lastOutputAt);
+  const pending = feedbackEvents.filter((event) => {
+    if (event.hogletTaskId !== entry.hoglet.taskId) return false;
+    if (event.source !== "hedgehog") return false;
+    if (event.routedOutcome !== "injected") return false;
+    const processed = event.processed ?? "unknown";
+    // Queued/unknown injections stay pending until the hoglet produces output
+    // after the injection; "active" only tells us the runtime consumed it.
+    if (processed !== "queued" && processed !== "unknown") return false;
+    const injectedMs = parseTimestamp(event.injectedAt);
+    if (injectedMs === null) return false;
+    return lastOutputMs === null || lastOutputMs <= injectedMs;
+  });
+
+  if (pending.length === 0) {
+    return { count: 0, oldestAgeMinutes: null };
+  }
+  const oldestMs = Math.min(
+    ...pending
+      .map((event) => parseTimestamp(event.injectedAt))
+      .filter((value): value is number => value !== null),
+  );
+  return {
+    count: pending.length,
+    oldestAgeMinutes: Math.max(0, Math.floor((Date.now() - oldestMs) / 60_000)),
+  };
+}
+
+function computeNestAnomalies(
+  hoglets: HogletWithState[],
+): TickContext["nestAnomalies"] {
+  const now = Date.now();
+  const silent = hoglets
+    .map((entry) => ({
+      entry,
+      createdMs: parseTimestamp(entry.hoglet.createdAt),
+    }))
+    .filter(
+      (item): item is { entry: HogletWithState; createdMs: number } =>
+        item.createdMs !== null &&
+        entryHasNoOutput(item.entry) &&
+        now - item.createdMs >= LOCKSTEP_SILENCE_MIN_QUIET_MS,
+    )
+    .sort((a, b) => a.createdMs - b.createdMs);
+
+  for (let start = 0; start < silent.length; start += 1) {
+    const group = silent.filter(
+      (item) =>
+        item.createdMs >= silent[start].createdMs &&
+        item.createdMs - silent[start].createdMs <=
+          LOCKSTEP_SILENCE_SPAWN_WINDOW_MS,
+    );
+    if (group.length >= LOCKSTEP_SILENCE_MIN_HOGLETS) {
+      const oldestMs = Math.min(...group.map((item) => item.createdMs));
+      return {
+        lockstepSilence: {
+          hogletIds: group.map((item) => item.entry.hoglet.id),
+          sinceMinutes: Math.max(0, Math.floor((now - oldestMs) / 60_000)),
+        },
+      };
+    }
+  }
+
+  return {};
+}
+
+function entryHasNoOutput(entry: HogletWithState): boolean {
+  return entry.lastOutputAt === null;
+}
+
+function latestOperatorMessageAt(recentChat: NestMessage[]): string | null {
+  return latestMessageAt(
+    recentChat,
+    (message) => message.kind === "user_message",
+  );
+}
+
+function latestHogletOutputAt(recentChat: NestMessage[]): string | null {
+  return latestMessageAt(
+    recentChat,
+    (message) =>
+      message.sourceTaskId !== null &&
+      (message.kind === "tool_result" || message.kind === "hoglet_summary"),
+  );
+}
+
+function latestMessageAt(
+  messages: NestMessage[],
+  predicate: (message: NestMessage) => boolean,
+): string | null {
+  let latest: string | null = null;
+  let latestMs: number | null = null;
+  for (const message of messages) {
+    if (!predicate(message)) continue;
+    const createdMs = parseTimestamp(message.createdAt);
+    if (createdMs === null) continue;
+    if (latestMs === null || createdMs > latestMs) {
+      latest = new Date(createdMs).toISOString();
+      latestMs = createdMs;
+    }
+  }
+  return latest;
+}
+
+function isAfterBaseline(
+  value: string | null,
+  baseline: string | null,
+): boolean {
+  const valueMs = parseTimestamp(value);
+  if (valueMs === null) return false;
+  const baselineMs = parseTimestamp(baseline);
+  return baselineMs === null ? true : valueMs > baselineMs;
+}
+
+function prStatusFingerprint(
+  hoglets: HogletWithState[],
+  prDependencies: TickContext["prDependencies"],
+): string {
+  return JSON.stringify({
+    hoglets: hoglets
+      .map((entry) => ({
+        taskId: entry.hoglet.taskId,
+        prUrl: entry.prUrl,
+        prState: entry.prState,
+        branch: entry.branch,
+      }))
+      .sort((a, b) => a.taskId.localeCompare(b.taskId)),
+    prDependencies: prDependencies
+      .map((edge) => ({
+        id: edge.id,
+        parentTaskId: edge.parentTaskId,
+        childTaskId: edge.childTaskId,
+        state: edge.state,
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id)),
+  });
+}
+
+function parseTimestamp(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+function truncateForScratchpad(value: string): string {
+  const singleLine = value.replace(/\s+/g, " ").trim();
+  // Leave room for the "Hold reasoning: " prefix under the 1000-char
+  // scratchpad schema limit.
+  if (singleLine.length <= 900) return singleLine;
+  return `${singleLine.slice(0, 900)}... (truncated)`;
 }

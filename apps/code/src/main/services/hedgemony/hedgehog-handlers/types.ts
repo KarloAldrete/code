@@ -5,9 +5,10 @@ import type { CloudTaskClient } from "../cloud-task-client";
 import type { FeedbackRoutingService } from "../feedback-routing-service";
 import type {
   HogletWithState,
+  NestAnomalies,
   NestRepositoryContext,
 } from "../hedgehog-prompts";
-import type { HedgehogToolName } from "../hedgehog-tools";
+import type { HedgehogToolName, HoldArgs } from "../hedgehog-tools";
 import type { HogletService } from "../hoglet-service";
 import type { NestService } from "../nest-service";
 import type { PrGraphService } from "../pr-graph-service";
@@ -29,6 +30,7 @@ export interface TickContext {
   readonly budget: TickBudget;
   readonly prDependencies: PrDependency[];
   readonly loadout: NestLoadout;
+  readonly nestAnomalies?: NestAnomalies;
   readonly repositoryContext: NestRepositoryContext;
   /**
    * Operator-override memory — decisions the operator explicitly made that
@@ -61,6 +63,7 @@ export interface HandlerResult {
   readonly success: boolean;
   readonly scratchpadSummary: string;
   readonly stopDispatch?: boolean;
+  readonly hold?: HoldArgs;
 }
 
 export interface HedgehogToolHandler {

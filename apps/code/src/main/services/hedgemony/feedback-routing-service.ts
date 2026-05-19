@@ -13,6 +13,7 @@ import type { NestService } from "./nest-service";
 import type {
   FeedbackEvent,
   FeedbackEventSource,
+  FeedbackProcessingState,
   InjectPromptEventPayload,
   RecordRoutedFeedbackInput,
 } from "./schemas";
@@ -159,6 +160,7 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
       payloadHash: input.payloadHash,
       payloadRef: input.payloadRef,
       routedOutcome: input.routedOutcome,
+      processed: input.processed,
       trustTier: input.trustTier ?? "external",
     });
 
@@ -174,6 +176,7 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
           type: "feedback_routed",
           source: input.source,
           outcome: input.routedOutcome,
+          processed: input.processed ?? "unknown",
           payloadRef: input.payloadRef,
           hogletTaskId: input.hogletTaskId,
         },
@@ -240,6 +243,7 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
       if (result.accepted) {
         this.recordHedgehogPromptOutcome(input, payloadHash, payloadRef, {
           routedOutcome: "injected",
+          processed: result.processed,
         });
         return;
       }
@@ -645,6 +649,7 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
           route.payloadRef,
           {
             routedOutcome: retry.accepted ? "injected" : "failed",
+            processed: retry.accepted ? retry.processed : undefined,
           },
         );
         return;
@@ -691,7 +696,10 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
     input: RouteHedgehogPromptInput,
     payloadHash: string,
     payloadRef: string,
-    outcome: { routedOutcome: "injected" | "failed" },
+    outcome: {
+      routedOutcome: "injected" | "failed";
+      processed?: FeedbackProcessingState;
+    },
   ): void {
     this.recordRoutedOutcome({
       nestId: input.nestId,
@@ -700,6 +708,7 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
       payloadHash,
       payloadRef,
       routedOutcome: outcome.routedOutcome,
+      processed: outcome.processed,
       trustTier: "internal",
     });
   }
@@ -871,9 +880,14 @@ function truncateSummary(value: string): string {
 
 function outcomeLabel(input: RecordRoutedFeedbackInput): string {
   if (input.routedOutcome === "injected") {
-    return input.source === "hedgehog"
-      ? "→ delivered to cloud run"
-      : "→ injected into live session";
+    if (input.source !== "hedgehog") return "→ injected into live session";
+    if (input.processed === "active") {
+      return "→ delivered to cloud run (active turn)";
+    }
+    if (input.processed === "queued") {
+      return "→ delivered to cloud run (queued; will be read at next turn boundary)";
+    }
+    return "→ delivered to cloud run";
   }
   if (input.routedOutcome === "follow_up_spawned") {
     return "→ spawned a follow-up hoglet";

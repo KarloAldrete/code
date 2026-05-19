@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { AnthropicToolDefinition } from "../llm-gateway/schemas";
+import { holdNextTrigger } from "./schemas";
 
 /**
  * The hedgehog's tool list. Brood management (spawn, raise, kill, message,
@@ -116,6 +117,38 @@ export const HEDGEHOG_TOOLS: AnthropicToolDefinition[] = [
         },
       },
       required: ["summary"],
+    },
+  },
+  {
+    name: "hold",
+    description:
+      "Deliberately wait for the next meaningful external signal when no productive state-change or query-state action is available this tick. Use when probes would stack up, an operator request has already been escalated, or downstream state is the only useful next signal. Counts as the tick's action.",
+    input_schema: {
+      type: "object",
+      properties: {
+        reason: {
+          type: "string",
+          description:
+            "Internal-only reason for the hold. Keep it precise and under 200 characters.",
+        },
+        nextTrigger: {
+          type: "string",
+          enum: [
+            "operator_response",
+            "hoglet_output",
+            "pr_status_change",
+            "timeout",
+          ],
+          description:
+            "External signal that should release this hold and allow the next normal tick.",
+        },
+        timeoutSeconds: {
+          type: "number",
+          description:
+            "Required when nextTrigger is timeout. Number of seconds to wait before the dispatcher releases the hold.",
+        },
+      },
+      required: ["reason", "nextTrigger"],
     },
   },
   {
@@ -248,6 +281,7 @@ export type HedgehogToolName =
   | "kill_hoglet"
   | "message_hoglet"
   | "write_audit_entry"
+  | "hold"
   | "mark_validated"
   | "request_repository_access"
   | "link_pr_dependency"
@@ -285,6 +319,29 @@ export const writeAuditEntryArgs = z.object({
   detail: z.string().trim().min(1).max(8000).optional(),
 });
 
+export const holdArgs = z
+  .object({
+    reason: z.string().trim().min(1).max(200),
+    nextTrigger: holdNextTrigger,
+    timeoutSeconds: z.number().int().positive().max(86_400).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.nextTrigger === "timeout" && value.timeoutSeconds === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["timeoutSeconds"],
+        message: "timeoutSeconds is required when nextTrigger is timeout",
+      });
+    }
+    if (value.nextTrigger !== "timeout" && value.timeoutSeconds !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["timeoutSeconds"],
+        message: "timeoutSeconds is only valid when nextTrigger is timeout",
+      });
+    }
+  });
+
 export const markValidatedArgs = z.object({
   summary: z.string().trim().min(1).max(8000),
   pr_urls: z.array(z.string().trim().min(1)).max(25).optional(),
@@ -318,6 +375,7 @@ export type RaiseHogletArgs = z.infer<typeof raiseHogletArgs>;
 export type KillHogletArgs = z.infer<typeof killHogletArgs>;
 export type MessageHogletArgs = z.infer<typeof messageHogletArgs>;
 export type WriteAuditEntryArgs = z.infer<typeof writeAuditEntryArgs>;
+export type HoldArgs = z.infer<typeof holdArgs>;
 export type MarkValidatedArgs = z.infer<typeof markValidatedArgs>;
 export type RequestRepositoryAccessArgs = z.infer<
   typeof requestRepositoryAccessArgs

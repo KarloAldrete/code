@@ -14,6 +14,7 @@ export type FeedbackEventOutcome =
   | "follow_up_spawned"
   | "failed";
 export type FeedbackTrustTier = "operator" | "internal" | "external";
+export type FeedbackProcessingState = "active" | "queued" | "unknown";
 
 export interface InsertFeedbackEventData {
   nestId: string | null;
@@ -23,6 +24,7 @@ export interface InsertFeedbackEventData {
   payloadRef: string;
   trustTier?: FeedbackTrustTier;
   routedOutcome: FeedbackEventOutcome;
+  processed?: FeedbackProcessingState;
 }
 
 export interface DedupeKey {
@@ -81,6 +83,7 @@ export class FeedbackEventRepository {
           nestId: data.nestId,
           payloadRef: data.payloadRef,
           trustTier: data.trustTier ?? existing.trustTier,
+          processed: data.processed ?? existing.processed ?? "unknown",
         })
         .where(byDedupeKey(data))
         .run();
@@ -132,6 +135,7 @@ export class FeedbackEventRepository {
       payloadRef: data.payloadRef,
       trustTier: data.trustTier ?? "external",
       routedOutcome: data.routedOutcome,
+      processed: data.processed ?? "unknown",
       injectedAt,
     };
     const returned = this.db

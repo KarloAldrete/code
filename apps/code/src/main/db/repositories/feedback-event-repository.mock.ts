@@ -55,6 +55,7 @@ export function createMockFeedbackEventRepository(): MockFeedbackEventRepository
       payloadRef: data.payloadRef,
       trustTier: data.trustTier ?? "external",
       routedOutcome: data.routedOutcome,
+      processed: data.processed ?? "unknown",
       injectedAt: new Date().toISOString(),
     };
     events.push(row);
@@ -79,6 +80,7 @@ export function createMockFeedbackEventRepository(): MockFeedbackEventRepository
           nestId: data.nestId,
           payloadRef: data.payloadRef,
           trustTier: data.trustTier ?? events[idx].trustTier,
+          processed: data.processed ?? events[idx].processed ?? "unknown",
         };
         events[idx] = next;
         return { inserted: false, row: { ...next } };

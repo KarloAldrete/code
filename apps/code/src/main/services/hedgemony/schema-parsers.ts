@@ -1,6 +1,7 @@
 import type { z } from "zod";
 import { logger } from "../../utils/logger";
 import {
+  type ActiveHoldState,
   type NestLoadout,
   nestLoadout,
   type scratchpadEntrySchema,
@@ -12,6 +13,7 @@ const schemaLog = logger.scope("hedgemony-schemas");
 export interface HedgehogPersistedState {
   scratchpad: z.infer<typeof scratchpadEntrySchema>[];
   observedTerminalRunKeys: Record<string, string>;
+  activeHold: ActiveHoldState | null;
 }
 
 /**
@@ -74,9 +76,10 @@ export function parseHedgehogState(
   return {
     scratchpad: result.data.scratchpad ?? [],
     observedTerminalRunKeys: result.data.observedTerminalRunKeys ?? {},
+    activeHold: result.data.activeHold ?? null,
   };
 }
 
 function emptyHedgehogState(): HedgehogPersistedState {
-  return { scratchpad: [], observedTerminalRunKeys: {} };
+  return { scratchpad: [], observedTerminalRunKeys: {}, activeHold: null };
 }
