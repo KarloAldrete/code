@@ -299,10 +299,11 @@ export const hedgemonyRouter = router({
   }),
   feedback: router({
     /**
-     * Live stream of `injectPrompt` events. The renderer hook
+     * Live stream of non-hedgehog `injectPrompt` events. The renderer hook
      * `useHedgemonyPromptRouter` subscribes once at app level and either
      * calls the existing `sendPromptToAgent` for connected sessions or
-     * calls `nests.spawnFollowUpHoglet` for closed ones.
+     * calls `nests.spawnFollowUpHoglet` for closed ones. Hedgehog-originated
+     * messages are delivered directly from main to cloud runs.
      */
     onInjectPrompt: publicProcedure.subscription(async function* ({ signal }) {
       const service = getFeedbackRoutingService();

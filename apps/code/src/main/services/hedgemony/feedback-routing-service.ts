@@ -45,6 +45,11 @@ const FAILING_CONCLUSIONS = new Set<string>([
   "timed_out",
   "action_required",
 ]);
+const HEDGEHOG_FOLLOW_UP_FALLBACK_STATUSES = new Set<TaskRunStatus>([
+  "completed",
+  "failed",
+  "cancelled",
+]);
 
 export const FeedbackRoutingEvent = {
   InjectPrompt: "injectPrompt",
@@ -60,6 +65,7 @@ interface RouteHedgehogPromptInput {
   nestId: string;
   prompt: string;
   toolCallId: string;
+  latestRunId?: string | null;
   targetRunStatus?: TaskRunStatus | null;
 }
 
@@ -178,13 +184,12 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
     return row;
   }
 
-  routeHedgehogPrompt(input: RouteHedgehogPromptInput): void {
+  async routeHedgehogPrompt(input: RouteHedgehogPromptInput): Promise<void> {
     const payloadRef = `hedgehog-message:${input.nestId}:${input.toolCallId}`;
     const payloadHash = sha256(
       `${payloadRef}:${input.hogletId}:${input.prompt}`,
     );
-
-    this.tryEmitInject({
+    const payload: InjectPromptEventPayload = {
       taskId: input.taskId,
       hogletId: input.hogletId,
       nestId: input.nestId,
@@ -195,7 +200,71 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
       prUrl: "",
       fallbackPrompt: input.prompt,
       targetRunStatus: input.targetRunStatus ?? null,
-    });
+    };
+
+    if (!this.canDirectInjectHedgehogPrompt(input)) {
+      if (this.shouldFallbackHedgehogPromptToFollowUp(input)) {
+        this.tryEmitInject(payload, "internal");
+        return;
+      }
+      if (input.targetRunStatus === "in_progress") {
+        if (!this.tryReserveInject(payload, "internal")) return;
+        await this.recoverHedgehogPromptRoute(input, payload, {
+          attemptedRunId: input.latestRunId ?? null,
+          payloadHash,
+          payloadRef,
+        });
+        return;
+      }
+      this.recordRoutedOutcome({
+        nestId: input.nestId,
+        hogletTaskId: input.taskId,
+        source: "hedgehog",
+        payloadHash,
+        payloadRef,
+        routedOutcome: "failed",
+        trustTier: "internal",
+      });
+      return;
+    }
+
+    if (!this.tryReserveInject(payload, "internal")) return;
+
+    try {
+      const result = await this.cloudTasks.injectPrompt({
+        taskId: input.taskId,
+        taskRunId: input.latestRunId,
+        prompt: input.prompt,
+        authoredBy: "hedgehog",
+      });
+      if (result.accepted) {
+        this.recordHedgehogPromptOutcome(input, payloadHash, payloadRef, {
+          routedOutcome: "injected",
+        });
+        return;
+      }
+      if (result.reason === "run_unavailable") {
+        await this.recoverHedgehogPromptRoute(input, payload, {
+          attemptedRunId: input.latestRunId,
+          payloadHash,
+          payloadRef,
+        });
+        return;
+      }
+      this.recordHedgehogPromptOutcome(input, payloadHash, payloadRef, {
+        routedOutcome: "failed",
+      });
+    } catch (error) {
+      log.warn("hedgehog prompt direct injection failed", {
+        taskId: input.taskId,
+        runId: input.latestRunId,
+        payloadRef,
+        error: stringifyError(error),
+      });
+      this.recordHedgehogPromptOutcome(input, payloadHash, payloadRef, {
+        routedOutcome: "failed",
+      });
+    }
   }
 
   /**
@@ -484,18 +553,28 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
    * `recordRoutedOutcome` runs still sees the pending row and skips
    * re-emitting. Returns `false` if the slot was already reserved.
    */
-  private tryEmitInject(payload: InjectPromptEventPayload): boolean {
+  private tryEmitInject(
+    payload: InjectPromptEventPayload,
+    trustTier: "internal" | "external" = "external",
+  ): boolean {
+    if (!this.tryReserveInject(payload, trustTier)) return false;
+    this.emitInject(payload);
+    return true;
+  }
+
+  private tryReserveInject(
+    payload: InjectPromptEventPayload,
+    trustTier: "internal" | "external",
+  ): boolean {
     const { reserved } = this.feedbackRepo.tryReservePending({
       nestId: payload.nestId,
       hogletTaskId: payload.taskId,
       source: payload.source,
       payloadHash: payload.payloadHash,
       payloadRef: payload.payloadRef,
-      trustTier: "external",
+      trustTier,
     });
-    if (!reserved) return false;
-    this.emitInject(payload);
-    return true;
+    return reserved;
   }
 
   private emitInject(payload: InjectPromptEventPayload): void {
@@ -513,6 +592,116 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
         droppedPayloadRef: dropped?.payloadRef,
       });
     }
+  }
+
+  private canDirectInjectHedgehogPrompt(
+    input: RouteHedgehogPromptInput,
+  ): input is RouteHedgehogPromptInput & { latestRunId: string } {
+    return Boolean(
+      input.latestRunId && input.targetRunStatus === "in_progress",
+    );
+  }
+
+  private shouldFallbackHedgehogPromptToFollowUp(
+    input: RouteHedgehogPromptInput,
+  ): boolean {
+    return Boolean(
+      input.nestId &&
+        input.targetRunStatus &&
+        HEDGEHOG_FOLLOW_UP_FALLBACK_STATUSES.has(input.targetRunStatus),
+    );
+  }
+
+  private async recoverHedgehogPromptRoute(
+    input: RouteHedgehogPromptInput,
+    payload: InjectPromptEventPayload,
+    route: {
+      attemptedRunId: string | null;
+      payloadHash: string;
+      payloadRef: string;
+    },
+  ): Promise<void> {
+    try {
+      const { latestRun } = await this.cloudTasks.getTaskWithLatestRun(
+        input.taskId,
+      );
+      const latestStatus = latestRun?.status ?? null;
+      const latestRunId = latestRun?.id ?? null;
+
+      if (
+        latestStatus === "in_progress" &&
+        latestRunId &&
+        latestRunId !== route.attemptedRunId
+      ) {
+        const retry = await this.cloudTasks.injectPrompt({
+          taskId: input.taskId,
+          taskRunId: latestRunId,
+          prompt: input.prompt,
+          authoredBy: "hedgehog",
+        });
+        this.recordHedgehogPromptOutcome(
+          input,
+          route.payloadHash,
+          route.payloadRef,
+          {
+            routedOutcome: retry.accepted ? "injected" : "failed",
+          },
+        );
+        return;
+      }
+
+      if (
+        latestStatus &&
+        HEDGEHOG_FOLLOW_UP_FALLBACK_STATUSES.has(latestStatus)
+      ) {
+        this.emitInject({
+          ...payload,
+          targetRunStatus: latestStatus,
+        });
+        return;
+      }
+
+      this.recordHedgehogPromptOutcome(
+        input,
+        route.payloadHash,
+        route.payloadRef,
+        {
+          routedOutcome: "failed",
+        },
+      );
+    } catch (error) {
+      log.warn("hedgehog prompt recovery failed", {
+        taskId: input.taskId,
+        attemptedRunId: route.attemptedRunId,
+        payloadRef: route.payloadRef,
+        error: stringifyError(error),
+      });
+      this.recordHedgehogPromptOutcome(
+        input,
+        route.payloadHash,
+        route.payloadRef,
+        {
+          routedOutcome: "failed",
+        },
+      );
+    }
+  }
+
+  private recordHedgehogPromptOutcome(
+    input: RouteHedgehogPromptInput,
+    payloadHash: string,
+    payloadRef: string,
+    outcome: { routedOutcome: "injected" | "failed" },
+  ): void {
+    this.recordRoutedOutcome({
+      nestId: input.nestId,
+      hogletTaskId: input.taskId,
+      source: "hedgehog",
+      payloadHash,
+      payloadRef,
+      routedOutcome: outcome.routedOutcome,
+      trustTier: "internal",
+    });
   }
 }
 
@@ -682,14 +871,16 @@ function truncateSummary(value: string): string {
 
 function outcomeLabel(input: RecordRoutedFeedbackInput): string {
   if (input.routedOutcome === "injected") {
-    return "→ injected into live session";
+    return input.source === "hedgehog"
+      ? "→ delivered to cloud run"
+      : "→ injected into live session";
   }
   if (input.routedOutcome === "follow_up_spawned") {
     return "→ spawned a follow-up hoglet";
   }
   if (input.routedOutcome === "failed") {
     return input.source === "hedgehog"
-      ? "→ could not deliver: the hoglet's task tab is not currently open. Open the hoglet to deliver the message, or wait for the run to complete."
+      ? "→ could not deliver: the hoglet's cloud run is not currently accepting messages. Wait for the run to advance or for its hoglet summary, then retry only if the question is still useful."
       : "→ no active session, no nest; logged only";
   }
   return "";

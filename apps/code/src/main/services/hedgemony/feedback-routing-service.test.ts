@@ -158,6 +158,7 @@ function createMockCloudTaskClient(prUrl: string | null): CloudTaskClient {
       },
       latestRun: null,
     })),
+    injectPrompt: vi.fn(async () => ({ accepted: true })),
   } as unknown as CloudTaskClient;
 }
 
@@ -691,7 +692,218 @@ describe("FeedbackRoutingService", () => {
     expect(nests.emitMessageAppended).toHaveBeenCalledTimes(1);
   });
 
-  it("explains failed hedgehog messages as detached task-tab delivery", () => {
+  it("injects hedgehog messages directly into an in-progress cloud run", async () => {
+    const cloudTasks = {
+      injectPrompt: vi.fn(async () => ({ accepted: true })),
+      getTaskWithLatestRun: vi.fn(),
+    } as unknown as CloudTaskClient;
+    const service = new FeedbackRoutingService(
+      createMockHogletService([]),
+      nests,
+      createMockGitService({}),
+      cloudTasks,
+      feedbackRepo as unknown as FeedbackEventRepository,
+      nestChat,
+    );
+    const received: InjectPromptEventPayload[] = [];
+    service.on(FeedbackRoutingEvent.InjectPrompt, (payload) => {
+      received.push(payload);
+    });
+
+    await service.routeHedgehogPrompt({
+      taskId: "task-1",
+      hogletId: "hoglet-1",
+      nestId: "nest-1",
+      prompt: "Status?",
+      toolCallId: "tool-1",
+      latestRunId: "run-1",
+      targetRunStatus: "in_progress",
+    });
+
+    expect(cloudTasks.injectPrompt).toHaveBeenCalledWith({
+      taskId: "task-1",
+      taskRunId: "run-1",
+      prompt: "Status?",
+      authoredBy: "hedgehog",
+    });
+    expect(received).toHaveLength(0);
+    expect(feedbackRepo._events[0]).toMatchObject({
+      source: "hedgehog",
+      routedOutcome: "injected",
+      trustTier: "internal",
+    });
+    expect(nestChat.recordHedgehogMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.stringContaining("→ delivered to cloud run"),
+      }),
+    );
+  });
+
+  it("retries hedgehog delivery against the fresh latest run when the tick run id is stale", async () => {
+    const latestRun = {
+      id: "run-2",
+      task: "task-1",
+      status: "in_progress",
+      output: null,
+      branch: null,
+    };
+    const cloudTasks = {
+      injectPrompt: vi
+        .fn()
+        .mockResolvedValueOnce({ accepted: false, reason: "run_unavailable" })
+        .mockResolvedValueOnce({ accepted: true }),
+      getTaskWithLatestRun: vi.fn(async (taskId: string) => ({
+        task: { id: taskId, latest_run: latestRun },
+        latestRun,
+      })),
+    } as unknown as CloudTaskClient;
+    const service = new FeedbackRoutingService(
+      createMockHogletService([]),
+      nests,
+      createMockGitService({}),
+      cloudTasks,
+      feedbackRepo as unknown as FeedbackEventRepository,
+      nestChat,
+    );
+    const received: InjectPromptEventPayload[] = [];
+    service.on(FeedbackRoutingEvent.InjectPrompt, (payload) => {
+      received.push(payload);
+    });
+
+    await service.routeHedgehogPrompt({
+      taskId: "task-1",
+      hogletId: "hoglet-1",
+      nestId: "nest-1",
+      prompt: "Status?",
+      toolCallId: "tool-1",
+      latestRunId: "run-1",
+      targetRunStatus: "in_progress",
+    });
+
+    expect(cloudTasks.injectPrompt).toHaveBeenNthCalledWith(1, {
+      taskId: "task-1",
+      taskRunId: "run-1",
+      prompt: "Status?",
+      authoredBy: "hedgehog",
+    });
+    expect(cloudTasks.injectPrompt).toHaveBeenNthCalledWith(2, {
+      taskId: "task-1",
+      taskRunId: "run-2",
+      prompt: "Status?",
+      authoredBy: "hedgehog",
+    });
+    expect(cloudTasks.getTaskWithLatestRun).toHaveBeenCalledWith("task-1");
+    expect(received).toHaveLength(0);
+    expect(feedbackRepo._events[0]).toMatchObject({
+      source: "hedgehog",
+      routedOutcome: "injected",
+      trustTier: "internal",
+    });
+  });
+
+  it("records failed hedgehog delivery when the cloud run rejects the prompt", async () => {
+    const cloudTasks = {
+      injectPrompt: vi.fn(async () => ({
+        accepted: false,
+        reason: "rejected",
+        message: "Agent is busy",
+      })),
+      getTaskWithLatestRun: vi.fn(),
+    } as unknown as CloudTaskClient;
+    const service = new FeedbackRoutingService(
+      createMockHogletService([]),
+      nests,
+      createMockGitService({}),
+      cloudTasks,
+      feedbackRepo as unknown as FeedbackEventRepository,
+      nestChat,
+    );
+    const received: InjectPromptEventPayload[] = [];
+    service.on(FeedbackRoutingEvent.InjectPrompt, (payload) => {
+      received.push(payload);
+    });
+
+    await service.routeHedgehogPrompt({
+      taskId: "task-1",
+      hogletId: "hoglet-1",
+      nestId: "nest-1",
+      prompt: "Status?",
+      toolCallId: "tool-1",
+      latestRunId: "run-1",
+      targetRunStatus: "in_progress",
+    });
+
+    expect(cloudTasks.injectPrompt).toHaveBeenCalledWith({
+      taskId: "task-1",
+      taskRunId: "run-1",
+      prompt: "Status?",
+      authoredBy: "hedgehog",
+    });
+    expect(cloudTasks.getTaskWithLatestRun).not.toHaveBeenCalled();
+    expect(received).toHaveLength(0);
+    expect(feedbackRepo._events[0]).toMatchObject({
+      source: "hedgehog",
+      routedOutcome: "failed",
+      trustTier: "internal",
+    });
+  });
+
+  it("falls back to a follow-up when stale hedgehog delivery discovers a terminal latest run", async () => {
+    const latestRun = {
+      id: "run-2",
+      task: "task-1",
+      status: "completed",
+      output: null,
+      branch: null,
+    };
+    const cloudTasks = {
+      injectPrompt: vi.fn(async () => ({
+        accepted: false,
+        reason: "run_unavailable",
+      })),
+      getTaskWithLatestRun: vi.fn(async (taskId: string) => ({
+        task: { id: taskId, latest_run: latestRun },
+        latestRun,
+      })),
+    } as unknown as CloudTaskClient;
+    const service = new FeedbackRoutingService(
+      createMockHogletService([]),
+      nests,
+      createMockGitService({}),
+      cloudTasks,
+      feedbackRepo as unknown as FeedbackEventRepository,
+      nestChat,
+    );
+    const received: InjectPromptEventPayload[] = [];
+    service.on(FeedbackRoutingEvent.InjectPrompt, (payload) => {
+      received.push(payload);
+    });
+
+    await service.routeHedgehogPrompt({
+      taskId: "task-1",
+      hogletId: "hoglet-1",
+      nestId: "nest-1",
+      prompt: "Please follow up.",
+      toolCallId: "tool-1",
+      latestRunId: "run-1",
+      targetRunStatus: "in_progress",
+    });
+
+    expect(cloudTasks.getTaskWithLatestRun).toHaveBeenCalledWith("task-1");
+    expect(received).toHaveLength(1);
+    expect(received[0]).toMatchObject({
+      source: "hedgehog",
+      fallbackPrompt: "Please follow up.",
+      targetRunStatus: "completed",
+    });
+    expect(feedbackRepo._events[0]).toMatchObject({
+      source: "hedgehog",
+      routedOutcome: "pending",
+      trustTier: "internal",
+    });
+  });
+
+  it("records failed hedgehog delivery when no in-progress run can accept it", async () => {
     const service = new FeedbackRoutingService(
       createMockHogletService([]),
       nests,
@@ -701,30 +913,70 @@ describe("FeedbackRoutingService", () => {
       nestChat,
     );
 
-    service.recordRoutedOutcome({
+    await service.routeHedgehogPrompt({
+      taskId: "task-1",
+      hogletId: "hoglet-1",
       nestId: "nest-1",
-      hogletTaskId: "task-1",
-      source: "hedgehog",
-      payloadHash: "hash-hedgehog",
-      payloadRef: "hedgehog-message:nest-1:tool-1",
-      routedOutcome: "failed",
-      trustTier: "internal",
+      prompt: "Status?",
+      toolCallId: "tool-1",
+      latestRunId: null,
+      targetRunStatus: "queued",
     });
 
     expect(nestChat.recordHedgehogMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         body: expect.stringContaining(
-          "the hoglet's task tab is not currently open",
+          "the hoglet's cloud run is not currently accepting messages",
         ),
       }),
     );
     expect(nestChat.recordHedgehogMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         body: expect.stringContaining(
-          "Open the hoglet to deliver the message, or wait for the run to complete.",
+          "retry only if the question is still useful",
         ),
       }),
     );
+  });
+
+  it("emits a follow-up fallback event for terminal hedgehog targets", async () => {
+    const cloudTasks = createMockCloudTaskClient(null);
+    const service = new FeedbackRoutingService(
+      createMockHogletService([]),
+      nests,
+      createMockGitService({}),
+      cloudTasks,
+      feedbackRepo as unknown as FeedbackEventRepository,
+      nestChat,
+    );
+    const received: InjectPromptEventPayload[] = [];
+    service.on(FeedbackRoutingEvent.InjectPrompt, (payload) => {
+      received.push(payload);
+    });
+
+    await service.routeHedgehogPrompt({
+      taskId: "task-1",
+      hogletId: "hoglet-1",
+      nestId: "nest-1",
+      prompt: "Please address this follow-up.",
+      toolCallId: "tool-1",
+      latestRunId: "run-1",
+      targetRunStatus: "completed",
+    });
+
+    expect(cloudTasks.injectPrompt).not.toHaveBeenCalled();
+    expect(received).toHaveLength(1);
+    expect(received[0]).toMatchObject({
+      taskId: "task-1",
+      source: "hedgehog",
+      fallbackPrompt: "Please address this follow-up.",
+      targetRunStatus: "completed",
+    });
+    expect(feedbackRepo._events[0]).toMatchObject({
+      source: "hedgehog",
+      routedOutcome: "pending",
+      trustTier: "internal",
+    });
   });
 
   it("keeps failed external feedback copy as no-route logged-only", () => {

@@ -177,8 +177,8 @@ async function initializeServices(): Promise<void> {
 
   // Boot the feedback router. Polls each hoglet's PR for new review comments
   // and CI failures; emits `injectPrompt` events consumed by a renderer hook
-  // that injects them via the existing `sendPromptToAgent`. Inert until a
-  // hoglet exists and has an open PR.
+  // for those external feedback paths. Hedgehog-originated messages are
+  // delivered directly from main to cloud runs.
   const feedbackRoutingService = container.get<FeedbackRoutingService>(
     MAIN_TOKENS.FeedbackRoutingService,
   );

@@ -35,12 +35,13 @@ export const messageHogletHandler: HedgehogToolHandler = {
       );
     }
 
-    deps.feedbackRouting.routeHedgehogPrompt({
+    await deps.feedbackRouting.routeHedgehogPrompt({
       taskId: entry.hoglet.taskId,
       hogletId: entry.hoglet.id,
       nestId: ctx.nest.id,
       prompt: args.prompt,
       toolCallId: block.id,
+      latestRunId: entry.latestRunId,
       targetRunStatus: ROUTABLE_RUN_STATUSES.has(
         entry.taskRunStatus as TaskRunStatus,
       )
@@ -60,7 +61,7 @@ export const messageHogletHandler: HedgehogToolHandler = {
     });
     return {
       success: true,
-      scratchpadSummary: `message_hoglet injected for ${args.hoglet_id}`,
+      scratchpadSummary: `message_hoglet routed for ${args.hoglet_id}`,
     };
   },
 };

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("../../utils/logger.js", () => ({
   logger: {
     scope: () => ({
+      info: vi.fn(),
       error: vi.fn(),
       warn: vi.fn(),
     }),
@@ -143,6 +144,85 @@ describe("CloudTaskClient", () => {
       "https://app.posthog.test/api/projects/42/tasks/task-1/",
       { method: "DELETE" },
     );
+  });
+
+  it("injects hedgehog prompts through the cloud run command endpoint", async () => {
+    const auth = createAuthMock(42);
+    (auth.authenticatedFetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      jsonResponse({ jsonrpc: "2.0", id: "hedgemony-1", result: {} }),
+    );
+    const client = new CloudTaskClient(auth);
+
+    await expect(
+      client.injectPrompt({
+        taskId: "task-1",
+        taskRunId: "run-1",
+        prompt: "Status?",
+        authoredBy: "hedgehog",
+      }),
+    ).resolves.toEqual({ accepted: true });
+
+    expect(auth.authenticatedFetch).toHaveBeenCalledWith(
+      fetch,
+      "https://app.posthog.test/api/projects/42/tasks/task-1/runs/run-1/command/",
+      expect.objectContaining({ method: "POST" }),
+    );
+    const init = (auth.authenticatedFetch as ReturnType<typeof vi.fn>).mock
+      .calls[0][2] as RequestInit;
+    expect(JSON.parse(init.body as string)).toEqual({
+      jsonrpc: "2.0",
+      method: "user_message",
+      params: {
+        content:
+          "Message from the Hedgemony hedgehog orchestrating this nest:\n\nStatus?",
+      },
+      id: expect.stringMatching(/^hedgemony-hedgehog-/),
+    });
+  });
+
+  it("reports unavailable runs when prompt injection cannot find an active run", async () => {
+    const auth = createAuthMock(42);
+    (auth.authenticatedFetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      textResponse("No active session for this run", { status: 400 }),
+    );
+    const client = new CloudTaskClient(auth);
+
+    await expect(
+      client.injectPrompt({
+        taskId: "task-1",
+        taskRunId: "run-1",
+        prompt: "Status?",
+        authoredBy: "hedgehog",
+      }),
+    ).resolves.toMatchObject({
+      accepted: false,
+      reason: "run_unavailable",
+    });
+  });
+
+  it("reports command-level injection rejections", async () => {
+    const auth = createAuthMock(42);
+    (auth.authenticatedFetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      jsonResponse({
+        jsonrpc: "2.0",
+        id: "hedgemony-1",
+        error: { message: "Agent is busy" },
+      }),
+    );
+    const client = new CloudTaskClient(auth);
+
+    await expect(
+      client.injectPrompt({
+        taskId: "task-1",
+        taskRunId: "run-1",
+        prompt: "Status?",
+        authoredBy: "hedgehog",
+      }),
+    ).resolves.toEqual({
+      accepted: false,
+      reason: "rejected",
+      message: "Agent is busy",
+    });
   });
 
   it("lists accessible repository slugs from the integration cache", async () => {

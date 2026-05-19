@@ -1223,7 +1223,7 @@ describe("HedgehogTickService", () => {
     expect(audits.some((m) => m.body.includes("Failed to spawn"))).toBe(true);
   });
 
-  it("message_hoglet emits an InjectPrompt event via feedbackRouting", async () => {
+  it("message_hoglet routes prompts via feedbackRouting", async () => {
     const hoglet = makeHoglet({ id: "h1", taskId: "task-1" });
     const mocks = setupMocks({
       hoglets: [hoglet],

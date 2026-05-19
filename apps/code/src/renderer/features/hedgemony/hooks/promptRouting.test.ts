@@ -21,34 +21,34 @@ function makePayload(
 }
 
 describe("resolveHedgemonyPromptRoute", () => {
-  it("injects when the session is connected", () => {
+  it("injects external feedback when the session is connected", () => {
     expect(
       resolveHedgemonyPromptRoute({
-        payload: makePayload(),
+        payload: makePayload({
+          source: "pr_review",
+          prUrl: "https://github.com/org/repo/pull/1",
+        }),
         sessionStatus: "connected",
-        latestRunStatus: "in_progress",
       }),
     ).toBe("inject");
   });
 
-  it("suppresses hedgehog follow-up spawning for active detached runs", () => {
+  it("spawns follow-ups for hedgehog fallback events even with stale connected session state", () => {
     expect(
       resolveHedgemonyPromptRoute({
         payload: makePayload({ targetRunStatus: "in_progress" }),
-        sessionStatus: "disconnected",
-        latestRunStatus: null,
+        sessionStatus: "connected",
       }),
-    ).toBe("suppress_hedgehog_follow_up");
+    ).toBe("spawn_follow_up");
   });
 
-  it("uses task summary status when the event has no target status", () => {
+  it("fails detached events without a nest", () => {
     expect(
       resolveHedgemonyPromptRoute({
-        payload: makePayload({ targetRunStatus: null }),
+        payload: makePayload({ nestId: null }),
         sessionStatus: "disconnected",
-        latestRunStatus: "queued",
       }),
-    ).toBe("suppress_hedgehog_follow_up");
+    ).toBe("failed");
   });
 
   it("still spawns follow-ups for external feedback", () => {
@@ -60,7 +60,6 @@ describe("resolveHedgemonyPromptRoute", () => {
           prUrl: "https://github.com/org/repo/pull/1",
         }),
         sessionStatus: "disconnected",
-        latestRunStatus: "in_progress",
       }),
     ).toBe("spawn_follow_up");
   });

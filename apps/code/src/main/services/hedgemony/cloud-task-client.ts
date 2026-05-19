@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { inject, injectable } from "inversify";
 import { z } from "zod";
 import type {
@@ -188,6 +189,15 @@ const signalReportArtefactsResponseSchema = z
   })
   .passthrough();
 
+const taskRunCommandResponseSchema = z
+  .object({
+    jsonrpc: z.string().optional(),
+    id: z.unknown().optional(),
+    result: z.unknown().optional(),
+    error: z.unknown().optional(),
+  })
+  .passthrough();
+
 /**
  * Reject `apiHost` values that would let the cloud API base URL escape into a
  * path component or non-HTTPS scheme. Auth state is the source of truth for
@@ -233,6 +243,14 @@ interface UpdateTaskRunPatch {
   status?: TaskRunStatus;
   errorMessage?: string | null;
 }
+
+export type CloudTaskPromptInjectionResult =
+  | { accepted: true }
+  | {
+      accepted: false;
+      reason: "run_unavailable" | "rejected";
+      message?: string;
+    };
 
 /**
  * Thin main-process client for the cloud task API. Mirrors the renderer-side
@@ -443,6 +461,61 @@ export class CloudTaskClient {
       response,
       taskSchema,
     )) as unknown as Task;
+  }
+
+  async injectPrompt(input: {
+    taskId: string;
+    taskRunId: string;
+    prompt: string;
+    authoredBy: "hedgehog";
+  }): Promise<CloudTaskPromptInjectionResult> {
+    const { apiHost, teamId } = await this.resolveContext();
+    const url = `${apiHost}/api/projects/${teamId}/tasks/${input.taskId}/runs/${input.taskRunId}/command/`;
+    const response = await this.auth.authenticatedFetch(fetch, url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        method: "user_message",
+        params: {
+          content: formatInjectedPrompt(input),
+        },
+        id: `hedgemony-${input.authoredBy}-${crypto.randomUUID()}`,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      const reason =
+        response.status === 400 || response.status === 404
+          ? "run_unavailable"
+          : "rejected";
+      log.warn("injectPrompt failed", {
+        taskId: input.taskId,
+        taskRunId: input.taskRunId,
+        status: response.status,
+        reason,
+        errorText,
+      });
+      return { accepted: false, reason, message: errorText || undefined };
+    }
+
+    const data = await parseJsonResponse(
+      "POST /tasks/{id}/runs/{runId}/command/",
+      response,
+      taskRunCommandResponseSchema,
+    );
+    if (data.error != null) {
+      const message = commandErrorMessage(data.error);
+      log.warn("injectPrompt command rejected", {
+        taskId: input.taskId,
+        taskRunId: input.taskRunId,
+        error: message,
+      });
+      return { accepted: false, reason: "rejected", message };
+    }
+
+    return { accepted: true };
   }
 
   async updateTaskRun(
@@ -697,4 +770,25 @@ export class CloudTaskClient {
     this.cachedFallbackContext = { apiHost, teamId: id };
     return { apiHost, teamId: id };
   }
+}
+
+function formatInjectedPrompt(input: {
+  prompt: string;
+  authoredBy: "hedgehog";
+}): string {
+  return `Message from the Hedgemony hedgehog orchestrating this nest:\n\n${input.prompt}`;
+}
+
+function commandErrorMessage(error: unknown): string {
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object") {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string") return message;
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return "Command rejected";
+    }
+  }
+  return "Command rejected";
 }

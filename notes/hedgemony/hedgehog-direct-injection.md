@@ -58,11 +58,12 @@ whether or not any operator has its task tab open.
 ## Approach
 
 Main-side direct injection: when the hedgehog calls `message_hoglet`,
-`FeedbackRoutingService.routeHedgehogPrompt` calls a new
-`CloudTaskClient.injectPrompt(taskRunId, prompt)` method directly,
-which POSTs the prompt to whatever cloud-task endpoint the renderer's
-`sendPromptToAgent` ultimately resolves to. The renderer is removed
-from the loop for hedgehog-source events entirely.
+`FeedbackRoutingService.routeHedgehogPrompt` calls
+`CloudTaskClient.injectPrompt(taskId, taskRunId, prompt)` directly.
+That method POSTs a `user_message` JSON-RPC command to the cloud run's
+existing `/command/` endpoint, matching the endpoint the renderer uses
+for connected cloud sessions. The renderer is removed from the loop for
+hedgehog-source events entirely.
 
 For non-hedgehog sources (`pr_review`, `ci`, `issue`), the existing
 renderer-mediated routing stays in place — those routes deliberately
@@ -76,21 +77,10 @@ hedgehog events no longer flow through the renderer.
 ## Open questions (resolve before implementation)
 
 1. **Does the cloud-task API expose a main-callable
-   message-injection endpoint?** The renderer's `sendPromptToAgent`
-   ultimately routes through some path that reaches the cloud agent's
-   conversation. We need to confirm:
-   - That path goes through an HTTP endpoint (not just an in-process
-     ACP socket).
-   - Authentication for that endpoint accepts the same credentials
-     the renderer uses, callable from main without an existing
-     socket.
-   - Idempotency: if main sends a duplicate (e.g., on retry), the
-     cloud handles it cleanly.
-
-   If the answer is "the only path is the ACP socket the renderer
-   holds," then the design changes — main would need to hold its own
-   persistent ACP socket per active hoglet, or the cloud-side would
-   need a new HTTP endpoint.
+   message-injection endpoint?** Resolved: the existing
+   `/api/projects/{project}/tasks/{task}/runs/{run}/command/`
+   endpoint accepts authenticated JSON-RPC `user_message` commands from
+   main using the same auth plumbing as other cloud task calls.
 
 2. **What does the cloud-task user-vs-bot identity look like for a
    main-originated injection?** The existing path injects as the
@@ -123,6 +113,7 @@ Add a new method:
 
 ```ts
 async injectPrompt(input: {
+  taskId: string;
   taskRunId: string;
   prompt: string;
   /** Source identifier — hedgemony surfaces this so the cloud-side
@@ -132,84 +123,48 @@ async injectPrompt(input: {
 }): Promise<{ accepted: true } | { accepted: false; reason: string }>;
 ```
 
-Implementation depends on the answer to open question 1. Likely a
-POST to a cloud endpoint like
-`/api/projects/{project}/tasks/{task}/runs/{run}/inject/` with body
-`{ prompt, authored_by: "hedgehog" }`. The fetch is
-authenticated via the existing `auth.authenticatedFetch` plumbing
-already used by `createTaskRun` and `getTaskWithLatestRun`.
+Implementation POSTs to
+`/api/projects/{project}/tasks/{task}/runs/{run}/command/` with a
+JSON-RPC body like
+`{ "jsonrpc": "2.0", "method": "user_message", "params": { "content": "..." } }`.
+The fetch is authenticated via the existing `auth.authenticatedFetch`
+plumbing already used by `createTaskRun` and `getTaskWithLatestRun`.
 
 Error handling:
-- 404 → run terminated → return `{ accepted: false, reason:
-  "run_terminated" }`.
-- 5xx → throw → caller decides whether to retry on next tick.
+- 400 / 404 → no active run/session available → return
+  `{ accepted: false, reason: "run_unavailable" }`.
+- JSON-RPC `error` → return `{ accepted: false, reason: "rejected" }`
+  with the command error message.
+- Network or unsafe response shape → throw; the caller records a failed
+  route and the hedgehog can retry on a later tick if still useful.
+- JSON-RPC ids use a fresh UUID so same-millisecond hedgehog messages
+  do not share telemetry/correlation ids.
 
 ### 2. `FeedbackRoutingService.routeHedgehogPrompt` rewires
 
 **File:** `apps/code/src/main/services/hedgemony/feedback-routing-service.ts`
 
-`routeHedgehogPrompt` currently emits an `InjectPrompt` event for the
-renderer router to handle. Change it to:
+`routeHedgehogPrompt` no longer emits renderer events for active
+hedgehog messages. It now:
 
-```ts
-async routeHedgehogPrompt(input: RouteHedgehogPromptInput): Promise<void> {
-  // 1) Resolve the active taskRunId for this hoglet via cloudTasks.
-  const { latestRun } = await this.cloudTasks.getTaskWithLatestRun(input.taskId);
-  if (!latestRun) {
-    // No active run. Fall back to the existing spawn-follow-up path.
-    return this.emitInjectPromptForRendererFallback(input);
-  }
+- Uses the `latestRunId` and `targetRunStatus` already captured in the
+  hedgehog tick context.
+- Directly injects only when the target run is `in_progress`.
+- On `run_unavailable`, re-reads the task's latest run once. If the
+  latest run is a different `in_progress` run, it retries injection
+  there; if the latest run is terminal, it emits the terminal follow-up
+  fallback instead.
+- Preserves the narrow renderer fallback for terminal
+  `completed` / `failed` / `cancelled` targets, where spawning a
+  follow-up remains the right behavior.
+- Records `failed` for queued, not-started, unknown, unavailable, or
+  rejected runs so the hedgehog knows that specific message was not
+  delivered.
 
-  // 2) Try direct injection.
-  const result = await this.cloudTasks.injectPrompt({
-    taskRunId: latestRun.id,
-    prompt: input.prompt,
-    authoredBy: "hedgehog",
-  });
-
-  if (result.accepted) {
-    this.recordRoutedOutcome({
-      nestId: input.nestId,
-      hogletTaskId: input.taskId,
-      source: "hedgehog",
-      payloadHash: input.payloadHash,
-      payloadRef: input.payloadRef,
-      routedOutcome: "injected",
-      trustTier: "internal",
-    });
-    return;
-  }
-
-  // 3) Cloud-side rejected (e.g., run terminated mid-flight). Fall
-  //    back to spawn-follow-up via the renderer-mediated path.
-  if (result.reason === "run_terminated") {
-    return this.emitInjectPromptForRendererFallback(input);
-  }
-
-  // 4) Other rejection (auth, validation, etc.). Surface as failed.
-  this.recordRoutedOutcome({ ..., routedOutcome: "failed" });
-}
-
-private emitInjectPromptForRendererFallback(input: RouteHedgehogPromptInput): void {
-  this.emit(FeedbackRoutingEvent.InjectPrompt, {
-    taskId: input.taskId,
-    hogletId: input.hogletId,
-    nestId: input.nestId,
-    source: "hedgehog",
-    targetRunStatus: input.targetRunStatus,
-    payloadRef: input.payloadRef,
-    payloadHash: input.payloadHash,
-    prompt: input.prompt,
-    prUrl: "",
-    fallbackPrompt: input.prompt,
-  });
-}
-```
-
-The renderer-fallback path is intentionally narrow: it fires only
-when the cloud-side told us the run is terminated and a follow-up
-spawn is the right answer. The renderer router's existing logic for
-that case (`spawn_follow_up`) handles it.
+The renderer-fallback path is intentionally narrow: it fires only for
+terminal targets where a follow-up spawn is the right answer. The
+renderer router's existing logic for that case (`spawn_follow_up`)
+handles it.
 
 ### 3. `useHedgemonyPromptRouter` simplification
 
@@ -229,41 +184,44 @@ Either:
   main to only emit when fallback is the answer. The hook checks
   `payload.source === "hedgehog"` and assumes spawn-follow-up.
 
-Cleaner: the second option. The router decision in `promptRouting.ts`
-shrinks to:
+Cleaner: the second option. Hedgehog events that reach the renderer are
+already fallback events, so the router never tries to inject them into a
+possibly stale connected session:
 
 ```ts
 export function resolveHedgemonyPromptRoute(input: {
   payload: InjectPromptEventPayload;
   sessionStatus: string | null | undefined;
 }): PromptRoute {
+  if (input.payload.source === "hedgehog") {
+    return input.payload.nestId ? "spawn_follow_up" : "failed";
+  }
   if (input.sessionStatus === "connected") return "inject";
   return input.payload.nestId ? "spawn_follow_up" : "failed";
 }
 ```
 
-No more `targetRunStatus`, no more `suppress_hedgehog_follow_up`.
-The `targetRunStatus` field on `InjectPromptEventPayload` can be
-removed (or marked deprecated).
+No more `suppress_hedgehog_follow_up`. `targetRunStatus` remains on
+the payload for the narrow terminal fallback path.
 
 ### 4. System-prompt cleanup
 
 **File:** `apps/code/src/main/services/hedgemony/hedgehog-prompts.ts`
 
 Remove the short-term "task tab not open" Operational Posture clause
-once direct injection is in place. The hedgehog should never see
-that audit in normal operation; if it ever appears (run terminated,
-cloud rejected), the existing fallback path handles it identically
-to a terminated-run probe.
+once direct injection is in place. The hedgehog may still see older
+history with that wording, but new failed routes should describe the
+cloud run as not accepting messages.
 
 ### 5. Tests
 
 - `cloud-task-client.test.ts`: cover `injectPrompt` happy path,
-  404 → `{ accepted: false, reason: "run_terminated" }`, 5xx
-  throws.
+  400 / 404 → `{ accepted: false, reason: "run_unavailable" }`,
+  and JSON-RPC command rejection.
 - `feedback-routing-service.test.ts`: cover three branches of
-  `routeHedgehogPrompt` — direct-inject success, run-terminated
-  fallback to emit, other-rejection failed outcome.
+  `routeHedgehogPrompt` — direct-inject success, terminal fallback
+  to emit, non-accepting run failure, and one-shot stale latest-run
+  recovery.
 - `promptRouting.test.ts`: simplify since `suppress_hedgehog_follow_up`
   is gone.
 - `useHedgemonyPromptRouter.test.ts`: remove the
@@ -274,31 +232,13 @@ to a terminated-run probe.
   conversation (visible when you later attach the tab) without
   attachment being a precondition.
 
-## Cloud-side prerequisites (if open question 1 requires it)
+## Cloud-side prerequisites
 
-If the cloud-task API doesn't currently expose a main-callable
-inject endpoint, we'll need to coordinate with the posthog-cloud
-team to add one. Specification:
-
-- **Endpoint:** `POST /api/projects/{project_id}/cloud_tasks/{task_id}/runs/{run_id}/inject/`
-- **Auth:** same Bearer token the renderer uses; main authenticates
-  with the operator's credentials (no separate service account).
-- **Request:** `{ prompt: string, authored_by: "hedgehog" | "operator" }`.
-- **Response:** `202 Accepted` with the queued message identifier,
-  or `404` if the run has terminated, or `409` if the agent isn't
-  in a state that accepts new prompts (e.g., a previous prompt is
-  still being processed and serialization is required).
-- **Conversation surfacing:** when an `authored_by: "hedgehog"`
-  prompt is injected, the agent's session log should record it as
-  distinct from operator-authored prompts, so renderer-side rendering
-  can style hedgehog messages (e.g., with a small "from hedgehog"
-  badge instead of the operator avatar).
-
-If coordination is heavy, fall back to a transitional approach:
-main holds its own lightweight ACP socket per active hoglet (used
-purely for injection, not observation) and routes hedgehog messages
-through it. More code in main, no cloud-side change required, but
-duplicates connection state.
+None for the first version. The existing cloud run `/command/`
+endpoint is enough for main-side text injection. A future backend
+improvement could add first-class `authored_by: "hedgehog"` metadata
+so attached renderer sessions can style hedgehog-authored messages
+separately from operator-authored prompts.
 
 ## Out of scope
 
@@ -306,6 +246,10 @@ duplicates connection state.
   unavailable (5xx, network blip). In-tick retry handled by the
   hedgehog's own tool-error recovery; multi-tick durability is a
   follow-up if observed reliability is a problem.
+- Multi-attempt recovery for repeated latest-run churn. The direct
+  injection path does one fresh latest-run read and one retry, then
+  records a failed route if the cloud run still cannot accept the
+  message.
 - Operator-authored direct injection from outside the renderer (e.g.,
   CLI command). Not a current need; main's `injectPrompt` is
   hedgemony-only.
@@ -318,11 +262,9 @@ duplicates connection state.
 1. **`CloudTaskClient.injectPrompt` + unit tests** — pure
    addition, no behavior change yet.
 2. **`FeedbackRoutingService.routeHedgehogPrompt` rewire** — switches
-   the hedgehog path to direct injection with run-terminated
-   fallback.
-3. **Router simplification** — `promptRouting.ts` shrinks,
-   `useHedgemonyPromptRouter` loses the suppress branch and the
-   targetRunStatus plumbing.
+   the hedgehog path to direct injection with terminal-run fallback.
+3. **Router simplification** — `promptRouting.ts` shrinks and
+   `useHedgemonyPromptRouter` loses the suppress branch.
 4. **System-prompt cleanup** — remove the "task tab not open"
    Operational Posture clause.
 
