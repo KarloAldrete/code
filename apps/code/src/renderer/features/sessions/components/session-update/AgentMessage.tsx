@@ -154,7 +154,7 @@ export const AgentMessage = memo(function AgentMessage({
         content={content}
         componentsOverride={agentComponents}
       />
-      <Box className="-top-3 absolute right-1 z-10 rounded-(--radius-2) border border-(--gray-5) bg-(--gray-1) opacity-0 shadow-sm transition-opacity group-hover/msg:opacity-100">
+      <Box className="absolute top-1 left-full ml-2 opacity-0 transition-opacity group-hover/msg:opacity-100">
         <Tooltip content={copied ? "Copied!" : "Copy message"}>
           <IconButton
             size="1"
@@ -163,7 +163,7 @@ export const AgentMessage = memo(function AgentMessage({
             onClick={handleCopy}
             aria-label="Copy message"
           >
-            {copied ? <Check size={12} /> : <Copy size={12} />}
+            {copied ? <Check size={14} /> : <Copy size={14} />}
           </IconButton>
         </Tooltip>
       </Box>
