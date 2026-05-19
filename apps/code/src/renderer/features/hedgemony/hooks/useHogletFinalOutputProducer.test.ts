@@ -153,6 +153,30 @@ describe("useHogletFinalOutputProducer", () => {
     });
   });
 
+  it("records final output when the hoglet roster appears after the completed session", async () => {
+    seedSession({
+      events: [
+        agentMessage("Verification complete. All checks pass.", 1),
+        turnComplete("end_turn", 2),
+      ],
+    });
+    renderHook(() => useHogletFinalOutputProducer());
+
+    act(() => {
+      seedHoglet();
+    });
+
+    await waitFor(() => {
+      expect(mockRecordHogletFinalOutput).toHaveBeenCalledWith({
+        nestId: "nest-1",
+        hogletId: "hoglet-1",
+        taskId: "task-1",
+        runId: "run-1",
+        body: "Verification complete. All checks pass.",
+      });
+    });
+  });
+
   it("does not subscribe or record when hedgemony is disabled", () => {
     mockUseFeatureFlag.mockReturnValue(false);
     seedHoglet();

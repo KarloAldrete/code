@@ -14,10 +14,14 @@ import type { AuthService } from "../auth/service";
 import { CloudTaskClient } from "./cloud-task-client";
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
+  const headers = new Headers(init.headers);
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
   return new Response(JSON.stringify(body), {
     status: init.status ?? 200,
     statusText: init.statusText,
-    headers: { "Content-Type": "application/json" },
+    headers,
   });
 }
 
@@ -143,6 +147,47 @@ describe("CloudTaskClient", () => {
       fetch,
       "https://app.posthog.test/api/projects/42/tasks/task-1/",
       { method: "DELETE" },
+    );
+  });
+
+  it("fetches task run session logs with pagination metadata", async () => {
+    const auth = createAuthMock(42);
+    (auth.authenticatedFetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      jsonResponse(
+        [
+          {
+            type: "notification",
+            timestamp: "2026-05-13T00:00:00Z",
+            notification: {
+              jsonrpc: "2.0",
+              method: "_posthog/turn_complete",
+            },
+          },
+        ],
+        { headers: { "X-Has-More": "true" } },
+      ),
+    );
+    const client = new CloudTaskClient(auth);
+
+    await expect(
+      client.getTaskRunSessionLogs({
+        taskId: "task-1",
+        runId: "run-1",
+        offset: 200,
+        limit: 50,
+      }),
+    ).resolves.toMatchObject({
+      hasMore: true,
+      entries: [
+        expect.objectContaining({
+          type: "notification",
+          timestamp: "2026-05-13T00:00:00Z",
+        }),
+      ],
+    });
+    expect(auth.authenticatedFetch).toHaveBeenCalledWith(
+      fetch,
+      "https://app.posthog.test/api/projects/42/tasks/task-1/runs/run-1/session_logs/?limit=50&offset=200",
     );
   });
 

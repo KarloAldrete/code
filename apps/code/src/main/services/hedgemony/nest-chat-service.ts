@@ -193,7 +193,7 @@ export class NestChatService {
     taskId: string;
     runId: string;
     body: string;
-    terminalReason: "completed" | "final_output";
+    terminalReason: "completed" | "failed" | "cancelled" | "final_output";
   }): { message: NestMessage; created: boolean } {
     const existing = this.messages.findHogletSummaryByRun(
       input.nestId,

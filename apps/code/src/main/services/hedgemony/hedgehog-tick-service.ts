@@ -73,6 +73,7 @@ const LOCKSTEP_SILENCE_MIN_HOGLETS = 2;
 const LOCKSTEP_SILENCE_SPAWN_WINDOW_MS = 5 * 60_000;
 const LOCKSTEP_SILENCE_MIN_QUIET_MS = 30 * 60_000;
 const PENDING_INJECTION_LOOKBACK = 100;
+const EVENT_HOLD_FALLBACK_TIMEOUT_SECONDS = 60 * 60;
 
 function getHeartbeatIntervalMs(): number {
   const envOverride = process.env.HEDGEMONY_HEARTBEAT_INTERVAL_MS;
@@ -230,6 +231,8 @@ export class HedgehogTickService {
       if (event.message.kind === "user_message") {
         // Operator chat → trigger tick.
         void this.enqueueTick(data.nestId, "operator_chat");
+      } else if (isHogletOutputMessage(event.message)) {
+        void this.enqueueTick(data.nestId, "hoglet_output");
       }
       return;
     }
@@ -582,28 +585,33 @@ export class HedgehogTickService {
     nest: Nest,
     hold: ActiveHoldState,
   ): Promise<{ released: boolean; reason: string }> {
+    const recentChat = this.nestChat.list({ nestId: nest.id, detail: false });
+    const latestOperator = latestOperatorMessageAt(recentChat);
+    if (
+      isAfterBaseline(
+        latestOperator,
+        hold.lastOperatorMessageAt ?? hold.createdAt,
+      )
+    ) {
+      return { released: true, reason: "operator response arrived" };
+    }
+
+    const timeoutAt = holdTimeoutAt(hold);
+    if (timeoutAt && Date.now() >= Date.parse(timeoutAt)) {
+      return {
+        released: true,
+        reason:
+          hold.nextTrigger === "timeout"
+            ? "timeout fired"
+            : "hold fallback timeout fired",
+      };
+    }
+
     if (hold.nextTrigger === "timeout") {
-      const timeoutAt =
-        hold.timeoutAt ??
-        new Date(
-          Date.parse(hold.createdAt) + (hold.timeoutSeconds ?? 0) * 1000,
-        ).toISOString();
-      // Timeout holds wake on the next heartbeat or external nest event after
-      // timeoutAt; they do not need a separate timer per held nest.
-      if (Date.now() >= Date.parse(timeoutAt)) {
-        return { released: true, reason: "timeout fired" };
-      }
       return { released: false, reason: "timeout still pending" };
     }
 
-    const recentChat = this.nestChat.list({ nestId: nest.id, detail: false });
     if (hold.nextTrigger === "operator_response") {
-      const latest = latestOperatorMessageAt(recentChat);
-      if (
-        isAfterBaseline(latest, hold.lastOperatorMessageAt ?? hold.createdAt)
-      ) {
-        return { released: true, reason: "operator response arrived" };
-      }
       return { released: false, reason: "awaiting operator response" };
     }
 
@@ -632,17 +640,16 @@ export class HedgehogTickService {
     recentChat: NestMessage[],
   ): ActiveHoldState {
     const createdAt = new Date().toISOString();
+    const timeoutSeconds =
+      hold.timeoutSeconds ?? EVENT_HOLD_FALLBACK_TIMEOUT_SECONDS;
     return {
       reason: hold.reason,
       nextTrigger: hold.nextTrigger,
-      timeoutSeconds: hold.timeoutSeconds,
+      timeoutSeconds,
       createdAt,
-      timeoutAt:
-        hold.nextTrigger === "timeout" && hold.timeoutSeconds
-          ? new Date(
-              Date.parse(createdAt) + hold.timeoutSeconds * 1000,
-            ).toISOString()
-          : undefined,
+      timeoutAt: new Date(
+        Date.parse(createdAt) + timeoutSeconds * 1000,
+      ).toISOString(),
       lastOperatorMessageAt: latestOperatorMessageAt(recentChat),
       lastHogletOutputAt: latestHogletOutputAt(recentChat),
       prStatusFingerprint: prStatusFingerprint(ctx.hoglets, ctx.prDependencies),
@@ -1068,11 +1075,13 @@ function latestOperatorMessageAt(recentChat: NestMessage[]): string | null {
 }
 
 function latestHogletOutputAt(recentChat: NestMessage[]): string | null {
-  return latestMessageAt(
-    recentChat,
-    (message) =>
-      message.sourceTaskId !== null &&
-      (message.kind === "tool_result" || message.kind === "hoglet_summary"),
+  return latestMessageAt(recentChat, isHogletOutputMessage);
+}
+
+function isHogletOutputMessage(message: NestMessage): boolean {
+  return (
+    message.sourceTaskId !== null &&
+    (message.kind === "tool_result" || message.kind === "hoglet_summary")
   );
 }
 
@@ -1102,6 +1111,15 @@ function isAfterBaseline(
   if (valueMs === null) return false;
   const baselineMs = parseTimestamp(baseline);
   return baselineMs === null ? true : valueMs > baselineMs;
+}
+
+function holdTimeoutAt(hold: ActiveHoldState): string | null {
+  if (hold.timeoutAt) return hold.timeoutAt;
+  const timeoutSeconds =
+    hold.timeoutSeconds ?? EVENT_HOLD_FALLBACK_TIMEOUT_SECONDS;
+  const createdMs = parseTimestamp(hold.createdAt);
+  if (createdMs === null) return null;
+  return new Date(createdMs + timeoutSeconds * 1000).toISOString();
 }
 
 function prStatusFingerprint(

@@ -11,6 +11,7 @@ import type {
   TaskRun,
   TaskRunStatus,
 } from "../../../shared/types";
+import type { StoredLogEntry } from "../../../shared/types/session-events";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import type { AuthService } from "../auth/service";
@@ -204,6 +205,16 @@ const taskRunCommandResponseSchema = z
   })
   .passthrough();
 
+const storedLogEntrySchema = z
+  .object({
+    type: z.string().min(1).max(128),
+    timestamp: z.string().optional(),
+    notification: z.unknown().optional(),
+  })
+  .passthrough();
+
+const sessionLogsResponseSchema = z.array(storedLogEntrySchema);
+
 /**
  * Reject `apiHost` values that would let the cloud API base URL escape into a
  * path component or non-HTTPS scheme. Auth state is the source of truth for
@@ -373,6 +384,52 @@ export class CloudTaskClient {
       taskSchema,
     )) as unknown as Task;
     return { task, latestRun: task.latest_run ?? null };
+  }
+
+  async getTaskRunSessionLogs(input: {
+    taskId: string;
+    runId: string;
+    offset?: number;
+    limit?: number;
+  }): Promise<{ entries: StoredLogEntry[]; hasMore: boolean }> {
+    const { apiHost, teamId } = await this.resolveContext();
+    const url = new URL(
+      `${apiHost}/api/projects/${teamId}/tasks/${input.taskId}/runs/${input.runId}/session_logs/`,
+    );
+    url.searchParams.set("limit", String(input.limit ?? 200));
+    url.searchParams.set("offset", String(input.offset ?? 0));
+
+    const response = await this.auth.authenticatedFetch(fetch, url.toString());
+    if (!response.ok) {
+      throw new Error(
+        `cloud_task_session_logs_fetch_failed: HTTP ${response.status} for task ${input.taskId} run ${input.runId}`,
+      );
+    }
+
+    const raw = await response.json();
+    const parsed = sessionLogsResponseSchema.safeParse(raw);
+    if (!parsed.success) {
+      log.warn("cloud API response rejected by schema", {
+        endpoint: "GET /tasks/{id}/runs/{runId}/session_logs/",
+        issues: parsed.error.issues.slice(0, 8).map((issue) => ({
+          path: issue.path,
+          code: issue.code,
+          message: issue.message,
+        })),
+      });
+      throw new CloudApiResponseError(
+        "GET /tasks/{id}/runs/{runId}/session_logs/",
+        parsed.error.issues.map((issue) => ({
+          path: issue.path,
+          message: issue.message,
+        })),
+      );
+    }
+
+    return {
+      entries: parsed.data as StoredLogEntry[],
+      hasMore: response.headers.get("X-Has-More") === "true",
+    };
   }
 
   async createTaskRun(

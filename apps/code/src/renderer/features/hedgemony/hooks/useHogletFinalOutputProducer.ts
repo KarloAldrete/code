@@ -50,9 +50,13 @@ export function useHogletFinalOutputProducer() {
       }
     };
 
-    const unsubscribe = useSessionStore.subscribe(handleStoreChange);
+    const unsubscribeSessions = useSessionStore.subscribe(handleStoreChange);
+    const unsubscribeHoglets = useHogletStore.subscribe(handleStoreChange);
     handleStoreChange();
-    return unsubscribe;
+    return () => {
+      unsubscribeSessions();
+      unsubscribeHoglets();
+    };
   }, [hedgemonyEnabled]);
 }
 

@@ -921,6 +921,34 @@ describe("HedgehogTickService", () => {
     expect(mocks.llm.promptWithTools).toHaveBeenCalledTimes(1);
   });
 
+  it("enqueues a tick when a hoglet output row is appended", async () => {
+    const mocks = setupMocks({
+      promptResponse: makePromptWithToolsResponse([]),
+    });
+    const service = buildService(mocks);
+
+    service.start();
+    try {
+      mocks.nestService.emit(HedgemonyEvent.NestChanged, {
+        nestId: "nest-1",
+        event: {
+          kind: "message_appended",
+          message: makeMessage({
+            kind: "hoglet_summary",
+            sourceTaskId: "task-1",
+            body: "I shipped it. PR is up.",
+          }),
+        },
+      });
+
+      await vi.waitFor(() => {
+        expect(mocks.llm.promptWithTools).toHaveBeenCalledTimes(1);
+      });
+    } finally {
+      service.stop();
+    }
+  });
+
   it("persists scratchpad between ticks", async () => {
     const mocks = setupMocks({
       promptResponse: makePromptWithToolsResponse([
@@ -943,6 +971,8 @@ describe("HedgehogTickService", () => {
   });
 
   it("persists active holds and suppresses free-text reasoning from summary chat", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-18T17:05:00.000Z"));
     const mocks = setupMocks({
       promptResponse: makePromptWithToolsResponse(
         [
@@ -981,12 +1011,19 @@ describe("HedgehogTickService", () => {
     const parsed = JSON.parse(
       mocks.stateRepo.findByNestId("nest-1")?.serializedStateJson ?? "{}",
     ) as {
-      activeHold?: { nextTrigger?: string; reason?: string } | null;
+      activeHold?: {
+        nextTrigger?: string;
+        reason?: string;
+        timeoutAt?: string;
+        timeoutSeconds?: number;
+      } | null;
       scratchpad?: Array<{ summary: string }>;
     };
     expect(parsed.activeHold).toMatchObject({
       nextTrigger: "hoglet_output",
       reason: "waiting for queued probes to be read",
+      timeoutSeconds: 3600,
+      timeoutAt: "2026-05-18T18:05:00.000Z",
     });
     expect(
       parsed.scratchpad?.some((entry) =>
@@ -996,6 +1033,8 @@ describe("HedgehogTickService", () => {
   });
 
   it("short-circuits an active hold until its trigger fires", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-18T17:06:00.000Z"));
     const mocks = setupMocks({
       recentChat: [
         makeMessage({
@@ -1097,6 +1136,113 @@ describe("HedgehogTickService", () => {
     ).toBe(true);
   });
 
+  it("releases any active hold when the operator sends a newer message", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-18T17:30:00.000Z"));
+    const mocks = setupMocks({
+      recentChat: [
+        makeMessage({
+          kind: "user_message",
+          body: "baseline operator note",
+          createdAt: "2026-05-18T17:00:00.000Z",
+        }),
+        makeMessage({
+          id: "message-operator-new",
+          kind: "user_message",
+          body: "Daniel finished awhile ago",
+          createdAt: "2026-05-18T17:20:00.000Z",
+        }),
+      ],
+      promptResponse: makePromptWithToolsResponse([
+        {
+          id: "t-1",
+          name: "write_audit_entry",
+          input: { summary: "operator override seen" },
+        },
+      ]),
+    });
+    mocks.stateRepo.upsert({
+      nestId: "nest-1",
+      state: "idle",
+      serializedStateJson: JSON.stringify({
+        scratchpad: [],
+        observedTerminalRunKeys: {},
+        activeHold: {
+          reason: "waiting for hoglet output",
+          nextTrigger: "hoglet_output",
+          createdAt: "2026-05-18T17:05:00.000Z",
+          lastOperatorMessageAt: "2026-05-18T17:00:00.000Z",
+          lastHogletOutputAt: null,
+        },
+      }),
+    });
+    const service = buildService(mocks);
+
+    await service.tick("nest-1", "operator_chat");
+
+    expect(mocks.llm.promptWithTools).toHaveBeenCalledTimes(1);
+    const persisted = JSON.parse(
+      mocks.stateRepo.findByNestId("nest-1")?.serializedStateJson ?? "{}",
+    ) as {
+      activeHold?: { nextTrigger?: string } | null;
+      scratchpad?: Array<{ summary: string }>;
+    };
+    expect(persisted.activeHold).toBeNull();
+    expect(
+      persisted.scratchpad?.some((entry) =>
+        entry.summary.includes("operator response arrived"),
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps hoglet_output holds pending before output, operator override, or fallback", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-18T17:30:00.000Z"));
+    const mocks = setupMocks({
+      recentChat: [
+        makeMessage({
+          kind: "user_message",
+          body: "baseline operator note",
+          createdAt: "2026-05-18T17:00:00.000Z",
+        }),
+      ],
+      promptResponse: makePromptWithToolsResponse([
+        {
+          id: "t-1",
+          name: "write_audit_entry",
+          input: { summary: "should not run" },
+        },
+      ]),
+    });
+    mocks.stateRepo.upsert({
+      nestId: "nest-1",
+      state: "idle",
+      serializedStateJson: JSON.stringify({
+        scratchpad: [],
+        observedTerminalRunKeys: {},
+        activeHold: {
+          reason: "waiting for hoglet output",
+          nextTrigger: "hoglet_output",
+          createdAt: "2026-05-18T17:16:46.000Z",
+          lastOperatorMessageAt: "2026-05-18T17:00:00.000Z",
+          lastHogletOutputAt: null,
+        },
+      }),
+    });
+    const service = buildService(mocks);
+
+    await service.tick("nest-1", "heartbeat");
+
+    expect(mocks.llm.promptWithTools).not.toHaveBeenCalled();
+    const persisted = JSON.parse(
+      mocks.stateRepo.findByNestId("nest-1")?.serializedStateJson ?? "{}",
+    ) as { activeHold?: { nextTrigger?: string; reason?: string } | null };
+    expect(persisted.activeHold).toMatchObject({
+      nextTrigger: "hoglet_output",
+      reason: "waiting for hoglet output",
+    });
+  });
+
   it("releases timeout holds on the next heartbeat after timeoutAt", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-18T17:10:01.000Z"));
@@ -1139,6 +1285,52 @@ describe("HedgehogTickService", () => {
     expect(
       persisted.scratchpad?.some((entry) =>
         entry.summary.includes("timeout fired"),
+      ),
+    ).toBe(true);
+  });
+
+  it("releases non-timeout holds after the fallback timeout", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-18T18:16:47.000Z"));
+    const mocks = setupMocks({
+      promptResponse: makePromptWithToolsResponse([
+        {
+          id: "t-1",
+          name: "write_audit_entry",
+          input: { summary: "fallback released" },
+        },
+      ]),
+    });
+    mocks.stateRepo.upsert({
+      nestId: "nest-1",
+      state: "idle",
+      serializedStateJson: JSON.stringify({
+        scratchpad: [],
+        observedTerminalRunKeys: {},
+        activeHold: {
+          reason: "wait for hoglet output",
+          nextTrigger: "hoglet_output",
+          createdAt: "2026-05-18T17:16:46.000Z",
+          lastOperatorMessageAt: "2026-05-18T17:00:00.000Z",
+          lastHogletOutputAt: null,
+        },
+      }),
+    });
+    const service = buildService(mocks);
+
+    await service.tick("nest-1", "heartbeat");
+
+    expect(mocks.llm.promptWithTools).toHaveBeenCalledTimes(1);
+    const persisted = JSON.parse(
+      mocks.stateRepo.findByNestId("nest-1")?.serializedStateJson ?? "{}",
+    ) as {
+      activeHold?: { nextTrigger?: string } | null;
+      scratchpad?: Array<{ summary: string }>;
+    };
+    expect(persisted.activeHold).toBeNull();
+    expect(
+      persisted.scratchpad?.some((entry) =>
+        entry.summary.includes("hold fallback timeout fired"),
       ),
     ).toBe(true);
   });

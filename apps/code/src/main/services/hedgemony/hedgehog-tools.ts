@@ -145,7 +145,7 @@ export const HEDGEHOG_TOOLS: AnthropicToolDefinition[] = [
         timeoutSeconds: {
           type: "number",
           description:
-            "Required when nextTrigger is timeout. Number of seconds to wait before the dispatcher releases the hold.",
+            "Required when nextTrigger is timeout. Number of seconds to wait before the dispatcher releases the hold. Other triggers receive a dispatcher fallback timeout automatically.",
         },
       },
       required: ["reason", "nextTrigger"],

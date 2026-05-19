@@ -1,6 +1,11 @@
 import crypto from "node:crypto";
 import { inject, injectable } from "inversify";
 import type { TaskRun, TaskRunStatus } from "../../../shared/types";
+import type {
+  AcpMessage,
+  JsonRpcMessage,
+  StoredLogEntry,
+} from "../../../shared/types/session-events";
 import type { FeedbackEventRepository } from "../../db/repositories/feedback-event-repository";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
@@ -25,7 +30,13 @@ const MAX_LOGIN_CHARS = 64;
 const MAX_FILE_PATH_CHARS = 512;
 const MAX_CI_NAME_CHARS = 256;
 const MAX_CI_URL_CHARS = 512;
+const MAX_BRANCH_CHARS = 256;
+const HOGLET_FINAL_OUTPUT_MAX_CHARS = 30_000;
 const MAX_HOGLET_SUMMARY_CHARS = 1200;
+const SESSION_LOG_PAGE_LIMIT = 200;
+const MAX_SESSION_LOG_PAGES_PER_POLL = 5;
+// Keep the ACP buffer bounded; a very chatty turn can preserve only the tail.
+const MAX_RUN_EVENT_BUFFER = 500;
 const FINAL_OUTPUT_PAYLOAD_TYPES = new Set([
   "final_output",
   "hoglet_final_output",
@@ -85,6 +96,10 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
   private pollHandle: ReturnType<typeof setInterval> | null = null;
   private readonly pending: InjectPromptEventPayload[] = [];
   private readonly lastPolledAt = new Map<string, number>();
+  // Process-local cursors. After app restart we may replay from offset 0, which
+  // is safe because nest-chat dedupes final-output and summary rows by run id.
+  private readonly runLogOffsets = new Map<string, number>();
+  private readonly runEventBuffers = new Map<string, AcpMessage[]>();
   private pollingNow = false;
 
   constructor(
@@ -327,8 +342,9 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
         hoglet.taskId,
       );
       const run = latestRun ?? task.latest_run ?? null;
+      await this.recordCloudLogFinalOutput(hoglet, run);
       this.recordFinalOutputHogletSummary(hoglet, run);
-      this.recordCompletedHogletSummary(hoglet, run);
+      this.recordTerminalRunHogletSummary(hoglet, run);
 
       const candidate = extractTaskRunPrUrl(run?.output ?? null);
       if (typeof candidate === "string" && candidate.length > 0) {
@@ -355,14 +371,89 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
     await this.pollPrCheckRuns(hoglet, prUrl);
   }
 
-  private recordCompletedHogletSummary(
+  private async recordCloudLogFinalOutput(
     hoglet: { id: string; taskId: string; nestId: string | null },
-    latestRun: Pick<TaskRun, "id" | "status" | "output"> | null,
+    latestRun: Pick<TaskRun, "id"> | null,
+  ): Promise<void> {
+    if (!hoglet.nestId) return;
+    if (!latestRun?.id) return;
+
+    const runKey = `${hoglet.taskId}:${latestRun.id}`;
+    const newEntries: StoredLogEntry[] = [];
+    let offset = this.runLogOffsets.get(runKey) ?? 0;
+
+    for (let page = 0; page < MAX_SESSION_LOG_PAGES_PER_POLL; page += 1) {
+      let result: Awaited<ReturnType<CloudTaskClient["getTaskRunSessionLogs"]>>;
+      try {
+        result = await this.cloudTasks.getTaskRunSessionLogs({
+          taskId: hoglet.taskId,
+          runId: latestRun.id,
+          offset,
+          limit: SESSION_LOG_PAGE_LIMIT,
+        });
+      } catch (error) {
+        log.debug("cloud task session logs fetch failed during poll", {
+          hogletId: hoglet.id,
+          taskId: hoglet.taskId,
+          runId: latestRun.id,
+          offset,
+          error: stringifyError(error),
+        });
+        return;
+      }
+
+      newEntries.push(...result.entries);
+      offset += result.entries.length;
+      if (!result.hasMore || result.entries.length === 0) break;
+    }
+
+    if (newEntries.length === 0) return;
+    this.runLogOffsets.set(runKey, offset);
+
+    const newEvents = newEntries.map(storedEntryToAcpMessage);
+    const buffer = [
+      ...(this.runEventBuffers.get(runKey) ?? []),
+      ...newEvents,
+    ].slice(-MAX_RUN_EVENT_BUFFER);
+    this.runEventBuffers.set(runKey, buffer);
+
+    if (!hasTurnComplete(newEvents)) return;
+
+    const output = extractTerminalAssistantOutput(buffer);
+    if (!output) return;
+
+    try {
+      const { message, created } = this.nestChat.recordHogletFinalOutput({
+        nestId: hoglet.nestId,
+        hogletId: hoglet.id,
+        taskId: hoglet.taskId,
+        runId: latestRun.id,
+        body: truncateFinalOutput(output),
+      });
+      if (created) {
+        this.nests.emitMessageAppended(message);
+      }
+    } catch (error) {
+      log.warn("failed to record hoglet final output from cloud logs", {
+        hogletId: hoglet.id,
+        taskId: hoglet.taskId,
+        runId: latestRun.id,
+        error: stringifyError(error),
+      });
+    }
+  }
+
+  private recordTerminalRunHogletSummary(
+    hoglet: { id: string; taskId: string; nestId: string | null },
+    latestRun: Pick<
+      TaskRun,
+      "id" | "status" | "output" | "branch" | "error_message"
+    > | null,
   ): void {
     if (!hoglet.nestId) return;
-    if (!latestRun || latestRun.status !== "completed") return;
+    if (!latestRun || !isSummaryWorthyTerminalStatus(latestRun.status)) return;
 
-    const body = extractDeliverableText(latestRun.output);
+    const body = extractTerminalRunSummary(latestRun);
     if (!body) return;
 
     try {
@@ -371,7 +462,7 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
         hogletId: hoglet.id,
         taskId: hoglet.taskId,
         runId: latestRun.id,
-        terminalReason: "completed",
+        terminalReason: latestRun.status,
         body,
       });
       if (created) {
@@ -790,15 +881,37 @@ function escapeXmlAttr(value: string): string {
     .replace(/'/g, "&apos;");
 }
 
-function extractDeliverableText(
-  output: Record<string, unknown> | null,
-): string | null {
-  const prUrl = extractTaskRunPrUrl(output);
+function isSummaryWorthyTerminalStatus(
+  status: TaskRunStatus,
+): status is "completed" | "failed" | "cancelled" {
+  return (
+    status === "completed" || status === "failed" || status === "cancelled"
+  );
+}
+
+function extractTerminalRunSummary(
+  run: Pick<TaskRun, "status" | "output" | "branch" | "error_message">,
+): string {
+  if (run.status === "failed") {
+    const message = run.error_message?.trim();
+    return message ? `Run failed: ${truncateSummary(message)}` : "Run failed.";
+  }
+
+  if (run.status === "cancelled") {
+    return "Run cancelled.";
+  }
+
+  const prUrl = extractTaskRunPrUrl(run.output);
   if (prUrl) {
     return `Run completed and produced a pull request: ${prUrl}`;
   }
 
-  return null;
+  const branch = extractTaskRunBranch(run.output) ?? run.branch;
+  if (branch) {
+    return `Run completed on branch: ${branch.slice(0, MAX_BRANCH_CHARS)}`;
+  }
+
+  return "Run completed without structured output. Review the task before deciding whether follow-up work is needed.";
 }
 
 function extractFinalOutputText(
@@ -870,6 +983,175 @@ function extractTaskRunPrUrl(
   }
 
   return null;
+}
+
+function extractTaskRunBranch(
+  output: Record<string, unknown> | null,
+): string | null {
+  if (!output) return null;
+
+  const direct = firstString(output, ["head_branch", "branch"]);
+  if (direct) return direct;
+
+  const nested = output.output;
+  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+    return firstString(nested as Record<string, unknown>, [
+      "head_branch",
+      "branch",
+    ]);
+  }
+
+  return null;
+}
+
+function firstString(
+  source: Record<string, unknown>,
+  keys: string[],
+): string | null {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+function storedEntryToAcpMessage(entry: StoredLogEntry): AcpMessage {
+  return {
+    type: "acp_message",
+    ts: entry.timestamp ? Date.parse(entry.timestamp) : Date.now(),
+    message: (entry.notification ?? {}) as JsonRpcMessage,
+  };
+}
+
+function hasTurnComplete(events: AcpMessage[]): boolean {
+  return events.some((event) => isTurnCompleteMessage(event.message));
+}
+
+function extractTerminalAssistantOutput(events: AcpMessage[]): string | null {
+  const turnCompleteIndex = findLastTerminalTurnCompleteIndex(events);
+  if (turnCompleteIndex === -1) return null;
+
+  let turnStartIndex = -1;
+  for (let index = turnCompleteIndex - 1; index >= 0; index -= 1) {
+    if (isTurnCompleteMessage(events[index].message)) {
+      turnStartIndex = index;
+      break;
+    }
+  }
+
+  const messages = collectAssistantText(
+    events.slice(turnStartIndex + 1, turnCompleteIndex),
+  );
+  const body = messages.join("\n\n").trim();
+  return body.length > 0 ? body : null;
+}
+
+function findLastTerminalTurnCompleteIndex(events: AcpMessage[]): number {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const message = events[index].message;
+    if (!isTurnCompleteMessage(message)) continue;
+    const params =
+      "params" in message
+        ? (message.params as { stopReason?: unknown } | undefined)
+        : undefined;
+    return params?.stopReason === "end_turn" ? index : -1;
+  }
+  return -1;
+}
+
+function isTurnCompleteMessage(message: JsonRpcMessage): boolean {
+  return (
+    hasJsonRpcMethod(message) &&
+    (message.method === "_posthog/turn_complete" ||
+      message.method === "turn_complete")
+  );
+}
+
+function collectAssistantText(events: AcpMessage[]): string[] {
+  const segments: string[] = [];
+  let chunkBuffer = "";
+
+  const flushChunks = () => {
+    const text = chunkBuffer.trim();
+    if (text) segments.push(text);
+    chunkBuffer = "";
+  };
+
+  for (const event of events) {
+    const message = event.message;
+    if (!hasJsonRpcMethod(message) || message.method !== "session/update") {
+      flushChunks();
+      continue;
+    }
+
+    const params = message.params as
+      | {
+          update?: {
+            sessionUpdate?: unknown;
+            content?: { type?: unknown; text?: unknown };
+            message?: unknown;
+          };
+        }
+      | undefined;
+    const update = params?.update;
+    if (!update) {
+      flushChunks();
+      continue;
+    }
+
+    if (update.sessionUpdate === "agent_message_chunk") {
+      const text = getTextFromUpdate(update);
+      if (text) chunkBuffer += text;
+      continue;
+    }
+
+    flushChunks();
+
+    if (update.sessionUpdate === "agent_message") {
+      const text = getTextFromUpdate(update);
+      if (text) segments.push(text.trim());
+    }
+  }
+
+  flushChunks();
+  return segments;
+}
+
+function hasJsonRpcMethod(
+  message: JsonRpcMessage,
+): message is JsonRpcMessage & { method: string; params?: unknown } {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    "method" in message &&
+    typeof message.method === "string"
+  );
+}
+
+function getTextFromUpdate(update: {
+  content?: { type?: unknown; text?: unknown };
+  message?: unknown;
+}): string | null {
+  if (
+    update.content?.type === "text" &&
+    typeof update.content.text === "string"
+  ) {
+    return update.content.text;
+  }
+
+  if (typeof update.message === "string") {
+    return update.message;
+  }
+
+  return null;
+}
+
+function truncateFinalOutput(body: string): string {
+  if (body.length <= HOGLET_FINAL_OUTPUT_MAX_CHARS) return body;
+  const suffix = "\n\n[Final output truncated for nest chat.]";
+  return `${body.slice(0, HOGLET_FINAL_OUTPUT_MAX_CHARS - suffix.length)}${suffix}`;
 }
 
 function truncateSummary(value: string): string {
