@@ -76,6 +76,10 @@ import type { LlmGatewayService } from "../llm-gateway/service";
 import type { CloudTaskClient } from "./cloud-task-client";
 import type { FeedbackRoutingService } from "./feedback-routing-service";
 import { HedgehogTickService } from "./hedgehog-tick-service";
+import {
+  MAX_SPAWN_HOGLET_PROMPT_CHARS,
+  MAX_SPAWN_HOGLET_TOOL_INPUT_CHARS,
+} from "./hedgehog-tools";
 import { readUserTaskPreferences } from "./hoglet-runtime-preferences";
 import type { HogletService } from "./hoglet-service";
 import type { NestChatService } from "./nest-chat-service";
@@ -200,6 +204,7 @@ function setupMocks(input: {
         | "cancelled";
       runId: string | null;
       prUrl?: string | null;
+      branch?: string | null;
       repository?: string | null;
       createdAt?: string | null;
       completedAt?: string | null;
@@ -314,7 +319,8 @@ function setupMocks(input: {
           ? ({
               id: state.runId,
               status: state.status,
-              branch: null,
+              branch: state.branch ?? null,
+              output: state.prUrl ? { pr_url: state.prUrl } : null,
               created_at: state.createdAt,
               completed_at: state.completedAt ?? null,
             } as never)
@@ -360,6 +366,7 @@ function setupMocks(input: {
 
   const git = {
     getPrDetailsByUrl: vi.fn(async () => null),
+    getPrDetailsByBranch: vi.fn(async () => null),
   } as unknown as GitService;
 
   const feedbackRouting = {
@@ -632,7 +639,7 @@ describe("HedgehogTickService", () => {
     const prompt = (mocks.llm.promptWithTools as ReturnType<typeof vi.fn>).mock
       .calls[0][0][0].content;
     expect(prompt).toContain(
-      "pending_injections: { count: 2, oldest_age_minutes: 20 }",
+      "pending_injections: { count: 1, oldest_age_minutes: 20 }",
     );
   });
 
@@ -719,8 +726,42 @@ describe("HedgehogTickService", () => {
       .calls[0][0][0].content;
     expect(prompt).toContain("nest_anomalies:");
     expect(prompt).toContain("lockstep_silence:");
+    expect(prompt).toContain("silent_hoglets:");
     expect(prompt).toContain("hoglet_ids: h1, h2");
     expect(prompt).toContain("since_minutes: 45");
+    expect(prompt).toContain("oldest_silent_minutes: 44");
+  });
+
+  it("reports silent single hoglets after ten minutes without output", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-18T18:00:00.000Z"));
+    const mocks = setupMocks({
+      hoglets: [
+        makeHoglet({
+          id: "h1",
+          taskId: "task-1",
+          createdAt: "2026-05-18T17:45:00.000Z",
+        }),
+      ],
+      hogletStates: {
+        "task-1": {
+          status: "in_progress",
+          runId: "run-1",
+          createdAt: "2026-05-18T17:49:00.000Z",
+        },
+      },
+      promptResponse: makePromptWithToolsResponse([]),
+    });
+    const service = buildService(mocks);
+
+    await service.tick("nest-1", "test");
+
+    const prompt = (mocks.llm.promptWithTools as ReturnType<typeof vi.fn>).mock
+      .calls[0][0][0].content;
+    expect(prompt).toContain("nest_anomalies:");
+    expect(prompt).toContain("silent_hoglets:");
+    expect(prompt).toContain("hoglet_ids: h1");
+    expect(prompt).toContain("oldest_silent_minutes: 11");
   });
 
   it("does not report lockstep silence when hoglets are outside the spawn window", async () => {
@@ -789,6 +830,45 @@ describe("HedgehogTickService", () => {
     };
     expect(first.state.state).toBe("ticking");
     expect(last.state.state).toBe("idle");
+  });
+
+  it("stringifies structured write_audit_entry summaries instead of rejecting them", async () => {
+    const mocks = setupMocks({
+      promptResponse: makePromptWithToolsResponse([
+        {
+          id: "tool-1",
+          name: "write_audit_entry",
+          input: {
+            summary: {
+              status: "blocked",
+              reason: "spawn prompt was too large",
+            },
+          },
+        },
+      ]),
+    });
+    const service = buildService(mocks);
+
+    await service.tick("nest-1", "test");
+
+    const auditBodies = (
+      mocks.nestChat.recordHedgehogMessage as ReturnType<typeof vi.fn>
+    ).mock.calls
+      .map(([args]) => args)
+      .filter((m) => m.kind === "audit")
+      .map((m) => m.body as string);
+    expect(
+      auditBodies.some(
+        (body) =>
+          body.includes('"status": "blocked"') &&
+          body.includes('"reason": "spawn prompt was too large"'),
+      ),
+    ).toBe(true);
+    expect(
+      auditBodies.some((body) =>
+        body.includes("Hedgehog tool write_audit_entry rejected"),
+      ),
+    ).toBe(false);
   });
 
   it("raises 3 idle hoglets when the LLM returns 3 raise_hoglet blocks", async () => {
@@ -1022,8 +1102,8 @@ describe("HedgehogTickService", () => {
     expect(parsed.activeHold).toMatchObject({
       nextTrigger: "hoglet_output",
       reason: "waiting for queued probes to be read",
-      timeoutSeconds: 3600,
-      timeoutAt: "2026-05-18T18:05:00.000Z",
+      timeoutSeconds: 600,
+      timeoutAt: "2026-05-18T17:15:00.000Z",
     });
     expect(
       parsed.scratchpad?.some((entry) =>
@@ -1223,7 +1303,7 @@ describe("HedgehogTickService", () => {
         activeHold: {
           reason: "waiting for hoglet output",
           nextTrigger: "hoglet_output",
-          createdAt: "2026-05-18T17:16:46.000Z",
+          createdAt: "2026-05-18T17:25:00.000Z",
           lastOperatorMessageAt: "2026-05-18T17:00:00.000Z",
           lastHogletOutputAt: null,
         },
@@ -1241,6 +1321,214 @@ describe("HedgehogTickService", () => {
       nextTrigger: "hoglet_output",
       reason: "waiting for hoglet output",
     });
+  });
+
+  it("persists explicit fallback timeouts for event-trigger holds", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-18T17:05:00.000Z"));
+    const mocks = setupMocks({
+      promptResponse: makePromptWithToolsResponse([
+        {
+          id: "t-1",
+          name: "hold",
+          input: {
+            reason: "waiting briefly for hoglet output",
+            nextTrigger: "hoglet_output",
+            timeoutSeconds: 300,
+          },
+        },
+      ]),
+    });
+    const service = buildService(mocks);
+
+    await service.tick("nest-1", "heartbeat");
+
+    const parsed = JSON.parse(
+      mocks.stateRepo.findByNestId("nest-1")?.serializedStateJson ?? "{}",
+    ) as {
+      activeHold?: {
+        nextTrigger?: string;
+        timeoutAt?: string;
+        timeoutSeconds?: number;
+      } | null;
+    };
+    expect(parsed.activeHold).toMatchObject({
+      nextTrigger: "hoglet_output",
+      timeoutSeconds: 300,
+      timeoutAt: "2026-05-18T17:10:00.000Z",
+    });
+  });
+
+  it("releases hoglet_output holds when cloud run state changes without a chat row", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-18T17:30:00.000Z"));
+    const hoglet = makeHoglet({ id: "h1", taskId: "task-1" });
+    const mocks = setupMocks({
+      hoglets: [hoglet],
+      hogletStates: {
+        "task-1": {
+          status: "in_progress",
+          runId: "run-1",
+          branch: "insight-wars/foundation",
+          createdAt: "2026-05-18T17:00:00.000Z",
+        },
+      },
+      recentChat: [
+        makeMessage({
+          kind: "user_message",
+          body: "baseline operator note",
+          createdAt: "2026-05-18T17:00:00.000Z",
+        }),
+      ],
+      promptResponse: makePromptWithToolsResponse([
+        {
+          id: "t-1",
+          name: "write_audit_entry",
+          input: { summary: "run state seen" },
+        },
+      ]),
+    });
+    mocks.stateRepo.upsert({
+      nestId: "nest-1",
+      state: "idle",
+      serializedStateJson: JSON.stringify({
+        scratchpad: [],
+        observedTerminalRunKeys: {},
+        activeHold: {
+          reason: "waiting for hoglet output",
+          nextTrigger: "hoglet_output",
+          createdAt: "2026-05-18T17:25:00.000Z",
+          lastOperatorMessageAt: "2026-05-18T17:00:00.000Z",
+          lastHogletOutputAt: null,
+          prStatusFingerprint: JSON.stringify({
+            hoglets: [
+              {
+                taskId: "task-1",
+                latestRunId: "run-1",
+                taskRunStatus: "in_progress",
+                latestRunCompletedAt: null,
+                prUrl: null,
+                prState: null,
+                branch: null,
+              },
+            ],
+            prDependencies: [],
+          }),
+        },
+      }),
+    });
+    const service = buildService(mocks);
+
+    await service.tick("nest-1", "heartbeat");
+
+    expect(mocks.llm.promptWithTools).toHaveBeenCalledTimes(1);
+    const persisted = JSON.parse(
+      mocks.stateRepo.findByNestId("nest-1")?.serializedStateJson ?? "{}",
+    ) as {
+      activeHold?: { nextTrigger?: string } | null;
+      scratchpad?: Array<{ summary: string }>;
+    };
+    expect(persisted.activeHold).toBeNull();
+    expect(
+      persisted.scratchpad?.some((entry) =>
+        entry.summary.includes("hoglet run state changed"),
+      ),
+    ).toBe(true);
+  });
+
+  it("releases hoglet_output holds when a branch PR appears before cloud output records it", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-18T17:30:00.000Z"));
+    const hoglet = makeHoglet({ id: "h1", taskId: "task-1" });
+    const mocks = setupMocks({
+      hoglets: [hoglet],
+      hogletStates: {
+        "task-1": {
+          status: "in_progress",
+          runId: "run-1",
+          branch: "insight-wars-card-resolvers-ai",
+          repository: "Brooker-Fam/nexus-games",
+          createdAt: "2026-05-18T17:00:00.000Z",
+        },
+      },
+      recentChat: [
+        makeMessage({
+          kind: "user_message",
+          body: "baseline operator note",
+          createdAt: "2026-05-18T17:00:00.000Z",
+        }),
+      ],
+      promptResponse: makePromptWithToolsResponse([
+        {
+          id: "t-1",
+          name: "write_audit_entry",
+          input: { summary: "branch PR seen" },
+        },
+      ]),
+    });
+    (
+      mocks.git.getPrDetailsByBranch as ReturnType<typeof vi.fn>
+    ).mockResolvedValue({
+      url: "https://github.com/Brooker-Fam/nexus-games/pull/111",
+      state: "open",
+      merged: false,
+      draft: false,
+    });
+    mocks.stateRepo.upsert({
+      nestId: "nest-1",
+      state: "idle",
+      serializedStateJson: JSON.stringify({
+        scratchpad: [],
+        observedTerminalRunKeys: {},
+        activeHold: {
+          reason: "waiting for hoglet output",
+          nextTrigger: "hoglet_output",
+          createdAt: "2026-05-18T17:25:00.000Z",
+          lastOperatorMessageAt: "2026-05-18T17:00:00.000Z",
+          lastHogletOutputAt: null,
+          prStatusFingerprint: JSON.stringify({
+            hoglets: [
+              {
+                taskId: "task-1",
+                latestRunId: "run-1",
+                taskRunStatus: "in_progress",
+                latestRunCompletedAt: null,
+                prUrl: null,
+                prState: null,
+                branch: "insight-wars-card-resolvers-ai",
+              },
+            ],
+            prDependencies: [],
+          }),
+        },
+      }),
+    });
+    const service = buildService(mocks);
+
+    await service.tick("nest-1", "heartbeat");
+
+    expect(mocks.git.getPrDetailsByBranch).toHaveBeenCalledWith(
+      "Brooker-Fam/nexus-games",
+      "insight-wars-card-resolvers-ai",
+    );
+    const prompt = (mocks.llm.promptWithTools as ReturnType<typeof vi.fn>).mock
+      .calls[0][0][0].content;
+    expect(prompt).toContain(
+      "pr_url: https://github.com/Brooker-Fam/nexus-games/pull/111",
+    );
+    expect(prompt).toContain("pr_state: open");
+    const persisted = JSON.parse(
+      mocks.stateRepo.findByNestId("nest-1")?.serializedStateJson ?? "{}",
+    ) as {
+      activeHold?: { nextTrigger?: string } | null;
+      scratchpad?: Array<{ summary: string }>;
+    };
+    expect(persisted.activeHold).toBeNull();
+    expect(
+      persisted.scratchpad?.some((entry) =>
+        entry.summary.includes("hoglet run state changed"),
+      ),
+    ).toBe(true);
   });
 
   it("releases timeout holds on the next heartbeat after timeoutAt", async () => {
@@ -1469,6 +1757,119 @@ describe("HedgehogTickService", () => {
       .map(([args]) => args)
       .filter((m) => m.kind === "audit");
     expect(audits.some((m) => m.body.includes("Spawned hoglet"))).toBe(true);
+  });
+
+  it("trims oversized spawn_hoglet prompts instead of rejecting the spawn", async () => {
+    const oversizedPrompt = "Build cards.".repeat(4000);
+    const mocks = setupMocks({
+      nest: makeNest({ primaryRepository: "posthog/posthog" }),
+      availableRepositories: [
+        makeRepository({
+          remoteUrl: "https://github.com/posthog/posthog.git",
+        }),
+      ],
+      promptResponse: makePromptWithToolsResponse([
+        {
+          id: "t-1",
+          name: "spawn_hoglet",
+          input: { prompt: oversizedPrompt },
+        },
+      ]),
+    });
+    const service = buildService(mocks);
+    await service.tick("nest-1", "test");
+
+    expect(mocks.hogletService.spawnInNest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: oversizedPrompt.slice(0, MAX_SPAWN_HOGLET_PROMPT_CHARS),
+      }),
+      expect.objectContaining({}),
+    );
+    const audit = (
+      mocks.nestChat.recordHedgehogMessage as ReturnType<typeof vi.fn>
+    ).mock.calls
+      .map(([args]) => args)
+      .find((m) => m.kind === "audit" && m.body.includes("Spawned hoglet"));
+    expect(audit?.payloadJson).toMatchObject({
+      type: "spawned_hoglet",
+      promptWasTruncated: true,
+      originalPromptLength: oversizedPrompt.length,
+      promptLength: MAX_SPAWN_HOGLET_PROMPT_CHARS,
+    });
+  });
+
+  it("passes spawn_hoglet prompts above the old 8k ceiling without truncation", async () => {
+    const longPrompt = "Build cards.".repeat(900);
+    const mocks = setupMocks({
+      nest: makeNest({ primaryRepository: "posthog/posthog" }),
+      availableRepositories: [
+        makeRepository({
+          remoteUrl: "https://github.com/posthog/posthog.git",
+        }),
+      ],
+      promptResponse: makePromptWithToolsResponse([
+        {
+          id: "t-1",
+          name: "spawn_hoglet",
+          input: { prompt: longPrompt },
+        },
+      ]),
+    });
+    const service = buildService(mocks);
+    await service.tick("nest-1", "test");
+
+    expect(longPrompt.length).toBeGreaterThan(8000);
+    expect(longPrompt.length).toBeLessThan(MAX_SPAWN_HOGLET_PROMPT_CHARS);
+    expect(mocks.hogletService.spawnInNest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: longPrompt,
+      }),
+      expect.objectContaining({}),
+    );
+    const audit = (
+      mocks.nestChat.recordHedgehogMessage as ReturnType<typeof vi.fn>
+    ).mock.calls
+      .map(([args]) => args)
+      .find((m) => m.kind === "audit" && m.body.includes("Spawned hoglet"));
+    expect(audit?.payloadJson).toMatchObject({
+      type: "spawned_hoglet",
+      promptWasTruncated: false,
+      promptLength: longPrompt.length,
+    });
+  });
+
+  it("rejects absurdly large spawn_hoglet prompts at the tool boundary", async () => {
+    const absurdPrompt = "x".repeat(MAX_SPAWN_HOGLET_TOOL_INPUT_CHARS + 1);
+    const mocks = setupMocks({
+      nest: makeNest({ primaryRepository: "posthog/posthog" }),
+      availableRepositories: [
+        makeRepository({
+          remoteUrl: "https://github.com/posthog/posthog.git",
+        }),
+      ],
+      promptResponse: makePromptWithToolsResponse([
+        {
+          id: "t-1",
+          name: "spawn_hoglet",
+          input: { prompt: absurdPrompt },
+        },
+      ]),
+    });
+    const service = buildService(mocks);
+    await service.tick("nest-1", "test");
+
+    expect(mocks.hogletService.spawnInNest).not.toHaveBeenCalled();
+    const audit = (
+      mocks.nestChat.recordHedgehogMessage as ReturnType<typeof vi.fn>
+    ).mock.calls
+      .map(([args]) => args)
+      .find(
+        (m) =>
+          m.kind === "audit" &&
+          typeof m.body === "string" &&
+          m.body.includes("spawn_hoglet rejected"),
+      );
+    expect(audit).toBeDefined();
   });
 
   it("caps spawn_hoglet calls at 3 per tick", async () => {

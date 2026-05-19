@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { AnthropicToolDefinition } from "../llm-gateway/schemas";
-import { holdNextTrigger } from "./schemas";
+import { HOGLET_PROMPT_MAX_CHARS, holdNextTrigger } from "./schemas";
 
 /**
  * The hedgehog's tool list. Brood management (spawn, raise, kill, message,
@@ -23,7 +23,7 @@ export const HEDGEHOG_TOOLS: AnthropicToolDefinition[] = [
         prompt: {
           type: "string",
           description:
-            "Detailed instructions for the new hoglet. Be specific about what to build, which files/areas to touch, and acceptance criteria.",
+            "Detailed instructions for the new hoglet, up to 32k characters. Be specific about what to build, which files/areas to touch, and acceptance criteria.",
         },
         repository: {
           type: "string",
@@ -122,7 +122,7 @@ export const HEDGEHOG_TOOLS: AnthropicToolDefinition[] = [
   {
     name: "hold",
     description:
-      "Deliberately wait for the next meaningful external signal when no productive state-change or query-state action is available this tick. Use when probes would stack up, an operator request has already been escalated, or downstream state is the only useful next signal. Counts as the tick's action.",
+      "Deliberately wait for the next meaningful external signal, with a fallback timeout, when no productive state-change or query-state action is available this tick. Use when probes would stack up, an operator request has already been escalated, or downstream state is the only useful next signal. Counts as the tick's action.",
     input_schema: {
       type: "object",
       properties: {
@@ -145,7 +145,7 @@ export const HEDGEHOG_TOOLS: AnthropicToolDefinition[] = [
         timeoutSeconds: {
           type: "number",
           description:
-            "Required when nextTrigger is timeout. Number of seconds to wait before the dispatcher releases the hold. Other triggers receive a dispatcher fallback timeout automatically.",
+            "Required when nextTrigger is timeout. Optional for event triggers as a shorter fallback timeout; use 300-600 seconds for hoglet_output when cloud communication is uncertain.",
         },
       },
       required: ["reason", "nextTrigger"],
@@ -288,8 +288,11 @@ export type HedgehogToolName =
   | "unlink_pr_dependency"
   | "rebase_child";
 
+export const MAX_SPAWN_HOGLET_PROMPT_CHARS = HOGLET_PROMPT_MAX_CHARS;
+export const MAX_SPAWN_HOGLET_TOOL_INPUT_CHARS = HOGLET_PROMPT_MAX_CHARS * 4;
+
 export const spawnHogletArgs = z.object({
-  prompt: z.string().trim().min(1).max(8000),
+  prompt: z.string().trim().min(1).max(MAX_SPAWN_HOGLET_TOOL_INPUT_CHARS),
   repository: z.string().trim().min(1).optional(),
   /**
    * Optional reference to a signal report this spawn is following up on.
@@ -314,9 +317,29 @@ export const messageHogletArgs = z.object({
   prompt: z.string().trim().min(1).max(2000),
 });
 
+function textArg(max: number) {
+  return z.preprocess((value) => {
+    if (typeof value === "string" || value === undefined || value === null) {
+      return value;
+    }
+    if (
+      typeof value === "number" ||
+      typeof value === "boolean" ||
+      typeof value === "bigint"
+    ) {
+      return String(value);
+    }
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  }, z.string().trim().min(1).max(max));
+}
+
 export const writeAuditEntryArgs = z.object({
-  summary: z.string().trim().min(1).max(2000),
-  detail: z.string().trim().min(1).max(8000).optional(),
+  summary: textArg(2000),
+  detail: textArg(8000).optional(),
 });
 
 export const holdArgs = z
@@ -331,13 +354,6 @@ export const holdArgs = z
         code: z.ZodIssueCode.custom,
         path: ["timeoutSeconds"],
         message: "timeoutSeconds is required when nextTrigger is timeout",
-      });
-    }
-    if (value.nextTrigger !== "timeout" && value.timeoutSeconds !== undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["timeoutSeconds"],
-        message: "timeoutSeconds is only valid when nextTrigger is timeout",
       });
     }
   });

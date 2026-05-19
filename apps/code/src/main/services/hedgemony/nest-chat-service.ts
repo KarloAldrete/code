@@ -10,7 +10,6 @@ import type {
   Nest,
   NestMessage,
   RecordBootstrapHandoffInput,
-  RecordHogletFinalOutputInput,
   SendNestMessageInput,
 } from "./schemas";
 import { SPEC_DRIVEN_DEVELOPMENT_METHOD } from "./spec-driven-development";
@@ -217,27 +216,34 @@ export class NestChatService {
     return { message, created: true };
   }
 
-  recordHogletFinalOutput(input: RecordHogletFinalOutputInput): {
-    message: NestMessage;
-    created: boolean;
-  } {
-    const existing = this.messages.findHogletFinalOutputByRun(
+  recordHogletMessage(input: {
+    nestId: string;
+    hogletId: string;
+    taskId: string;
+    runId: string;
+    turnIndex: number;
+    body: string;
+    stopReason: string;
+  }): { message: NestMessage; created: boolean } {
+    const existing = this.messages.findHogletMessageByTurn(
       input.nestId,
       input.taskId,
       input.runId,
+      input.turnIndex,
     );
     if (existing) return { message: existing, created: false };
 
     const message = this.messages.create({
       nestId: input.nestId,
-      kind: "tool_result",
+      kind: "hoglet_message",
       visibility: "summary",
       sourceTaskId: input.taskId,
       body: input.body,
       payloadJson: JSON.stringify({
-        type: "hoglet_final_output",
         hogletId: input.hogletId,
         runId: input.runId,
+        turnIndex: input.turnIndex,
+        stopReason: input.stopReason,
       }),
     });
     return { message, created: true };

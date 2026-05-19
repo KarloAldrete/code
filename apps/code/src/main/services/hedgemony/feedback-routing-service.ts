@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { POSTHOG_NOTIFICATIONS } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import type { TaskRun, TaskRunStatus } from "../../../shared/types";
 import type {
@@ -37,11 +38,6 @@ const SESSION_LOG_PAGE_LIMIT = 200;
 const MAX_SESSION_LOG_PAGES_PER_POLL = 5;
 // Keep the ACP buffer bounded; a very chatty turn can preserve only the tail.
 const MAX_RUN_EVENT_BUFFER = 500;
-const FINAL_OUTPUT_PAYLOAD_TYPES = new Set([
-  "final_output",
-  "hoglet_final_output",
-  "hoglet_terminal_output",
-]);
 
 const log = logger.scope("feedback-routing-service");
 
@@ -342,8 +338,7 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
         hoglet.taskId,
       );
       const run = latestRun ?? task.latest_run ?? null;
-      await this.recordCloudLogFinalOutput(hoglet, run);
-      this.recordFinalOutputHogletSummary(hoglet, run);
+      await this.recordCloudLogHogletTurns(hoglet, run);
       this.recordTerminalRunHogletSummary(hoglet, run);
 
       const candidate = extractTaskRunPrUrl(run?.output ?? null);
@@ -371,7 +366,7 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
     await this.pollPrCheckRuns(hoglet, prUrl);
   }
 
-  private async recordCloudLogFinalOutput(
+  private async recordCloudLogHogletTurns(
     hoglet: { id: string; taskId: string; nestId: string | null },
     latestRun: Pick<TaskRun, "id"> | null,
   ): Promise<void> {
@@ -417,29 +412,32 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
     ].slice(-MAX_RUN_EVENT_BUFFER);
     this.runEventBuffers.set(runKey, buffer);
 
-    if (!hasTurnComplete(newEvents)) return;
+    const turns = extractHogletTurns(buffer);
+    if (turns.length === 0) return;
 
-    const output = extractTerminalAssistantOutput(buffer);
-    if (!output) return;
-
-    try {
-      const { message, created } = this.nestChat.recordHogletFinalOutput({
-        nestId: hoglet.nestId,
-        hogletId: hoglet.id,
-        taskId: hoglet.taskId,
-        runId: latestRun.id,
-        body: truncateFinalOutput(output),
-      });
-      if (created) {
-        this.nests.emitMessageAppended(message);
+    for (const turn of turns) {
+      try {
+        const { message, created } = this.nestChat.recordHogletMessage({
+          nestId: hoglet.nestId,
+          hogletId: hoglet.id,
+          taskId: hoglet.taskId,
+          runId: latestRun.id,
+          turnIndex: turn.turnIndex,
+          body: truncateFinalOutput(turn.text),
+          stopReason: turn.stopReason,
+        });
+        if (created) {
+          this.nests.emitMessageAppended(message);
+        }
+      } catch (error) {
+        log.warn("failed to record hoglet message from cloud logs", {
+          hogletId: hoglet.id,
+          taskId: hoglet.taskId,
+          runId: latestRun.id,
+          turnIndex: turn.turnIndex,
+          error: stringifyError(error),
+        });
       }
-    } catch (error) {
-      log.warn("failed to record hoglet final output from cloud logs", {
-        hogletId: hoglet.id,
-        taskId: hoglet.taskId,
-        runId: latestRun.id,
-        error: stringifyError(error),
-      });
     }
   }
 
@@ -470,69 +468,6 @@ export class FeedbackRoutingService extends TypedEventEmitter<FeedbackRoutingEve
       }
     } catch (error) {
       log.warn("failed to record hoglet summary", {
-        hogletId: hoglet.id,
-        taskId: hoglet.taskId,
-        runId: latestRun.id,
-        error: stringifyError(error),
-      });
-    }
-  }
-
-  private recordFinalOutputHogletSummary(
-    hoglet: { id: string; taskId: string; nestId: string | null },
-    latestRun: Pick<TaskRun, "id" | "created_at"> | null,
-  ): void {
-    if (!hoglet.nestId) return;
-    if (!latestRun?.id || !latestRun.created_at) return;
-
-    let messages: ReturnType<NestChatService["list"]>;
-    try {
-      messages = this.nestChat.list({ nestId: hoglet.nestId, detail: false });
-    } catch (error) {
-      log.warn("failed to read nest chat for hoglet summary", {
-        hogletId: hoglet.id,
-        taskId: hoglet.taskId,
-        runId: latestRun.id,
-        error: stringifyError(error),
-      });
-      return;
-    }
-
-    const runCreatedMs = Date.parse(latestRun.created_at);
-    const latestFinalOutput = messages.reduce<(typeof messages)[number] | null>(
-      (current, message) => {
-        if (message.kind !== "tool_result") return current;
-        if (message.sourceTaskId !== hoglet.taskId) return current;
-        const createdMs = Date.parse(message.createdAt);
-        if (Number.isNaN(createdMs)) return current;
-        if (!Number.isNaN(runCreatedMs) && createdMs <= runCreatedMs) {
-          return current;
-        }
-        if (!extractFinalOutputText(message, latestRun.id)) return current;
-        if (!current) return message;
-        return createdMs > Date.parse(current.createdAt) ? message : current;
-      },
-      null,
-    );
-
-    if (!latestFinalOutput) return;
-    const body = extractFinalOutputText(latestFinalOutput, latestRun.id);
-    if (!body) return;
-
-    try {
-      const { message, created } = this.nestChat.recordHogletSummary({
-        nestId: hoglet.nestId,
-        hogletId: hoglet.id,
-        taskId: hoglet.taskId,
-        runId: latestRun.id,
-        terminalReason: "final_output",
-        body,
-      });
-      if (created) {
-        this.nests.emitMessageAppended(message);
-      }
-    } catch (error) {
-      log.warn("failed to record hoglet final-output summary", {
         hogletId: hoglet.id,
         taskId: hoglet.taskId,
         runId: latestRun.id,
@@ -914,52 +849,6 @@ function extractTerminalRunSummary(
   return "Run completed without structured output. Review the task before deciding whether follow-up work is needed.";
 }
 
-function extractFinalOutputText(
-  message: {
-    body: string;
-    payloadJson: string | null;
-  },
-  runId?: string,
-): string | null {
-  const payload = parsePayload(message.payloadJson);
-  const payloadType =
-    payload && typeof payload.type === "string" ? payload.type : null;
-  if (payloadType && FINAL_OUTPUT_PAYLOAD_TYPES.has(payloadType)) {
-    const payloadRunId =
-      payload && typeof payload.runId === "string" ? payload.runId : null;
-    if (payloadRunId && runId && payloadRunId !== runId) return null;
-    return truncateSummary(message.body);
-  }
-
-  if (!looksLikeDeliverable(message.body)) return null;
-  return truncateSummary(message.body);
-}
-
-function looksLikeDeliverable(value: string): boolean {
-  return [
-    /\bverification complete\b/i,
-    /\b(?:done|complete|completed|finished)\b/i,
-    /\bsummary\b/i,
-    /\bfindings?\b/i,
-    /\bno regressions?\b/i,
-    /\ball (?:tests|checks|child PRs)\b.*\b(?:pass|clean|open)\b/i,
-  ].some((pattern) => pattern.test(value));
-}
-
-function parsePayload(
-  payloadJson: string | null,
-): Record<string, unknown> | null {
-  if (!payloadJson) return null;
-  try {
-    const parsed = JSON.parse(payloadJson);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Current agent/cloud paths write task-run output as direct metadata
  * (`{ pr_url }`, `{ head_branch }`), while structured-output runs can be
@@ -1025,66 +914,45 @@ function storedEntryToAcpMessage(entry: StoredLogEntry): AcpMessage {
   };
 }
 
-function hasTurnComplete(events: AcpMessage[]): boolean {
-  return events.some((event) => isTurnCompleteMessage(event.message));
+interface ExtractedHogletTurn {
+  turnIndex: number;
+  text: string;
+  stopReason: string;
 }
 
-function extractTerminalAssistantOutput(events: AcpMessage[]): string | null {
-  const turnCompleteIndex = findLastTerminalTurnCompleteIndex(events);
-  if (turnCompleteIndex === -1) return null;
-
-  let turnStartIndex = -1;
-  for (let index = turnCompleteIndex - 1; index >= 0; index -= 1) {
-    if (isTurnCompleteMessage(events[index].message)) {
-      turnStartIndex = index;
-      break;
-    }
-  }
-
-  const messages = collectAssistantText(
-    events.slice(turnStartIndex + 1, turnCompleteIndex),
-  );
-  const body = messages.join("\n\n").trim();
-  return body.length > 0 ? body : null;
-}
-
-function findLastTerminalTurnCompleteIndex(events: AcpMessage[]): number {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const message = events[index].message;
-    if (!isTurnCompleteMessage(message)) continue;
-    const params =
-      "params" in message
-        ? (message.params as { stopReason?: unknown } | undefined)
-        : undefined;
-    return params?.stopReason === "end_turn" ? index : -1;
-  }
-  return -1;
-}
-
-function isTurnCompleteMessage(message: JsonRpcMessage): boolean {
-  return (
-    hasJsonRpcMethod(message) &&
-    (message.method === "_posthog/turn_complete" ||
-      message.method === "turn_complete")
-  );
-}
-
-function collectAssistantText(events: AcpMessage[]): string[] {
-  const segments: string[] = [];
-  let chunkBuffer = "";
-
-  const flushChunks = () => {
-    const text = chunkBuffer.trim();
-    if (text) segments.push(text);
-    chunkBuffer = "";
-  };
+function extractHogletTurns(events: AcpMessage[]): ExtractedHogletTurn[] {
+  const turns: ExtractedHogletTurn[] = [];
+  let turnIndex = 0;
+  let currentSegments: string[] = [];
 
   for (const event of events) {
     const message = event.message;
-    if (!hasJsonRpcMethod(message) || message.method !== "session/update") {
-      flushChunks();
+    if (
+      typeof message !== "object" ||
+      message === null ||
+      !("method" in message) ||
+      typeof message.method !== "string"
+    ) {
       continue;
     }
+
+    if (message.method === POSTHOG_NOTIFICATIONS.TURN_COMPLETE) {
+      const params = message.params as { stopReason?: unknown } | undefined;
+      const stopReason =
+        typeof params?.stopReason === "string" ? params.stopReason : "end_turn";
+      const nonEmpty = currentSegments.filter((segment) => segment.length > 0);
+      if (nonEmpty.length > 0) {
+        const text = nonEmpty.join("\n\n").trim();
+        if (text.length > 0) {
+          turns.push({ turnIndex, text, stopReason });
+        }
+      }
+      turnIndex += 1;
+      currentSegments = [];
+      continue;
+    }
+
+    if (message.method !== "session/update") continue;
 
     const params = message.params as
       | {
@@ -1096,56 +964,20 @@ function collectAssistantText(events: AcpMessage[]): string[] {
         }
       | undefined;
     const update = params?.update;
-    if (!update) {
-      flushChunks();
-      continue;
-    }
+    if (!update || update.sessionUpdate !== "agent_message") continue;
 
-    if (update.sessionUpdate === "agent_message_chunk") {
-      const text = getTextFromUpdate(update);
-      if (text) chunkBuffer += text;
-      continue;
-    }
-
-    flushChunks();
-
-    if (update.sessionUpdate === "agent_message") {
-      const text = getTextFromUpdate(update);
-      if (text) segments.push(text.trim());
+    const text =
+      typeof update.content?.text === "string"
+        ? update.content.text
+        : typeof update.message === "string"
+          ? update.message
+          : null;
+    if (text && text.length > 0) {
+      currentSegments.push(text);
     }
   }
 
-  flushChunks();
-  return segments;
-}
-
-function hasJsonRpcMethod(
-  message: JsonRpcMessage,
-): message is JsonRpcMessage & { method: string; params?: unknown } {
-  return (
-    typeof message === "object" &&
-    message !== null &&
-    "method" in message &&
-    typeof message.method === "string"
-  );
-}
-
-function getTextFromUpdate(update: {
-  content?: { type?: unknown; text?: unknown };
-  message?: unknown;
-}): string | null {
-  if (
-    update.content?.type === "text" &&
-    typeof update.content.text === "string"
-  ) {
-    return update.content.text;
-  }
-
-  if (typeof update.message === "string") {
-    return update.message;
-  }
-
-  return null;
+  return turns;
 }
 
 function truncateFinalOutput(body: string): string {

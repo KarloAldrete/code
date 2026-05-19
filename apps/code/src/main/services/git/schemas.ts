@@ -354,6 +354,17 @@ export const getPrDetailsByUrlOutput = z.object({
 });
 export type PrDetailsByUrlOutput = z.infer<typeof getPrDetailsByUrlOutput>;
 
+export const getPrDetailsByBranchInput = z.object({
+  repository: z.string(),
+  branch: z.string(),
+});
+export const getPrDetailsByBranchOutput = getPrDetailsByUrlOutput.extend({
+  url: z.string(),
+});
+export type PrDetailsByBranchOutput = z.infer<
+  typeof getPrDetailsByBranchOutput
+>;
+
 // getPrReviewComments schemas
 export const prReviewCommentUserSchema = z.object({
   login: z.string(),

@@ -168,6 +168,7 @@ export const hedgemonyNestMessages = sqliteTable(
         "audit",
         "tool_result",
         "hoglet_summary",
+        "hoglet_message",
       ],
     }).notNull(),
     visibility: text({ enum: ["summary", "detail"] })

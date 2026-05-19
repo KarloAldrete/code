@@ -57,19 +57,22 @@ function createMockMessageRepository() {
           return payload.runId === runId;
         }) ?? null,
     ),
-    findHogletFinalOutputByRun: vi.fn(
-      (nestId: string, sourceTaskId: string, runId: string) =>
+    findHogletMessageByTurn: vi.fn(
+      (
+        nestId: string,
+        sourceTaskId: string,
+        runId: string,
+        turnIndex: number,
+      ) =>
         messages.find((message) => {
           if (message.nestId !== nestId) return false;
-          if (message.kind !== "tool_result") return false;
+          if (message.kind !== "hoglet_message") return false;
           if (message.sourceTaskId !== sourceTaskId) return false;
           const payload = JSON.parse(message.payloadJson ?? "{}") as {
             runId?: unknown;
-            type?: unknown;
+            turnIndex?: unknown;
           };
-          return (
-            payload.runId === runId && payload.type === "hoglet_final_output"
-          );
+          return payload.runId === runId && payload.turnIndex === turnIndex;
         }) ?? null,
     ),
     create: vi.fn((data) => {
@@ -90,7 +93,7 @@ function createMockMessageRepository() {
     _messages: NestMessage[];
     listByNestId: ReturnType<typeof vi.fn>;
     findHogletSummaryByRun: ReturnType<typeof vi.fn>;
-    findHogletFinalOutputByRun: ReturnType<typeof vi.fn>;
+    findHogletMessageByTurn: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
     compactCompletedContext: ReturnType<typeof vi.fn>;
   };
@@ -252,20 +255,24 @@ describe("NestChatService", () => {
     expect(validation?.payloadJson).toContain('"type":"nest_validated"');
   });
 
-  it("records hoglet final output idempotently as attributed tool_result", () => {
-    const first = service.recordHogletFinalOutput({
+  it("records hoglet message idempotently per turn", () => {
+    const first = service.recordHogletMessage({
       nestId: "nest-1",
       hogletId: "hoglet-1",
       taskId: "task-1",
       runId: "run-1",
+      turnIndex: 0,
       body: "Verification complete.",
+      stopReason: "end_turn",
     });
-    const second = service.recordHogletFinalOutput({
+    const second = service.recordHogletMessage({
       nestId: "nest-1",
       hogletId: "hoglet-1",
       taskId: "task-1",
       runId: "run-1",
+      turnIndex: 0,
       body: "Verification complete.",
+      stopReason: "end_turn",
     });
 
     expect(first.created).toBe(true);
@@ -273,15 +280,16 @@ describe("NestChatService", () => {
     expect(second.message.id).toBe(first.message.id);
     expect(messageRepository.create).toHaveBeenCalledTimes(1);
     expect(first.message).toMatchObject({
-      kind: "tool_result",
+      kind: "hoglet_message",
       visibility: "summary",
       sourceTaskId: "task-1",
       body: "Verification complete.",
     });
     expect(JSON.parse(first.message.payloadJson ?? "{}")).toEqual({
-      type: "hoglet_final_output",
       hogletId: "hoglet-1",
       runId: "run-1",
+      turnIndex: 0,
+      stopReason: "end_turn",
     });
   });
 

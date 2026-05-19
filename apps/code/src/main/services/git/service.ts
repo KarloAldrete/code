@@ -68,6 +68,7 @@ import type {
   OpenPrOutput,
   PrActionType,
   PrCheckRun,
+  PrDetailsByBranchOutput,
   PrDetailsByUrlOutput,
   PrReviewComment,
   PrStatusOutput,
@@ -1082,6 +1083,47 @@ export class GitService extends TypedEventEmitter<GitServiceEvents> {
       return data;
     } catch (error) {
       log.warn("Failed to fetch PR details", { prUrl, error });
+      return null;
+    }
+  }
+
+  public async getPrDetailsByBranch(
+    repository: string,
+    branch: string,
+  ): Promise<PrDetailsByBranchOutput | null> {
+    const [owner, repo, ...rest] = repository.split("/");
+    if (!owner || !repo || rest.length > 0 || !branch.trim()) return null;
+
+    const params = new URLSearchParams({
+      head: `${owner}:${branch}`,
+      state: "all",
+      per_page: "10",
+    });
+
+    try {
+      const result = await execGh([
+        "api",
+        `repos/${owner}/${repo}/pulls?${params.toString()}`,
+        "--jq",
+        "sort_by(.updated_at) | reverse | .[0] | if . == null then null else {url:.html_url,state,merged:(.merged_at != null),draft} end",
+      ]);
+
+      if (result.exitCode !== 0) {
+        log.warn("Failed to fetch PR details by branch", {
+          repository,
+          branch,
+          error: result.stderr || result.error,
+        });
+        return null;
+      }
+
+      return JSON.parse(result.stdout) as PrDetailsByBranchOutput | null;
+    } catch (error) {
+      log.warn("Failed to fetch PR details by branch", {
+        repository,
+        branch,
+        error,
+      });
       return null;
     }
   }

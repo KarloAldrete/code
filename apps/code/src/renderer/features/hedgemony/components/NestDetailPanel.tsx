@@ -505,6 +505,7 @@ const KIND_LABEL: Record<NestMessageKind, string> = {
   audit: "Audit",
   tool_result: "Tool result",
   hoglet_summary: "Hoglet",
+  hoglet_message: "Hoglet",
 };
 
 const KIND_ACCENT: Record<NestMessageKind, string> = {
@@ -513,6 +514,7 @@ const KIND_ACCENT: Record<NestMessageKind, string> = {
   audit: "text-(--gray-10)",
   tool_result: "text-(--blue-11)",
   hoglet_summary: "text-(--gray-11)",
+  hoglet_message: "text-(--gray-11)",
 };
 
 const MESSAGE_BODY_CLASS =

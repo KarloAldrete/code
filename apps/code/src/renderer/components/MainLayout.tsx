@@ -11,7 +11,6 @@ import { BgmPlayer } from "@features/hedgemony/audio/BgmPlayer";
 import { SfxBridge } from "@features/hedgemony/audio/SfxBridge";
 import { useHedgemonyPrGraphRouter } from "@features/hedgemony/hooks/useHedgemonyPrGraphRouter";
 import { useHedgemonyPromptRouter } from "@features/hedgemony/hooks/useHedgemonyPromptRouter";
-import { useHogletFinalOutputProducer } from "@features/hedgemony/hooks/useHogletFinalOutputProducer";
 import { useHedgemonyViewStore } from "@features/hedgemony/stores/hedgemonyViewStore";
 import { InboxView } from "@features/inbox/components/InboxView";
 import { useInboxDeepLink } from "@features/inbox/hooks/useInboxDeepLink";
@@ -94,7 +93,6 @@ export function MainLayout() {
   useInboxDeepLink();
   useHedgemonyPromptRouter();
   useHedgemonyPrGraphRouter();
-  useHogletFinalOutputProducer();
 
   useEffect(() => {
     if (tasks) {

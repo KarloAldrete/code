@@ -57,7 +57,6 @@ import {
   rebaseChildEventPayload,
   recordAdhocHogletInput,
   recordBootstrapHandoffInput,
-  recordHogletFinalOutputInput,
   recordRebaseOutcomeInput,
   recordRoutedFeedbackInput,
   recordSignalBackedHogletInput,
@@ -190,22 +189,6 @@ export const hedgemonyRouter = router({
       .mutation(({ input }) => {
         const message = getNestChatService().recordBootstrapHandoff(input);
         getService().emitMessageAppended(message);
-        return message;
-      }),
-
-    recordHogletFinalOutput: publicProcedure
-      .input(recordHogletFinalOutputInput)
-      .output(nestMessage)
-      .mutation(({ input }) => {
-        const { message, created } =
-          getNestChatService().recordHogletFinalOutput(input);
-        if (created) {
-          getService().emitMessageAppended(message);
-          getHedgehogTickService().enqueueTick(
-            input.nestId,
-            "hoglet_final_output",
-          );
-        }
         return message;
       }),
 

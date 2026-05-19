@@ -32,6 +32,7 @@ import {
   buildUserPrompt,
   deriveHogletLastOutput,
   HEDGEHOG_SYSTEM_PROMPT,
+  HOGLET_OUTPUT_KINDS,
   type HogletPrState,
   type HogletWithState,
   type ScratchpadEntry,
@@ -72,8 +73,10 @@ const TICK_WINDOW_MS = 60 * 60_000;
 const LOCKSTEP_SILENCE_MIN_HOGLETS = 2;
 const LOCKSTEP_SILENCE_SPAWN_WINDOW_MS = 5 * 60_000;
 const LOCKSTEP_SILENCE_MIN_QUIET_MS = 30 * 60_000;
+const SILENT_HOGLET_MIN_QUIET_MS = 10 * 60_000;
 const PENDING_INJECTION_LOOKBACK = 100;
-const EVENT_HOLD_FALLBACK_TIMEOUT_SECONDS = 60 * 60;
+// Safety net only: event holds should usually release via run/PR fingerprints first.
+const EVENT_HOLD_FALLBACK_TIMEOUT_SECONDS = 10 * 60;
 
 function getHeartbeatIntervalMs(): number {
   const envOverride = process.env.HEDGEMONY_HEARTBEAT_INTERVAL_MS;
@@ -620,6 +623,21 @@ export class HedgehogTickService {
       if (isAfterBaseline(latest, hold.lastHogletOutputAt ?? hold.createdAt)) {
         return { released: true, reason: "hoglet output arrived" };
       }
+      const context = await this.buildContext(
+        nest,
+        new TickBudget(),
+        recentChat,
+      );
+      const currentFingerprint = prStatusFingerprint(
+        context.hoglets,
+        context.prDependencies,
+      );
+      if (
+        hold.prStatusFingerprint &&
+        currentFingerprint !== hold.prStatusFingerprint
+      ) {
+        return { released: true, reason: "hoglet run state changed" };
+      }
       return { released: false, reason: "awaiting hoglet output" };
     }
 
@@ -682,19 +700,34 @@ export class HedgehogTickService {
     );
     const enriched: HogletWithState[] = [];
     const prStateCache = new Map<string, HogletPrState>();
+    const prBranchCache = new Map<
+      string,
+      { prUrl: string; prState: HogletPrState } | null
+    >();
     for (const hoglet of hoglets) {
       try {
         const { task, latestRun } = await this.cloudTasks.getTaskWithLatestRun(
           hoglet.taskId,
         );
         const prUrlCandidate = latestRun?.output?.pr_url;
-        const prUrl =
+        let prUrl =
           typeof prUrlCandidate === "string" && prUrlCandidate.length > 0
             ? prUrlCandidate
             : null;
-        const prState = prUrl
+        let prState = prUrl
           ? await this.resolvePrState(prUrl, prStateCache)
           : null;
+        if (!prUrl && task.repository && latestRun?.branch) {
+          const inferred = await this.resolvePrFromBranch(
+            task.repository,
+            latestRun.branch,
+            prBranchCache,
+          );
+          if (inferred) {
+            prUrl = inferred.prUrl;
+            prState = inferred.prState;
+          }
+        }
         const entry: Omit<HogletWithState, "pendingInjections"> = {
           hoglet,
           repository: task.repository ?? null,
@@ -891,13 +924,7 @@ export class HedgehogTickService {
     try {
       const status = await this.git.getPrDetailsByUrl(prUrl);
       const resolved: HogletPrState = status
-        ? status.merged
-          ? "merged"
-          : status.draft
-            ? "draft"
-            : status.state === "closed"
-              ? "closed"
-              : "open"
+        ? this.prDetailsToState(status)
         : "unknown";
       cache.set(prUrl, resolved);
       return resolved;
@@ -909,6 +936,46 @@ export class HedgehogTickService {
       cache.set(prUrl, "unknown");
       return "unknown";
     }
+  }
+
+  private async resolvePrFromBranch(
+    repository: string,
+    branch: string,
+    cache: Map<string, { prUrl: string; prState: HogletPrState } | null>,
+  ): Promise<{ prUrl: string; prState: HogletPrState } | null> {
+    const key = `${repository}:${branch}`;
+    const cached = cache.get(key);
+    if (cached !== undefined) return cached;
+    try {
+      const status = await this.git.getPrDetailsByBranch(repository, branch);
+      const resolved = status
+        ? {
+            prUrl: status.url,
+            prState: this.prDetailsToState(status),
+          }
+        : null;
+      cache.set(key, resolved);
+      return resolved;
+    } catch (error) {
+      log.debug("getPrDetailsByBranch failed inside hedgehog tick", {
+        repository,
+        branch,
+        error: stringifyError(error),
+      });
+      cache.set(key, null);
+      return null;
+    }
+  }
+
+  private prDetailsToState(status: {
+    state: string;
+    merged: boolean;
+    draft: boolean;
+  }): HogletPrState {
+    if (status.merged) return "merged";
+    if (status.draft) return "draft";
+    if (status.state === "closed") return "closed";
+    return "open";
   }
 
   private loadPersistedState(nestId: string): {
@@ -1003,9 +1070,10 @@ function computePendingInjections(
     if (event.source !== "hedgehog") return false;
     if (event.routedOutcome !== "injected") return false;
     const processed = event.processed ?? "unknown";
-    // Queued/unknown injections stay pending until the hoglet produces output
-    // after the injection; "active" only tells us the runtime consumed it.
-    if (processed !== "queued" && processed !== "unknown") return false;
+    // Only explicit queued injections are blockers. Some cloud command
+    // responses cannot report processing state and come back as "unknown"
+    // even after delivery, so treating unknown as queued can strand the hedge.
+    if (processed !== "queued") return false;
     const injectedMs = parseTimestamp(event.injectedAt);
     if (injectedMs === null) return false;
     return lastOutputMs === null || lastOutputMs <= injectedMs;
@@ -1029,6 +1097,28 @@ function computeNestAnomalies(
   hoglets: HogletWithState[],
 ): TickContext["nestAnomalies"] {
   const now = Date.now();
+  const anomalies: TickContext["nestAnomalies"] = {};
+  const silentActive = hoglets
+    .map((entry) => ({
+      entry,
+      runCreatedMs: parseTimestamp(entry.latestRunCreatedAt),
+    }))
+    .filter(
+      (item): item is { entry: HogletWithState; runCreatedMs: number } =>
+        item.runCreatedMs !== null &&
+        item.entry.taskRunStatus === "in_progress" &&
+        entryHasNoOutput(item.entry) &&
+        now - item.runCreatedMs >= SILENT_HOGLET_MIN_QUIET_MS,
+    )
+    .sort((a, b) => a.runCreatedMs - b.runCreatedMs);
+  if (silentActive.length > 0) {
+    const oldestMs = Math.min(...silentActive.map((item) => item.runCreatedMs));
+    anomalies.silentHoglets = {
+      hogletIds: silentActive.map((item) => item.entry.hoglet.id),
+      oldestSilentMinutes: Math.max(0, Math.floor((now - oldestMs) / 60_000)),
+    };
+  }
+
   const silent = hoglets
     .map((entry) => ({
       entry,
@@ -1051,16 +1141,15 @@ function computeNestAnomalies(
     );
     if (group.length >= LOCKSTEP_SILENCE_MIN_HOGLETS) {
       const oldestMs = Math.min(...group.map((item) => item.createdMs));
-      return {
-        lockstepSilence: {
-          hogletIds: group.map((item) => item.entry.hoglet.id),
-          sinceMinutes: Math.max(0, Math.floor((now - oldestMs) / 60_000)),
-        },
+      anomalies.lockstepSilence = {
+        hogletIds: group.map((item) => item.entry.hoglet.id),
+        sinceMinutes: Math.max(0, Math.floor((now - oldestMs) / 60_000)),
       };
+      return anomalies;
     }
   }
 
-  return {};
+  return anomalies;
 }
 
 function entryHasNoOutput(entry: HogletWithState): boolean {
@@ -1079,10 +1168,7 @@ function latestHogletOutputAt(recentChat: NestMessage[]): string | null {
 }
 
 function isHogletOutputMessage(message: NestMessage): boolean {
-  return (
-    message.sourceTaskId !== null &&
-    (message.kind === "tool_result" || message.kind === "hoglet_summary")
-  );
+  return message.sourceTaskId !== null && HOGLET_OUTPUT_KINDS.has(message.kind);
 }
 
 function latestMessageAt(
@@ -1114,9 +1200,14 @@ function isAfterBaseline(
 }
 
 function holdTimeoutAt(hold: ActiveHoldState): string | null {
-  if (hold.timeoutAt) return hold.timeoutAt;
+  if (hold.nextTrigger === "timeout" && hold.timeoutAt) return hold.timeoutAt;
   const timeoutSeconds =
-    hold.timeoutSeconds ?? EVENT_HOLD_FALLBACK_TIMEOUT_SECONDS;
+    hold.nextTrigger === "timeout"
+      ? (hold.timeoutSeconds ?? EVENT_HOLD_FALLBACK_TIMEOUT_SECONDS)
+      : Math.min(
+          hold.timeoutSeconds ?? EVENT_HOLD_FALLBACK_TIMEOUT_SECONDS,
+          EVENT_HOLD_FALLBACK_TIMEOUT_SECONDS,
+        );
   const createdMs = parseTimestamp(hold.createdAt);
   if (createdMs === null) return null;
   return new Date(createdMs + timeoutSeconds * 1000).toISOString();
@@ -1130,6 +1221,9 @@ function prStatusFingerprint(
     hoglets: hoglets
       .map((entry) => ({
         taskId: entry.hoglet.taskId,
+        latestRunId: entry.latestRunId,
+        taskRunStatus: entry.taskRunStatus,
+        latestRunCompletedAt: entry.latestRunCompletedAt,
         prUrl: entry.prUrl,
         prState: entry.prState,
         branch: entry.branch,

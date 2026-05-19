@@ -45,7 +45,8 @@ export function createMockNestMessageRepository(): MockNestMessageRepository {
         } else if (
           m.kind === "user_message" ||
           m.kind === "tool_result" ||
-          m.kind === "hoglet_summary"
+          m.kind === "hoglet_summary" ||
+          m.kind === "hoglet_message"
         ) {
           messages[i] = {
             ...m,

@@ -1,5 +1,8 @@
 import { logger } from "../../../utils/logger";
-import { spawnHogletArgs } from "../hedgehog-tools";
+import {
+  MAX_SPAWN_HOGLET_PROMPT_CHARS,
+  spawnHogletArgs,
+} from "../hedgehog-tools";
 import { findSimilarRepoSlugs } from "../repo-slug-match";
 import {
   clampReasoningEffortForAdapter,
@@ -36,6 +39,10 @@ export const spawnHogletHandler: HedgehogToolHandler = {
       );
     }
     const args = parsed.data;
+    const prompt =
+      args.prompt.length > MAX_SPAWN_HOGLET_PROMPT_CHARS
+        ? args.prompt.slice(0, MAX_SPAWN_HOGLET_PROMPT_CHARS)
+        : args.prompt;
     if (args.signal_report_id) {
       const suppressed = ctx.operatorDecisions.find(
         (d) =>
@@ -169,15 +176,16 @@ export const spawnHogletHandler: HedgehogToolHandler = {
       const { hoglet, taskRunId } = await deps.hogletService.spawnInNest(
         {
           nestId: ctx.nest.id,
-          prompt: args.prompt,
+          prompt,
           repository,
         },
         ctx.loadout,
       );
+      const promptWasTruncated = prompt.length !== args.prompt.length;
       deps.writeNestMessage(ctx.nest.id, {
         kind: "audit",
         sourceTaskId: hoglet.taskId,
-        body: `Spawned hoglet ${hoglet.name ?? hoglet.id}: ${truncate(args.prompt, 200)}`,
+        body: `Spawned hoglet ${hoglet.name ?? hoglet.id}: ${truncate(prompt, 200)}`,
         payloadJson: {
           type: "spawned_hoglet",
           hogletId: hoglet.id,
@@ -186,6 +194,11 @@ export const spawnHogletHandler: HedgehogToolHandler = {
           taskRunId,
           repository,
           repositorySource,
+          promptWasTruncated,
+          originalPromptLength: promptWasTruncated
+            ? args.prompt.length
+            : undefined,
+          promptLength: prompt.length,
           model:
             ctx.loadout.model ??
             defaultModelForAdapter(ctx.loadout.runtimeAdapter),
@@ -207,7 +220,7 @@ export const spawnHogletHandler: HedgehogToolHandler = {
         payloadJson: {
           type: "spawn_failed",
           error: stringifyError(error),
-          prompt: truncate(args.prompt, 200),
+          prompt: truncate(prompt, 200),
         },
       });
       return {

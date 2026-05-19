@@ -11,7 +11,8 @@ export type NestMessageKind =
   | "hedgehog_message"
   | "audit"
   | "tool_result"
-  | "hoglet_summary";
+  | "hoglet_summary"
+  | "hoglet_message";
 export type NestMessageVisibility = "summary" | "detail";
 
 export interface CreateNestMessageData {
@@ -67,17 +68,18 @@ export class NestMessageRepository {
     });
   }
 
-  findHogletFinalOutputByRun(
+  findHogletMessageByTurn(
     nestId: string,
     sourceTaskId: string,
     runId: string,
+    turnIndex: number,
   ): NestMessage | null {
     return this.findBySourceTaskRun({
       nestId,
-      kind: "tool_result",
+      kind: "hoglet_message",
       sourceTaskId,
       runId,
-      payloadType: "hoglet_final_output",
+      turnIndex,
     });
   }
 
@@ -115,6 +117,7 @@ export class NestMessageRepository {
     sourceTaskId: string;
     runId: string;
     payloadType?: string;
+    turnIndex?: number;
   }): NestMessage | null {
     const candidates = this.db
       .select()
@@ -131,7 +134,10 @@ export class NestMessageRepository {
 
     return (
       candidates.find((message) =>
-        payloadMatchesRun(message.payloadJson, input.runId, input.payloadType),
+        payloadMatchesRun(message.payloadJson, input.runId, {
+          payloadType: input.payloadType,
+          turnIndex: input.turnIndex,
+        }),
       ) ?? null
     );
   }
@@ -158,6 +164,7 @@ export class NestMessageRepository {
             eq(hedgemonyNestMessages.kind, "user_message"),
             eq(hedgemonyNestMessages.kind, "tool_result"),
             eq(hedgemonyNestMessages.kind, "hoglet_summary"),
+            eq(hedgemonyNestMessages.kind, "hoglet_message"),
           ),
         ),
       )
@@ -170,16 +177,25 @@ export class NestMessageRepository {
 function payloadMatchesRun(
   payloadJson: string | null,
   runId: string,
-  payloadType?: string,
+  options: { payloadType?: string; turnIndex?: number },
 ): boolean {
   if (!payloadJson) return false;
   try {
     const payload = JSON.parse(payloadJson) as {
       runId?: unknown;
       type?: unknown;
+      turnIndex?: unknown;
     };
     if (payload.runId !== runId) return false;
-    if (payloadType && payload.type !== payloadType) return false;
+    if (options.payloadType && payload.type !== options.payloadType) {
+      return false;
+    }
+    if (
+      options.turnIndex !== undefined &&
+      payload.turnIndex !== options.turnIndex
+    ) {
+      return false;
+    }
     return true;
   } catch {
     return false;
