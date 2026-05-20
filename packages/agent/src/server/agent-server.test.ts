@@ -996,16 +996,23 @@ describe("AgentServer HTTP Mode", () => {
   describe("buildDetectedPrContext", () => {
     const prUrl = "https://github.com/org/repo/pull/1";
 
-    it("returns review-first PR context for non-Slack runs", () => {
+    it("returns review-first PR context that honors explicit user authorization for non-Slack runs", () => {
       const s = createServer();
       const context = (s as unknown as TestableServer).buildDetectedPrContext(
         prUrl,
       );
-      expect(context).toContain("stop with local changes ready for review");
+      // Default behavior is still review-first.
+      expect(context).toContain("Default workflow");
       expect(context).toContain(
-        "Do NOT create commits, push to the PR branch, update the pull request",
+        "stop without committing, pushing, or updating the PR",
       );
-      expect(context).not.toContain("gh pr checkout");
+      // Explicit in-turn user authorization is honored — previously the
+      // standing "Do NOT" rule blocked even reauthorized push requests.
+      expect(context).toContain("User-authorized publish");
+      expect(context).toContain(`gh pr checkout ${prUrl}`);
+      // No hard "Do NOT" framing that the safety classifier treats as an
+      // immovable boundary.
+      expect(context).not.toMatch(/Do NOT create commits/);
     });
 
     it("returns auto-update PR context for Slack-origin runs", () => {
@@ -1038,8 +1045,13 @@ describe("AgentServer HTTP Mode", () => {
       const context = (
         server as unknown as TestableServer
       ).buildDetectedPrContext(prUrl);
-      expect(context).toContain("stop with local changes ready for review");
-      expect(context).not.toContain("gh pr checkout");
+      expect(context).toContain("Default workflow");
+      expect(context).toContain(
+        "stop without committing, pushing, or updating the PR",
+      );
+      // Even in createPr=false review-first mode, explicit user authorization
+      // is recognized rather than blanket-prohibited.
+      expect(context).toContain("User-authorized publish");
       delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
     });
   });

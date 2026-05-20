@@ -1579,10 +1579,15 @@ export class AgentServer {
 
   private buildDetectedPrContext(prUrl: string): string {
     if (!this.shouldAutoPublishCloudChanges()) {
+      // Framed as default + explicit user-override clause rather than a hard
+      // "Do NOT" rule. The previous wording was re-injected on every turn and
+      // the safety classifier treated it as a standing boundary, refusing
+      // even when the user reauthorized in-turn (e.g. "push la PR", "commit
+      // and push"). The session-start system prompt still carries the policy.
       return (
-        `An open pull request already exists: ${prUrl}\n` +
-        `Use that PR as context if it is helpful, but stop with local changes ready for review.\n` +
-        `Do NOT create commits, push to the PR branch, update the pull request, create a new branch, or create a new pull request unless the user explicitly asks.`
+        `Open pull request for this task: ${prUrl}.\n` +
+        `Default workflow: do the requested work locally and stop without committing, pushing, or updating the PR — the user reviews and publishes themselves. Do not create a new branch or a new pull request as part of this default.\n` +
+        `User-authorized publish: if the user's current message explicitly asks you to commit, push, update the PR, or similar (in any language), treat that as authorization for this turn and proceed by checking out the PR branch with \`gh pr checkout ${prUrl}\`, committing, and pushing to that branch. A new branch or new pull request is still off-limits unless the user explicitly asks for one.`
       );
     }
 
