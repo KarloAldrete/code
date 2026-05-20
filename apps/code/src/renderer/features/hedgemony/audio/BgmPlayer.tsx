@@ -1,6 +1,6 @@
 import { useCommandCenterStore } from "@features/command-center/stores/commandCenterStore";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
-import { HEDGEMONY_FLAG } from "@shared/constants";
+import { RTS_FLAG } from "@shared/constants";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useEffect, useRef } from "react";
 import { useBgmStore } from "./bgmStore";
@@ -16,7 +16,7 @@ export function BgmPlayer() {
   const volume = useBgmStore((s) => s.volume);
   const viewType = useNavigationStore((s) => s.view.type);
   const viewMode = useCommandCenterStore((s) => s.viewMode);
-  const hedgemonyEnabled = useFeatureFlag(HEDGEMONY_FLAG, import.meta.env.DEV);
+  const hedgemonyEnabled = useFeatureFlag(RTS_FLAG, import.meta.env.DEV);
 
   const shouldPlay =
     hedgemonyEnabled && viewType === "command-center" && viewMode === "map";

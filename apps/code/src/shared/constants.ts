@@ -1,6 +1,6 @@
 export const BILLING_FLAG = "posthog-code-billing";
 export const INBOX_GATED_DUE_TO_SCALE_FLAG = "inbox-gated-due-to-scale";
-export const HEDGEMONY_FLAG = "hedgemony-enabled";
+export const RTS_FLAG = "hedgemony-enabled";
 export const SYNC_CLOUD_TASKS_FLAG = "posthog-code-sync-cloud-tasks";
 export const BRANCH_PREFIX = "posthog-code/";
 export const DATA_DIR = ".posthog-code";
