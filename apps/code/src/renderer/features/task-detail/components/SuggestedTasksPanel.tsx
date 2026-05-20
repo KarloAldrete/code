@@ -26,16 +26,28 @@ const LOG_FEED_PADDING = 16;
 
 interface SuggestedTasksPanelProps {
   onSelect: (task: DiscoveredTask) => void;
+  // Suggestions are scoped to the repo they were generated against; pass the
+  // currently-selected repo path to filter them to that scope.
+  repoPath: string | null;
 }
 
-export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
-  const discoveredTasks = useSetupStore((s) => s.discoveredTasks);
+export function SuggestedTasksPanel({
+  onSelect,
+  repoPath,
+}: SuggestedTasksPanelProps) {
+  const allDiscoveredTasks = useSetupStore((s) => s.discoveredTasks);
   const discoveryStatus = useSetupStore((s) => s.discoveryStatus);
+  const discoveryRepoPath = useSetupStore((s) => s.discoveryRepoPath);
   const enricherStatus = useSetupStore((s) => s.enricherStatus);
+  const enricherRepoPath = useSetupStore((s) => s.enricherRepoPath);
   const discoveryFeed = useSetupStore((s) => s.discoveryFeed);
   const removeDiscoveredTask = useSetupStore((s) => s.removeDiscoveredTask);
   const selectDiscoveredTask = useSetupStore((s) => s.selectDiscoveredTask);
   const navigateToInbox = useNavigationStore((s) => s.navigateToInbox);
+
+  const discoveredTasks = repoPath
+    ? allDiscoveredTasks.filter((t) => t.repoPath === repoPath)
+    : [];
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [availableHeight, setAvailableHeight] = useState<number>(() =>
@@ -81,8 +93,10 @@ export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
     [selectDiscoveredTask, navigateToInbox],
   );
 
-  const isEnricherRunning = enricherStatus === "running";
-  const isDiscoveryRunning = discoveryStatus === "running";
+  const isEnricherRunning =
+    enricherStatus === "running" && enricherRepoPath === repoPath;
+  const isDiscoveryRunning =
+    discoveryStatus === "running" && discoveryRepoPath === repoPath;
 
   const hasTasks = discoveredTasks.length > 0;
 

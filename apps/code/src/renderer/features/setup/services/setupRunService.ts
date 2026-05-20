@@ -160,7 +160,10 @@ interface StaleFlagPayload {
   referenceCount: number;
 }
 
-function buildStaleFlagSuggestion(flag: StaleFlagPayload): DiscoveredTask {
+function buildStaleFlagSuggestion(
+  flag: StaleFlagPayload,
+  repoPath: string,
+): DiscoveredTask {
   const refs = flag.references;
   const first = refs[0];
   const moreCount = Math.max(0, flag.referenceCount - refs.length);
@@ -169,9 +172,11 @@ function buildStaleFlagSuggestion(flag: StaleFlagPayload): DiscoveredTask {
     .join("\n");
   const recommendation = `Remove the flag check and inline the winning branch. Code references:\n${referencesBlock}${moreCount > 0 ? `\n…and ${moreCount} more.` : ""}`;
   return {
-    // Stable id keyed off the flag key so dismissal sticks across re-runs.
-    id: `posthog-stale-flag-${flag.flagKey}`,
+    // Stable id keyed off both the repo and flag key so dismissal sticks
+    // across re-runs and doesn't collide across repos with the same flag name.
+    id: `posthog-stale-flag-${repoPath}-${flag.flagKey}`,
     source: "enricher",
+    repoPath,
     category: "stale_feature_flag",
     title: `Clean up stale flag "${flag.flagKey}"`,
     description: `\`${flag.flagKey}\` hasn't been evaluated in 30+ days but is still referenced in ${flag.referenceCount} place${flag.referenceCount === 1 ? "" : "s"} in this codebase.`,
@@ -184,10 +189,11 @@ function buildStaleFlagSuggestion(flag: StaleFlagPayload): DiscoveredTask {
   };
 }
 
-function buildSdkHealthSuggestion(): DiscoveredTask {
+function buildSdkHealthSuggestion(repoPath: string): DiscoveredTask {
   return {
-    id: "posthog-sdk-health",
+    id: `posthog-sdk-health-${repoPath}`,
     source: "enricher",
+    repoPath,
     category: "posthog_setup",
     title: "Check PostHog SDK health",
     description:
@@ -202,11 +208,13 @@ function buildSdkHealthSuggestion(): DiscoveredTask {
 
 function buildPosthogSetupSuggestion(
   state: "not_installed" | "installed_no_init",
+  repoPath: string,
 ): DiscoveredTask {
   if (state === "not_installed") {
     return {
-      id: "posthog-setup",
+      id: `posthog-setup-${repoPath}`,
       source: "enricher",
+      repoPath,
       category: "posthog_setup",
       title: "Set up PostHog",
       description:
@@ -219,8 +227,9 @@ function buildPosthogSetupSuggestion(
     };
   }
   return {
-    id: "posthog-finish-init",
+    id: `posthog-finish-init-${repoPath}`,
     source: "enricher",
+    repoPath,
     category: "posthog_setup",
     title: "Finish wiring PostHog",
     description:
@@ -262,7 +271,7 @@ export class SetupRunService {
     if (!directory) return;
     if (this.enricherSuggestionsRunning) return;
     this.enricherSuggestionsRunning = true;
-    useSetupStore.getState().startEnrichment();
+    useSetupStore.getState().startEnrichment(directory);
 
     void (async () => {
       try {
@@ -274,10 +283,15 @@ export class SetupRunService {
         if (installState === "initialized") {
           useSetupStore
             .getState()
-            .addEnricherSuggestionIfMissing(buildSdkHealthSuggestion());
+            .addEnricherSuggestionIfMissing(
+              buildSdkHealthSuggestion(directory),
+            );
           await this.injectStaleFlagSuggestions(directory);
         } else {
-          const suggestion = buildPosthogSetupSuggestion(installState);
+          const suggestion = buildPosthogSetupSuggestion(
+            installState,
+            directory,
+          );
           useSetupStore.getState().addEnricherSuggestionIfMissing(suggestion);
         }
         useSetupStore.getState().completeEnrichment();
@@ -297,7 +311,9 @@ export class SetupRunService {
       });
       const store = useSetupStore.getState();
       for (const flag of flags) {
-        store.addEnricherSuggestionIfMissing(buildStaleFlagSuggestion(flag));
+        store.addEnricherSuggestionIfMissing(
+          buildStaleFlagSuggestion(flag, directory),
+        );
       }
     } catch (err) {
       log.warn("Failed to find stale flag suggestions", { error: err });
@@ -373,7 +389,7 @@ export class SetupRunService {
         throw new Error("Failed to create discovery task run");
       }
 
-      useSetupStore.getState().startDiscovery(task.id, taskRun.id);
+      useSetupStore.getState().startDiscovery(task.id, taskRun.id, directory);
       track(ANALYTICS_EVENTS.SETUP_DISCOVERY_STARTED, {
         discovery_task_id: task.id,
         discovery_task_run_id: taskRun.id,
@@ -423,7 +439,7 @@ export class SetupRunService {
           taskCount: tasks.length,
           signalSource,
         });
-        useSetupStore.getState().completeDiscovery(tasks);
+        useSetupStore.getState().completeDiscovery(tasks, directory);
         track(ANALYTICS_EVENTS.SETUP_DISCOVERY_COMPLETED, {
           discovery_task_id: task.id,
           discovery_task_run_id: taskRun.id,

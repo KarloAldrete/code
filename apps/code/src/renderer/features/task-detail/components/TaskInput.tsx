@@ -837,7 +837,12 @@ export function TaskInput({
                     <CloudGithubMissingNotice />
                   </div>
                 )}
-              <SuggestedTasksPanel onSelect={handleSelectSuggestion} />
+              <SuggestedTasksPanel
+                onSelect={handleSelectSuggestion}
+                repoPath={
+                  workspaceMode === "cloud" ? null : selectedDirectory || null
+                }
+              />
             </Flex>
           </motion.div>
         </LayoutGroup>

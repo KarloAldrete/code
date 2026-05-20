@@ -17,6 +17,10 @@ export interface DiscoveredTask {
     | "posthog_setup"
     | "experiment";
   source: DiscoveredTaskSource;
+  // Absolute path of the repo this suggestion was generated against. Used to
+  // scope which suggestions show up on the new task page based on the
+  // currently-selected repo.
+  repoPath: string;
   file?: string;
   lineHint?: number;
   impact?: string;

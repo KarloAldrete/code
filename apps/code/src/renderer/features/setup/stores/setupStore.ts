@@ -33,18 +33,24 @@ interface SetupStoreState {
   discoveryStatus: DiscoveryStatus;
   discoveryTaskId: string | null;
   discoveryTaskRunId: string | null;
+  // Repo the in-flight or last-completed discovery run targeted. Used to scope
+  // which suggestions show on the new task page based on the currently
+  // selected repo.
+  discoveryRepoPath: string | null;
   discoveryFeed: AgentFeedState;
   enricherStatus: EnricherStatus;
+  // Repo the in-flight or last-completed enricher run targeted.
+  enricherRepoPath: string | null;
   error: string | null;
   selectedDiscoveredTaskId: string | null;
 }
 
 interface SetupStoreActions {
-  startDiscovery: (taskId: string, taskRunId: string) => void;
-  completeDiscovery: (tasks: DiscoveredTask[]) => void;
+  startDiscovery: (taskId: string, taskRunId: string, repoPath: string) => void;
+  completeDiscovery: (tasks: DiscoveredTask[], repoPath: string) => void;
   failDiscovery: (message?: string) => void;
   resetDiscovery: () => void;
-  startEnrichment: () => void;
+  startEnrichment: (repoPath: string) => void;
   completeEnrichment: () => void;
   failEnrichment: () => void;
   removeDiscoveredTask: (taskId: string) => void;
@@ -61,16 +67,23 @@ const initialState: SetupStoreState = {
   discoveryStatus: "idle",
   discoveryTaskId: null,
   discoveryTaskRunId: null,
+  discoveryRepoPath: null,
   discoveryFeed: EMPTY_FEED,
   enricherStatus: "idle",
+  enricherRepoPath: null,
   error: null,
   selectedDiscoveredTaskId: null,
 };
 
-// Discovery resets only clear agent-source suggestions; enricher-source
-// suggestions are deterministic and survive across runs.
-function keepEnricherSuggestions(tasks: DiscoveredTask[]): DiscoveredTask[] {
-  return tasks.filter((t) => t.source === "enricher");
+// Discovery resets only clear agent-source suggestions for the target repo;
+// enricher-source suggestions and other repos' agent suggestions survive.
+function clearAgentSuggestionsForRepo(
+  tasks: DiscoveredTask[],
+  repoPath: string,
+): DiscoveredTask[] {
+  return tasks.filter(
+    (t) => t.source === "enricher" || t.repoPath !== repoPath,
+  );
 }
 
 function pushEntry(prev: AgentFeedState, entry: ActivityEntry): AgentFeedState {
@@ -104,30 +117,45 @@ export const useSetupStore = create<SetupStore>()(
     (set) => ({
       ...initialState,
 
-      // Starts a fresh agent run. Clears agent-source suggestions only —
-      // enricher-source suggestions persist across discovery runs.
-      startDiscovery: (taskId, taskRunId) => {
-        log.info("Discovery started", { taskId, taskRunId });
+      // Starts a fresh agent run. Clears agent-source suggestions only for the
+      // target repo — enricher-source and other repos' suggestions survive.
+      startDiscovery: (taskId, taskRunId, repoPath) => {
+        log.info("Discovery started", { taskId, taskRunId, repoPath });
         set((state) => ({
           discoveryStatus: "running",
           discoveryTaskId: taskId,
           discoveryTaskRunId: taskRunId,
-          discoveredTasks: keepEnricherSuggestions(state.discoveredTasks),
+          discoveryRepoPath: repoPath,
+          discoveredTasks: clearAgentSuggestionsForRepo(
+            state.discoveredTasks,
+            repoPath,
+          ),
           discoveryFeed: EMPTY_FEED,
           error: null,
         }));
       },
 
-      // Replaces only agent-source entries with the new findings; enricher
-      // entries stay put and continue to render first.
-      completeDiscovery: (tasks) => {
-        log.info("Discovery completed", { taskCount: tasks.length });
+      // Replaces only the target repo's agent-source entries with the new
+      // findings; enricher entries and other repos' suggestions stay put.
+      completeDiscovery: (tasks, repoPath) => {
+        log.info("Discovery completed", {
+          taskCount: tasks.length,
+          repoPath,
+        });
         set((state) => {
-          const enricher = keepEnricherSuggestions(state.discoveredTasks);
-          const agent = tasks.map((t) => ({ ...t, source: "agent" as const }));
+          const kept = clearAgentSuggestionsForRepo(
+            state.discoveredTasks,
+            repoPath,
+          );
+          const agent = tasks.map((t) => ({
+            ...t,
+            source: "agent" as const,
+            repoPath,
+          }));
           return {
             discoveryStatus: "done",
-            discoveredTasks: [...enricher, ...agent],
+            discoveryRepoPath: repoPath,
+            discoveredTasks: [...kept, ...agent],
             error: null,
           };
         });
@@ -140,18 +168,24 @@ export const useSetupStore = create<SetupStore>()(
 
       resetDiscovery: () => {
         log.info("Discovery reset");
-        set((state) => ({
-          discoveryStatus: "idle",
-          discoveryTaskId: null,
-          discoveryTaskRunId: null,
-          discoveredTasks: keepEnricherSuggestions(state.discoveredTasks),
-          discoveryFeed: EMPTY_FEED,
-          error: null,
-        }));
+        set((state) => {
+          const repoPath = state.discoveryRepoPath;
+          return {
+            discoveryStatus: "idle",
+            discoveryTaskId: null,
+            discoveryTaskRunId: null,
+            discoveryRepoPath: null,
+            discoveredTasks: repoPath
+              ? clearAgentSuggestionsForRepo(state.discoveredTasks, repoPath)
+              : state.discoveredTasks.filter((t) => t.source === "enricher"),
+            discoveryFeed: EMPTY_FEED,
+            error: null,
+          };
+        });
       },
 
-      startEnrichment: () => {
-        set({ enricherStatus: "running" });
+      startEnrichment: (repoPath) => {
+        set({ enricherStatus: "running", enricherRepoPath: repoPath });
       },
 
       completeEnrichment: () => {
@@ -212,6 +246,7 @@ export const useSetupStore = create<SetupStore>()(
           state.discoveryStatus === "done"
             ? ("done" as const)
             : ("idle" as const),
+        discoveryRepoPath: state.discoveryRepoPath,
       }),
     },
   ),
