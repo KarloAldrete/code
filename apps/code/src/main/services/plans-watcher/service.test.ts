@@ -123,6 +123,48 @@ describe("plans-watcher helpers", () => {
       expect(findBlockInsertionLine(lines, "## Step 1", 1)).toBe(6);
       expect(findBlockInsertionLine(lines, "## Step 1", 2)).toBe(null);
     });
+
+    it("matches a fenced code block that contains a blank line", () => {
+      // A fenced code block is ONE markdown block, even when its body has
+      // a blank line. The renderer exposes a single gutter for it, so the
+      // watcher must treat it as one block too — not three sub-blocks
+      // split on blank lines.
+      const source =
+        "```ts\n" +
+        "function foo() {\n" +
+        "\n" +
+        "  return 1;\n" +
+        "}\n" +
+        "```\n" +
+        "\n" +
+        "Some prose after.\n";
+      const lines = source.split("\n");
+      const fencedBlock = "```ts\nfunction foo() {\n\n  return 1;\n}\n```";
+      // The fenced block spans lines 0–5; insertion after it is line 6.
+      expect(findBlockInsertionLine(lines, fencedBlock)).toBe(6);
+    });
+
+    it("matches a loose list with blank lines between items", () => {
+      // A loose list (`- a` … blank line … `- b`) is one mdast `list` node,
+      // and the renderer surfaces a single gutter for it.
+      const source =
+        "- item one\n\n- item two\n\n- item three\n\nNext paragraph.\n";
+      const lines = source.split("\n");
+      const looseList = "- item one\n\n- item two\n\n- item three";
+      // The list spans lines 0–4; insertion after it is line 5.
+      expect(findBlockInsertionLine(lines, looseList)).toBe(5);
+    });
+
+    it("matches a GFM table as one block (renderer uses remark-gfm)", () => {
+      // The renderer parses with remark-gfm, which treats this as one
+      // `table` block. Without gfm in the watcher parser, the table rows
+      // would parse as paragraphs and we'd split incorrectly.
+      const source =
+        "| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |\n\nAfter table.\n";
+      const lines = source.split("\n");
+      const tableBlock = "| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |";
+      expect(findBlockInsertionLine(lines, tableBlock)).toBe(4);
+    });
   });
 
   describe("findExistingThreadRange", () => {

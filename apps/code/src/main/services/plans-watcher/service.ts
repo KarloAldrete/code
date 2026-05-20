@@ -3,6 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import * as watcher from "@parcel/watcher";
 import { inject, injectable, preDestroy } from "inversify";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
@@ -39,28 +41,78 @@ export function isThreadLine(line: string): boolean {
   return THREAD_LINE_RE.test(line);
 }
 
-/**
- * Iterate the source as a sequence of source-blocks: each block is a
- * contiguous run of non-blank lines, separated by blank lines (the
- * standard markdown paragraph boundary). Thread blockquotes are emitted
- * but flagged so the caller can skip them when looking for anchor blocks.
- */
-function* iterSourceBlocks(
-  lines: string[],
-): Generator<{ start: number; end: number; text: string; isThread: boolean }> {
-  let i = 0;
-  while (i < lines.length) {
-    while (i < lines.length && lines[i].trim() === "") i += 1;
-    if (i >= lines.length) return;
-    const start = i;
-    while (i < lines.length && lines[i].trim() !== "") i += 1;
-    const end = i;
-    const blockLines = lines.slice(start, end);
-    const isThread = blockLines.every(
-      (l) => l.trim() === "" || isThreadLine(l),
-    );
-    yield { start, end, text: blockLines.join("\n"), isThread };
+interface AstBlock {
+  /** Verbatim source slice of this block. */
+  text: string;
+  /** 0-based line index immediately AFTER the block (insertion point). */
+  endLine: number;
+  /** True if this block is a `[H]:` / `[A]:` / `[resolved]` thread blockquote. */
+  isThread: boolean;
+}
+
+interface MdNodeLike {
+  type: string;
+  children?: MdNodeLike[];
+  position?: {
+    start: { line: number; column: number; offset?: number };
+    end: { line: number; column: number; offset?: number };
+  };
+  // For blockquote thread detection (definition nodes carry the label)
+  label?: string;
+  value?: string;
+}
+
+function isThreadBlockquote(node: MdNodeLike): boolean {
+  if (node.type !== "blockquote" || !node.children?.length) return false;
+  for (const child of node.children) {
+    if (child.type === "definition") {
+      if (child.label !== "H" && child.label !== "A") return false;
+      continue;
+    }
+    if (child.type === "paragraph") {
+      const text = (function getText(n: MdNodeLike): string {
+        if (typeof n.value === "string") return n.value;
+        return (n.children ?? []).map(getText).join("");
+      })(child);
+      const lines = text.split("\n");
+      const allThread = lines.every(
+        (l) => l.trim() === "" || /^\s*\[(H|A|resolved)\]/.test(l),
+      );
+      if (!allThread) return false;
+      continue;
+    }
+    return false;
   }
+  return true;
+}
+
+function parseAstBlocks(source: string): AstBlock[] {
+  // Parse the file's top-level markdown structure to identify anchor
+  // blocks the same way the renderer does. Doing this with `remark-parse`
+  // means a fenced code block with a blank line — or a loose list with
+  // blank lines between items — counts as ONE block, matching the
+  // renderer's single gutter button for that block. Without AST parsing
+  // we'd split such blocks on blank lines and fail to find an exact match.
+  const tree = unified()
+    .use(remarkParse)
+    .parse(source) as unknown as MdNodeLike;
+
+  const blocks: AstBlock[] = [];
+  for (const child of tree.children ?? []) {
+    const startOffset = child.position?.start.offset;
+    const endOffset = child.position?.end.offset;
+    if (typeof startOffset !== "number" || typeof endOffset !== "number") {
+      continue;
+    }
+    const text = source.slice(startOffset, endOffset);
+    const endLine = source.slice(0, endOffset).split("\n").length;
+    blocks.push({
+      text,
+      endLine,
+      isThread: isThreadBlockquote(child),
+    });
+  }
+  return blocks;
 }
 
 export function findBlockInsertionLine(
@@ -71,15 +123,13 @@ export function findBlockInsertionLine(
   const target = blockText.trim();
   if (!target) return null;
 
+  const source = lines.join("\n");
   let remainingToSkip = occurrence;
-  for (const block of iterSourceBlocks(lines)) {
+
+  for (const block of parseAstBlocks(source)) {
     if (block.isThread) continue;
-    // Exact match against the source-block text. This is what the renderer
-    // computed `occurrence` for — substring containment would let
-    // `## Step 1` match `## Step 10` (and would count thread reply text
-    // that mentions the snippet as an occurrence).
     if (block.text.trim() !== target) continue;
-    if (remainingToSkip === 0) return block.end;
+    if (remainingToSkip === 0) return block.endLine;
     remainingToSkip -= 1;
   }
   return null;

@@ -105,6 +105,31 @@ describe("getPlanFilePathFromSessionUpdate", () => {
     ).toBe(null);
   });
 
+  it("ignores MultiEdit — the Claude adapter doesn't emit typed locations for it", () => {
+    // tool-use-to-acp.ts has no MultiEdit case; it falls through to the
+    // default branch which returns no `locations`. We deliberately drop
+    // MultiEdit from the supported set so we never accidentally rely on
+    // locations the adapter doesn't promise. Even if a caller hand-rolls
+    // a `locations` array for MultiEdit, we ignore it.
+    process.env.CLAUDE_CONFIG_DIR = "/var/data/claude";
+    expect(
+      getPlanFilePathFromSessionUpdate(
+        buildToolCall("MultiEdit", "/var/data/claude/plans/x.md"),
+      ),
+    ).toBe(null);
+    expect(
+      getPlanFilePathFromSessionUpdate({
+        method: "session/update",
+        params: {
+          update: {
+            sessionUpdate: "tool_call",
+            _meta: { claudeCode: { toolName: "MultiEdit" } },
+          },
+        },
+      }),
+    ).toBe(null);
+  });
+
   it("uses the typed ACP `locations` field as the source of the file path", () => {
     // Per repo guidance we don't trust `rawInput` for agent-facing
     // contracts. The Claude adapter populates `tool_call.locations` for

@@ -13,12 +13,11 @@ function getClaudePlansDir(): string {
   return path.join(configDir, "plans");
 }
 
-const WRITE_TOOL_NAMES = new Set([
-  "Write",
-  "Edit",
-  "MultiEdit",
-  "NotebookEdit",
-]);
+// MultiEdit is intentionally excluded: the Claude adapter
+// (packages/agent/.../conversion/tool-use-to-acp.ts) has no `MultiEdit`
+// case and falls through to the default branch, which does not populate
+// `locations`. If that's fixed upstream, add it back here.
+const WRITE_TOOL_NAMES = new Set(["Write", "Edit", "NotebookEdit"]);
 
 const ToolCallLocation = z.object({ path: z.string().min(1) }).passthrough();
 
