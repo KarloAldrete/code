@@ -8,7 +8,7 @@ export async function loadNestChatMessages(nestId: string): Promise<void> {
   const store = useNestChatStore.getState();
   store.setLoading(nestId, true);
   try {
-    const messages = await trpcClient.hedgemony.nestChat.list.query({
+    const messages = await trpcClient.rts.nestChat.list.query({
       nestId,
     });
     useNestChatStore.getState().setMessages(nestId, messages);

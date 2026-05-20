@@ -93,7 +93,7 @@ export function BroodHoglet({
         <button
           ref={ref}
           type="button"
-          data-hedgemony-hoglet
+          data-rts-hoglet
           aria-label={`Hoglet: ${title}`}
           aria-pressed={selected}
           onClick={handleClick}

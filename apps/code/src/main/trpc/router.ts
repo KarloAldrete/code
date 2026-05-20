@@ -58,7 +58,7 @@ export const trpcRouter = router({
   git: gitRouter,
   githubIntegration: githubIntegrationRouter,
   handoff: handoffRouter,
-  hedgemony: rtsRouter,
+  rts: rtsRouter,
   linearIntegration: linearIntegrationRouter,
   llmGateway: llmGatewayRouter,
   mcpApps: mcpAppsRouter,

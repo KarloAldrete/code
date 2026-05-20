@@ -70,8 +70,8 @@ describe("UsageEventRepository", () => {
     expect(inserted).toBe(true);
     expect(row.workload).toBe("brood-hoglet");
     expect(row.team).toBe("posthog-code");
-    expect(row.product).toBe("hedgemony");
-    expect(row.system).toBe("hedgemony");
+    expect(row.product).toBe("rts");
+    expect(row.system).toBe("rts");
     expect(row.costUsd).toBe(0.42);
     expect(row.costSource).toBe("sdk");
   });

@@ -73,7 +73,7 @@ export function WildHoglet({
         <button
           ref={ref}
           type="button"
-          data-hedgemony-hoglet
+          data-rts-hoglet
           aria-label={`Wild hoglet: ${title}`}
           aria-pressed={selected}
           onClick={handleClick}

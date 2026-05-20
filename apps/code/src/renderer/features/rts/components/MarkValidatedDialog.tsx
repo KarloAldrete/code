@@ -61,7 +61,7 @@ export function MarkValidatedDialog({
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean);
-      const validated = await trpcClient.hedgemony.nests.markValidated.mutate({
+      const validated = await trpcClient.rts.nests.markValidated.mutate({
         id: nest.id,
         summary: summary.trim(),
         prUrls: defaultPrUrls.length > 0 ? defaultPrUrls : undefined,

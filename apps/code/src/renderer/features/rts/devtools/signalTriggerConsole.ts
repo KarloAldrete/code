@@ -156,7 +156,7 @@ const stubSignalCommand: SignalStubCommand = async (taskId, options = {}) => {
   };
   queryClient.setQueryData(key, merged);
 
-  const hoglet = await trpcClient.hedgemony.hoglets.recordSignalBacked.mutate({
+  const hoglet = await trpcClient.rts.hoglets.recordSignalBacked.mutate({
     taskId,
     signalReportId,
   });

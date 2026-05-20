@@ -57,7 +57,7 @@ export function useRtsPromptRouter() {
 
         if (route === "inject") {
           sendPromptToAgent(payload.taskId, payload.prompt);
-          await trpcClient.hedgemony.feedback.recordRouted.mutate({
+          await trpcClient.rts.feedback.recordRouted.mutate({
             nestId: payload.nestId,
             hogletTaskId: payload.taskId,
             source: payload.source,
@@ -76,13 +76,13 @@ export function useRtsPromptRouter() {
         }
 
         if (route === "spawn_follow_up" && payload.nestId) {
-          await trpcClient.hedgemony.nests.spawnFollowUpHoglet.mutate({
+          await trpcClient.rts.nests.spawnFollowUpHoglet.mutate({
             nestId: payload.nestId,
             parentTaskId: payload.taskId,
             prompt: payload.fallbackPrompt,
             payloadRef: payload.payloadRef,
           });
-          await trpcClient.hedgemony.feedback.recordRouted.mutate({
+          await trpcClient.rts.feedback.recordRouted.mutate({
             nestId: payload.nestId,
             hogletTaskId: payload.taskId,
             source: payload.source,
@@ -100,7 +100,7 @@ export function useRtsPromptRouter() {
           return;
         }
 
-        await trpcClient.hedgemony.feedback.recordRouted.mutate({
+        await trpcClient.rts.feedback.recordRouted.mutate({
           nestId: payload.nestId,
           hogletTaskId: payload.taskId,
           source: payload.source,
@@ -137,7 +137,7 @@ export function useRtsPromptRouter() {
     void (async () => {
       try {
         const pending =
-          await trpcClient.hedgemony.feedback.getPendingInjects.query();
+          await trpcClient.rts.feedback.getPendingInjects.query();
         for (const event of pending) {
           await handleInject(event);
         }
@@ -148,7 +148,7 @@ export function useRtsPromptRouter() {
   }, [isAuthenticated, handleInject]);
 
   useSubscription(
-    trpcReact.hedgemony.feedback.onInjectPrompt.subscriptionOptions(undefined, {
+    trpcReact.rts.feedback.onInjectPrompt.subscriptionOptions(undefined, {
       onData: (data) => {
         void handleInject(data);
       },

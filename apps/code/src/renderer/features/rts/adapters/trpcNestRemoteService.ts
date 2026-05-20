@@ -3,13 +3,13 @@ import type { NestRemoteService } from "../domain/NestRemoteService";
 
 export const trpcNestRemoteService: NestRemoteService = {
   update(input) {
-    return trpcClient.hedgemony.nests.update.mutate(input);
+    return trpcClient.rts.nests.update.mutate(input);
   },
   list() {
-    return trpcClient.hedgemony.nests.list.query();
+    return trpcClient.rts.nests.list.query();
   },
   watch(id, callbacks) {
-    return trpcClient.hedgemony.nests.watch.subscribe(
+    return trpcClient.rts.nests.watch.subscribe(
       { id },
       {
         onData: callbacks.onData,

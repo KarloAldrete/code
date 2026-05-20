@@ -79,7 +79,7 @@ export const useRtsViewStore = create<RtsViewStore>()(
         }),
     }),
     {
-      name: "hedgemony-view-storage",
+      name: "rts-view-storage",
       storage: electronStorage,
       // fullscreen and osFullscreen are intentionally not persisted — they
       // describe transient session state, not user preference.

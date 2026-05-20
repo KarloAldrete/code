@@ -33,13 +33,13 @@ export const SIGNAL_QUERY_PARAMS = {
  */
 export function useSignalIngestion(): void {
   useEffect(() => {
-    trpcClient.hedgemony.signalIngestion.start
+    trpcClient.rts.signalIngestion.start
       .mutate()
       .catch((error: unknown) =>
         log.error("Failed to start signal ingestion service", { error }),
       );
 
-    const sub = trpcClient.hedgemony.signalIngestion.onIngested.subscribe(
+    const sub = trpcClient.rts.signalIngestion.onIngested.subscribe(
       undefined,
       {
         onData: (payload) => {

@@ -365,7 +365,7 @@ export function SpawnHogletPanel({ onClose }: SpawnHogletPanelProps) {
   const handleTaskCreated = useCallback(
     async (task: Task) => {
       try {
-        const hoglet = await trpcClient.hedgemony.hoglets.recordAdhoc.mutate({
+        const hoglet = await trpcClient.rts.hoglets.recordAdhoc.mutate({
           taskId: task.id,
         });
         useHogletStore.getState().upsert(WILD_BUCKET, hoglet);

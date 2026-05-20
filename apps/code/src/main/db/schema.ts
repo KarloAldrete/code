@@ -297,9 +297,9 @@ export const rtsUsageEvents = sqliteTable(
     taskRunId: text(),
     turnIndex: integer(),
     team: text().notNull().default("posthog-code"),
-    product: text().notNull().default("hedgemony"),
+    product: text().notNull().default("rts"),
     environment: text().notNull(),
-    system: text().notNull().default("hedgemony"),
+    system: text().notNull().default("rts"),
     workload: text({
       enum: ["hedgehog-tick", "brood-hoglet", "wild-hoglet"],
     }).notNull(),

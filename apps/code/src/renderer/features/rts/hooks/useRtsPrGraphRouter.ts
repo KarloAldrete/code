@@ -48,7 +48,7 @@ export function useRtsPrGraphRouter() {
 
       if (isLive && !isStreaming) {
         sendPromptToAgent(payload.childTaskId, payload.prompt);
-        await trpcClient.hedgemony.prGraph.recordRebaseOutcome.mutate({
+        await trpcClient.rts.prGraph.recordRebaseOutcome.mutate({
           edgeId: payload.edgeId,
           outcome: "injected",
         });
@@ -59,13 +59,13 @@ export function useRtsPrGraphRouter() {
       }
 
       if (payload.nestId) {
-        await trpcClient.hedgemony.nests.spawnFollowUpHoglet.mutate({
+        await trpcClient.rts.nests.spawnFollowUpHoglet.mutate({
           nestId: payload.nestId,
           parentTaskId: payload.childTaskId,
           prompt: payload.fallbackPrompt,
           payloadRef: `rebase:${payload.edgeId}`,
         });
-        await trpcClient.hedgemony.prGraph.recordRebaseOutcome.mutate({
+        await trpcClient.rts.prGraph.recordRebaseOutcome.mutate({
           edgeId: payload.edgeId,
           outcome: "follow_up_spawned",
         });
@@ -75,7 +75,7 @@ export function useRtsPrGraphRouter() {
         return;
       }
 
-      await trpcClient.hedgemony.prGraph.recordRebaseOutcome.mutate({
+      await trpcClient.rts.prGraph.recordRebaseOutcome.mutate({
         edgeId: payload.edgeId,
         outcome: "failed",
       });
@@ -89,7 +89,7 @@ export function useRtsPrGraphRouter() {
         error,
       });
       try {
-        await trpcClient.hedgemony.prGraph.recordRebaseOutcome.mutate({
+        await trpcClient.rts.prGraph.recordRebaseOutcome.mutate({
           edgeId: payload.edgeId,
           outcome: "broken",
           note: error instanceof Error ? error.message : String(error),
@@ -116,7 +116,7 @@ export function useRtsPrGraphRouter() {
     void (async () => {
       try {
         const pending =
-          await trpcClient.hedgemony.prGraph.getPendingRebases.query();
+          await trpcClient.rts.prGraph.getPendingRebases.query();
         for (const event of pending) {
           await handleRebase(event);
         }
@@ -127,7 +127,7 @@ export function useRtsPrGraphRouter() {
   }, [isAuthenticated, handleRebase]);
 
   useSubscription(
-    trpcReact.hedgemony.prGraph.onRebaseChild.subscriptionOptions(undefined, {
+    trpcReact.rts.prGraph.onRebaseChild.subscriptionOptions(undefined, {
       onData: (data) => {
         void handleRebase(data);
       },

@@ -124,7 +124,7 @@ export function PlaceNestDialog({
       currentDraft,
     });
     try {
-      const response = await trpcClient.hedgemony.goalDraft.respond.mutate({
+      const response = await trpcClient.rts.goalDraft.respond.mutate({
         transcript: nextTranscript,
         currentDraft,
         mapContext: { mapX: roundedMapX, mapY: roundedMapY },
@@ -199,7 +199,7 @@ export function PlaceNestDialog({
         ? buildSimpleTranscript({ goalPrompt: trimmedGoalPrompt })
         : transcript;
 
-      const created = await trpcClient.hedgemony.nests.create.mutate({
+      const created = await trpcClient.rts.nests.create.mutate({
         name: effectiveName,
         goalPrompt: trimmedGoalPrompt,
         definitionOfDone: simpleMode ? null : definitionOfDone.trim(),

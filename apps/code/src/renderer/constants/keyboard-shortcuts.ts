@@ -35,7 +35,7 @@ export type ShortcutCategory =
   | "navigation"
   | "panels"
   | "editor"
-  | "hedgemony";
+  | "rts";
 
 export interface KeyboardShortcut {
   id: string;
@@ -220,10 +220,10 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
   },
   ...HEDGEMONY_HOTKEYS.map(
     (h): KeyboardShortcut => ({
-      id: `hedgemony-${h.id}`,
+      id: `rts-${h.id}`,
       keys: h.keys,
       description: h.description,
-      category: "hedgemony",
+      category: "rts",
       context: HEDGEMONY_CONTEXT_LABELS[h.context],
     }),
   ),
@@ -234,7 +234,7 @@ export const CATEGORY_LABELS: Record<ShortcutCategory, string> = {
   navigation: "Navigation",
   panels: "Panels & Tabs",
   editor: "Editor",
-  hedgemony: "Rts",
+  rts: "Rts",
 };
 
 export function getShortcutsByCategory(): Record<
@@ -246,7 +246,7 @@ export function getShortcutsByCategory(): Record<
     navigation: [],
     panels: [],
     editor: [],
-    hedgemony: [],
+    rts: [],
   };
   for (const shortcut of KEYBOARD_SHORTCUTS) {
     grouped[shortcut.category].push(shortcut);

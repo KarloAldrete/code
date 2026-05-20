@@ -543,7 +543,7 @@ export class CloudTaskClient {
         params: {
           content: formatInjectedPrompt(input),
         },
-        id: `hedgemony-${input.authoredBy}-${crypto.randomUUID()}`,
+        id: `rts-${input.authoredBy}-${crypto.randomUUID()}`,
       }),
     });
 

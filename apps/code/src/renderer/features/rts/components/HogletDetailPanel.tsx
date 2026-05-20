@@ -186,7 +186,7 @@ export function HogletDetailPanel({ hoglet, onClose }: HogletDetailPanelProps) {
     onClose();
 
     try {
-      await trpcClient.hedgemony.hoglets.retire.mutate({
+      await trpcClient.rts.hoglets.retire.mutate({
         hogletId: hoglet.id,
       });
       track(ANALYTICS_EVENTS.HEDGEMONY_HOGLET_RETIRED, {

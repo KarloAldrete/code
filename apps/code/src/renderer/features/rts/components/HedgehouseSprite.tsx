@@ -39,7 +39,7 @@ export function HedgehouseSprite({
       >
         <motion.button
           type="button"
-          data-hedgemony-hedgehouse
+          data-rts-hedgehouse
           aria-label="Hedgehouse"
           className="-translate-x-1/2 -translate-y-1/2 relative flex cursor-pointer flex-col items-center border-0 bg-transparent p-0"
           whileHover={{ scale: 1.04 }}

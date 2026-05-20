@@ -41,7 +41,7 @@ export function CompactNestDialog({
     setError(null);
     try {
       const trimmed = reason.trim();
-      const compacted = await trpcClient.hedgemony.nests.compact.mutate({
+      const compacted = await trpcClient.rts.nests.compact.mutate({
         id: nest.id,
         reason: trimmed.length > 0 ? trimmed : undefined,
       });

@@ -194,7 +194,7 @@ export function NestSprite({
         <motion.button
           ref={dropRef}
           type="button"
-          data-hedgemony-nest
+          data-rts-nest
           aria-label={`Select ${nest.name}`}
           className="-translate-x-1/2 -translate-y-1/2 flex cursor-pointer flex-col items-center border-0 bg-transparent p-0"
           whileHover={{ scale: 1.03 }}

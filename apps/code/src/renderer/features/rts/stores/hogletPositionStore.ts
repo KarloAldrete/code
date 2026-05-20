@@ -69,7 +69,7 @@ export const useHogletPositionStore = create<HogletPositionStore>()(
       reset: () => set({ positions: {}, walkPaths: {} }),
     }),
     {
-      name: "hedgemony-hoglet-positions",
+      name: "rts-hoglet-positions",
       storage: electronStorage,
       partialize: (state) => ({ positions: state.positions }),
     },

@@ -28,7 +28,7 @@ function formatTokens(n: number): string {
 
 export function FinOpsPanel({ onClose }: FinOpsPanelProps) {
   const { data, isLoading } = useQuery(
-    trpc.hedgemony.usage.summary.queryOptions(undefined, {
+    trpc.rts.usage.summary.queryOptions(undefined, {
       refetchInterval: 5000,
       staleTime: 4000,
     }),

@@ -454,7 +454,7 @@ function RtsMapSurfaceImpl(
     if (event.button !== 0) return;
     const onEntity = Boolean(
       (event.target as HTMLElement).closest(
-        "[data-hedgemony-nest], [data-hedgemony-hedgehouse], [data-hedgemony-hoglet]",
+        "[data-rts-nest], [data-rts-hedgehouse], [data-rts-hoglet]",
       ),
     );
     pointerDown.current = {
@@ -521,7 +521,7 @@ function RtsMapSurfaceImpl(
     if (!start || !onMapClick) return;
     if (
       (event.target as HTMLElement).closest(
-        "[data-hedgemony-nest], [data-hedgemony-hedgehouse], [data-hedgemony-hoglet]",
+        "[data-rts-nest], [data-rts-hedgehouse], [data-rts-hoglet]",
       ) &&
       !placementMode
     ) {
@@ -585,7 +585,7 @@ function RtsMapSurfaceImpl(
     event.preventDefault();
     if (
       (event.target as HTMLElement).closest(
-        "[data-hedgemony-nest], [data-hedgemony-hedgehouse]",
+        "[data-rts-nest], [data-rts-hedgehouse]",
       ) &&
       !placementMode
     ) {

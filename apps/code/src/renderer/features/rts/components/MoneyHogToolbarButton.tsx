@@ -28,7 +28,7 @@ export function MoneyHogToolbarButton({
 }: MoneyHogToolbarButtonProps) {
   const canView = useCanViewFinOps();
   const { data } = useQuery(
-    trpc.hedgemony.usage.summary.queryOptions(undefined, {
+    trpc.rts.usage.summary.queryOptions(undefined, {
       refetchInterval: 5000,
       staleTime: 4000,
       enabled: canView === true,

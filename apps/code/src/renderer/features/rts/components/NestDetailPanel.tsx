@@ -165,7 +165,7 @@ export function NestDetailPanel({
     setSending(true);
     setChatError(null);
     try {
-      await trpcClient.hedgemony.nestChat.send.mutate({
+      await trpcClient.rts.nestChat.send.mutate({
         nestId: nest.id,
         body,
       });
@@ -192,7 +192,7 @@ export function NestDetailPanel({
     setSaving(true);
     setError(null);
     try {
-      const updated = await trpcClient.hedgemony.nests.update.mutate({
+      const updated = await trpcClient.rts.nests.update.mutate({
         id: nest.id,
         name: name.trim(),
         goalPrompt: goalPrompt.trim(),
@@ -212,7 +212,7 @@ export function NestDetailPanel({
     setArchiving(true);
     setError(null);
     try {
-      await trpcClient.hedgemony.nests.archive.mutate({
+      await trpcClient.rts.nests.archive.mutate({
         id: nest.id,
       });
       useNestStore.getState().startDying(nest.id, nest.mapX, nest.mapY);
@@ -685,7 +685,7 @@ function HogletCard({
     if (retiring) return;
     setRetiring(true);
     try {
-      await trpcClient.hedgemony.hoglets.retire.mutate({
+      await trpcClient.rts.hoglets.retire.mutate({
         hogletId: hoglet.id,
       });
       useHogletStore.getState().remove(nestId, hoglet.id);
@@ -817,7 +817,7 @@ function PrGraphSection({ nestId }: { nestId: string }) {
   const handleUnlink = async (edgeId: string) => {
     setUnlinkingId(edgeId);
     try {
-      await trpcClient.hedgemony.prGraph.unlink.mutate({ id: edgeId });
+      await trpcClient.rts.prGraph.unlink.mutate({ id: edgeId });
     } catch (e) {
       log.error("Failed to unlink pr dependency", { edgeId, error: e });
     } finally {

@@ -68,7 +68,7 @@ export async function archiveTaskImperative(
   try {
     await getSessionService().disconnectFromTask(taskId);
 
-    await trpcClient.hedgemony.hoglets.retireByTaskId.mutate({ taskId });
+    await trpcClient.rts.hoglets.retireByTaskId.mutate({ taskId });
 
     await trpcClient.archive.archive.mutate({
       taskId,

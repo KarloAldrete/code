@@ -198,7 +198,7 @@ export function buildSimpleTranscript(input: {
   ];
 }
 
-const DRAFT_STORAGE_KEY = "hedgemony-nest-draft";
+const DRAFT_STORAGE_KEY = "rts-nest-draft";
 
 /**
  * Schema for the `nest-draft` localStorage entry. The renderer's own code
