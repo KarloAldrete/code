@@ -278,6 +278,64 @@ describe("PlansWatcherService.appendThreadMessage / resolveThread", () => {
     expect(lines[2]).toBe("First step content");
   });
 
+  it("inserts a blank line AFTER the new thread when the next line is non-blank", async () => {
+    // In CommonMark, `## Heading\nNext paragraph` is two blocks with no
+    // blank between them. If we insert `> [H]: msg` right after the
+    // heading without a trailing blank, "Next paragraph" becomes lazy
+    // continuation of the new blockquote and `remarkPlanThreads` can't
+    // parse it as a thread anymore.
+    const planPath = path.join(plansDir, "plan.md");
+    await fs.writeFile(planPath, "## Heading\nNext paragraph\n", "utf8");
+
+    await service.appendThreadMessage({
+      filePath: planPath,
+      blockText: "## Heading",
+      occurrence: 0,
+      message: "Why this heading?",
+      speaker: "H",
+    });
+
+    const updated = await fs.readFile(planPath, "utf8");
+    // The thread line must be sandwiched by blank lines on both sides.
+    const lines = updated.split("\n");
+    const threadIdx = lines.findIndex((l) => l.startsWith("> [H]: Why"));
+    expect(threadIdx).toBeGreaterThan(0);
+    expect(lines[threadIdx - 1]).toBe("");
+    expect(lines[threadIdx + 1]).toBe("");
+    expect(lines[threadIdx + 2]).toBe("Next paragraph");
+  });
+
+  it("inserts a blank line AFTER `> [resolved]` when the next line is non-blank", async () => {
+    // Defensively also keep the resolve marker separated from any
+    // following non-thread content.
+    const planPath = path.join(plansDir, "plan.md");
+    // Manually construct a state where the next line after the thread
+    // is non-blank. This shouldn't normally happen (the agent and the
+    // append helper produce a trailing blank), but we want to be robust.
+    await fs.writeFile(
+      planPath,
+      "Anchor para.\n\n> [H]: q\nNot a thread line\n",
+      "utf8",
+    );
+
+    // The renderer wouldn't actually surface this as a thread (the
+    // mdast blockquote contains lazy-continuation text), so we exercise
+    // the resolve helper directly.
+    await service.resolveThread({
+      filePath: planPath,
+      blockText: "Anchor para.",
+      occurrence: 0,
+    });
+
+    const updated = await fs.readFile(planPath, "utf8");
+    const lines = updated.split("\n");
+    const resolvedIdx = lines.findIndex((l) => l.trim() === "> [resolved]");
+    expect(resolvedIdx).toBeGreaterThan(0);
+    // The line after `> [resolved]` must be blank to terminate the
+    // blockquote.
+    expect(lines[resolvedIdx + 1]).toBe("");
+  });
+
   it("resolves the thread under the requested occurrence", async () => {
     const planPath = path.join(plansDir, "plan.md");
     const original = [

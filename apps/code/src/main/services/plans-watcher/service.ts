@@ -135,6 +135,21 @@ export function findBlockInsertionLine(
   return null;
 }
 
+/**
+ * After inserting or extending a thread blockquote, ensure the line right
+ * after the thread is blank (or the file ends there). Without this guard,
+ * a non-blank line immediately following `> [H]: …` becomes lazy
+ * continuation of the blockquote under CommonMark and `remarkPlanThreads`
+ * stops recognising it as a pure `[H]/[A]/[resolved]` thread.
+ *
+ * @param threadEnd 0-based index immediately after the last thread line
+ */
+function ensureBlankAfterThread(lines: string[], threadEnd: number): string[] {
+  if (threadEnd >= lines.length) return lines;
+  if (lines[threadEnd].trim() === "") return lines;
+  return [...lines.slice(0, threadEnd), "", ...lines.slice(threadEnd)];
+}
+
 export function findExistingThreadRange(
   lines: string[],
   startLine: number,
@@ -243,6 +258,7 @@ export class PlansWatcherService extends TypedEventEmitter<PlansWatcherEvents> {
     const existing = findExistingThreadRange(lines, insertionLine);
 
     let next: string[];
+    let threadEnd: number;
     if (existing) {
       // Extend the existing thread. If the last line is `> [resolved]`, insert
       // before it so the resolved marker stays terminal.
@@ -251,6 +267,7 @@ export class PlansWatcherService extends TypedEventEmitter<PlansWatcherEvents> {
           ? existing.end - 1
           : existing.end;
       next = [...lines.slice(0, insertAt), newLine, ...lines.slice(insertAt)];
+      threadEnd = existing.end + 1;
     } else {
       // Create a new thread immediately after the anchor block. Ensure there
       // is exactly one blank line between the block and the thread.
@@ -258,8 +275,10 @@ export class PlansWatcherService extends TypedEventEmitter<PlansWatcherEvents> {
       const suffix = lines.slice(insertionLine);
       const needsBlank = prefix.length > 0 && prefix[prefix.length - 1] !== "";
       next = [...prefix, ...(needsBlank ? [""] : []), newLine, ...suffix];
+      threadEnd = prefix.length + (needsBlank ? 1 : 0) + 1;
     }
 
+    next = ensureBlankAfterThread(next, threadEnd);
     await this.atomicWrite(input.filePath, next.join("\n"));
   }
 
@@ -286,11 +305,12 @@ export class PlansWatcherService extends TypedEventEmitter<PlansWatcherEvents> {
       return; // already resolved
     }
 
-    const next = [
+    let next = [
       ...lines.slice(0, existing.end),
       "> [resolved]",
       ...lines.slice(existing.end),
     ];
+    next = ensureBlankAfterThread(next, existing.end + 1);
     await this.atomicWrite(input.filePath, next.join("\n"));
   }
 
