@@ -56,12 +56,11 @@ export function buildWrapUpMessage(task: LongRunningTaskState): string {
   ].join("\n");
 }
 
-export function pushSystemContinuation(
-  session: Session,
+export function makeContinuationUserMessage(
   sessionId: string,
   text: string,
-): void {
-  session.input.push(makeUserMessage(sessionId, text));
+): SDKUserMessage {
+  return makeUserMessage(sessionId, text);
 }
 
 export async function broadcastLongRunningTaskUpdate(
@@ -82,18 +81,37 @@ export async function broadcastLongRunningTaskUpdate(
 
 export type LoopDecision =
   | { kind: "exit" }
-  | { kind: "continue" }
-  | { kind: "wrap_up" };
+  | { kind: "continue"; text: string }
+  | { kind: "wrap_up"; text: string };
+
+interface LongRunningTaskHostSession {
+  longRunningTask: LongRunningTaskState | null;
+  cancelled: boolean;
+  notificationHistory: Session["notificationHistory"];
+}
+
+interface DecideOptions {
+  /**
+   * Number of user-driven prompts queued behind the current turn. If > 0,
+   * the loop yields to the user instead of auto-continuing. Adapters that
+   * don't queue concurrent prompts (codex) pass 0.
+   */
+  pendingUserMessageCount: number;
+}
 
 /**
  * Decide what to do after an end-of-turn signal when a long-running task is
- * active. Mutates session state (iterations++, clearing on exit) and pushes
- * the appropriate user message into session.input when continuing.
+ * active. Mutates `session.longRunningTask` in place (iterations++, clearing
+ * on exit) and returns the next continuation text for continue/wrap_up.
+ * Caller is responsible for routing the text through whatever turn mechanism
+ * its adapter uses (pushing into session.input for claude, building a new
+ * PromptRequest for codex).
  */
 export async function decideLongRunningTaskStep(
-  session: Session,
+  session: LongRunningTaskHostSession,
   sessionId: string,
   client: AgentSideConnection,
+  options: DecideOptions,
 ): Promise<LoopDecision> {
   const task = session.longRunningTask;
   if (!task || session.cancelled) {
@@ -102,32 +120,26 @@ export async function decideLongRunningTaskStep(
 
   const lastText = getLatestAssistantText(session.notificationHistory) ?? "";
 
-  // Marker observed — task done.
   if (lastText.includes(task.marker)) {
     session.longRunningTask = null;
     await broadcastLongRunningTaskUpdate(client, sessionId, null);
     return { kind: "exit" };
   }
 
-  // Budget exhausted — let the agent do one wrap-up turn, then exit.
   if (task.iterations >= task.maxIterations) {
     const text = buildWrapUpMessage(task);
     session.longRunningTask = null;
     await broadcastLongRunningTaskUpdate(client, sessionId, null);
-    pushSystemContinuation(session, sessionId, text);
-    return { kind: "wrap_up" };
+    return { kind: "wrap_up", text };
   }
 
-  // User has steered: a concurrent prompt() has queued their input. Defer to
-  // it — the next prompt() will pick up the loop after its own end_turn.
-  if (session.pendingMessages.size > 0) {
+  if (options.pendingUserMessageCount > 0) {
     return { kind: "exit" };
   }
 
   task.iterations += 1;
   await broadcastLongRunningTaskUpdate(client, sessionId, task);
-  pushSystemContinuation(session, sessionId, buildContinuationMessage(task));
-  return { kind: "continue" };
+  return { kind: "continue", text: buildContinuationMessage(task) };
 }
 
 const PROPOSAL_TAG_RE =
@@ -162,8 +174,13 @@ export function extractProposal(text: string): Proposal | null {
   return result.success ? result.data : null;
 }
 
+interface ProposalSessionView {
+  longRunningTask: LongRunningTaskState | null;
+  notificationHistory: Session["notificationHistory"];
+}
+
 export async function maybeBroadcastProposal(
-  session: Session,
+  session: ProposalSessionView,
   sessionId: string,
   client: AgentSideConnection,
 ): Promise<void> {

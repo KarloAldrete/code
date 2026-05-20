@@ -44,6 +44,12 @@ import {
 export interface CodexClientCallbacks {
   /** Called when a usage_update session notification is received */
   onUsageUpdate?: (update: Record<string, unknown>) => void;
+  /**
+   * Called for every session notification before it is forwarded upstream.
+   * The long-running task loop uses this to populate notificationHistory
+   * with agent_message_chunk entries so marker / proposal detection works.
+   */
+  onSessionNotification?: (notification: SessionNotification) => void;
   /** When set, Read responses are annotated with PostHog enrichment before reaching codex-acp. */
   enrichmentDeps?: FileEnrichmentDeps;
   /**
@@ -165,6 +171,7 @@ export function createCodexClient(
     },
 
     async sessionUpdate(params: SessionNotification): Promise<void> {
+      callbacks?.onSessionNotification?.(params);
       const update = params.update as Record<string, unknown> | undefined;
 
       if (

@@ -72,6 +72,7 @@ import type { EnrichedReadCache } from "./hooks";
 import {
   broadcastLongRunningTaskUpdate,
   decideLongRunningTaskStep,
+  makeContinuationUserMessage,
   maybeBroadcastProposal,
   StartLongRunningTaskParamsSchema,
 } from "./long-running-task/utils";
@@ -614,11 +615,14 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               this.session,
               params.sessionId,
               this.client,
+              { pendingUserMessageCount: this.session.pendingMessages.size },
             );
             if (lrtDecision.kind !== "exit") {
-              // Keep the while-loop alive — a continuation user message has
-              // been pushed into session.input, so the SDK will start a new
-              // turn instead of going idle.
+              this.session.input.push(
+                makeContinuationUserMessage(params.sessionId, lrtDecision.text),
+              );
+              // Keep the while-loop alive — the SDK will start a new turn
+              // instead of going idle.
               promptReplayed = true;
               break;
             }

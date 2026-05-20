@@ -62,6 +62,14 @@ import {
   nodeWritableToWebWritable,
 } from "../../utils/streams";
 import { BaseAcpAgent, type BaseSession } from "../base-acp-agent";
+import { LONG_RUNNING_TASK_INSTRUCTIONS } from "../claude/long-running-task/instructions";
+import {
+  broadcastLongRunningTaskUpdate,
+  decideLongRunningTaskStep,
+  maybeBroadcastProposal,
+  StartLongRunningTaskParamsSchema,
+} from "../claude/long-running-task/utils";
+import type { LongRunningTaskState } from "../claude/types";
 import { classifyAgentError } from "../error-classification";
 import { createCodexClient } from "./codex-client";
 import { normalizeCodexConfigOptions } from "./models";
@@ -112,7 +120,15 @@ export interface CodexAcpAgentOptions {
 type CodexSession = BaseSession & {
   settingsManager: CodexSettingsManager;
   promptRunning: boolean;
+  longRunningTask: LongRunningTaskState | null;
 };
+
+function appendLongRunningTaskInstructions(
+  existing: string | undefined,
+): string {
+  if (!existing) return LONG_RUNNING_TASK_INSTRUCTIONS;
+  return `${existing}\n\n${LONG_RUNNING_TASK_INSTRUCTIONS}`;
+}
 
 function toCodexPermissionMode(mode?: string): PermissionMode {
   if (mode && (isCodexNativeMode(mode) || isCodeExecutionMode(mode))) {
@@ -257,13 +273,18 @@ export class CodexAcpAgent extends BaseAcpAgent {
     const cwd = options.codexProcessOptions.cwd ?? process.cwd();
     const settingsManager = new CodexSettingsManager(cwd);
 
-    this.codexProcessOptions = options.codexProcessOptions;
+    this.codexProcessOptions = {
+      ...options.codexProcessOptions,
+      instructions: appendLongRunningTaskInstructions(
+        options.codexProcessOptions.instructions,
+      ),
+    };
     this.processCallbacks = options.processCallbacks;
     this.onStructuredOutput = options.onStructuredOutput;
 
     // Spawn the codex-acp subprocess
     this.codexProcess = spawnCodexProcess({
-      ...options.codexProcessOptions,
+      ...this.codexProcessOptions,
       settings: settingsManager.getSettings(),
       logger: this.logger,
       processCallbacks: options.processCallbacks,
@@ -281,6 +302,7 @@ export class CodexAcpAgent extends BaseAcpAgent {
       notificationHistory: [],
       cancelled: false,
       promptRunning: false,
+      longRunningTask: null,
     };
 
     this.sessionState = createSessionState("", cwd);
@@ -295,6 +317,9 @@ export class CodexAcpAgent extends BaseAcpAgent {
         createCodexClient(this.client, this.logger, this.sessionState, {
           enrichmentDeps: this.enrichment?.deps,
           onStructuredOutput: this.onStructuredOutput,
+          onSessionNotification: (n) => {
+            this.session.notificationHistory.push(n);
+          },
         }),
       codexStream,
     );
@@ -589,10 +614,40 @@ export class CodexAcpAgent extends BaseAcpAgent {
 
     this.session.promptRunning = true;
     let response: PromptResponse;
+    let currentParams = params;
     try {
-      response = await this.codexConnection.prompt(prependPrContext(params));
-    } catch (error) {
-      throw classifyPromptError(error);
+      // Long-running task loop: after each inner prompt() resolves we may
+      // synthesize another continuation user message and call prompt() again,
+      // until the agent emits the marker, the cap is hit, or the user
+      // cancels.
+      while (true) {
+        try {
+          response = await this.codexConnection.prompt(
+            prependPrContext(currentParams),
+          );
+        } catch (error) {
+          throw classifyPromptError(error);
+        }
+
+        const lrtDecision = await decideLongRunningTaskStep(
+          this.session,
+          params.sessionId,
+          this.client,
+          { pendingUserMessageCount: 0 },
+        );
+        if (lrtDecision.kind === "exit") {
+          await maybeBroadcastProposal(
+            this.session,
+            params.sessionId,
+            this.client,
+          );
+          break;
+        }
+        currentParams = {
+          sessionId: params.sessionId,
+          prompt: [{ type: "text", text: lrtDecision.text }],
+        };
+      }
     } finally {
       this.session.promptRunning = false;
     }
@@ -676,6 +731,12 @@ export class CodexAcpAgent extends BaseAcpAgent {
     method: string,
     params: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
+    if (isMethod(method, POSTHOG_METHODS.START_LONG_RUNNING_TASK)) {
+      return this.handleStartLongRunningTask(params);
+    }
+    if (isMethod(method, POSTHOG_METHODS.STOP_LONG_RUNNING_TASK)) {
+      return this.handleStopLongRunningTask();
+    }
     if (!isMethod(method, POSTHOG_METHODS.REFRESH_SESSION)) {
       throw RequestError.methodNotFound(method);
     }
@@ -699,6 +760,42 @@ export class CodexAcpAgent extends BaseAcpAgent {
 
     await this.refreshSession(params.mcpServers as McpServer[]);
     return { refreshed: true };
+  }
+
+  private async handleStartLongRunningTask(
+    params: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const parsed = StartLongRunningTaskParamsSchema.safeParse(params);
+    if (!parsed.success) {
+      throw new RequestError(
+        -32602,
+        `start_long_running_task: invalid params — ${parsed.error.issues
+          .map((i) => `${i.path.join(".")}: ${i.message}`)
+          .join("; ")}`,
+      );
+    }
+    this.session.longRunningTask = {
+      goal: parsed.data.goal,
+      successCriterion: parsed.data.successCriterion,
+      marker: parsed.data.marker,
+      iterations: 0,
+      maxIterations: parsed.data.maxIterations,
+    };
+    await broadcastLongRunningTaskUpdate(
+      this.client,
+      this.sessionId,
+      this.session.longRunningTask,
+    );
+    return { started: true };
+  }
+
+  private async handleStopLongRunningTask(): Promise<Record<string, unknown>> {
+    if (!this.session.longRunningTask) {
+      return { stopped: false };
+    }
+    this.session.longRunningTask = null;
+    await broadcastLongRunningTaskUpdate(this.client, this.sessionId, null);
+    return { stopped: true };
   }
 
   private async refreshSession(mcpServers: McpServer[]): Promise<void> {
@@ -750,7 +847,11 @@ export class CodexAcpAgent extends BaseAcpAgent {
     const newConnection = new ClientSideConnection(
       (_agent) =>
         createCodexClient(this.client, this.logger, this.sessionState, {
+          enrichmentDeps: this.enrichment?.deps,
           onStructuredOutput: this.onStructuredOutput,
+          onSessionNotification: (n) => {
+            this.session.notificationHistory.push(n);
+          },
         }),
       codexStream,
     );
