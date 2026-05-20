@@ -104,6 +104,10 @@ vi.mock("@shared/errors.js", () => ({
   isAuthError: vi.fn(() => false),
 }));
 
+vi.mock("../settingsStore.js", () => ({
+  getUseClaudeSubscription: vi.fn(() => false),
+}));
+
 vi.mock("node:fs", async (importOriginal) => {
   const original = await importOriginal<typeof import("node:fs")>();
   return {

@@ -11,6 +11,7 @@ import { useHotkeys } from "react-hotkeys-hook";
 
 import { useOnboardingFlow } from "../hooks/useOnboardingFlow";
 import { usePrefetchSignalData } from "../hooks/usePrefetchSignalData";
+import { ClaudeAuthMethodStep } from "./ClaudeAuthMethodStep";
 import { CliInstallStep } from "./CliInstallStep";
 import { GitIntegrationStep } from "./GitIntegrationStep";
 import { InviteCodeStep } from "./InviteCodeStep";
@@ -109,6 +110,21 @@ export function OnboardingFlow() {
               className="min-h-0 w-full flex-1"
             >
               <WelcomeScreen onNext={next} />
+            </motion.div>
+          )}
+
+          {currentStep === "claude-auth-method" && (
+            <motion.div
+              key="claude-auth-method"
+              custom={direction}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              variants={stepVariants}
+              transition={{ duration: 0.3 }}
+              className="min-h-0 w-full flex-1"
+            >
+              <ClaudeAuthMethodStep onNext={next} onBack={back} />
             </motion.div>
           )}
 

@@ -21,7 +21,9 @@ import {
   Text,
 } from "@radix-ui/themes";
 import { Tooltip } from "@renderer/components/ui/Tooltip";
+import { useTRPC } from "@renderer/trpc";
 import { PLAN_PRO_ALPHA } from "@shared/types/seat";
+import { useQuery } from "@tanstack/react-query";
 import { logger } from "@utils/logger";
 import { getBillingUrl, getPostHogUrl } from "@utils/urls";
 import { useEffect, useState } from "react";
@@ -55,6 +57,32 @@ function formatResetTime(seconds: number): string {
 }
 
 export function PlanUsageSettings() {
+  const trpcReact = useTRPC();
+  const { data: useClaudeSubscription } = useQuery(
+    trpcReact.claudeSubscription.getEnabled.queryOptions(),
+  );
+
+  if (useClaudeSubscription) {
+    return (
+      <Flex direction="column" gap="3">
+        <Callout.Root color="blue" size="1">
+          <Callout.Icon>
+            <Info size={16} />
+          </Callout.Icon>
+          <Callout.Text className="text-sm">
+            You're using your own Claude subscription. PostHog plan usage and
+            billing don't apply. To switch back, turn off "Use my Claude
+            subscription" in General settings.
+          </Callout.Text>
+        </Callout.Root>
+      </Flex>
+    );
+  }
+
+  return <PlanUsageContent />;
+}
+
+function PlanUsageContent() {
   const {
     seat,
     orgSeat,

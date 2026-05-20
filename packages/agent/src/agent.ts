@@ -50,10 +50,24 @@ export class Agent {
     }
   }
 
-  private async _configureLlmGateway(overrideUrl?: string): Promise<{
+  private async _configureLlmGateway(
+    overrideUrl?: string,
+    skipGateway?: boolean,
+  ): Promise<{
     gatewayUrl: string;
     apiKey: string;
   } | null> {
+    if (skipGateway) {
+      // Subscription mode: clear any previously-set gateway env vars so the SDK
+      // falls back to api.anthropic.com authenticated with the user's local
+      // ~/.claude.json credentials.
+      delete process.env.OPENAI_BASE_URL;
+      delete process.env.OPENAI_API_KEY;
+      delete process.env.ANTHROPIC_BASE_URL;
+      delete process.env.ANTHROPIC_AUTH_TOKEN;
+      return null;
+    }
+
     if (!this.posthogAPI) {
       return null;
     }
@@ -79,7 +93,10 @@ export class Agent {
     taskRunId: string,
     options: TaskExecutionOptions = {},
   ): Promise<InProcessAcpConnection> {
-    const gatewayConfig = await this._configureLlmGateway(options.gatewayUrl);
+    const gatewayConfig = await this._configureLlmGateway(
+      options.gatewayUrl,
+      options.useClaudeSubscription,
+    );
     this.taskRunId = taskRunId;
 
     let allowedModelIds: Set<string> | undefined;

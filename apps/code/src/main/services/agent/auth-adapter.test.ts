@@ -1,3 +1,5 @@
+import * as os from "node:os";
+import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockFetch = vi.hoisted(() => vi.fn());
@@ -11,6 +13,10 @@ vi.mock("../../utils/logger.js", () => ({
       debug: vi.fn(),
     }),
   },
+}));
+
+vi.mock("../../utils/env.js", () => ({
+  getUserDataDir: vi.fn(() => "/mock/userdata"),
 }));
 
 vi.mock("@posthog/agent/posthog-api", () => ({
@@ -224,6 +230,7 @@ describe("AgentAuthAdapter", () => {
       mockNodeDir: "/mock/node",
       proxyUrl: "http://127.0.0.1:9999",
       claudeCliPath: "/mock/claude-cli.js",
+      useClaudeSubscription: false,
     });
 
     expect(process.env.POSTHOG_API_KEY).toBe("test-access-token");
@@ -231,5 +238,26 @@ describe("AgentAuthAdapter", () => {
     expect(process.env.LLM_GATEWAY_URL).toBe("http://127.0.0.1:9999");
     expect(process.env.CLAUDE_CODE_EXECUTABLE).toBe("/mock/claude-cli.js");
     expect(process.env.POSTHOG_PROJECT_ID).toBe("1");
+  });
+
+  it("skips gateway env vars and points to ~/.claude in subscription mode", async () => {
+    process.env.LLM_GATEWAY_URL = "http://leftover";
+    process.env.POSTHOG_API_KEY = "leftover";
+    process.env.POSTHOG_AUTH_HEADER = "leftover";
+
+    await adapter.configureProcessEnv({
+      credentials: baseCredentials,
+      mockNodeDir: "/mock/node",
+      proxyUrl: null,
+      claudeCliPath: "/mock/claude-cli.js",
+      useClaudeSubscription: true,
+    });
+
+    expect(process.env.LLM_GATEWAY_URL).toBeUndefined();
+    expect(process.env.POSTHOG_API_KEY).toBeUndefined();
+    expect(process.env.POSTHOG_AUTH_HEADER).toBeUndefined();
+    expect(process.env.CLAUDE_CONFIG_DIR).toBe(
+      path.join(os.homedir(), ".claude"),
+    );
   });
 });

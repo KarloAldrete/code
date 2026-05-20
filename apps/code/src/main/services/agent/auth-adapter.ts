@@ -1,3 +1,5 @@
+import * as os from "node:os";
+import * as path from "node:path";
 import { delimiter } from "node:path";
 import {
   type McpToolApprovalState,
@@ -7,6 +9,7 @@ import {
 import { getLlmGatewayUrl } from "@posthog/agent/posthog-api";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
+import { getUserDataDir } from "../../utils/env";
 import { logger } from "../../utils/logger";
 import type { AuthService } from "../auth/service";
 import type { AuthProxyService } from "../auth-proxy/service";
@@ -50,8 +53,10 @@ export type McpToolInstallations = Record<string, McpToolInstallationRef>;
 interface ConfigureProcessEnvInput {
   credentials: Credentials;
   mockNodeDir: string;
-  proxyUrl: string;
+  /** Local proxy URL for PostHog LLM gateway. Pass `null` when subscription mode is on. */
+  proxyUrl: string | null;
   claudeCliPath: string;
+  useClaudeSubscription: boolean;
 }
 
 @injectable()
@@ -137,6 +142,7 @@ export class AgentAuthAdapter {
     mockNodeDir,
     proxyUrl,
     claudeCliPath,
+    useClaudeSubscription,
   }: ConfigureProcessEnvInput): Promise<void> {
     await this.getValidToken();
 
@@ -145,10 +151,24 @@ export class AgentAuthAdapter {
       process.env.PATH = `${mockNodeDir}${delimiter}${currentPath}`;
     }
 
-    process.env.LLM_GATEWAY_URL = proxyUrl;
     process.env.CLAUDE_CODE_EXECUTABLE = claudeCliPath;
     process.env.POSTHOG_API_URL = credentials.apiHost;
     process.env.POSTHOG_PROJECT_ID = String(credentials.projectId);
+
+    if (useClaudeSubscription) {
+      // Point the SDK at the user's real Claude credentials so it uses their
+      // existing `claude auth login` subscription instead of the PostHog gateway.
+      process.env.CLAUDE_CONFIG_DIR = path.join(os.homedir(), ".claude");
+      delete process.env.LLM_GATEWAY_URL;
+      delete process.env.POSTHOG_API_KEY;
+      delete process.env.POSTHOG_AUTH_HEADER;
+    } else {
+      if (proxyUrl) {
+        process.env.LLM_GATEWAY_URL = proxyUrl;
+      }
+      // Restore the isolated config dir in case it was previously overridden.
+      process.env.CLAUDE_CONFIG_DIR = path.join(getUserDataDir(), "claude");
+    }
   }
 
   private syncTokenEnvironment(token: string): void {

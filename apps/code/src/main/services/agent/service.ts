@@ -53,6 +53,7 @@ import type { FsService } from "../fs/service";
 import type { McpAppsService } from "../mcp-apps/service";
 import type { PosthogPluginService } from "../posthog-plugin/service";
 import type { ProcessTrackingService } from "../process-tracking/service";
+import { getUseClaudeSubscription } from "../settingsStore";
 import type { SleepService } from "../sleep/service";
 import type { AgentAuthAdapter, McpToolInstallations } from "./auth-adapter";
 import { discoverExternalPlugins } from "./discover-plugins";
@@ -563,14 +564,16 @@ When creating pull requests, add the following footer at the end of the PR descr
 
     const channel = `agent-event:${taskRunId}`;
     const mockNodeDir = this.setupMockNodeEnvironment();
-    const proxyUrl = await this.agentAuthAdapter.ensureGatewayProxy(
-      credentials.apiHost,
-    );
+    const useClaudeSubscription = getUseClaudeSubscription();
+    const proxyUrl = useClaudeSubscription
+      ? null
+      : await this.agentAuthAdapter.ensureGatewayProxy(credentials.apiHost);
     await this.agentAuthAdapter.configureProcessEnv({
       credentials,
       mockNodeDir,
       proxyUrl,
       claudeCliPath: this.getClaudeCliPath(),
+      useClaudeSubscription,
     });
 
     const isPreview = taskId === "__preview__";
@@ -595,7 +598,8 @@ When creating pull requests, add the following footer at the end of the PR descr
 
       const acpConnection = await agent.run(taskId, taskRunId, {
         adapter,
-        gatewayUrl: proxyUrl,
+        gatewayUrl: proxyUrl ?? undefined,
+        useClaudeSubscription,
         codexBinaryPath:
           adapter === "codex" ? this.getCodexBinaryPath() : undefined,
         model,

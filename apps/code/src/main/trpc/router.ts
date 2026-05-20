@@ -2,6 +2,7 @@ import { agentRouter } from "./routers/agent";
 import { analyticsRouter } from "./routers/analytics";
 import { archiveRouter } from "./routers/archive";
 import { authRouter } from "./routers/auth";
+import { claudeSubscriptionRouter } from "./routers/claude-subscription";
 import { cloudTaskRouter } from "./routers/cloud-task";
 import { connectivityRouter } from "./routers/connectivity";
 import { contextMenuRouter } from "./routers/context-menu";
@@ -42,6 +43,7 @@ export const trpcRouter = router({
   analytics: analyticsRouter,
   archive: archiveRouter,
   auth: authRouter,
+  claudeSubscription: claudeSubscriptionRouter,
   cloudTask: cloudTaskRouter,
   connectivity: connectivityRouter,
   contextMenu: contextMenuRouter,

@@ -119,6 +119,12 @@ export interface TaskExecutionOptions {
   adapter?: "claude" | "codex";
   model?: string;
   gatewayUrl?: string;
+  /**
+   * When true, skip configuring the LLM gateway env vars so the underlying SDK
+   * uses the user's local Claude credentials (~/.claude.json) — i.e. their
+   * Claude Max / Pro subscription — instead of routing through PostHog's gateway.
+   */
+  useClaudeSubscription?: boolean;
   codexBinaryPath?: string;
   instructions?: string;
   processCallbacks?: ProcessSpawnedCallback;

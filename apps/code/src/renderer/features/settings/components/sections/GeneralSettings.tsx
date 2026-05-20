@@ -22,7 +22,7 @@ import { useTRPC } from "@renderer/trpc";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import type { ThemePreference } from "@stores/themeStore";
 import { useThemeStore } from "@stores/themeStore";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { track } from "@utils/analytics";
 import { playCompletionSound } from "@utils/sounds";
 import { getPostHogUrl } from "@utils/urls";
@@ -471,6 +471,12 @@ export function GeneralSettings() {
         />
       </SettingRow>
 
+      {/* Claude */}
+      <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">
+        Claude
+      </Text>
+      <ClaudeSubscriptionSettings />
+
       {/* Fun */}
       <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">
         Fun
@@ -488,6 +494,89 @@ export function GeneralSettings() {
         />
       </SettingRow>
     </Flex>
+  );
+}
+
+function ClaudeSubscriptionSettings() {
+  const trpcReact = useTRPC();
+  const queryClient = useQueryClient();
+  const { data: enabled } = useQuery(
+    trpcReact.claudeSubscription.getEnabled.queryOptions(),
+  );
+  const { data: status, refetch: refetchStatus } = useQuery(
+    trpcReact.claudeSubscription.getStatus.queryOptions(),
+  );
+  const setEnabledMutation = useMutation(
+    trpcReact.claudeSubscription.setEnabled.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: trpcReact.claudeSubscription.getEnabled.queryKey(),
+        });
+      },
+    }),
+  );
+
+  const isEnabled = enabled ?? false;
+  const isSignedIn = status?.signedIn ?? false;
+
+  const handleToggle = useCallback(
+    (checked: boolean) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "use_claude_subscription",
+        new_value: checked,
+        old_value: isEnabled,
+      });
+      setEnabledMutation.mutate({ enabled: checked });
+      if (checked) void refetchStatus();
+    },
+    [isEnabled, setEnabledMutation, refetchStatus],
+  );
+
+  return (
+    <>
+      <SettingRow
+        label="Use my Claude subscription"
+        description="Bypass PostHog's LLM gateway and use your personal Claude Max or Pro subscription. PostHog plan usage doesn't apply when this is on."
+      >
+        <Switch checked={isEnabled} onCheckedChange={handleToggle} size="1" />
+      </SettingRow>
+
+      {isEnabled && (
+        <SettingRow
+          label="Claude account"
+          description={
+            isSignedIn ? (
+              <Text color="gray" className="text-[13px]">
+                Signed in
+                {status?.accountEmail ? ` as ${status.accountEmail}` : ""}.
+              </Text>
+            ) : (
+              <Text color="gray" className="text-[13px]">
+                Run{" "}
+                <Text
+                  className="rounded-(--radius-2) bg-(--gray-3) px-1 py-0.5 font-mono text-[12px]"
+                  color="gray"
+                >
+                  claude auth login
+                </Text>{" "}
+                in your terminal, then click Refresh.
+              </Text>
+            )
+          }
+          noBorder
+        >
+          <Button
+            size="1"
+            variant="outline"
+            onClick={() => {
+              void refetchStatus();
+            }}
+          >
+            Refresh
+          </Button>
+        </SettingRow>
+      )}
+    </>
   );
 }
 
