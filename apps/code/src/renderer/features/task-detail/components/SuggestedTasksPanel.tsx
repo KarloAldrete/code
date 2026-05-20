@@ -1,4 +1,4 @@
-import { useInboxReportSelectionStore } from "@features/inbox/stores/inboxReportSelectionStore";
+import { DiscoveredTaskDetailDialog } from "@features/setup/components/DiscoveredTaskDetailDialog";
 import { SetupScanFeed } from "@features/setup/components/SetupScanFeed";
 import {
   selectRepoDiscovery,
@@ -9,7 +9,6 @@ import type { DiscoveredTask } from "@features/setup/types";
 import { ArrowRight, Lightning, MagnifyingGlass } from "@phosphor-icons/react";
 import { Flex, Text } from "@radix-ui/themes";
 import { useActiveRepoStore } from "@stores/activeRepoStore";
-import { useNavigationStore } from "@stores/navigationStore";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { SuggestedTaskCard } from "./SuggestedTaskCard";
@@ -29,11 +28,7 @@ const BOTTOM_PADDING = 56;
 const LOG_LINE_HEIGHT = 24;
 const LOG_FEED_PADDING = 16;
 
-interface SuggestedTasksPanelProps {
-  onSelect: (task: DiscoveredTask) => void;
-}
-
-export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
+export function SuggestedTasksPanel() {
   const selectedDirectory = useActiveRepoStore((s) => s.path);
   const discoveredTasks = useSetupStore((s) =>
     s.discoveredTasks.filter((task) =>
@@ -50,8 +45,9 @@ export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
     (s) => selectRepoDiscovery(s, selectedDirectory).feed,
   );
   const removeDiscoveredTask = useSetupStore((s) => s.removeDiscoveredTask);
-  const selectDiscoveredTask = useSetupStore((s) => s.selectDiscoveredTask);
-  const navigateToInbox = useNavigationStore((s) => s.navigateToInbox);
+
+  const [detailTask, setDetailTask] = useState<DiscoveredTask | null>(null);
+  const [pageStart, setPageStart] = useState(0);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [availableHeight, setAvailableHeight] = useState<number>(() =>
@@ -88,14 +84,13 @@ export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
     [removeDiscoveredTask],
   );
 
-  const handleViewDetails = useCallback(
-    (task: DiscoveredTask) => {
-      useInboxReportSelectionStore.getState().clearSelection();
-      selectDiscoveredTask(task.id);
-      navigateToInbox();
-    },
-    [selectDiscoveredTask, navigateToInbox],
-  );
+  const handleSelectTask = useCallback((task: DiscoveredTask) => {
+    setDetailTask(task);
+  }, []);
+
+  const handleCloseDetail = useCallback(() => {
+    setDetailTask(null);
+  }, []);
 
   const isEnricherRunning = enricherStatus === "running";
   const isDiscoveryRunning = discoveryStatus === "running";
@@ -147,8 +142,23 @@ export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
     }
   }
 
-  const visibleTasks = discoveredTasks.slice(0, visibleCount);
-  const hiddenCount = totalTasks - visibleTasks.length;
+  // Clamp pageStart if dismissals shrink the list past the current page.
+  const effectivePageStart =
+    visibleCount > 0 && pageStart < totalTasks ? pageStart : 0;
+
+  const visibleTasks = discoveredTasks.slice(
+    effectivePageStart,
+    effectivePageStart + visibleCount,
+  );
+  const hiddenCount = totalTasks - visibleCount;
+
+  const handleSeeMore = () => {
+    setPageStart((prev) => {
+      const base = prev < totalTasks ? prev : 0;
+      const next = base + visibleCount;
+      return next >= totalTasks ? 0 : next;
+    });
+  };
 
   const fadeMotion = {
     initial: { opacity: 0 },
@@ -170,9 +180,8 @@ export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
             key={task.id}
             task={task}
             index={index}
-            onSelect={onSelect}
+            onSelect={handleSelectTask}
             onDismiss={handleDismiss}
-            onViewDetails={handleViewDetails}
           />
         ))}
         {hiddenCount > 0 && (
@@ -180,13 +189,13 @@ export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
             key="see-more"
             layout
             type="button"
-            onClick={navigateToInbox}
+            onClick={handleSeeMore}
             {...fadeMotion}
             className="cursor-pointer self-end rounded-md px-1.5 py-0.5 text-(--gray-11) hover:text-(--gray-12)"
           >
             <Flex align="center" gap="1">
               <Text size="1" weight="medium">
-                See {hiddenCount} more in Inbox
+                See {hiddenCount} more
               </Text>
               <ArrowRight size={12} weight="bold" />
             </Flex>
@@ -220,6 +229,10 @@ export function SuggestedTasksPanel({ onSelect }: SuggestedTasksPanelProps) {
           </motion.div>
         )}
       </AnimatePresence>
+      <DiscoveredTaskDetailDialog
+        task={detailTask}
+        onClose={handleCloseDetail}
+      />
     </div>
   );
 }

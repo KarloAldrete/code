@@ -54,7 +54,6 @@ interface SetupStoreState {
   discoveredTasks: DiscoveredTask[];
   discoveryByRepo: Record<string, RepoDiscoveryState>;
   enricherByRepo: Record<string, RepoEnricherState>;
-  selectedDiscoveredTaskId: string | null;
 }
 
 interface SetupStoreActions {
@@ -66,7 +65,6 @@ interface SetupStoreActions {
   completeEnrichment: (repoPath: string) => void;
   failEnrichment: (repoPath: string) => void;
   removeDiscoveredTask: (taskId: string, repoPath: string | null) => void;
-  selectDiscoveredTask: (taskId: string | null) => void;
   addEnricherSuggestionIfMissing: (task: DiscoveredTask) => void;
   pushDiscoveryActivity: (repoPath: string, entry: ActivityEntry) => void;
   resetSetup: () => void;
@@ -83,7 +81,6 @@ const initialState: SetupStoreState = {
   discoveredTasks: [],
   discoveryByRepo: {},
   enricherByRepo: {},
-  selectedDiscoveredTaskId: null,
 };
 
 export function selectRepoDiscovery(
@@ -265,15 +262,7 @@ export const useSetupStore = create<SetupStore>()(
           discoveredTasks: state.discoveredTasks.filter(
             (t) => !(t.id === taskId && isTaskForRepo(t, repoPath)),
           ),
-          selectedDiscoveredTaskId:
-            state.selectedDiscoveredTaskId === taskId
-              ? null
-              : state.selectedDiscoveredTaskId,
         }));
-      },
-
-      selectDiscoveredTask: (taskId) => {
-        set({ selectedDiscoveredTaskId: taskId });
       },
 
       // Adds an enricher-source suggestion if there isn't already one with

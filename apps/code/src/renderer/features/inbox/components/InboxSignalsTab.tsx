@@ -33,9 +33,6 @@ import {
 } from "@features/inbox/utils/filterReports";
 import { INBOX_REFETCH_INTERVAL_MS } from "@features/inbox/utils/inboxConstants";
 import { setPendingInboxOpenMethod } from "@features/inbox/utils/pendingInboxOpenMethod";
-import { DiscoveredTaskDetailPane } from "@features/setup/components/DiscoveredTaskDetailPane";
-import { RecommendedSetupTasks } from "@features/setup/components/RecommendedSetupTasks";
-import { useSetupStore } from "@features/setup/stores/setupStore";
 import {
   useIntegrations,
   useRepositoryIntegration,
@@ -350,9 +347,6 @@ export function InboxSignalsTab() {
   // ── Click handler: plain / cmd / shift ──────────────────────────────────
   const handleReportClick = useCallback(
     (reportId: string, event: { metaKey: boolean; shiftKey: boolean }) => {
-      // Selecting a real report clears any discovered-task selection so the
-      // detail pane can swap to the report.
-      useSetupStore.getState().selectDiscoveredTask(null);
       if (event.shiftKey) {
         setPendingInboxOpenMethod("click_shift");
         selectRange(
@@ -433,28 +427,6 @@ export function InboxSignalsTab() {
     };
   }, [sidebarIsResizing, setSidebarWidth, setSidebarIsResizing]);
 
-  // ── Discovered-task suggestions (rendered inline at top of list) ───────
-  const discoveredTasks = useSetupStore((s) => s.discoveredTasks);
-  const hasDiscoveredTasks = discoveredTasks.length > 0;
-  const selectedDiscoveredTaskId = useSetupStore(
-    (s) => s.selectedDiscoveredTaskId,
-  );
-  const selectDiscoveredTask = useSetupStore((s) => s.selectDiscoveredTask);
-  const selectedDiscoveredTask =
-    discoveredTasks.find((t) => t.id === selectedDiscoveredTaskId) ?? null;
-
-  const handleSelectDiscoveredTask = useCallback(
-    (taskId: string) => {
-      selectDiscoveredTask(taskId);
-      clearSelection();
-    },
-    [selectDiscoveredTask, clearSelection],
-  );
-
-  const handleCloseDiscoveredTaskPane = useCallback(() => {
-    selectDiscoveredTask(null);
-  }, [selectDiscoveredTask]);
-
   // ── Layout mode (computed early — needed by focus effect below) ────────
   const hasReports = allReports.length > 0;
   const hasActiveFilters =
@@ -462,10 +434,7 @@ export function InboxSignalsTab() {
     suggestedReviewerFilter.length > 0 ||
     statusFilter.length < 5;
   const shouldShowTwoPane =
-    hasReports ||
-    !!searchQuery.trim() ||
-    hasActiveFilters ||
-    hasDiscoveredTasks;
+    hasReports || !!searchQuery.trim() || hasActiveFilters;
 
   // Sticky: once we enter two-pane mode, stay there even if a refetch
   // momentarily empties the list (e.g. when sort order changes).
@@ -704,9 +673,6 @@ export function InboxSignalsTab() {
                     onReportAction={tracker.signalAction}
                   />
                 </Box>
-                <RecommendedSetupTasks
-                  onSelectTask={handleSelectDiscoveredTask}
-                />
                 <ReportListPane
                   reports={reports}
                   allReports={allReports}
@@ -761,11 +727,6 @@ export function InboxSignalsTab() {
                 isDismissMutationPending={dismissMutationPending}
                 onReportAction={tracker.signalAction}
                 onScroll={tracker.signalScroll}
-              />
-            ) : selectedDiscoveredTask ? (
-              <DiscoveredTaskDetailPane
-                task={selectedDiscoveredTask}
-                onClose={handleCloseDiscoveredTaskPane}
               />
             ) : (
               <SelectReportPane />
