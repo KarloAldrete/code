@@ -69,6 +69,20 @@ export const POSTHOG_NOTIFICATIONS = {
 
   /** Response to a relayed permission request (plan approval, question) */
   PERMISSION_RESPONSE: "_posthog/permission_response",
+
+  /**
+   * Long-running-task state changed (entered, iteration advanced, exited).
+   * Payload: { active, goal, successCriterion, marker, iterations, maxIterations }
+   */
+  LONG_RUNNING_TASK_UPDATE: "_posthog/long_running_task_update",
+
+  /**
+   * Agent emitted a long-running-task proposal in its end-of-turn message.
+   * Payload: { proposalId, goal, successCriterion, marker, maxIterations, approach }
+   * The client should render a confirmation card and call START_LONG_RUNNING_TASK
+   * (plus send a kickoff prompt) when the user approves.
+   */
+  LONG_RUNNING_TASK_PROPOSAL: "_posthog/long_running_task_proposal",
 } as const;
 
 /**
@@ -85,6 +99,20 @@ export const POSTHOG_METHODS = {
    * completed so the caller can safely send the next prompt.
    */
   REFRESH_SESSION: "_posthog/refresh_session",
+
+  /**
+   * Begin a long-running task on this session. The next prompt() call will
+   * loop after each end_turn until the agent emits `marker` in its last
+   * assistant text, the iteration cap is hit, or the user stops the loop.
+   * Payload: { goal, successCriterion, marker, maxIterations }
+   */
+  START_LONG_RUNNING_TASK: "_posthog/long_running_task/start",
+
+  /**
+   * Stop the active long-running task on this session. The current turn
+   * finishes naturally — no auto-continuation will be injected after it.
+   */
+  STOP_LONG_RUNNING_TASK: "_posthog/long_running_task/stop",
 } as const;
 
 type PosthogNotification =

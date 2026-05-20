@@ -1,4 +1,6 @@
 import { isOtherOption } from "@components/action-selector/constants";
+import { LongRunningTaskPill } from "@components/long-running-task/LongRunningTaskPill";
+import { LongRunningTaskProposalCard } from "@components/long-running-task/LongRunningTaskProposalCard";
 import { PermissionSelector } from "@components/permissions/PermissionSelector";
 import { showOfflineToast } from "@features/connectivity/connectivityToast";
 import {
@@ -13,6 +15,7 @@ import {
   useAdapterForTask,
   useModeConfigOptionForTask,
   usePendingPermissionsForTask,
+  useSessionStore,
   useThoughtLevelConfigOptionForTask,
 } from "@features/sessions/stores/sessionStore";
 import type { Plan } from "@features/sessions/types";
@@ -181,6 +184,9 @@ export function SessionView({
   );
 
   const sessionId = taskId ?? "default";
+  const taskRunId = useSessionStore((s) =>
+    taskId ? s.taskIdIndex[taskId] : undefined,
+  );
   const setContext = useDraftStore((s) => s.actions.setContext);
   const requestFocus = useDraftStore((s) => s.actions.requestFocus);
 
@@ -619,6 +625,22 @@ export function SessionView({
                           : "pointer-events-none translate-y-4 opacity-0"
                       }`}
                     >
+                      {taskRunId && taskId && (
+                        <Box
+                          className={compact ? "px-1 pt-1" : "mx-auto px-2 pt-2"}
+                          style={
+                            compact
+                              ? undefined
+                              : { maxWidth: CHAT_CONTENT_MAX_WIDTH }
+                          }
+                        >
+                          <LongRunningTaskProposalCard
+                            taskId={taskId}
+                            taskRunId={taskRunId}
+                          />
+                          <LongRunningTaskPill taskRunId={taskRunId} />
+                        </Box>
+                      )}
                       <Box
                         className={compact ? "p-1" : "mx-auto p-2"}
                         style={

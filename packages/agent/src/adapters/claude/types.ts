@@ -39,6 +39,14 @@ export type PendingMessage = {
   order: number;
 };
 
+export type LongRunningTaskState = {
+  goal: string;
+  successCriterion: string;
+  marker: string;
+  iterations: number;
+  maxIterations: number;
+};
+
 export type Session = BaseSession & {
   query: Query;
   /** The Options object passed to query() — mutating it affects subsequent prompts */
@@ -65,6 +73,8 @@ export type Session = BaseSession & {
   pendingMessages: Map<string, PendingMessage>;
   nextPendingOrder: number;
   emitRawSDKMessages: boolean | SDKMessageFilter[];
+  /** Active long-running task — drives the auto-continuation loop. */
+  longRunningTask: LongRunningTaskState | null;
 };
 
 export type ToolUseCache = {

@@ -56,6 +56,7 @@ import type { AcpMessage, StoredLogEntry } from "@shared/types/session-events";
 import { isJsonRpcRequest } from "@shared/types/session-events";
 import { getBackoffDelay } from "@shared/utils/backoff";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
+import { useLongRunningTaskStore } from "@stores/longRunningTaskStore";
 import { buildPermissionToolMetadata, track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import {
@@ -1331,6 +1332,67 @@ export class SessionService {
       });
 
       this.drainQueuedMessages(taskRunId, session);
+    }
+
+    if (
+      "method" in msg &&
+      "params" in msg &&
+      isNotification(msg.method, POSTHOG_NOTIFICATIONS.LONG_RUNNING_TASK_UPDATE)
+    ) {
+      const params = msg.params as {
+        active?: boolean;
+        goal?: string | null;
+        successCriterion?: string | null;
+        marker?: string | null;
+        iterations?: number;
+        maxIterations?: number;
+      };
+      if (params.active) {
+        useLongRunningTaskStore.getState().setTask(taskRunId, {
+          active: true,
+          goal: params.goal ?? "",
+          successCriterion: params.successCriterion ?? "",
+          marker: params.marker ?? "",
+          iterations: params.iterations ?? 0,
+          maxIterations: params.maxIterations ?? 0,
+        });
+      } else {
+        useLongRunningTaskStore.getState().clearTask(taskRunId);
+      }
+    }
+
+    if (
+      "method" in msg &&
+      "params" in msg &&
+      isNotification(
+        msg.method,
+        POSTHOG_NOTIFICATIONS.LONG_RUNNING_TASK_PROPOSAL,
+      )
+    ) {
+      const params = msg.params as {
+        proposalId?: string;
+        goal?: string;
+        successCriterion?: string;
+        marker?: string;
+        maxIterations?: number;
+        approach?: string | null;
+      };
+      if (
+        typeof params.proposalId === "string" &&
+        typeof params.goal === "string" &&
+        typeof params.successCriterion === "string" &&
+        typeof params.marker === "string" &&
+        typeof params.maxIterations === "number"
+      ) {
+        useLongRunningTaskStore.getState().setProposal(taskRunId, {
+          proposalId: params.proposalId,
+          goal: params.goal,
+          successCriterion: params.successCriterion,
+          marker: params.marker,
+          maxIterations: params.maxIterations,
+          approach: params.approach ?? null,
+        });
+      }
     }
   }
 

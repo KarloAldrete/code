@@ -70,6 +70,12 @@ import {
 } from "./conversion/sdk-to-acp";
 import type { EnrichedReadCache } from "./hooks";
 import {
+  broadcastLongRunningTaskUpdate,
+  decideLongRunningTaskStep,
+  maybeBroadcastProposal,
+  StartLongRunningTaskParamsSchema,
+} from "./long-running-task/utils";
+import {
   fetchMcpToolMetadata,
   getConnectedMcpServerNames,
   setMcpToolApprovalStates,
@@ -604,6 +610,26 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               });
             }
 
+            const lrtDecision = await decideLongRunningTaskStep(
+              this.session,
+              params.sessionId,
+              this.client,
+            );
+            if (lrtDecision.kind !== "exit") {
+              // Keep the while-loop alive — a continuation user message has
+              // been pushed into session.input, so the SDK will start a new
+              // turn instead of going idle.
+              promptReplayed = true;
+              break;
+            }
+
+            // No active task: see if the agent emitted a setup proposal.
+            await maybeBroadcastProposal(
+              this.session,
+              params.sessionId,
+              this.client,
+            );
+
             return { stopReason: result.stopReason ?? "end_turn", usage };
           }
 
@@ -822,6 +848,12 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     method: string,
     params: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
+    if (isMethod(method, POSTHOG_METHODS.START_LONG_RUNNING_TASK)) {
+      return this.handleStartLongRunningTask(params);
+    }
+    if (isMethod(method, POSTHOG_METHODS.STOP_LONG_RUNNING_TASK)) {
+      return this.handleStopLongRunningTask();
+    }
     if (!isMethod(method, POSTHOG_METHODS.REFRESH_SESSION)) {
       throw RequestError.methodNotFound(method);
     }
@@ -847,6 +879,42 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     );
     await this.refreshSession(mcpServers);
     return { refreshed: true };
+  }
+
+  private async handleStartLongRunningTask(
+    params: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const parsed = StartLongRunningTaskParamsSchema.safeParse(params);
+    if (!parsed.success) {
+      throw new RequestError(
+        -32602,
+        `start_long_running_task: invalid params — ${parsed.error.issues
+          .map((i) => `${i.path.join(".")}: ${i.message}`)
+          .join("; ")}`,
+      );
+    }
+    this.session.longRunningTask = {
+      goal: parsed.data.goal,
+      successCriterion: parsed.data.successCriterion,
+      marker: parsed.data.marker,
+      iterations: 0,
+      maxIterations: parsed.data.maxIterations,
+    };
+    await broadcastLongRunningTaskUpdate(
+      this.client,
+      this.sessionId,
+      this.session.longRunningTask,
+    );
+    return { started: true };
+  }
+
+  private async handleStopLongRunningTask(): Promise<Record<string, unknown>> {
+    if (!this.session.longRunningTask) {
+      return { stopped: false };
+    }
+    this.session.longRunningTask = null;
+    await broadcastLongRunningTaskUpdate(this.client, this.sessionId, null);
+    return { stopped: true };
   }
 
   private async refreshSession(
@@ -1190,6 +1258,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       promptRunning: false,
       pendingMessages: new Map(),
       nextPendingOrder: 0,
+      longRunningTask: null,
       emitRawSDKMessages: meta?.claudeCode?.emitRawSDKMessages ?? false,
 
       // Custom properties

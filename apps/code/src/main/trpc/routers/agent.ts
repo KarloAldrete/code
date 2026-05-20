@@ -20,7 +20,9 @@ import {
   respondToPermissionInput,
   sessionResponseSchema,
   setConfigOptionInput,
+  startLongRunningTaskInput,
   startSessionInput,
+  stopLongRunningTaskInput,
   subscribeSessionInput,
 } from "../../services/agent/schemas";
 import type { AgentService } from "../../services/agent/service";
@@ -56,6 +58,14 @@ export const agentRouter = router({
     .mutation(({ input }) =>
       getService().cancelPrompt(input.sessionId, input.reason),
     ),
+
+  startLongRunningTask: publicProcedure
+    .input(startLongRunningTaskInput)
+    .mutation(({ input }) => getService().startLongRunningTask(input)),
+
+  stopLongRunningTask: publicProcedure
+    .input(stopLongRunningTaskInput)
+    .mutation(({ input }) => getService().stopLongRunningTask(input.sessionId)),
 
   reconnect: publicProcedure
     .input(reconnectSessionInput)

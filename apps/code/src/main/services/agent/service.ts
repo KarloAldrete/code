@@ -15,6 +15,7 @@ import {
 import {
   isMcpToolReadOnly,
   isNotification,
+  POSTHOG_METHODS,
   POSTHOG_NOTIFICATIONS,
 } from "@posthog/agent";
 import type { McpToolApprovals } from "@posthog/agent/adapters/claude/mcp/tool-metadata";
@@ -934,6 +935,41 @@ When creating pull requests, add the following footer at the end of the PR descr
     } catch (err) {
       log.error("Failed to cancel prompt", { sessionId, err });
       return false;
+    }
+  }
+
+  async startLongRunningTask(input: {
+    sessionId: string;
+    goal: string;
+    successCriterion: string;
+    marker?: string;
+    maxIterations?: number;
+  }): Promise<void> {
+    const session = this.sessions.get(input.sessionId);
+    if (!session) {
+      throw new Error(`Session not found: ${input.sessionId}`);
+    }
+    await session.clientSideConnection.extMethod(
+      POSTHOG_METHODS.START_LONG_RUNNING_TASK,
+      {
+        goal: input.goal,
+        successCriterion: input.successCriterion,
+        marker: input.marker,
+        maxIterations: input.maxIterations,
+      },
+    );
+  }
+
+  async stopLongRunningTask(sessionId: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    try {
+      await session.clientSideConnection.extMethod(
+        POSTHOG_METHODS.STOP_LONG_RUNNING_TASK,
+        {},
+      );
+    } catch (err) {
+      log.error("Failed to stop long-running task", { sessionId, err });
     }
   }
 

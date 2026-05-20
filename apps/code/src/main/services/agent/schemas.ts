@@ -159,6 +159,25 @@ export const cancelPromptInput = z.object({
   reason: interruptReasonSchema.optional(),
 });
 
+// Long-running task start/stop
+export const startLongRunningTaskInput = z.object({
+  sessionId: z.string(),
+  goal: z.string().min(1).max(2000),
+  successCriterion: z.string().min(1).max(1000),
+  marker: z.string().min(1).max(200).optional(),
+  maxIterations: z.number().int().positive().max(200).optional(),
+});
+
+export type StartLongRunningTaskInput = z.infer<
+  typeof startLongRunningTaskInput
+>;
+
+export const stopLongRunningTaskInput = z.object({
+  sessionId: z.string(),
+});
+
+export type StopLongRunningTaskInput = z.infer<typeof stopLongRunningTaskInput>;
+
 // Reconnect session input
 export const reconnectSessionInput = z.object({
   taskId: z.string(),
