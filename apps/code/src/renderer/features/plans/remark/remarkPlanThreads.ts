@@ -160,13 +160,23 @@ function getAnchorOccurrence(node: MdNode): number {
   return 0;
 }
 
-const ANCHORABLE_TYPES = new Set([
-  "heading",
-  "paragraph",
-  "list",
-  "code",
-  "table",
-]);
+/**
+ * Block types we expose a `+` gutter for. Keep this set in sync with the
+ * components wrapped by `PlanBlockGutter` in `PlanView`:
+ *
+ *  - `heading` → `<h1>`–`<h6>` (wrapped)
+ *  - `paragraph` → `<p>` (wrapped)
+ *  - `list` → `<ul>` / `<ol>` (wrapped)
+ *
+ * `code` and `table` are deliberately excluded: mdast-util-to-hast moves a
+ * fenced `code` node's hProperties onto the inner `<code>` element
+ * (wrapped in `<pre>`), and the project's base `table` component drops
+ * arbitrary props. Annotating them would set `data-plan-block` on
+ * elements no React component listens to — the gutter would be invisible
+ * and the user couldn't comment. Re-add them once the renderer wraps
+ * those components.
+ */
+const ANCHORABLE_TYPES = new Set(["heading", "paragraph", "list"]);
 
 // Type the plugin against mdast's `Root` for unified compatibility, then
 // operate on our loose `MdRoot` shape inside (mdast's discriminated children

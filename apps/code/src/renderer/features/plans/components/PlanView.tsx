@@ -127,6 +127,10 @@ export function PlanView({ taskId, filePath }: PlanViewProps) {
       };
     };
 
+    // Wrap only the components whose mdast types are in
+    // `remarkPlanThreads`'s `ANCHORABLE_TYPES`. The set must agree on
+    // both sides — see the comment in `remarkPlanThreads.ts` for why
+    // `code` / `table` are excluded.
     return {
       h1: wrap("h1"),
       h2: wrap("h2"),
@@ -137,7 +141,6 @@ export function PlanView({ taskId, filePath }: PlanViewProps) {
       p: wrap("p"),
       ul: wrap("ul"),
       ol: wrap("ol"),
-      pre: wrap("pre"),
       "plan-thread": (props: PlanThreadElementProps) => {
         const blockText = props["data-block-text"] ?? "";
         const occurrence = parseOccurrence(props["data-occurrence"]);

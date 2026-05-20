@@ -131,4 +131,35 @@ describe("remarkPlanThreads", () => {
     expect(children.find((c) => c.type === "planThread")).toBeUndefined();
     expect(children.find((c) => c.type === "blockquote")).toBeDefined();
   });
+
+  it("does NOT annotate `code` or `table` blocks (UI surfaces no gutter for them)", () => {
+    // mdast-util-to-hast moves a fenced `code` node's hProperties onto the
+    // inner `<code>` element (wrapped in `<pre>`), and the base `table`
+    // component drops arbitrary props. Until we wrap those components
+    // properly, marking them anchorable just confuses users — clicking
+    // the gutter would fail. Limit the anchor surface to blocks the
+    // renderer actually wraps with `PlanBlockGutter`.
+    const source = [
+      "Paragraph.",
+      "",
+      "```ts",
+      "const x = 1;",
+      "```",
+      "",
+      "| a | b |",
+      "| --- | --- |",
+      "| 1 | 2 |",
+    ].join("\n");
+    const tree = parse(source);
+    const children = getTopChildren(tree);
+    const code = children.find((c) => c.type === "code");
+    expect(code?.data?.hProperties?.["data-plan-block"]).toBeUndefined();
+    // Tables only appear with remark-gfm; with plain remark-parse this
+    // shape parses as a paragraph (and gets annotated as a paragraph).
+    // Confirm no node ever carries `data-plan-block` on a `table` node:
+    const table = children.find((c) => c.type === "table");
+    if (table) {
+      expect(table.data?.hProperties?.["data-plan-block"]).toBeUndefined();
+    }
+  });
 });
