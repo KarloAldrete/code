@@ -40,6 +40,7 @@ import { useAuthStore } from "@renderer/features/auth/stores/authStore";
 import { useDraftStore } from "@renderer/features/message-editor/stores/draftStore";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
 import { toast } from "@renderer/utils/toast";
+import { useActiveRepoStore } from "@stores/activeRepoStore";
 import {
   type TaskInputReportAssociation,
   useNavigationStore,
@@ -78,6 +79,8 @@ export function TaskInput({
   const setSelectedReportIds = useInboxReportSelectionStore(
     (s) => s.setSelectedReportIds,
   );
+  const selectedDirectory = useActiveRepoStore((s) => s.path);
+  const setSelectedDirectory = useActiveRepoStore((s) => s.setPath);
   const { data: mostRecentRepo } = useQuery(
     trpcReact.folders.getMostRecentlyAccessedRepository.queryOptions(),
   );
@@ -121,7 +124,6 @@ export function TaskInput({
     reportAssociation ?? null,
   );
 
-  const [selectedDirectory, setSelectedDirectory] = useState("");
   const adapter = lastUsedAdapter;
   const prefillRequestKey = initialPromptKey ?? initialPrompt;
 
@@ -171,7 +173,7 @@ export function TaskInput({
     if (!selectedDirectory && mostRecentRepo?.path) {
       setSelectedDirectory(mostRecentRepo.path);
     }
-  }, [mostRecentRepo?.path, selectedDirectory]);
+  }, [mostRecentRepo?.path, selectedDirectory, setSelectedDirectory]);
 
   const setAdapter = (newAdapter: AgentAdapter) =>
     setLastUsedAdapter(newAdapter);
@@ -408,7 +410,7 @@ export function TaskInput({
         setSelectedDirectory(folder.path);
       }
     }
-  }, [view.folderId, folders]);
+  }, [view.folderId, folders, setSelectedDirectory]);
 
   useEffect(() => {
     setCloudBranchSearchQuery("");
@@ -541,7 +543,10 @@ export function TaskInput({
       const ok = await handleSubmit({
         segments: [{ type: "text", text: buildDiscoveredTaskPrompt(task) }],
       });
-      if (ok) useSetupStore.getState().removeDiscoveredTask(task.id);
+      if (ok)
+        useSetupStore
+          .getState()
+          .removeDiscoveredTask(task.id, task.repoPath ?? null);
     },
     [handleSubmit],
   );
