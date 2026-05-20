@@ -14,6 +14,14 @@ const log = logger.scope("analytics");
 
 let isInitialized = false;
 
+type PendingFlagListener = {
+  callback: () => void;
+  unsubscribe?: () => void;
+};
+
+// Buffers subscribers that arrive before init (child useEffects run before parent's initializePostHog).
+const pendingFlagListeners = new Set<PendingFlagListener>();
+
 export function initializePostHog() {
   const apiKey = import.meta.env.VITE_POSTHOG_API_KEY;
   const apiHost =
@@ -44,6 +52,10 @@ export function initializePostHog() {
   posthog.register({ team: "posthog-code" });
 
   isInitialized = true;
+
+  for (const listener of pendingFlagListeners) {
+    listener.unsubscribe = posthog.onFeatureFlags(listener.callback);
+  }
 }
 
 /**
@@ -212,11 +224,16 @@ export function isFeatureFlagEnabled(flagKey: string): boolean {
  * Returns unsubscribe function.
  */
 export function onFeatureFlagsLoaded(callback: () => void): () => void {
-  if (!isInitialized) {
-    return () => {};
+  if (isInitialized) {
+    return posthog.onFeatureFlags(callback);
   }
 
-  return posthog.onFeatureFlags(callback);
+  const listener: PendingFlagListener = { callback };
+  pendingFlagListeners.add(listener);
+  return () => {
+    pendingFlagListeners.delete(listener);
+    listener.unsubscribe?.();
+  };
 }
 
 /**
