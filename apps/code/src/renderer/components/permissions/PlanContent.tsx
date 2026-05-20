@@ -1,5 +1,5 @@
-import { ArrowsIn, ArrowsOut, ListChecks, X } from "@phosphor-icons/react";
-import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
+import { ArrowsOut, ListChecks, X } from "@phosphor-icons/react";
+import { Box, Button, Flex, IconButton, Text } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
@@ -56,16 +56,25 @@ export function PlanContent({ id, plan }: PlanContentProps) {
     if (portalTarget) {
       return (
         <>
-          <Flex justify="end" className="py-0.5">
-            <IconButton
+          <Flex
+            align="center"
+            justify="between"
+            className="max-w-[750px] rounded-lg border-2 border-blue-6 bg-blue-2 px-3 py-2"
+          >
+            <Flex align="center" gap="2">
+              <ListChecks size={14} className="text-blue-11" />
+              <Text className="text-blue-11 text-sm">
+                Plan opened in fullscreen
+              </Text>
+            </Flex>
+            <Button
               size="1"
               variant="ghost"
               color="gray"
               onClick={() => setIsFullscreen(false)}
-              title="Exit fullscreen"
             >
-              <ArrowsIn size={12} />
-            </IconButton>
+              Exit fullscreen
+            </Button>
           </Flex>
 
           {createPortal(
@@ -105,22 +114,34 @@ export function PlanContent({ id, plan }: PlanContentProps) {
   }
 
   return (
-    <Box
-      ref={scrollRef}
-      className="relative max-h-[50vh] max-w-[750px] overflow-y-auto rounded-lg border-2 border-blue-6 bg-blue-2 p-4"
-    >
-      <IconButton
-        size="1"
-        variant="ghost"
-        color="gray"
-        className="sticky top-0 z-10 float-right"
-        onClick={() => setIsFullscreen(true)}
-        title="Expand to fullscreen"
+    <Box className="max-w-[750px] overflow-hidden rounded-lg border-2 border-blue-6 bg-blue-2">
+      <Flex
+        align="center"
+        justify="between"
+        className="border-blue-6 border-b px-3 py-2"
       >
-        <ArrowsOut size={12} />
-      </IconButton>
+        <Flex align="center" gap="2">
+          <ListChecks size={14} className="text-blue-11" />
+          <Text className="text-blue-11 text-sm">Plan</Text>
+        </Flex>
+        <Button
+          size="1"
+          variant="ghost"
+          color="gray"
+          onClick={() => setIsFullscreen(true)}
+          title="Expand to fullscreen"
+        >
+          <ArrowsOut size={12} />
+          Expand
+        </Button>
+      </Flex>
 
-      <Box className="plan-markdown text-blue-12">{markdown}</Box>
+      <Box
+        ref={scrollRef}
+        className="plan-markdown max-h-[75vh] overflow-y-auto p-4 text-blue-12"
+      >
+        {markdown}
+      </Box>
     </Box>
   );
 }
