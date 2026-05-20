@@ -2,19 +2,22 @@ import {
   baseComponents,
   MarkdownRenderer,
 } from "@features/editor/components/MarkdownRenderer";
-import { ListChecks } from "@phosphor-icons/react";
+import { usePendingPermissionsForTask } from "@features/sessions/hooks/useSession";
+import { getSessionService } from "@features/sessions/service/service";
+import type { PermissionRequest } from "@features/sessions/utils/parseSessionLogs";
+import { CheckCircle, ListChecks, X } from "@phosphor-icons/react";
+import { Button } from "@posthog/quill";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { trpc, trpcClient } from "@renderer/trpc";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { logger } from "@utils/logger";
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import remarkGfm from "remark-gfm";
 import type { PluggableList } from "unified";
 import { remarkPlanThreads } from "../remark/remarkPlanThreads";
 import { handlePlanDeletion } from "../utils/handlePlanDeletion";
 import { PlanBlockGutter } from "./PlanBlockGutter";
-import { PlanComposePopover } from "./PlanComposePopover";
 import { PlanThread } from "./PlanThread";
 
 const log = logger.scope("plan-view");
@@ -51,10 +54,154 @@ declare module "react" {
   }
 }
 
+interface PendingPlanPermission {
+  toolCallId: string;
+  approveOptionId: string;
+  rejectOptionId: string | null;
+}
+
+function findPendingPlanPermission(
+  permissions: Map<string, PermissionRequest>,
+): PendingPlanPermission | null {
+  for (const req of permissions.values()) {
+    const toolCallId = req.toolCall?.toolCallId;
+    if (!toolCallId) continue;
+    if (req.toolCall?.kind !== "switch_mode") continue;
+
+    // First option is the user's previous mode (or `auto` by default) —
+    // see buildExitPlanModePermissionOptions in @posthog/agent.
+    const approve = req.options.find(
+      (o) => o.kind === "allow_once" || o.kind === "allow_always",
+    );
+    if (!approve) continue;
+
+    const reject = req.options.find(
+      (o) => o.kind === "reject_once" || o.kind === "reject_always",
+    );
+
+    return {
+      toolCallId,
+      approveOptionId: approve.optionId,
+      rejectOptionId: reject?.optionId ?? null,
+    };
+  }
+  return null;
+}
+
+interface PlanApprovalBarProps {
+  taskId: string;
+  permission: PendingPlanPermission;
+}
+
+function PlanApprovalBar({ taskId, permission }: PlanApprovalBarProps) {
+  const [showRejectInput, setShowRejectInput] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [pending, setPending] = useState<"approve" | "reject" | null>(null);
+
+  const respond = useCallback(
+    async (optionId: string, customInput?: string) => {
+      try {
+        await getSessionService().respondToPermission(
+          taskId,
+          permission.toolCallId,
+          optionId,
+          customInput,
+        );
+      } catch (err) {
+        log.warn("Failed to respond to plan approval", { err });
+      }
+    },
+    [taskId, permission.toolCallId],
+  );
+
+  const handleApprove = useCallback(async () => {
+    setPending("approve");
+    await respond(permission.approveOptionId);
+    setPending(null);
+  }, [respond, permission.approveOptionId]);
+
+  const handleReject = useCallback(async () => {
+    if (!permission.rejectOptionId) return;
+    setPending("reject");
+    await respond(permission.rejectOptionId, rejectReason.trim() || undefined);
+    setPending(null);
+    setShowRejectInput(false);
+    setRejectReason("");
+  }, [respond, permission.rejectOptionId, rejectReason]);
+
+  return (
+    <Box className="sticky top-0 z-10 border-(--gray-5) border-b bg-(--color-background) px-12 py-3">
+      <Flex direction="column" gap="2">
+        <Flex align="center" justify="between" gap="3">
+          <Text className="text-(--gray-11) text-sm">
+            The agent is waiting for plan approval.
+          </Text>
+          <Flex gap="2">
+            {permission.rejectOptionId && (
+              <Button
+                size="sm"
+                onClick={() => setShowRejectInput((v) => !v)}
+                disabled={!!pending}
+              >
+                <X />
+                Reject
+              </Button>
+            )}
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleApprove}
+              disabled={!!pending}
+            >
+              <CheckCircle />
+              {pending === "approve" ? "Approving…" : "Approve plan"}
+            </Button>
+          </Flex>
+        </Flex>
+        {showRejectInput && permission.rejectOptionId && (
+          <Flex direction="column" gap="2">
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="Tell the agent what to do differently (optional)…"
+              className="min-h-[60px] w-full resize-none rounded border border-(--gray-6) bg-(--color-background) p-2 text-(--gray-12) text-[13px] leading-normal outline-none"
+            />
+            <Flex gap="2">
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={handleReject}
+                disabled={!!pending}
+              >
+                {pending === "reject" ? "Sending…" : "Send rejection"}
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setShowRejectInput(false);
+                  setRejectReason("");
+                }}
+              >
+                Cancel
+              </Button>
+            </Flex>
+          </Flex>
+        )}
+      </Flex>
+    </Box>
+  );
+}
+
 export function PlanView({ taskId, filePath }: PlanViewProps) {
   const queryClient = useQueryClient();
   const planQuery = useQuery(
     trpc.plans.read.queryOptions({ filePath }, { staleTime: 0 }),
+  );
+
+  const pendingPermissions = usePendingPermissionsForTask(taskId);
+  const planPermission = useMemo(
+    () => findPendingPlanPermission(pendingPermissions),
+    [pendingPermissions],
   );
 
   useEffect(() => {
@@ -193,6 +340,9 @@ export function PlanView({ taskId, filePath }: PlanViewProps) {
 
   return (
     <Box className="relative h-full overflow-y-auto">
+      {planPermission && (
+        <PlanApprovalBar taskId={taskId} permission={planPermission} />
+      )}
       <Box className="plan-markdown mx-auto max-w-[820px] px-12 py-8 text-(--gray-12)">
         <MarkdownRenderer
           content={content}
@@ -200,7 +350,6 @@ export function PlanView({ taskId, filePath }: PlanViewProps) {
           componentsOverride={components}
         />
       </Box>
-      <PlanComposePopover />
     </Box>
   );
 }

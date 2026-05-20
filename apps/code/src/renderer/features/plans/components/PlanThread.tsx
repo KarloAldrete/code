@@ -1,5 +1,5 @@
 import { MarkdownRenderer } from "@features/editor/components/MarkdownRenderer";
-import { sendPromptToAgent } from "@features/sessions/utils/sendPromptToAgent";
+import { getSessionService } from "@features/sessions/service/service";
 import { CheckCircle, Robot, User, X } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
 import { Avatar, Badge, Box, Flex, Text } from "@radix-ui/themes";
@@ -96,7 +96,9 @@ export function PlanThread({
         message: text,
         speaker: "H",
       });
-      sendPromptToAgent(
+      // sendPrompt directly — sendPromptToAgent also switches the active
+      // tab to Chat, which is the wrong behavior from inside Plan view.
+      getSessionService().sendPrompt(
         taskId,
         buildAskAgentToReplyToPlanThreadPrompt(filePath, blockText),
       );
@@ -114,7 +116,9 @@ export function PlanThread({
         blockText,
         occurrence,
       });
-      sendPromptToAgent(
+      // sendPrompt directly — sendPromptToAgent also switches the active
+      // tab to Chat, which is the wrong behavior from inside Plan view.
+      getSessionService().sendPrompt(
         taskId,
         buildAskAgentToIncorporateResolvedThreadPrompt(filePath),
       );
