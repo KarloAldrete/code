@@ -31,7 +31,7 @@ function applyWatchEvent(
  * Bootstraps PR-graph edges for a single nest: fetches the current edge list,
  * opens a watch subscription, and returns a disposer.
  *
- * Mounted from `HedgemonyMapView` (or `NestBroodCluster`) per active nest so
+ * Mounted from `RtsMapView` (or `NestBroodCluster`) per active nest so
  * detail panels and sprite badges can read edges out of `usePrGraphStore`
  * without orchestrating their own fetch lifecycle.
  */

@@ -3,7 +3,7 @@ import { create } from "zustand";
 /**
  * Transient open/close state for the spawn-hoglet panel. Lives in its own
  * store because the open-trigger is in CommandCenterToolbar while the panel
- * itself mounts inside HedgemonyMapView.
+ * itself mounts inside RtsMapView.
  */
 interface SpawnDialogState {
   spawnHogletOpen: boolean;

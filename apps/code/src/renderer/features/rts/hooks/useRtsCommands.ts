@@ -8,7 +8,7 @@ import { useCallback } from "react";
 import { toast } from "sonner";
 import { playSfx } from "../audio/sfx";
 import { playVoice } from "../audio/voice";
-import type { MapSurfaceHandle } from "../components/HedgemonyMapSurface";
+import type { MapSurfaceHandle } from "../components/RtsMapSurface";
 import {
   BUILDER_NAME,
   HEDGEHOUSE_MAP_X,
@@ -21,7 +21,7 @@ import {
   type Selection,
   snapshotSelectionForControlGroup,
   toggleHogletSelection,
-} from "../state/HedgemonyController";
+} from "../state/RtsController";
 import {
   type ControlGroupSlot,
   useControlGroupStore,
@@ -70,7 +70,7 @@ export interface HedgemonyCommands {
  * camera-centering effect, and Controller delegations that every selection /
  * control-group / build action shares.
  */
-export function useHedgemonyCommands({
+export function useRtsCommands({
   nests,
   selection,
   setMode,

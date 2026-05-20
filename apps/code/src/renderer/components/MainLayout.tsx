@@ -12,9 +12,9 @@ import { useInboxDeepLink } from "@features/inbox/hooks/useInboxDeepLink";
 import { McpServersView } from "@features/mcp-servers/components/McpServersView";
 import { BgmPlayer } from "@features/rts/audio/BgmPlayer";
 import { SfxBridge } from "@features/rts/audio/SfxBridge";
-import { useHedgemonyPrGraphRouter } from "@features/rts/hooks/useHedgemonyPrGraphRouter";
-import { useHedgemonyPromptRouter } from "@features/rts/hooks/useHedgemonyPromptRouter";
-import { useHedgemonyViewStore } from "@features/rts/stores/hedgemonyViewStore";
+import { useRtsPrGraphRouter } from "@features/rts/hooks/useRtsPrGraphRouter";
+import { useRtsPromptRouter } from "@features/rts/hooks/useRtsPromptRouter";
+import { useHedgemonyViewStore } from "@features/rts/stores/rtsViewStore";
 import { FolderSettingsView } from "@features/settings/components/FolderSettingsView";
 import { SettingsDialog } from "@features/settings/components/SettingsDialog";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
@@ -91,8 +91,8 @@ export function MainLayout() {
   useIntegrations();
   useTaskDeepLink();
   useInboxDeepLink();
-  useHedgemonyPromptRouter();
-  useHedgemonyPrGraphRouter();
+  useRtsPromptRouter();
+  useRtsPrGraphRouter();
 
   useEffect(() => {
     if (tasks) {

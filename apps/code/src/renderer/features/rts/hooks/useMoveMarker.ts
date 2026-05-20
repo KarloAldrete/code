@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { MoveMarker } from "../components/HedgemonyMapSurface";
+import type { MoveMarker } from "../components/RtsMapSurface";
 import { HEDGEMONY_CONFIG } from "../config";
 
 export interface UseMoveMarkerResult {

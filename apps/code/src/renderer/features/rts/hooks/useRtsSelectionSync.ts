@@ -1,6 +1,6 @@
 import { useEffect } from "react";
-import type { Selection } from "../state/HedgemonyController";
-import { useHedgemonySelectionStore } from "../stores/hedgemonySelectionStore";
+import type { Selection } from "../state/RtsController";
+import { useHedgemonySelectionStore } from "../stores/rtsSelectionStore";
 
 /**
  * Mirrors the hoglet portion of the local selection out to a small global
@@ -8,7 +8,7 @@ import { useHedgemonySelectionStore } from "../stores/hedgemonySelectionStore";
  * hoglets. Clearing on unmount keeps the sidebar in sync when the map view
  * tears down (e.g. user navigates away from the command center).
  */
-export function useHedgemonySelectionSync(selection: Selection): void {
+export function useRtsSelectionSync(selection: Selection): void {
   useEffect(() => {
     const ids = selection?.type === "hoglets" ? selection.ids : [];
     useHedgemonySelectionStore.getState().setSelectedHogletIds(ids);

@@ -1,5 +1,5 @@
-import { HedgemonyMapView } from "@features/rts/components/HedgemonyMapView";
-import { useHedgemonyViewStore } from "@features/rts/stores/hedgemonyViewStore";
+import { RtsMapView } from "@features/rts/components/RtsMapView";
+import { useHedgemonyViewStore } from "@features/rts/stores/rtsViewStore";
 import { useTaskViewed } from "@features/sidebar/hooks/useTaskViewed";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useSetHeaderContent } from "@hooks/useSetHeaderContent";
@@ -60,7 +60,7 @@ export function CommandCenterView() {
       )}
       <Box className="min-h-0 flex-1">
         {isMap ? (
-          <HedgemonyMapView />
+          <RtsMapView />
         ) : (
           <CommandCenterGrid layout={layout} cells={cells} />
         )}

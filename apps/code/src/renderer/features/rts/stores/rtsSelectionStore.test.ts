@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { useHedgemonySelectionStore } from "./hedgemonySelectionStore";
+import { useHedgemonySelectionStore } from "./rtsSelectionStore";
 
-describe("hedgemonySelectionStore", () => {
+describe("rtsSelectionStore", () => {
   beforeEach(() => {
     useHedgemonySelectionStore.getState().clear();
   });

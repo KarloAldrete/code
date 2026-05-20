@@ -3,7 +3,7 @@ import type { Nest } from "@main/services/rts/schemas";
 import { useCallback } from "react";
 import { playSfx } from "../audio/sfx";
 import { playVoice } from "../audio/voice";
-import type { MapBoxSelection } from "../components/HedgemonyMapSurface";
+import type { MapBoxSelection } from "../components/RtsMapSurface";
 import type { NestCreationMode } from "../components/placeNestDialogReducer";
 import { BUILDER_NAME } from "../constants/map";
 import { moveNest } from "../service/nestMutations";
@@ -14,7 +14,7 @@ import {
 import {
   applyBoxSelect as applyBoxSelectController,
   type Selection,
-} from "../state/HedgemonyController";
+} from "../state/RtsController";
 import { useHogletPositionStore } from "../stores/hogletPositionStore";
 import { selectHogletById, useHogletStore } from "../stores/hogletStore";
 import { selectNests, useNestStore } from "../stores/nestStore";
@@ -63,7 +63,7 @@ export interface HedgemonyMapInput {
  * dispatches to the controller for selection transitions, to `moveNest` for
  * nest relocation, and to the builder for walks.
  */
-export function useHedgemonyMapInput({
+export function useRtsMapInput({
   mode,
   selection,
   nests,

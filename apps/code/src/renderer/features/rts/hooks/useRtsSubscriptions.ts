@@ -15,7 +15,7 @@ export interface UseHedgemonySubscriptionsOptions {
  * stream, nest stream, and per-nest PR-graph streams. Side-effect only —
  * mount the hook and it keeps the stores fresh until the map unmounts.
  */
-export function useHedgemonySubscriptions({
+export function useRtsSubscriptions({
   nestIds,
 }: UseHedgemonySubscriptionsOptions): void {
   useEffect(() => {

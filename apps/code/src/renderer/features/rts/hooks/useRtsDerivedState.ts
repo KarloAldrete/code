@@ -6,7 +6,7 @@ import {
   type Selection,
   selectActiveHotkeyContext,
   selectAffiliation,
-} from "../state/HedgemonyController";
+} from "../state/RtsController";
 import { selectHogletById, useHogletStore } from "../stores/hogletStore";
 
 export interface UseHedgemonyDerivedStateOptions {
@@ -35,7 +35,7 @@ export interface HedgemonyDerivedState {
  * the dozen one-liners out of the map view so the body of the component is
  * mostly orchestration + JSX.
  */
-export function useHedgemonyDerivedState({
+export function useRtsDerivedState({
   selection,
   mode,
   nests,

@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import type { ViewMode } from "../state/computeMapClickAction";
-import { applyEscape, type Selection } from "../state/HedgemonyController";
+import { applyEscape, type Selection } from "../state/RtsController";
 
 export interface UseHedgemonyEscapeKeyOptions {
   mode: ViewMode;
@@ -16,7 +16,7 @@ export interface UseHedgemonyEscapeKeyOptions {
  * Wires window-level Escape to the controller's priority ladder
  * (placement → fullscreen → selection → no-op).
  */
-export function useHedgemonyEscapeKey({
+export function useRtsEscapeKey({
   mode,
   selection,
   fullscreen,

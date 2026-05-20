@@ -12,9 +12,9 @@ import {
   HEDGEMONY_ZOOM_MAX,
   HEDGEMONY_ZOOM_MIN,
   useHedgemonyViewStore,
-} from "./hedgemonyViewStore";
+} from "./rtsViewStore";
 
-describe("hedgemonyViewStore", () => {
+describe("rtsViewStore", () => {
   beforeEach(() => {
     useHedgemonyViewStore.setState({
       panX: 0,

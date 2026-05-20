@@ -28,10 +28,10 @@ const log = logger.scope("hedgemony-pr-graph-router");
  * After each outcome, calls `prGraph.recordRebaseOutcome` so main can write
  * the edge state transition and an audit row.
  *
- * Mirrors `useHedgemonyPromptRouter` exactly. Mounted once at app level in
+ * Mirrors `useRtsPromptRouter` exactly. Mounted once at app level in
  * `MainLayout.tsx`.
  */
-export function useHedgemonyPrGraphRouter() {
+export function useRtsPrGraphRouter() {
   const trpcReact = useTRPC();
   const isAuthenticated = useAuthStateValue(
     (s) => s.status === "authenticated",

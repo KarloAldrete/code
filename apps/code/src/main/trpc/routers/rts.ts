@@ -283,7 +283,7 @@ export const hedgemonyRouter = router({
   feedback: router({
     /**
      * Live stream of non-hedgehog `injectPrompt` events. The renderer hook
-     * `useHedgemonyPromptRouter` subscribes once at app level and either
+     * `useRtsPromptRouter` subscribes once at app level and either
      * calls the existing `sendPromptToAgent` for connected sessions or
      * calls `nests.spawnFollowUpHoglet` for closed ones. Hedgehog-originated
      * messages are delivered directly from main to cloud runs.
@@ -406,7 +406,7 @@ export const hedgemonyRouter = router({
 
     /**
      * Live stream of `rebaseChild` events. The renderer hook
-     * `useHedgemonyPrGraphRouter` subscribes once at app level and either
+     * `useRtsPrGraphRouter` subscribes once at app level and either
      * injects the prompt into a connected session or spawns a follow-up
      * hoglet for closed ones — same shape as the feedback router.
      */

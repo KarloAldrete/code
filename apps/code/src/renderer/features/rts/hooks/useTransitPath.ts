@@ -18,7 +18,7 @@ import { hogletObstacles, worldObstacles } from "../utils/worldObstacles";
  *
  * Pass `enabled=false` when an explicit walk path is already supplied by the
  * caller (e.g. the multi-select right-click flow, which plans formations in
- * one shot in `HedgemonyMapView`). That path wins.
+ * one shot in `RtsMapView`). That path wins.
  *
  * Without this hook, every hoglet (x, y) change that *isn't* a right-click —
  * brood ring re-layout when siblings join/leave, adoption-to-nest, wild ring

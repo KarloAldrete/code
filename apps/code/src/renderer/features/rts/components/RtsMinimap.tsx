@@ -13,7 +13,7 @@ const WORLD_HALF = 1600;
 const WORLD_MIN = -WORLD_HALF;
 const WORLD_SIZE = WORLD_HALF * 2;
 
-interface HedgemonyMinimapProps {
+interface RtsMinimapProps {
   nests: Nest[];
   builderPos: Vec2;
   panX: number;
@@ -53,7 +53,7 @@ function worldToMinimap(wx: number, wy: number, width: number, height: number) {
   };
 }
 
-export function HedgemonyMinimap({
+export function RtsMinimap({
   nests,
   builderPos,
   panX,
@@ -64,7 +64,7 @@ export function HedgemonyMinimap({
   width,
   height,
   onJump,
-}: HedgemonyMinimapProps) {
+}: RtsMinimapProps) {
   const byBucket = useHogletStore((s) => s.byBucket);
   const positionOverrides = useHogletPositionStore((s) => s.positions);
   const nestsForPositions = useNestStore(selectNests);

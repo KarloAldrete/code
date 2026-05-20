@@ -12,7 +12,7 @@ import { WildHoglet } from "./WildHoglet";
  * visible difference is the robo sprite the WildHoglet component picks when
  * `signalReportId` is set.
  *
- * Subscription to the wild bucket is owned by HedgemonyMapView — we just
+ * Subscription to the wild bucket is owned by RtsMapView — we just
  * read from the store here. Per-hoglet position overrides are read inside
  * each WildHoglet so a single hoglet moving doesn't re-render the whole flock.
  */

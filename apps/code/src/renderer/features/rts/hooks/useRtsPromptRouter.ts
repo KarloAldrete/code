@@ -36,7 +36,7 @@ const log = logger.scope("hedgemony-prompt-router");
  * Mirrors `useInboxDeepLink` exactly. Mounted once at app level in
  * `MainLayout.tsx`.
  */
-export function useHedgemonyPromptRouter() {
+export function useRtsPromptRouter() {
   const trpcReact = useTRPC();
   const isAuthenticated = useAuthStateValue(
     (s) => s.status === "authenticated",

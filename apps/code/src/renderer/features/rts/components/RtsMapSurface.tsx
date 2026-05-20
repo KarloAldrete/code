@@ -25,7 +25,7 @@ import {
   HEDGEMONY_ZOOM_MAX,
   HEDGEMONY_ZOOM_MIN,
   useHedgemonyViewStore,
-} from "../stores/hedgemonyViewStore";
+} from "../stores/rtsViewStore";
 import { clientToWorld, fitZoom, panToCenter } from "../utils/coordinates";
 import type { Vec2 } from "../utils/pathfinding";
 import { usePanCamera } from "../utils/usePanCamera";
@@ -36,7 +36,7 @@ import {
   type BuilderSpriteHandle,
 } from "./BuilderSprite";
 import { HedgehouseSprite } from "./HedgehouseSprite";
-import { HedgemonyMinimap } from "./HedgemonyMinimap";
+import { RtsMinimap } from "./RtsMinimap";
 import { MapBackdrop } from "./MapBackdrop";
 import { MoneyHogToolbarButton } from "./MoneyHogToolbarButton";
 import { NestConstructionSite } from "./NestConstructionSite";
@@ -73,8 +73,8 @@ export interface MapBoxSelection {
 }
 
 /**
- * Imperative camera control exposed by `HedgemonyMapSurface` via ref. Lets the
- * parent (`HedgemonyMapView`) drive smooth camera moves for actions that
+ * Imperative camera control exposed by `RtsMapSurface` via ref. Lets the
+ * parent (`RtsMapView`) drive smooth camera moves for actions that
  * originate outside the surface itself — e.g., bookmark recall. The motion
  * values live on the surface because they're tied to the rendered transform,
  * and exposing a small API keeps that ownership intact while still allowing
@@ -89,7 +89,7 @@ export interface MapSurfaceHandle {
   centerOnPoint: (worldX: number, worldY: number) => void;
 }
 
-interface HedgemonyMapSurfaceProps {
+interface RtsMapSurfaceProps {
   nests: Nest[];
   selectedNestId: string | null;
   /**
@@ -128,7 +128,7 @@ interface HedgemonyMapSurfaceProps {
   onMoneyHogSelect?: () => void;
 }
 
-function HedgemonyMapSurfaceImpl(
+function RtsMapSurfaceImpl(
   {
     nests,
     selectedNestId,
@@ -155,7 +155,7 @@ function HedgemonyMapSurfaceImpl(
     onHedgehouseSelect,
     moneyHogSelected,
     onMoneyHogSelect,
-  }: HedgemonyMapSurfaceProps,
+  }: RtsMapSurfaceProps,
   ref: Ref<MapSurfaceHandle>,
 ) {
   const panX = useHedgemonyViewStore((s) => s.panX);
@@ -709,7 +709,7 @@ function HedgemonyMapSurfaceImpl(
         className="absolute bottom-3 left-3"
         onPointerDown={(e) => e.stopPropagation()}
       >
-        <HedgemonyMinimap
+        <RtsMinimap
           nests={nests}
           builderPos={builderPos}
           panX={livePan.x}
@@ -795,8 +795,8 @@ function HedgemonyMapSurfaceImpl(
   );
 }
 
-export const HedgemonyMapSurface = forwardRef<
+export const RtsMapSurface = forwardRef<
   MapSurfaceHandle,
-  HedgemonyMapSurfaceProps
->(HedgemonyMapSurfaceImpl);
-HedgemonyMapSurface.displayName = "HedgemonyMapSurface";
+  RtsMapSurfaceProps
+>(RtsMapSurfaceImpl);
+RtsMapSurface.displayName = "RtsMapSurface";

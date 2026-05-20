@@ -1,6 +1,6 @@
 import { useHotkeys } from "react-hotkeys-hook";
 import type { ControlGroupSlot } from "../stores/controlGroupStore";
-import type { BookmarkSlot } from "../stores/hedgemonyViewStore";
+import type { BookmarkSlot } from "../stores/rtsViewStore";
 
 export interface HedgemonyHotkeyCallbacks {
   onToggleFullscreen: () => void;
@@ -31,7 +31,7 @@ export interface UseHedgemonyHotkeysOptions {
  * bindings are unrolled by hand because `useHotkeys` cannot be invoked in a
  * loop — each call must be a stable hook position in the render order.
  */
-export function useHedgemonyHotkeys(
+export function useRtsHotkeys(
   callbacks: HedgemonyHotkeyCallbacks,
   options: UseHedgemonyHotkeysOptions,
 ): void {

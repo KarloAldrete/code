@@ -12,14 +12,14 @@ import { playVoice } from "../audio/voice";
 import { BUILDER_NAME } from "../constants/map";
 import { useBuilderCoordinator } from "../hooks/useBuilderCoordinator";
 import { useCameraBookmarks } from "../hooks/useCameraBookmarks";
-import { useHedgemonyCommands } from "../hooks/useHedgemonyCommands";
-import { useHedgemonyDerivedState } from "../hooks/useHedgemonyDerivedState";
-import { useHedgemonyEscapeKey } from "../hooks/useHedgemonyEscapeKey";
-import { useHedgemonyFullscreen } from "../hooks/useHedgemonyFullscreen";
-import { useHedgemonyHotkeys } from "../hooks/useHedgemonyHotkeys";
-import { useHedgemonyMapInput } from "../hooks/useHedgemonyMapInput";
-import { useHedgemonySelectionSync } from "../hooks/useHedgemonySelectionSync";
-import { useHedgemonySubscriptions } from "../hooks/useHedgemonySubscriptions";
+import { useRtsCommands } from "../hooks/useRtsCommands";
+import { useRtsDerivedState } from "../hooks/useRtsDerivedState";
+import { useRtsEscapeKey } from "../hooks/useRtsEscapeKey";
+import { useRtsFullscreen } from "../hooks/useRtsFullscreen";
+import { useRtsHotkeys } from "../hooks/useRtsHotkeys";
+import { useRtsMapInput } from "../hooks/useRtsMapInput";
+import { useRtsSelectionSync } from "../hooks/useRtsSelectionSync";
+import { useRtsSubscriptions } from "../hooks/useRtsSubscriptions";
 import { useMoveMarker } from "../hooks/useMoveMarker";
 import { useSignalIngestion } from "../hooks/useSignalIngestion";
 import {
@@ -28,7 +28,7 @@ import {
   handleHogletDrop,
 } from "../service/hogletMutations";
 import type { ViewMode } from "../state/computeMapClickAction";
-import type { Selection } from "../state/HedgemonyController";
+import type { Selection } from "../state/RtsController";
 import { selectNests, useNestStore } from "../stores/nestStore";
 import { useSpawnDialogStore } from "../stores/spawnDialogStore";
 import type { Vec2 } from "../utils/pathfinding";
@@ -38,12 +38,12 @@ import { DyingHogletLayer } from "./DyingHogletLayer";
 import { DyingNestLayer } from "./DyingNestLayer";
 import { FinOpsPanel } from "./FinOpsPanel";
 import { HedgehouseCommandPanel } from "./HedgehouseCommandPanel";
-import { HedgemonyFullscreenShell } from "./HedgemonyFullscreenShell";
-import { HedgemonyHotkeyHelper } from "./HedgemonyHotkeyHelper";
+import { RtsFullscreenShell } from "./RtsFullscreenShell";
+import { RtsHotkeyHelper } from "./RtsHotkeyHelper";
 import {
-  HedgemonyMapSurface,
+  RtsMapSurface,
   type MapSurfaceHandle,
-} from "./HedgemonyMapSurface";
+} from "./RtsMapSurface";
 import { HogletDetailPanel } from "./HogletDetailPanel";
 import { MultiHogletDetailPanel } from "./MultiHogletDetailPanel";
 import { NestBroodCluster } from "./NestBroodCluster";
@@ -52,7 +52,7 @@ import { type NestCreationMode, PlaceNestDialog } from "./PlaceNestDialog";
 import { SpawnHogletPanel } from "./SpawnHogletPanel";
 import { WildHogletFlock } from "./WildHogletFlock";
 
-export function HedgemonyMapView() {
+export function RtsMapView() {
   const nests = useNestStore(selectNests);
 
   const [mode, setMode] = useState<ViewMode>({ kind: "browsing" });
@@ -71,7 +71,7 @@ export function HedgemonyMapView() {
     exitFullscreen,
     toggleFullscreen,
     toggleInAppFullscreen,
-  } = useHedgemonyFullscreen();
+  } = useRtsFullscreen();
   const toggleBgmMute = useBgmStore((s) => s.toggleMute);
   const toggleSfxMute = useSfxStore((s) => s.toggleMute);
   const [helperOpen, setHelperOpen] = useState(false);
@@ -99,10 +99,10 @@ export function HedgemonyMapView() {
   useSignalIngestion();
 
   const nestIds = useMemo(() => nests.map((n) => n.id), [nests]);
-  useHedgemonySubscriptions({ nestIds });
+  useRtsSubscriptions({ nestIds });
 
-  useHedgemonySelectionSync(selection);
-  useHedgemonyEscapeKey({
+  useRtsSelectionSync(selection);
+  useRtsEscapeKey({
     mode,
     selection,
     fullscreen,
@@ -147,7 +147,7 @@ export function HedgemonyMapView() {
     clickSelectHedgehouse,
     toggleMoneyHog,
     focusHoglet,
-  } = useHedgemonyCommands({
+  } = useRtsCommands({
     nests,
     selection,
     setMode,
@@ -166,7 +166,7 @@ export function HedgemonyMapView() {
     [],
   );
 
-  useHedgemonyHotkeys(
+  useRtsHotkeys(
     {
       onToggleFullscreen: toggleFullscreen,
       onToggleInAppFullscreen: toggleInAppFullscreen,
@@ -191,7 +191,7 @@ export function HedgemonyMapView() {
     handleMapRightClick,
     handleBoxSelect,
     unitObstacles,
-  } = useHedgemonyMapInput({
+  } = useRtsMapInput({
     mode,
     selection,
     nests,
@@ -229,7 +229,7 @@ export function HedgemonyMapView() {
     buildMode,
     relocatingNestId,
     activeHotkeyContext,
-  } = useHedgemonyDerivedState({ selection, mode, nests, dialogOpen });
+  } = useRtsDerivedState({ selection, mode, nests, dialogOpen });
 
   const handleDragEnd = useCallback<DragDropEvents["dragend"]>((event) => {
     if (event.canceled) return;
@@ -246,7 +246,7 @@ export function HedgemonyMapView() {
   // to the map area so they don't bleed onto the app sidebar.
   const mapContent = (
     <div className="relative h-full w-full">
-      <HedgemonyMapSurface
+      <RtsMapSurface
         ref={surfaceRef}
         nests={nests}
         selectedNestId={activeNest?.id ?? null}
@@ -291,7 +291,7 @@ export function HedgemonyMapView() {
         />
         <DyingHogletLayer />
         <DyingNestLayer />
-      </HedgemonyMapSurface>
+      </RtsMapSurface>
       <AnimatePresence>
         {activeNest && (
           <NestDetailPanel
@@ -348,7 +348,7 @@ export function HedgemonyMapView() {
             />
           )}
       </AnimatePresence>
-      <HedgemonyHotkeyHelper
+      <RtsHotkeyHelper
         open={helperOpen}
         onOpenChange={setHelperOpen}
         activeContext={activeHotkeyContext}
@@ -392,13 +392,13 @@ export function HedgemonyMapView() {
         },
       ]}
     >
-      <HedgemonyFullscreenShell
+      <RtsFullscreenShell
         fullscreen={fullscreen}
         contextActive={activeHotkeyContext !== null}
         onExitFullscreen={exitFullscreen}
       >
         {mapContent}
-      </HedgemonyFullscreenShell>
+      </RtsFullscreenShell>
     </DragDropProvider>
   );
 }

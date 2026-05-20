@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import {
   type BookmarkSlot,
   useHedgemonyViewStore,
-} from "../stores/hedgemonyViewStore";
+} from "../stores/rtsViewStore";
 
 export interface UseCameraBookmarksOptions {
   /** Smooth-tween the surface to a saved view. Returning false means the

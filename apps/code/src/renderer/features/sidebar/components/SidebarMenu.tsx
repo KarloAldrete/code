@@ -7,7 +7,7 @@ import {
   INBOX_REFETCH_INTERVAL_MS,
 } from "@features/inbox/utils/inboxConstants";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
-import { useHedgemonySelectionStore } from "@features/rts/stores/hedgemonySelectionStore";
+import { useHedgemonySelectionStore } from "@features/rts/stores/rtsSelectionStore";
 import { useHogletStore } from "@features/rts/stores/hogletStore";
 import { getSessionService } from "@features/sessions/service/service";
 import { useSetupStore } from "@features/setup/stores/setupStore";

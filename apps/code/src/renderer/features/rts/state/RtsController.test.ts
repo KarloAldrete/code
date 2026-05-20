@@ -10,7 +10,7 @@ import {
   selectAffiliation,
   snapshotSelectionForControlGroup,
   toggleHogletSelection,
-} from "./HedgemonyController";
+} from "./RtsController";
 
 function makeNest(overrides: Partial<Nest> & { id: string }): Nest {
   const base: Nest = {
@@ -31,7 +31,7 @@ function makeNest(overrides: Partial<Nest> & { id: string }): Nest {
   return { ...base, ...overrides };
 }
 
-describe("HedgemonyController", () => {
+describe("RtsController", () => {
   describe("nextCycleNest", () => {
     it("returns null when no nests", () => {
       expect(nextCycleNest(null, [], 1)).toBeNull();

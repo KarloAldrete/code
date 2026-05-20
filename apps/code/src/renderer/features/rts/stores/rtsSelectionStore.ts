@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 /**
- * Mirrors the currently selected hoglet IDs out of HedgemonyMapView's local
+ * Mirrors the currently selected hoglet IDs out of RtsMapView's local
  * `Selection` state so consumers outside the map (e.g. the sidebar task list)
  * can react to selection without lifting the whole selection union into a
  * shared store. The map clears this on unmount.

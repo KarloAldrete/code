@@ -9,7 +9,7 @@ import {
   type HedgemonyHotkeyContext,
 } from "../constants/hotkeys";
 
-interface HedgemonyHotkeyHelperProps {
+interface RtsHotkeyHelperProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Highlighted in the overlay so the player sees what's bound *right now*. */
@@ -72,11 +72,11 @@ function HotkeyRow({ hotkey }: { hotkey: HedgemonyHotkey }) {
   );
 }
 
-export function HedgemonyHotkeyHelper({
+export function RtsHotkeyHelper({
   open,
   onOpenChange,
   activeContext,
-}: HedgemonyHotkeyHelperProps) {
+}: RtsHotkeyHelperProps) {
   // `?` opens, Esc closes — Esc is also wired in the map-level handler, but
   // we register it locally so the helper closes even when the map's Esc
   // ladder would have done something else first.

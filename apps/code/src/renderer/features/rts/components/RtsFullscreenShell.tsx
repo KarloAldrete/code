@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 
-interface HedgemonyFullscreenShellProps {
+interface RtsFullscreenShellProps {
   fullscreen: boolean;
   /** True when any contextual UI is showing — we hide the explicit exit
    * button in that case to avoid overlapping the panel's own controls. */
@@ -17,12 +17,12 @@ interface HedgemonyFullscreenShellProps {
  * than getting clipped behind it. Outside fullscreen, just renders the map
  * inline.
  */
-export function HedgemonyFullscreenShell({
+export function RtsFullscreenShell({
   fullscreen,
   contextActive,
   onExitFullscreen,
   children,
-}: HedgemonyFullscreenShellProps) {
+}: RtsFullscreenShellProps) {
   if (!fullscreen) {
     return <div className="relative h-full w-full">{children}</div>;
   }

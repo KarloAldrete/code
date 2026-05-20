@@ -9,7 +9,7 @@ import { HOGLET_PROMPT_MAX_CHARS, holdNextTrigger } from "./schemas";
  * these tools declare relationships and route prompts.
  *
  * `message_hoglet` emits an InjectPrompt event via the FeedbackRoutingService
- * pipeline. The renderer's useHedgemonyPromptRouter hook injects into live
+ * pipeline. The renderer's useRtsPromptRouter hook injects into live
  * sessions or spawns follow-up hoglets for completed ones.
  */
 export const HEDGEHOG_TOOLS: AnthropicToolDefinition[] = [
