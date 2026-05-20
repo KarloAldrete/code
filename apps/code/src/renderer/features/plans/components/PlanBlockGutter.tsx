@@ -6,6 +6,7 @@ import { usePlanComposeStore } from "../stores/planComposeStore";
 
 interface PlanBlockGutterProps {
   blockText: string | undefined;
+  occurrence: number;
   filePath: string;
   taskId: string;
   children: ReactNode;
@@ -18,6 +19,7 @@ interface PlanBlockGutterProps {
  */
 export function PlanBlockGutter({
   blockText,
+  occurrence,
   filePath,
   taskId,
   children,
@@ -36,10 +38,11 @@ export function PlanBlockGutter({
         bottom: rect.bottom,
       },
       blockText,
+      occurrence,
       filePath,
       taskId,
     });
-  }, [blockText, filePath, taskId, openAt]);
+  }, [blockText, occurrence, filePath, taskId, openAt]);
 
   return (
     <div ref={ref} className="group relative">

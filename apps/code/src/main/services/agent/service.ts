@@ -57,6 +57,7 @@ import { loadSessionEnvOverrides } from "../session-env/loader";
 import type { SleepService } from "../sleep/service";
 import type { AgentAuthAdapter, McpToolInstallations } from "./auth-adapter";
 import { discoverExternalPlugins } from "./discover-plugins";
+import { getPlanFilePathFromSessionUpdate } from "./plan-file-detector";
 import {
   AgentServiceEvent,
   type AgentServiceEvents,
@@ -249,6 +250,13 @@ interface ManagedSession {
   mcpToolApprovals: McpToolApprovals;
   /** Maps tool keys to their installation for backend approval updates */
   toolInstallations: McpToolInstallations;
+  /**
+   * Most recently observed `~/.claude/plans/<slug>.md` file the agent has
+   * written or edited in this session. Populated by the plan-file detector
+   * as tool_call notifications flow through `onAcpMessage`. Surfaced to
+   * the renderer via `agent.getPlanFilePath` + `agent.onPlanFileChanged`.
+   */
+  planFilePath?: string | null;
 }
 
 /** Get the agent session ID from a managed session, throwing if not set. */
@@ -395,6 +403,15 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
 
     this.pendingPermissions.delete(key);
     this.recordActivity(taskRunId);
+  }
+
+  /**
+   * Returns the most recently observed plan file path for a session, or
+   * `null` if the agent hasn't written one yet. Used by the renderer to
+   * seed the Plan tab when navigating to an in-flight task.
+   */
+  public getPlanFilePath(taskRunId: string): string | null {
+    return this.sessions.get(taskRunId)?.planFilePath ?? null;
   }
 
   /**
@@ -1221,6 +1238,19 @@ For git operations while detached:
 
       // Inspect tool call updates for PR URLs and file activity
       this.handleToolCallUpdate(taskRunId, message as AcpMessage["message"]);
+
+      // Surface plan-file activity as a typed event so the renderer's Plan
+      // tab can latch onto the right `~/.claude/plans/<slug>.md` without
+      // re-parsing tool call rawInput in the renderer.
+      const planFilePath = getPlanFilePathFromSessionUpdate(message);
+      if (planFilePath) {
+        const session = this.sessions.get(taskRunId);
+        if (session) session.planFilePath = planFilePath;
+        this.emit(AgentServiceEvent.PlanFileChanged, {
+          taskRunId,
+          filePath: planFilePath,
+        });
+      }
     };
 
     const tappedReadable = createTappedReadableStream(

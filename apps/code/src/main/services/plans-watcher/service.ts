@@ -42,16 +42,22 @@ export function isThreadLine(line: string): boolean {
 export function findBlockInsertionLine(
   lines: string[],
   blockText: string,
+  occurrence = 0,
 ): number | null {
   const trimmed = blockText.trim();
   if (!trimmed) return null;
 
-  // Try to match as a contiguous run of source lines that fully contains the
-  // user-supplied text. Walk the file line by line and check whether a
-  // window starting at each line — joined by newlines — contains `trimmed`
-  // as a substring.
-  for (let i = 0; i < lines.length; i += 1) {
-    if (!lines[i].trim()) continue;
+  // Walk the file looking for a contiguous window of source lines that
+  // fully contains the user-supplied text. When `occurrence > 0`, skip
+  // earlier matches and advance the cursor past each matched window so a
+  // single source line isn't double-counted across calls.
+  let remainingToSkip = occurrence;
+  let i = 0;
+  while (i < lines.length) {
+    if (!lines[i].trim()) {
+      i += 1;
+      continue;
+    }
     let acc = lines[i];
     let j = i;
     while (j < lines.length - 1 && !acc.includes(trimmed)) {
@@ -60,10 +66,16 @@ export function findBlockInsertionLine(
       if (acc.length > trimmed.length + 400) break;
     }
     if (acc.includes(trimmed)) {
-      // The block ends on line `j`. Insertion point is `j + 1` (the line
-      // after the matched block).
-      return j + 1;
+      if (remainingToSkip === 0) {
+        return j + 1;
+      }
+      remainingToSkip -= 1;
+      // Advance past the matched window so the next iteration looks at
+      // strictly later source lines.
+      i = j + 1;
+      continue;
     }
+    i += 1;
   }
   return null;
 }
@@ -163,7 +175,11 @@ export class PlansWatcherService extends TypedEventEmitter<PlansWatcherEvents> {
     }
     const original = (await this.readPlan(input.filePath)) ?? "";
     const lines = original.split("\n");
-    const insertionLine = findBlockInsertionLine(lines, input.blockText);
+    const insertionLine = findBlockInsertionLine(
+      lines,
+      input.blockText,
+      input.occurrence,
+    );
     if (insertionLine === null) {
       throw new Error("Plan thread anchor block not found in file");
     }
@@ -198,7 +214,11 @@ export class PlansWatcherService extends TypedEventEmitter<PlansWatcherEvents> {
     }
     const original = (await this.readPlan(input.filePath)) ?? "";
     const lines = original.split("\n");
-    const insertionLine = findBlockInsertionLine(lines, input.blockText);
+    const insertionLine = findBlockInsertionLine(
+      lines,
+      input.blockText,
+      input.occurrence,
+    );
     if (insertionLine === null) {
       throw new Error("Plan thread anchor block not found in file");
     }

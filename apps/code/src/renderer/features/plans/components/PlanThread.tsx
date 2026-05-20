@@ -23,6 +23,7 @@ interface PlanThreadProps {
   filePath: string;
   taskId: string;
   blockText: string;
+  occurrence: number;
   messages: ParsedMessage[];
   resolved: boolean;
 }
@@ -74,6 +75,7 @@ export function PlanThread({
   filePath,
   taskId,
   blockText,
+  occurrence,
   messages,
   resolved,
 }: PlanThreadProps) {
@@ -90,6 +92,7 @@ export function PlanThread({
       await trpcClient.plans.appendThreadMessage.mutate({
         filePath,
         blockText,
+        occurrence,
         message: text,
         speaker: "H",
       });
@@ -102,11 +105,15 @@ export function PlanThread({
     } finally {
       setPending(null);
     }
-  }, [blockText, filePath, taskId]);
+  }, [blockText, occurrence, filePath, taskId]);
 
   const handleResolve = useCallback(async () => {
     try {
-      await trpcClient.plans.resolveThread.mutate({ filePath, blockText });
+      await trpcClient.plans.resolveThread.mutate({
+        filePath,
+        blockText,
+        occurrence,
+      });
       sendPromptToAgent(
         taskId,
         buildAskAgentToIncorporateResolvedThreadPrompt(filePath),
@@ -114,7 +121,7 @@ export function PlanThread({
     } catch (err) {
       log.warn("Failed to resolve plan thread", { err });
     }
-  }, [blockText, filePath, taskId]);
+  }, [blockText, occurrence, filePath, taskId]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

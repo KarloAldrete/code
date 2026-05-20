@@ -19,6 +19,7 @@ export function PlanComposePopover() {
   const open = usePlanComposeStore((s) => s.open);
   const anchorRect = usePlanComposeStore((s) => s.anchorRect);
   const blockText = usePlanComposeStore((s) => s.blockText);
+  const occurrence = usePlanComposeStore((s) => s.occurrence);
   const filePath = usePlanComposeStore((s) => s.filePath);
   const taskId = usePlanComposeStore((s) => s.taskId);
   const close = usePlanComposeStore((s) => s.close);
@@ -51,6 +52,7 @@ export function PlanComposePopover() {
       await trpcClient.plans.appendThreadMessage.mutate({
         filePath,
         blockText,
+        occurrence,
         message: text,
         speaker: "H",
       });
@@ -63,7 +65,7 @@ export function PlanComposePopover() {
     } finally {
       close();
     }
-  }, [filePath, blockText, taskId, close]);
+  }, [filePath, blockText, occurrence, taskId, close]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

@@ -144,6 +144,10 @@ export const agentRouter = router({
     getService().hasActiveSessions(),
   ),
 
+  getPlanFilePath: publicProcedure
+    .input(subscribeSessionInput)
+    .query(({ input }) => getService().getPlanFilePath(input.taskRunId)),
+
   onSessionsIdle: publicProcedure.subscription(async function* (opts) {
     const service = getService();
     for await (const _ of service.toIterable(AgentServiceEvent.SessionsIdle, {
@@ -200,6 +204,21 @@ export const agentRouter = router({
       yield event;
     }
   }),
+
+  onPlanFileChanged: publicProcedure
+    .input(subscribeSessionInput)
+    .subscription(async function* (opts) {
+      const service = getService();
+      const targetTaskRunId = opts.input.taskRunId;
+      const iterable = service.toIterable(AgentServiceEvent.PlanFileChanged, {
+        signal: opts.signal,
+      });
+      for await (const event of iterable) {
+        if (event.taskRunId === targetTaskRunId) {
+          yield event;
+        }
+      }
+    }),
 
   getGatewayModels: publicProcedure
     .input(getGatewayModelsInput)

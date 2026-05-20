@@ -1,24 +1,44 @@
-import { useSessionStore } from "@features/sessions/stores/sessionStore";
-import { useMemo } from "react";
-import { extractLatestPlanFilePath } from "../utils/planFilePath";
+import { useSessionForTask } from "@features/sessions/hooks/useSession";
+import { trpc } from "@renderer/trpc";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSubscription } from "@trpc/tanstack-react-query";
 
 /**
- * Returns the most recently written `.claude/plans/*.md` file path for the
- * given task, or `null` if the agent hasn't produced a plan in this session.
+ * Returns the plan file path the agent is currently working on for this
+ * task, or `null` if no plan has been produced.
  *
- * The plan file path is derived from the session's event log rather than
- * stored explicitly — this avoids round-tripping a new field through the
- * agent → tRPC → store chain.
+ * The path is owned by the main-process `AgentService`, which detects plan
+ * file activity using the same `CLAUDE_CONFIG_DIR` env var that controls
+ * where the watcher looks — so renderer and main process can never
+ * disagree on which directory counts as the plans dir. Renderer never
+ * inspects `rawInput` from tool calls directly.
  */
 export function usePlanFilePath(taskId: string): string | null {
-  const events = useSessionStore((state) => {
-    const taskRunId = state.taskIdIndex[taskId];
-    if (!taskRunId) return null;
-    return state.sessions[taskRunId]?.events ?? null;
+  const session = useSessionForTask(taskId);
+  const taskRunId = session?.taskRunId ?? null;
+  const queryClient = useQueryClient();
+
+  const { data } = useQuery({
+    ...trpc.agent.getPlanFilePath.queryOptions(
+      { taskRunId: taskRunId ?? "" },
+      { enabled: !!taskRunId, staleTime: 0 },
+    ),
   });
 
-  return useMemo(
-    () => (events ? extractLatestPlanFilePath(events) : null),
-    [events],
+  useSubscription(
+    trpc.agent.onPlanFileChanged.subscriptionOptions(
+      { taskRunId: taskRunId ?? "" },
+      {
+        enabled: !!taskRunId,
+        onData: () => {
+          if (!taskRunId) return;
+          queryClient.invalidateQueries(
+            trpc.agent.getPlanFilePath.queryFilter({ taskRunId }),
+          );
+        },
+      },
+    ),
   );
+
+  return data ?? null;
 }

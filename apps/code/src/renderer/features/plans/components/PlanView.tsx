@@ -12,6 +12,7 @@ import { useEffect, useMemo } from "react";
 import remarkGfm from "remark-gfm";
 import type { PluggableList } from "unified";
 import { remarkPlanThreads } from "../remark/remarkPlanThreads";
+import { handlePlanDeletion } from "../utils/handlePlanDeletion";
 import { PlanBlockGutter } from "./PlanBlockGutter";
 import { PlanComposePopover } from "./PlanComposePopover";
 import { PlanThread } from "./PlanThread";
@@ -25,8 +26,18 @@ interface PlanViewProps {
 
 interface PlanThreadElementProps {
   "data-block-text"?: string;
+  "data-occurrence"?: string | number;
   "data-messages"?: string;
   "data-resolved"?: string;
+}
+
+function parseOccurrence(raw: unknown): number {
+  if (typeof raw === "number") return raw;
+  if (typeof raw === "string") {
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
 }
 
 declare module "react" {
@@ -64,6 +75,27 @@ export function PlanView({ taskId, filePath }: PlanViewProps) {
     }),
   );
 
+  useSubscription(
+    trpc.plans.onDeleted.subscriptionOptions(undefined, {
+      onData: (payload) => {
+        handlePlanDeletion({
+          deletedPath: payload.filePath,
+          currentPath: filePath,
+          clearCache: () => {
+            queryClient.setQueryData(trpc.plans.read.queryKey({ filePath }), {
+              content: null,
+            });
+          },
+          onCleared: () => {
+            queryClient.invalidateQueries(
+              trpc.plans.read.queryFilter({ filePath }),
+            );
+          },
+        });
+      },
+    }),
+  );
+
   const remarkPlugins = useMemo<PluggableList>(
     () => [remarkGfm, remarkPlanThreads],
     [],
@@ -74,10 +106,16 @@ export function PlanView({ taskId, filePath }: PlanViewProps) {
       const Original = baseComponents[tag];
       return function Wrapped(props: Record<string, unknown>) {
         const blockText = props["data-plan-block"] as string | undefined;
-        const { "data-plan-block": _unused, ...rest } = props;
+        const occurrence = parseOccurrence(props["data-occurrence"]);
+        const {
+          "data-plan-block": _unusedBlock,
+          "data-occurrence": _unusedOcc,
+          ...rest
+        } = props;
         return (
           <PlanBlockGutter
             blockText={blockText}
+            occurrence={occurrence}
             filePath={filePath}
             taskId={taskId}
           >
@@ -102,6 +140,7 @@ export function PlanView({ taskId, filePath }: PlanViewProps) {
       pre: wrap("pre"),
       "plan-thread": (props: PlanThreadElementProps) => {
         const blockText = props["data-block-text"] ?? "";
+        const occurrence = parseOccurrence(props["data-occurrence"]);
         const messages = (() => {
           try {
             return JSON.parse(props["data-messages"] ?? "[]");
@@ -115,6 +154,7 @@ export function PlanView({ taskId, filePath }: PlanViewProps) {
             filePath={filePath}
             taskId={taskId}
             blockText={blockText}
+            occurrence={occurrence}
             messages={messages}
             resolved={resolved}
           />

@@ -1,3 +1,4 @@
+import type { Root } from "mdast";
 import type { Plugin } from "unified";
 
 /**
@@ -60,10 +61,22 @@ function extractSource(node: MdNode, source: string): string | null {
   return source.slice(start, end);
 }
 
+interface MdDefinition extends MdNode {
+  type: "definition";
+  label?: string;
+  url?: string;
+}
+
 /**
  * Parses a blockquote node as a plan thread if it contains only `[H]`/`[A]`/
  * `[resolved]` lines. Returns `null` for blockquotes that are regular
  * markdown quotes.
+ *
+ * Why this is fiddly: CommonMark parses `[H]: short_value` as a link
+ * reference *definition* node, not a paragraph. That happens whenever the
+ * "url" portion has no spaces. Multi-word messages stay as paragraph text.
+ * So a blockquote thread is a mix of `definition` and `paragraph` children,
+ * and we accept either.
  */
 function parseThreadBlockquote(node: MdNode): ParsedThread | null {
   if (node.type !== "blockquote") return null;
@@ -73,6 +86,15 @@ function parseThreadBlockquote(node: MdNode): ParsedThread | null {
   let resolved = false;
 
   for (const child of node.children) {
+    if (child.type === "definition") {
+      const def = child as MdDefinition;
+      const tag = def.label;
+      if (tag !== "H" && tag !== "A") return null;
+      const message = (def.url ?? "").trim();
+      messages.push({ speaker: tag, text: message });
+      continue;
+    }
+
     if (child.type !== "paragraph") return null;
     const lines = getNodeText(child).split("\n");
     for (const line of lines) {
@@ -96,6 +118,7 @@ function asPlanThreadNode(
   thread: ParsedThread,
   anchor: MdNode,
   source: string,
+  occurrence: number,
 ): MdNode {
   const blockText = extractSource(anchor, source) ?? getNodeText(anchor);
   return {
@@ -104,6 +127,7 @@ function asPlanThreadNode(
       hName: "plan-thread",
       hProperties: {
         "data-block-text": blockText,
+        "data-occurrence": occurrence,
         "data-messages": JSON.stringify(thread.messages),
         "data-resolved": thread.resolved ? "true" : "false",
       },
@@ -111,7 +135,11 @@ function asPlanThreadNode(
   };
 }
 
-function annotateAnchorBlock(node: MdNode, source: string): void {
+function annotateAnchorBlock(
+  node: MdNode,
+  source: string,
+  occurrence: number,
+): void {
   const blockText = extractSource(node, source) ?? getNodeText(node);
   if (!blockText.trim()) return;
   if (!node.data) node.data = {};
@@ -120,6 +148,16 @@ function annotateAnchorBlock(node: MdNode, source: string): void {
   if (!("data-plan-block" in props)) {
     props["data-plan-block"] = blockText;
   }
+  if (!("data-occurrence" in props)) {
+    props["data-occurrence"] = occurrence;
+  }
+}
+
+function getAnchorOccurrence(node: MdNode): number {
+  const raw = node.data?.hProperties?.["data-occurrence"];
+  if (typeof raw === "number") return raw;
+  if (typeof raw === "string") return Number.parseInt(raw, 10) || 0;
+  return 0;
 }
 
 const ANCHORABLE_TYPES = new Set([
@@ -130,10 +168,28 @@ const ANCHORABLE_TYPES = new Set([
   "table",
 ]);
 
-export const remarkPlanThreads: Plugin<[], MdRoot> = () => {
-  return (tree, file) => {
+// Type the plugin against mdast's `Root` for unified compatibility, then
+// operate on our loose `MdRoot` shape inside (mdast's discriminated children
+// types aren't structurally compatible with the simpler `MdNode`).
+export const remarkPlanThreads: Plugin<[], Root> = () => {
+  return (input, file) => {
+    const tree = input as unknown as MdRoot;
     const source = String((file as VFileLike).value ?? "");
     const children = tree.children;
+
+    // Counts of how many times each block text snippet has already appeared
+    // as an anchor — drives the per-block `data-occurrence` and is also
+    // attached to the thread node so the mutation can target the Nth match.
+    const occurrenceByText = new Map<string, number>();
+
+    function occurrenceOf(node: MdNode): number {
+      const blockText = (
+        extractSource(node, source) ?? getNodeText(node)
+      ).trim();
+      const seen = occurrenceByText.get(blockText) ?? 0;
+      occurrenceByText.set(blockText, seen + 1);
+      return seen;
+    }
 
     for (let i = 0; i < children.length; i += 1) {
       const node = children[i];
@@ -149,12 +205,21 @@ export const remarkPlanThreads: Plugin<[], MdRoot> = () => {
           anchorIndex -= 1;
         }
         const anchor = anchorIndex >= 0 ? children[anchorIndex] : node;
-        children[i] = asPlanThreadNode(thread, anchor, source);
+        // The anchor block's occurrence was assigned earlier in the loop;
+        // read it back rather than re-counting (which would double-count).
+        const anchorOccurrence = getAnchorOccurrence(anchor);
+        children[i] = asPlanThreadNode(
+          thread,
+          anchor,
+          source,
+          anchorOccurrence,
+        );
         continue;
       }
 
       if (ANCHORABLE_TYPES.has(node.type)) {
-        annotateAnchorBlock(node, source);
+        const occurrence = occurrenceOf(node);
+        annotateAnchorBlock(node, source, occurrence);
       }
     }
   };

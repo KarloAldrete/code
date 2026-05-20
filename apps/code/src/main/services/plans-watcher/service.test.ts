@@ -1,9 +1,14 @@
-import { describe, expect, it } from "vitest";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { WatcherRegistryService } from "../watcher-registry/service";
 import {
   findBlockInsertionLine,
   findExistingThreadRange,
   formatThreadLine,
   isThreadLine,
+  PlansWatcherService,
 } from "./service";
 
 const SAMPLE_PLAN = `# Plan
@@ -59,6 +64,45 @@ describe("plans-watcher helpers", () => {
         null,
       );
     });
+
+    it("finds the Nth occurrence when the block text repeats", () => {
+      const lines = [
+        "## Step 1",
+        "",
+        "First step content",
+        "",
+        "## Step 1",
+        "",
+        "Duplicate heading",
+        "",
+        "## Step 1",
+        "",
+        "Third one",
+      ];
+      expect(findBlockInsertionLine(lines, "## Step 1", 0)).toBe(1);
+      expect(findBlockInsertionLine(lines, "## Step 1", 1)).toBe(5);
+      expect(findBlockInsertionLine(lines, "## Step 1", 2)).toBe(9);
+    });
+
+    it("defaults to occurrence 0 when none specified", () => {
+      const lines = ["## Step 1", "", "## Step 1", "", "..."];
+      expect(findBlockInsertionLine(lines, "## Step 1")).toBe(1);
+    });
+
+    it("returns null when the occurrence index exceeds the match count", () => {
+      const lines = ["## Step 1", "", "only one"];
+      expect(findBlockInsertionLine(lines, "## Step 1", 1)).toBe(null);
+    });
+
+    it("skips matches that overlap with already-counted matches", () => {
+      // Multi-line block that itself contains the search text twice in a row
+      // would otherwise double-count. We want each match to advance the
+      // cursor past the matched window.
+      const lines = ["foo", "foo", "bar", "foo", "baz"];
+      expect(findBlockInsertionLine(lines, "foo", 0)).toBe(1);
+      expect(findBlockInsertionLine(lines, "foo", 1)).toBe(2);
+      expect(findBlockInsertionLine(lines, "foo", 2)).toBe(4);
+    });
   });
 
   describe("findExistingThreadRange", () => {
@@ -104,5 +148,100 @@ describe("plans-watcher helpers", () => {
         "> [A]: line one line two",
       );
     });
+  });
+});
+
+describe("PlansWatcherService.appendThreadMessage / resolveThread", () => {
+  let tmpDir: string;
+  let plansDir: string;
+  let service: PlansWatcherService;
+  let savedConfigDir: string | undefined;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "plans-watcher-test-"));
+    plansDir = path.join(tmpDir, "claude", "plans");
+    await fs.mkdir(plansDir, { recursive: true });
+    savedConfigDir = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = path.join(tmpDir, "claude");
+
+    const registryStub = {
+      isShutdown: false,
+      register: vi.fn(),
+      unregister: vi.fn(),
+    } as unknown as WatcherRegistryService;
+    service = new PlansWatcherService(registryStub);
+  });
+
+  afterEach(async () => {
+    if (savedConfigDir === undefined) {
+      delete process.env.CLAUDE_CONFIG_DIR;
+    } else {
+      process.env.CLAUDE_CONFIG_DIR = savedConfigDir;
+    }
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("appends a thread under the requested occurrence of a repeated block", async () => {
+    const planPath = path.join(plansDir, "plan.md");
+    const original = [
+      "## Step 1",
+      "",
+      "First step content",
+      "",
+      "## Step 1",
+      "",
+      "Second step content",
+      "",
+    ].join("\n");
+    await fs.writeFile(planPath, original, "utf8");
+
+    await service.appendThreadMessage({
+      filePath: planPath,
+      blockText: "## Step 1",
+      occurrence: 1,
+      message: "Why is the same heading used twice?",
+      speaker: "H",
+    });
+
+    const updated = await fs.readFile(planPath, "utf8");
+    const lines = updated.split("\n");
+    // The thread must be attached to the SECOND occurrence (line index 4),
+    // not the first.
+    const threadIdx = lines.findIndex((l) =>
+      l.startsWith("> [H]: Why is the same heading"),
+    );
+    expect(threadIdx).toBeGreaterThan(4);
+    // And the first "## Step 1" must NOT have a thread directly after it.
+    expect(lines[1]).toBe("");
+    expect(lines[2]).toBe("First step content");
+  });
+
+  it("resolves the thread under the requested occurrence", async () => {
+    const planPath = path.join(plansDir, "plan.md");
+    const original = [
+      "## Step",
+      "",
+      "> [H]: question about first",
+      "",
+      "## Step",
+      "",
+      "> [H]: question about second",
+      "",
+    ].join("\n");
+    await fs.writeFile(planPath, original, "utf8");
+
+    await service.resolveThread({
+      filePath: planPath,
+      blockText: "## Step",
+      occurrence: 1,
+    });
+
+    const updated = await fs.readFile(planPath, "utf8");
+    // First thread must NOT be resolved
+    expect(updated.match(/> \[resolved\]/g) ?? []).toHaveLength(1);
+    // The resolved marker must appear AFTER the second thread question
+    const resolvedIdx = updated.indexOf("> [resolved]");
+    const secondQuestionIdx = updated.indexOf("question about second");
+    expect(resolvedIdx).toBeGreaterThan(secondQuestionIdx);
   });
 });
