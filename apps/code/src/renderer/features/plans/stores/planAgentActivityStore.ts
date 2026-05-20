@@ -10,6 +10,14 @@ interface PlanAgentActivityState {
   queue: string[];
   enqueue: (threadKey: string) => void;
   dequeue: (threadKey: string) => void;
+  /**
+   * Garbage-collect: keep only keys that are still alive in the parsed
+   * plan. Called from `PlanView` whenever the plan content changes so
+   * that resolve-then-removed threads (where the agent never posted an
+   * `[A]:` in the thread because it rewrote the surrounding content
+   * instead) don't leak in the queue.
+   */
+  syncQueue: (activeKeys: Set<string>) => void;
   getStatus: (threadKey: string) => "active" | "queued" | null;
 }
 
@@ -25,6 +33,12 @@ export const usePlanAgentActivityStore = create<PlanAgentActivityState>(
       set((state) => {
         if (!state.queue.includes(threadKey)) return state;
         return { queue: state.queue.filter((k) => k !== threadKey) };
+      }),
+    syncQueue: (activeKeys) =>
+      set((state) => {
+        const next = state.queue.filter((k) => activeKeys.has(k));
+        if (next.length === state.queue.length) return state;
+        return { queue: next };
       }),
     getStatus: (threadKey) => {
       const queue = get().queue;

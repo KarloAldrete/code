@@ -16,6 +16,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import remarkGfm from "remark-gfm";
 import type { PluggableList } from "unified";
 import { remarkPlanThreads } from "../remark/remarkPlanThreads";
+import { usePlanAgentActivityStore } from "../stores/planAgentActivityStore";
+import { extractThreadKeys } from "../utils/extractThreadKeys";
 import { handlePlanDeletion } from "../utils/handlePlanDeletion";
 import { PlanBlockGutter } from "./PlanBlockGutter";
 import { PlanThread } from "./PlanThread";
@@ -248,6 +250,18 @@ export function PlanView({ taskId, filePath }: PlanViewProps) {
     [],
   );
 
+  // Garbage-collect the activity-store queue whenever the plan content
+  // changes. Resolve-then-rewrite flows can remove a thread block
+  // without ever posting an `[A]:` reply inside it, which would
+  // otherwise leak the entry. Sweeping by "which thread keys still
+  // exist in the file" is StrictMode-safe (no race with unmount).
+  const syncActivityQueue = usePlanAgentActivityStore((s) => s.syncQueue);
+  const planContent = planQuery.data?.content ?? null;
+  useEffect(() => {
+    if (planContent === null) return;
+    syncActivityQueue(extractThreadKeys(planContent, filePath));
+  }, [planContent, filePath, syncActivityQueue]);
+
   const components = useMemo(() => {
     const wrap = <Tag extends keyof typeof baseComponents>(tag: Tag) => {
       const Original = baseComponents[tag];
@@ -313,7 +327,7 @@ export function PlanView({ taskId, filePath }: PlanViewProps) {
     } as never;
   }, [filePath, taskId]);
 
-  const content = planQuery.data?.content ?? null;
+  const content = planContent;
 
   if (planQuery.isLoading && content === null) {
     return (

@@ -61,6 +61,33 @@ describe("planAgentActivityStore", () => {
     expect(usePlanAgentActivityStore.getState().queue).toEqual([KEY_A]);
   });
 
+  it("syncQueue removes entries that aren't in the active-key set", () => {
+    const { enqueue, syncQueue } = usePlanAgentActivityStore.getState();
+    enqueue(KEY_A);
+    enqueue(KEY_B);
+    enqueue("plan.md::C::0");
+
+    // Simulate: thread A's block was removed from the file, threads B and C
+    // are still present.
+    syncQueue(new Set([KEY_B, "plan.md::C::0"]));
+
+    expect(usePlanAgentActivityStore.getState().queue).toEqual([
+      KEY_B,
+      "plan.md::C::0",
+    ]);
+    // B is now the head ("active").
+    expect(usePlanAgentActivityStore.getState().getStatus(KEY_B)).toBe(
+      "active",
+    );
+  });
+
+  it("syncQueue is a no-op when every queued key is still active", () => {
+    usePlanAgentActivityStore.getState().enqueue(KEY_A);
+    usePlanAgentActivityStore.getState().enqueue(KEY_B);
+    usePlanAgentActivityStore.getState().syncQueue(new Set([KEY_A, KEY_B]));
+    expect(usePlanAgentActivityStore.getState().queue).toEqual([KEY_A, KEY_B]);
+  });
+
   it("buildThreadKey produces a stable key from (filePath, blockText, occurrence)", async () => {
     const { buildThreadKey } = await import("./planAgentActivityStore");
     const k1 = buildThreadKey({

@@ -164,15 +164,12 @@ export function PlanThread({
     }
   }, [lastSpeaker, activityStatus, dequeueAgentActivity, threadKey]);
 
-  // Safety net: when the agent rewrites the plan and removes this thread
-  // block entirely (the typical end of a `Resolve` flow), the component
-  // unmounts. Dequeue here so any threads queued behind us are promoted
-  // to "active" instead of being stuck.
-  useEffect(() => {
-    return () => {
-      dequeueAgentActivity(threadKey);
-    };
-  }, [dequeueAgentActivity, threadKey]);
+  // No unmount cleanup here. React StrictMode in dev double-invokes
+  // effect cleanups (fake unmount → re-mount), which would race against
+  // the user's just-submitted enqueue and clear the indicator before it
+  // could render. The resolve-then-block-removed case is handled by
+  // `extractThreadKeys` + `syncQueue` in `PlanView`, which sweeps the
+  // queue whenever the plan content changes.
 
   const handleReplySubmit = useCallback(async () => {
     const text = textareaRef.current?.value?.trim();
