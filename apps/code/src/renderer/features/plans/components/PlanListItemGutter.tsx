@@ -34,11 +34,12 @@ interface InlineComposerLiProps {
 }
 
 /**
- * Composer rendered as a sibling `<li>` so the resulting DOM stays
- * valid inside `<ul>`/`<ol>`. Mirrors `PlanBlockGutter`'s inline
- * composer in behavior, but with a `<li>` outer element.
+ * Composer rendered as a `<div>` INSIDE the anchor `<li>`. A `<div>`
+ * inside `<li>` is valid HTML, and unlike a sibling `<li>` it doesn't
+ * participate in `<ol>` numbering — so opening the composer no longer
+ * shifts the next step's marker.
  */
-function InlineComposerLi({
+function InlineComposerInLi({
   blockText,
   occurrence,
   filePath,
@@ -113,29 +114,27 @@ function InlineComposerLi({
   );
 
   return (
-    <li className="my-2 list-none">
-      <div className="rounded-md border border-(--gray-5) bg-(--gray-2) p-2">
-        <textarea
-          ref={textareaRef}
-          placeholder="Add a comment to the plan…"
-          onKeyDown={handleKeyDown}
-          className="min-h-[80px] w-full resize-none rounded border border-(--gray-6) bg-(--color-background) p-2 text-(--gray-12) text-[13px] leading-normal outline-none"
-        />
-        <Flex align="center" gap="2" className="mt-2">
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={handleSubmit}
-            disabled={pending}
-          >
-            {pending ? "Sending…" : "Add comment"}
-          </Button>
-          <Button size="sm" onClick={onClose}>
-            <X />
-          </Button>
-        </Flex>
-      </div>
-    </li>
+    <div className="my-2 rounded-md border border-(--gray-5) bg-(--gray-2) p-2">
+      <textarea
+        ref={textareaRef}
+        placeholder="Add a comment to the plan…"
+        onKeyDown={handleKeyDown}
+        className="min-h-[80px] w-full resize-none rounded border border-(--gray-6) bg-(--color-background) p-2 text-(--gray-12) text-[13px] leading-normal outline-none"
+      />
+      <Flex align="center" gap="2" className="mt-2">
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={handleSubmit}
+          disabled={pending}
+        >
+          {pending ? "Sending…" : "Add comment"}
+        </Button>
+        <Button size="sm" onClick={onClose}>
+          <X />
+        </Button>
+      </Flex>
+    </div>
   );
 }
 
@@ -159,24 +158,22 @@ export function PlanListItemGutter({
   const [composing, setComposing] = useState(false);
 
   return (
-    <>
-      <li className="group relative">
-        {blockText && (
-          <Tooltip content="Add a comment" side="left">
-            <button
-              type="button"
-              aria-label="Add a comment"
-              onClick={() => setComposing(true)}
-              className="-left-7 absolute top-1 flex h-5 w-5 cursor-pointer items-center justify-center rounded border border-(--gray-5) bg-(--color-background) text-(--gray-11) opacity-0 transition-opacity hover:bg-(--gray-3) hover:text-(--gray-12) group-hover:opacity-100"
-            >
-              <Plus size={12} />
-            </button>
-          </Tooltip>
-        )}
-        {children}
-      </li>
+    <li className="group relative">
+      {blockText && (
+        <Tooltip content="Add a comment" side="left">
+          <button
+            type="button"
+            aria-label="Add a comment"
+            onClick={() => setComposing(true)}
+            className="-left-7 absolute top-1 flex h-5 w-5 cursor-pointer items-center justify-center rounded border border-(--gray-5) bg-(--color-background) text-(--gray-11) opacity-0 transition-opacity hover:bg-(--gray-3) hover:text-(--gray-12) group-hover:opacity-100"
+          >
+            <Plus size={12} />
+          </button>
+        </Tooltip>
+      )}
+      {children}
       {composing && blockText && (
-        <InlineComposerLi
+        <InlineComposerInLi
           blockText={blockText}
           occurrence={occurrence}
           filePath={filePath}
@@ -184,6 +181,6 @@ export function PlanListItemGutter({
           onClose={() => setComposing(false)}
         />
       )}
-    </>
+    </li>
   );
 }

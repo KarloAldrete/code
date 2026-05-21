@@ -61,44 +61,47 @@ describe("PlanListItemGutter — DOM validity inside <ul>/<ol>", () => {
     }
   });
 
-  it("renders the inline composer as a sibling <li>, not as a <div> child of <ul>", () => {
-    const { container, getByLabelText, getByPlaceholderText } = render(
+  it("opens the composer inside the anchor <li> so it doesn't add an extra list item", () => {
+    const { container, getAllByLabelText, getByPlaceholderText } = render(
       <Theme>
-        <ul>
+        <ol>
           <PlanListItemGutter
-            blockText="- Anchor item"
+            blockText="1. Anchor item"
             occurrence={0}
             filePath="/x/plan.md"
             taskId="task-1"
           >
             Anchor item
           </PlanListItemGutter>
-        </ul>
+          <PlanListItemGutter
+            blockText="2. Next item"
+            occurrence={0}
+            filePath="/x/plan.md"
+            taskId="task-1"
+          >
+            Next item
+          </PlanListItemGutter>
+        </ol>
       </Theme>,
     );
 
+    const ol = container.querySelector("ol");
+    expect(ol).not.toBeNull();
+    const initialItemCount = ol?.children.length ?? 0;
+    expect(initialItemCount).toBe(2);
+
+    const addButtons = getAllByLabelText("Add a comment");
     act(() => {
-      fireEvent.click(getByLabelText("Add a comment"));
+      fireEvent.click(addButtons[0]);
     });
 
-    // The composer's textarea must be inside a <li>, not a stray <div>.
-    const textarea = getByPlaceholderText(/add a comment/i);
-    let node: Element | null = textarea;
-    let foundListItem = false;
-    while (node && node !== container) {
-      if (node.tagName.toLowerCase() === "li") {
-        foundListItem = true;
-        break;
-      }
-      if (node.tagName.toLowerCase() === "ul") break;
-      node = node.parentElement;
-    }
-    expect(foundListItem).toBe(true);
+    // The composer's textarea must be inside the first anchor <li>,
+    // not as a new sibling — otherwise an <ol> renumbers and the next
+    // step's marker shifts while the user is typing.
+    expect(ol?.children.length).toBe(initialItemCount);
 
-    // And every direct child of <ul> must still be <li>.
-    const ul = container.querySelector("ul");
-    for (const child of Array.from(ul?.children ?? [])) {
-      expect(child.tagName.toLowerCase()).toBe("li");
-    }
+    const textarea = getByPlaceholderText(/add a comment/i);
+    const anchorLi = ol?.children[0];
+    expect(anchorLi?.contains(textarea)).toBe(true);
   });
 });
