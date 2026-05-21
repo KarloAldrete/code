@@ -279,7 +279,7 @@ export type ListNestChatInput = z.infer<typeof listNestChatInput>;
 export const listNestChatOutput = z.array(nestMessage);
 
 /**
- * Renderer-visible projection of `hedgemony_hedgehog_state`. Drives the
+ * Renderer-visible projection of `rts_hedgehog_state`. Drives the
  * "ticking" sprite glow and any future per-nest hedgehog UI. `state` enum
  * mirrors the sqlite column.
  */
@@ -387,7 +387,7 @@ export const activeHoldStateSchema = z.object({
 export type ActiveHoldState = z.infer<typeof activeHoldStateSchema>;
 
 /**
- * Top-level shape of `hedgemony_hedgehog_state.serializedStateJson`. Anything
+ * Top-level shape of `rts_hedgehog_state.serializedStateJson`. Anything
  * outside this shape is dropped to keep adversarial entries out of the next
  * hedgehog prompt.
  */
@@ -461,13 +461,7 @@ export function clampReasoningEffortForAdapter(
   adapter: HogletRuntimeAdapter | undefined,
 ): RtsReasoningEffort {
   if (adapter !== "codex") return effort;
-  const order: RtsReasoningEffort[] = [
-    "low",
-    "medium",
-    "high",
-    "xhigh",
-    "max",
-  ];
+  const order: RtsReasoningEffort[] = ["low", "medium", "high", "xhigh", "max"];
   const effortIdx = order.indexOf(effort);
   const maxIdx = order.indexOf(CODEX_MAX_EFFORT);
   return effortIdx > maxIdx ? CODEX_MAX_EFFORT : effort;
@@ -563,7 +557,7 @@ export const feedbackEventSource = z.enum([
 export type FeedbackEventSource = z.infer<typeof feedbackEventSource>;
 
 /**
- * The outcome value stored on a `hedgemony_feedback_event` row. `pending` is
+ * The outcome value stored on a `rts_feedback_event` row. `pending` is
  * the reservation state the router writes before emitting; once the renderer
  * records the routing outcome it flips to one of the terminal values.
  */

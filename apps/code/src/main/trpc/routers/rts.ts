@@ -28,7 +28,6 @@ import {
   finopsSummaryInput,
   goalDraftRespondInput,
   goalDraftResponse,
-  RtsEvent,
   hoglet,
   hogletIngestedEventPayload,
   hogletWatchEvent,
@@ -54,6 +53,7 @@ import {
   operatorDecision,
   prDependency,
   prGraphWatchEvent,
+  RtsEvent,
   rebaseChildEventPayload,
   recordAdhocHogletInput,
   recordBootstrapHandoffInput,
@@ -305,7 +305,7 @@ export const rtsRouter = router({
 
     /**
      * Records the outcome of a routed feedback event. Inserts a
-     * `hedgemony_feedback_event` row (idempotent on the dedupe index)
+     * `rts_feedback_event` row (idempotent on the dedupe index)
      * and writes a `feedback_routed` audit row to nest chat.
      */
     recordRouted: publicProcedure
@@ -394,10 +394,9 @@ export const rtsRouter = router({
       signal,
     }) {
       const service = getPrGraphService();
-      for await (const data of service.toIterable(
-        RtsEvent.PrGraphChanged,
-        { signal },
-      )) {
+      for await (const data of service.toIterable(RtsEvent.PrGraphChanged, {
+        signal,
+      })) {
         if (data.nestId === input.id) {
           yield prGraphWatchEvent.parse(data.event);
         }

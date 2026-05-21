@@ -149,5 +149,5 @@ Persistent hoglet identity / cosmetics, multiplayer, voice lines, cloud-vs-local
 3. **Idle hoglet TTL** — when does the hedgehog give up on an unraised hoglet?
 4. **Goal-completion confidence** — does the hedgehog always require operator confirmation to close a nest, or auto-close above some confidence?
 5. **Renderer direction + budget** — are we shipping a lightweight map shell first, or committing to a game renderer; and how many simultaneous hoglets must it handle?
-6. **Command Center default view** — when `HEDGEMONY_FLAG` / `hedgemony-enabled` is on, does Command Center open in grid mode or map mode? (Inbox vs Command Center placement is no longer an open — they're separate top-level views.)
+6. **Command Center default view** — when `RTS_FLAG` / `rts-enabled` is on, does Command Center open in grid mode or map mode? (Inbox vs Command Center placement is no longer an open — they're separate top-level views.)
 7. **Retention defaults** — should dormant nest detail be compacted immediately, after a fixed TTL, or only on explicit operator action?

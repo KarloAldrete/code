@@ -96,7 +96,7 @@ export class UsageAttributionService {
   recordHogletTurn(input: HogletTurnUsage): RecordedUsage | null {
     const hoglet = this.hogletRepo.findByTaskId(input.taskId);
     if (!hoglet) {
-      log.debug("recordHogletTurn: no hedgemony hoglet for taskId, skipping", {
+      log.debug("recordHogletTurn: no rts hoglet for taskId, skipping", {
         taskId: input.taskId,
       });
       return null;

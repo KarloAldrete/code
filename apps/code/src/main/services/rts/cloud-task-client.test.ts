@@ -54,7 +54,7 @@ describe("CloudTaskClient", () => {
     vi.clearAllMocks();
   });
 
-  it("creates task runs with hedgemony runtime and permission settings", async () => {
+  it("creates task runs with rts runtime and permission settings", async () => {
     const auth = createAuthMock(42);
     (auth.authenticatedFetch as ReturnType<typeof vi.fn>).mockResolvedValue(
       jsonResponse({ id: "run-1", status: "not_started" }),

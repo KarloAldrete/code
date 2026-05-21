@@ -21,7 +21,7 @@ const log = logger.scope("rts-prompt-router");
  *   manual "Fix with agent" button.
  * - **Closed/disconnected/completed session (with a nest)**: call
  *   `nests.spawnFollowUpHoglet`, which creates a new cloud Task in the same
- *   nest and links it via `hedgemony_pr_dependency.state = "follow_up"`.
+ *   nest and links it via `rts_pr_dependency.state = "follow_up"`.
  * - **No nest, no live session**: log as `failed` and let the operator
  *   handle it manually.
  *
@@ -136,8 +136,7 @@ export function useRtsPromptRouter() {
     pendingDrainedRef.current = true;
     void (async () => {
       try {
-        const pending =
-          await trpcClient.rts.feedback.getPendingInjects.query();
+        const pending = await trpcClient.rts.feedback.getPendingInjects.query();
         for (const event of pending) {
           await handleInject(event);
         }

@@ -12,7 +12,7 @@ Hedgemony is a view mode _inside_ Command Center, sibling to its existing 9-grid
 
 Folder: `apps/code/src/renderer/features/hedgemony/` (sibling feature folder, matching `features/inbox`, `features/command-center`, etc.). Command Center imports the map view from here. Kept as a sibling rather than nested under `features/command-center/` because Hedgemony has its own stores, tRPC router, and services — nesting would bloat Command Center and complicate eventual extraction.
 
-**Command Center changes required (~60 lines + new components)**, behind `HEDGEMONY_FLAG = "hedgemony-enabled"` from `@shared/constants` so the flag-off behavior is unchanged:
+**Command Center changes required (~60 lines + new components)**, behind `RTS_FLAG = "rts-enabled"` from `@shared/constants` so the flag-off behavior is unchanged:
 
 - `commandCenterStore.ts` — add `viewMode: "grid" | "map"` field + setter. Existing cell-indexed actions (`assignTask`, `removeTask`, `setActiveCell`, etc.) stay; they're no-ops in map mode.
 - `CommandCenterView.tsx` — branch on `viewMode`: render the existing grid in `"grid"`, render `<HedgemonyMap />` (imported from `features/hedgemony/`) in `"map"`.

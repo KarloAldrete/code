@@ -17,7 +17,7 @@ describe("OperatorDecisionRepository", () => {
   beforeEach(() => {
     testDb = createTestDb();
     testDb.db.run(
-      `INSERT INTO hedgemony_nest (id, name, goal_prompt, map_x, map_y) VALUES ('${nestId}', 'fixture', 'goal', 0, 0)`,
+      `INSERT INTO rts_nest (id, name, goal_prompt, map_x, map_y) VALUES ('${nestId}', 'fixture', 'goal', 0, 0)`,
     );
     repo = new OperatorDecisionRepository(
       new StubDatabaseService(testDb.db) as never,
@@ -84,7 +84,7 @@ describe("OperatorDecisionRepository", () => {
   it("isolates rows by nestId", () => {
     const otherNest = "nest-2";
     testDb.db.run(
-      `INSERT INTO hedgemony_nest (id, name, goal_prompt, map_x, map_y) VALUES ('${otherNest}', 'other', 'goal', 0, 0)`,
+      `INSERT INTO rts_nest (id, name, goal_prompt, map_x, map_y) VALUES ('${otherNest}', 'other', 'goal', 0, 0)`,
     );
     repo.recordReviveHoglet({ nestId, subjectKey: "hog-shared" });
     repo.recordReviveHoglet({ nestId: otherNest, subjectKey: "hog-shared" });

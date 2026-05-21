@@ -96,7 +96,7 @@ export const authSessions = sqliteTable("auth_sessions", {
 });
 
 export const rtsNests = sqliteTable(
-  "hedgemony_nest",
+  "rts_nest",
   {
     id: id(),
     name: text().notNull(),
@@ -126,11 +126,11 @@ export const rtsNests = sqliteTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index("hedgemony_nest_status_idx").on(t.status)],
+  (t) => [index("rts_nest_status_idx").on(t.status)],
 );
 
 export const rtsHoglets = sqliteTable(
-  "hedgemony_hoglet",
+  "rts_hoglet",
   {
     id: id(),
     name: text(),
@@ -151,11 +151,11 @@ export const rtsHoglets = sqliteTable(
     updatedAt: updatedAt(),
     deletedAt: text(),
   },
-  (t) => [index("hedgemony_hoglet_nest_id_idx").on(t.nestId)],
+  (t) => [index("rts_hoglet_nest_id_idx").on(t.nestId)],
 );
 
 export const rtsNestMessages = sqliteTable(
-  "hedgemony_nest_message",
+  "rts_nest_message",
   {
     id: id(),
     nestId: text()
@@ -180,12 +180,12 @@ export const rtsNestMessages = sqliteTable(
     createdAt: createdAt(),
   },
   (t) => [
-    index("hedgemony_nest_message_nest_id_idx").on(t.nestId),
-    index("hedgemony_nest_message_created_at_idx").on(t.createdAt),
+    index("rts_nest_message_nest_id_idx").on(t.nestId),
+    index("rts_nest_message_created_at_idx").on(t.createdAt),
   ],
 );
 
-export const rtsHedgehogState = sqliteTable("hedgemony_hedgehog_state", {
+export const rtsHedgehogState = sqliteTable("rts_hedgehog_state", {
   nestId: text()
     .primaryKey()
     .references(() => rtsNests.id, { onDelete: "cascade" }),
@@ -201,7 +201,7 @@ export const rtsHedgehogState = sqliteTable("hedgemony_hedgehog_state", {
 });
 
 export const rtsFeedbackEvents = sqliteTable(
-  "hedgemony_feedback_event",
+  "rts_feedback_event",
   {
     id: id(),
     nestId: text().references(() => rtsNests.id, {
@@ -223,17 +223,17 @@ export const rtsFeedbackEvents = sqliteTable(
     injectedAt: text().notNull().default(sql`(CURRENT_TIMESTAMP)`),
   },
   (t) => [
-    uniqueIndex("hedgemony_feedback_event_dedupe_idx").on(
+    uniqueIndex("rts_feedback_event_dedupe_idx").on(
       t.hogletTaskId,
       t.source,
       t.payloadHash,
     ),
-    index("hedgemony_feedback_event_nest_idx").on(t.nestId, t.injectedAt),
+    index("rts_feedback_event_nest_idx").on(t.nestId, t.injectedAt),
   ],
 );
 
 export const rtsPrDependencies = sqliteTable(
-  "hedgemony_pr_dependency",
+  "rts_pr_dependency",
   {
     id: id(),
     nestId: text()
@@ -248,9 +248,9 @@ export const rtsPrDependencies = sqliteTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    index("hedgemony_pr_dependency_nest_idx").on(t.nestId),
-    index("hedgemony_pr_dependency_child_idx").on(t.childTaskId),
-    uniqueIndex("hedgemony_pr_dependency_triple_idx").on(
+    index("rts_pr_dependency_nest_idx").on(t.nestId),
+    index("rts_pr_dependency_child_idx").on(t.childTaskId),
+    uniqueIndex("rts_pr_dependency_triple_idx").on(
       t.nestId,
       t.parentTaskId,
       t.childTaskId,
@@ -259,7 +259,7 @@ export const rtsPrDependencies = sqliteTable(
 );
 
 export const rtsOperatorDecisions = sqliteTable(
-  "hedgemony_operator_decision",
+  "rts_operator_decision",
   {
     id: id(),
     nestId: text()
@@ -274,8 +274,8 @@ export const rtsOperatorDecisions = sqliteTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    index("hedgemony_operator_decision_nest_idx").on(t.nestId),
-    uniqueIndex("hedgemony_operator_decision_subject_idx").on(
+    index("rts_operator_decision_nest_idx").on(t.nestId),
+    uniqueIndex("rts_operator_decision_subject_idx").on(
       t.nestId,
       t.kind,
       t.subjectKey,
@@ -284,7 +284,7 @@ export const rtsOperatorDecisions = sqliteTable(
 );
 
 export const rtsUsageEvents = sqliteTable(
-  "hedgemony_usage_event",
+  "rts_usage_event",
   {
     id: id(),
     nestId: text().references(() => rtsNests.id, {
@@ -314,19 +314,16 @@ export const rtsUsageEvents = sqliteTable(
     occurredAt: text().notNull().default(sql`(CURRENT_TIMESTAMP)`),
   },
   (t) => [
-    index("hedgemony_usage_event_nest_idx").on(t.nestId, t.occurredAt),
-    index("hedgemony_usage_event_hoglet_idx").on(t.hogletId, t.occurredAt),
-    index("hedgemony_usage_event_occurred_at_idx").on(t.occurredAt),
-    index("hedgemony_usage_event_workload_idx").on(t.workload, t.occurredAt),
-    uniqueIndex("hedgemony_usage_event_dedupe_idx").on(
-      t.taskRunId,
-      t.turnIndex,
-    ),
+    index("rts_usage_event_nest_idx").on(t.nestId, t.occurredAt),
+    index("rts_usage_event_hoglet_idx").on(t.hogletId, t.occurredAt),
+    index("rts_usage_event_occurred_at_idx").on(t.occurredAt),
+    index("rts_usage_event_workload_idx").on(t.workload, t.occurredAt),
+    uniqueIndex("rts_usage_event_dedupe_idx").on(t.taskRunId, t.turnIndex),
   ],
 );
 
 export const rtsTickLog = sqliteTable(
-  "hedgemony_tick_log",
+  "rts_tick_log",
   {
     id: id(),
     nestId: text()
@@ -337,7 +334,7 @@ export const rtsTickLog = sqliteTable(
       enum: ["completed", "errored", "aborted", "capped"],
     }).notNull(),
   },
-  (t) => [index("hedgemony_tick_log_window_idx").on(t.nestId, t.tickedAt)],
+  (t) => [index("rts_tick_log_window_idx").on(t.nestId, t.tickedAt)],
 );
 
 export const authPreferences = sqliteTable(

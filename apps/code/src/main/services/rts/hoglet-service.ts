@@ -19,8 +19,6 @@ import type { PrGraphService } from "./pr-graph-service";
 import {
   type AdoptHogletInput,
   type DismissSignalHogletInput,
-  RtsEvent,
-  type RtsEvents,
   type Hoglet,
   type HogletBucket,
   type HogletWatchEvent,
@@ -30,6 +28,8 @@ import {
   type RecordSignalBackedHogletInput,
   type ReleaseHogletInput,
   type RetireHogletInput,
+  RtsEvent,
+  type RtsEvents,
   type SpawnFollowUpHogletInput,
   type SpawnHogletInNestInput,
 } from "./schemas";
@@ -139,7 +139,7 @@ function bucketForHoglet(h: Hoglet): HogletBucket {
 }
 
 /**
- * Owns the `hedgemony_hoglet` sidecar invariant. Hoglet creation is anchored
+ * Owns the `rts_hoglet` sidecar invariant. Hoglet creation is anchored
  * on cloud Task creation (driven by the renderer's TaskCreationSaga); this
  * service writes only the local sidecar row + emits an event. Chat/audit
  * is intentionally not coupled here — observers narrate creation later.
@@ -620,7 +620,7 @@ export class HogletService extends TypedEventEmitter<RtsEvents> {
    * Spawns a follow-up hoglet in `nestId` to address late feedback on a
    * merged/closed parent's PR. Prefers the nest's current repository so
    * corrected nest state beats any stale parent task fields. Writes a
-   * `hedgemony_pr_dependency` edge with `state = "follow_up"` linking the
+   * `rts_pr_dependency` edge with `state = "follow_up"` linking the
    * new child Task to the parent, so the hedgehog and PR-graph UIs track
    * them together.
    */

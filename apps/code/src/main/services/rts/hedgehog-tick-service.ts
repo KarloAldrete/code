@@ -50,7 +50,6 @@ import { parseHedgehogState, parseNestLoadout } from "./schema-parsers";
 import {
   type ActiveHoldState,
   DEFAULT_HOGLET_MODEL,
-  RtsEvent,
   type Hoglet,
   type HogletChangedEvent,
   type Nest,
@@ -58,6 +57,7 @@ import {
   type NestLoadout,
   type NestMessage,
   parseNestChatCreationBootstrapPayload,
+  RtsEvent,
 } from "./schemas";
 import type { UsageAttributionService } from "./usage-attribution-service";
 
@@ -94,7 +94,7 @@ function getHeartbeatIntervalMs(): number {
  * ticks on (heartbeat | new hoglet event | operator chat message), assembles
  * fresh context from sqlite, calls Claude with the constrained tool list, and
  * dispatches each tool_use block back to a service method. State persists in
- * `hedgemony_hedgehog_state` so force-quit mid-tick recovers cleanly.
+ * `rts_hedgehog_state` so force-quit mid-tick recovers cleanly.
  *
  * NOT a Task. NOT a long-running agent. The service singleton owns the
  * scheduler and dispatch; each tick is a one-shot function over `(nest,

@@ -298,8 +298,8 @@ All caps surfaced in `settingsStore` so power users can raise them per-machine; 
 
 Current app standard:
 
-1. **Cloud flag key** — `hedgemony-enabled`, exported as `HEDGEMONY_FLAG` from `apps/code/src/shared/constants.ts`.
-2. **Renderer evaluation** — `useFeatureFlag(HEDGEMONY_FLAG, import.meta.env.DEV)` gates the Command Center map toggle and map route. The second argument follows the local dev-default pattern supported by `useFeatureFlag`.
+1. **Cloud flag key** — `rts-enabled`, exported as `RTS_FLAG` from `apps/code/src/shared/constants.ts`.
+2. **Renderer evaluation** — `useFeatureFlag(RTS_FLAG, import.meta.env.DEV)` gates the Command Center map toggle and map route. The second argument follows the local dev-default pattern supported by `useFeatureFlag`.
 3. **Main activation** — main-process routers/services do not evaluate cloud flags directly today. They can be registered normally, but must remain side-effect-free until the enabled renderer path calls/subscribes/activates them.
 4. **Local override** — optional later user setting in `settingsStore` if power users need opt-in before the cloud rollout. Do not assume it exists in the first slice.
 

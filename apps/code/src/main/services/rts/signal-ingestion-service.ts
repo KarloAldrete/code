@@ -46,7 +46,7 @@ interface QueryParams {
  * into Rts as signal-backed hoglets. Polls the cloud `signals/reports`
  * endpoint every {@link POLL_INTERVAL_MS} and, for each report not already
  * ingested, spawns a fresh cloud Task (via {@link HogletService.spawnSignalBacked})
- * which writes the local `hedgemony_hoglet` sidecar.
+ * which writes the local `rts_hoglet` sidecar.
  *
  * Owned by main so the orchestration survives the renderer-side map view
  * being unmounted mid-flight. The renderer kicks the loop with `start()`

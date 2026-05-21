@@ -58,8 +58,8 @@ export class PrDependencyRepository {
   /**
    * Idempotent insert. Returns the existing row if a `(nestId, parentTaskId,
    * childTaskId)` edge already exists, otherwise inserts a new `pending` (or
-   * caller-provided) row. The schema enforces a UNIQUE index on this triple
-   * (migration 0014), so the conflict resolution happens inside sqlite and
+   * caller-provided) row. The schema enforces a UNIQUE index on this triple,
+   * so the conflict resolution happens inside sqlite and
    * `link_pr_dependency` is race-free even under concurrent ticks.
    */
   insertOrIgnore(data: CreatePrDependencyData): {
@@ -182,9 +182,6 @@ export class PrDependencyRepository {
   }
 
   delete(id: string): void {
-    this.db
-      .delete(rtsPrDependencies)
-      .where(eq(rtsPrDependencies.id, id))
-      .run();
+    this.db.delete(rtsPrDependencies).where(eq(rtsPrDependencies.id, id)).run();
   }
 }

@@ -44,11 +44,11 @@ The only remaining product work to call v1 done is the `propose_completion` tool
 
 **In scope**
 
-- Migration creates the `hedgemony_*` schema (idempotent, runs even when flag off).
-- `HEDGEMONY_FLAG = "hedgemony-enabled"` exported from `@shared/constants`.
-- Command Center checks `useFeatureFlag(HEDGEMONY_FLAG, import.meta.env.DEV)` before rendering the map toggle.
-- Empty `hedgemony` tRPC router/services can be registered normally, but stay side-effect-free when the flag is off.
-- New `features/hedgemony/` folder + Command Center view-mode option.
+- Migration creates the `rts_*` schema (idempotent, runs even when flag off).
+- `RTS_FLAG = "rts-enabled"` exported from `@shared/constants`.
+- Command Center checks `useFeatureFlag(RTS_FLAG, import.meta.env.DEV)` before rendering the map toggle.
+- Empty `rts` tRPC router/services can be registered normally, but stay side-effect-free when the flag is off.
+- New `features/rts/` folder + Command Center view-mode option.
 - Pan/zoom map surface with an empty-state.
 - Persistent **Builder hedgehog** unit on the map (client-side, no sqlite row). Left-click selects, right-click moves, Esc clears selection. Selection docks `BuilderCommandPanel` at the bottom; panel currently has one "Build nest" button (two-button split lands with Slice 1).
 - RTS-style map controls: left-click select, right-click move, Esc cancel. Build mode (crosshair + ghost circle) wired through the Builder.
@@ -59,7 +59,7 @@ The only remaining product work to call v1 done is the `propose_completion` tool
 
 **Acceptance criteria**
 
-- Toggling `hedgemony-enabled` shows/hides the Command Center view-mode option.
+- Toggling `rts-enabled` shows/hides the Command Center view-mode option.
 - Tables exist in sqlite whether or not the flag is on.
 - No Hedgemony pollers, timers, recovery sweeps, or subscriptions run when the flag is off.
 

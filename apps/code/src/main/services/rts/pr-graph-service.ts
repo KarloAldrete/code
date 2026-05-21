@@ -16,11 +16,11 @@ import {
   buildRebasePrompt,
 } from "./pr-graph-prompts";
 import {
-  RtsEvent,
   type LinkPrDependencyInput,
   type PrGraphChangedEvent,
   type RebaseChildEventPayload,
   type RecordRebaseOutcomeInput,
+  RtsEvent,
   type UnlinkPrDependencyInput,
 } from "./schemas";
 import { stringifyError } from "./utils";
@@ -30,7 +30,7 @@ const log = logger.scope("pr-graph-service");
 const POLL_INTERVAL_MS = 60_000;
 const PER_PARENT_DEBOUNCE_MS = 55_000;
 const MAX_PARALLEL_POLLS = 4;
-// Bound to keep the buffer from growing without limit if the hedgemony UI is
+// Bound to keep the buffer from growing without limit if the rts UI is
 // never opened. Oldest entries are dropped first — the next poll cycle will
 // repopulate anything that's still relevant.
 const MAX_PENDING_EVENTS = 100;
