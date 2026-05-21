@@ -55,8 +55,9 @@ vi.mock("@trpc/tanstack-react-query", () => ({
   useSubscription: () => undefined,
 }));
 
+const pendingPermissionsMock = vi.hoisted(() => vi.fn(() => new Map()));
 vi.mock("@features/sessions/hooks/useSession", () => ({
-  usePendingPermissionsForTask: () => new Map(),
+  usePendingPermissionsForTask: () => pendingPermissionsMock(),
 }));
 
 vi.mock("@features/sessions/service/service", () => ({
@@ -110,5 +111,62 @@ describe("PlanView gating", () => {
     renderPlanView();
 
     expect(ensureWatchingMutate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("PlanView approval bar", () => {
+  beforeEach(() => {
+    pendingPermissionsMock.mockReset();
+    planThreadsEnabledMock.mockReturnValue(true);
+  });
+
+  it("renders Approve, Reject, and the mode Select when a switch_mode permission is pending", async () => {
+    pendingPermissionsMock.mockReturnValue(
+      new Map([
+        [
+          "tc-1",
+          {
+            taskRunId: "task-1",
+            receivedAt: 0,
+            options: [
+              {
+                optionId: "bypassPermissions",
+                name: "Yes, bypass all permissions",
+                kind: "allow_always",
+              },
+              { optionId: "auto", name: 'Yes, "auto"', kind: "allow_always" },
+              {
+                optionId: "default",
+                name: "Yes, manually approve edits",
+                kind: "allow_once",
+              },
+              {
+                optionId: "reject_with_feedback",
+                name: "No, give feedback",
+                kind: "reject_once",
+              },
+            ],
+            toolCall: {
+              toolCallId: "tc-1",
+              title: "Ready to code?",
+              kind: "switch_mode",
+              content: [],
+              locations: [],
+              rawInput: {},
+            },
+          },
+        ],
+      ]) as never,
+    );
+
+    renderPlanView();
+    // Wait for the query to resolve and the inner to render the bar.
+    await screen.findByText("The agent is waiting for plan approval.");
+
+    expect(screen.getByText("Approve plan")).toBeInTheDocument();
+    expect(screen.getByText("Reject")).toBeInTheDocument();
+    expect(screen.getByText("Mode")).toBeInTheDocument();
+    // Default should be `default` (manual approval), not bypassPermissions.
+    expect(screen.getByText("Yes, manually approve edits")).toBeInTheDocument();
   });
 });
