@@ -2,7 +2,10 @@ import { getDeeplinkProtocol } from "@shared/deeplink";
 import { app } from "electron";
 import { container } from "./di/container";
 import { MAIN_TOKENS } from "./di/tokens";
-import type { DeepLinkService } from "./services/deep-link/service";
+import {
+  type DeepLinkService,
+  redactDeepLinkUrlForLog,
+} from "./services/deep-link/service";
 import { isDevBuild } from "./utils/env";
 import { logger } from "./utils/logger";
 import { focusMainWindow } from "./window";
@@ -23,6 +26,18 @@ function findDeepLinkUrlInArgs(args: string[]): string | undefined {
   return args.find((arg) => prefixes.some((p) => arg.startsWith(p)));
 }
 
+function redactDeepLinkArgsForLog(args: string[]): string[] {
+  const prefixes = [`${getDeeplinkProtocol(isDevBuild())}://`];
+  if (!isDevBuild()) {
+    prefixes.push("twig://", "array://");
+  }
+  return args.map((arg) =>
+    prefixes.some((p) => arg.startsWith(p))
+      ? redactDeepLinkUrlForLog(arg)
+      : arg,
+  );
+}
+
 /**
  * Register app-level deep link event handlers.
  * Must be called before app.whenReady() so macOS open-url events are captured.
@@ -31,7 +46,10 @@ export function registerDeepLinkHandlers(): void {
   // Handle deep link URLs on macOS
   app.on("open-url", (event, url) => {
     event.preventDefault();
-    log.info("open-url event received", { url, appReady: app.isReady() });
+    log.info("open-url event received", {
+      url: redactDeepLinkUrlForLog(url),
+      appReady: app.isReady(),
+    });
 
     if (!app.isReady()) {
       pendingDeepLinkUrl = url;
@@ -45,13 +63,15 @@ export function registerDeepLinkHandlers(): void {
   // Handle deep link URLs on Windows/Linux (second instance sends URL via command line)
   app.on("second-instance", (_event, commandLine) => {
     log.info("second-instance event received", {
-      commandLine: commandLine.join(" "),
+      commandLine: redactDeepLinkArgsForLog(commandLine).join(" "),
       argCount: commandLine.length,
     });
 
     const url = findDeepLinkUrlInArgs(commandLine);
     if (url) {
-      log.info("Deep link URL found in second-instance args", { url });
+      log.info("Deep link URL found in second-instance args", {
+        url: redactDeepLinkUrlForLog(url),
+      });
       getDeepLinkService().handleUrl(url);
       focusMainWindow("second-instance deep link");
     } else {

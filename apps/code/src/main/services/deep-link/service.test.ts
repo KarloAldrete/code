@@ -7,15 +7,16 @@ const mockAppLifecycle = vi.hoisted(() => ({
   onQuit: vi.fn(() => () => {}),
   registerDeepLinkScheme: vi.fn(),
 }));
+const mockLog = vi.hoisted(() => ({
+  info: vi.fn(),
+  error: vi.fn(),
+  warn: vi.fn(),
+  debug: vi.fn(),
+}));
 
 vi.mock("../../utils/logger.js", () => ({
   logger: {
-    scope: () => ({
-      info: vi.fn(),
-      error: vi.fn(),
-      warn: vi.fn(),
-      debug: vi.fn(),
-    }),
+    scope: () => mockLog,
   },
 }));
 
@@ -166,6 +167,24 @@ describe("DeepLinkService", () => {
         expect(handler).toHaveBeenCalled();
       });
 
+      it("redacts query parameters from logs", () => {
+        const handler = vi.fn(() => true);
+        service.registerHandler("new", handler);
+
+        service.handleUrl(
+          "posthog-code://new?prompt=do-not-log-this&other=value",
+        );
+
+        expect(handler).toHaveBeenCalled();
+        expect(mockLog.info).toHaveBeenCalledWith(
+          "Received deep link:",
+          "posthog-code://new?<redacted>",
+        );
+        expect(JSON.stringify(mockLog.info.mock.calls)).not.toContain(
+          "do-not-log-this",
+        );
+      });
+
       it("handles empty path", () => {
         const handler = vi.fn(() => true);
         service.registerHandler("ping", handler);
@@ -229,6 +248,14 @@ describe("DeepLinkService", () => {
 
       it("returns false for malformed URLs", () => {
         expect(service.handleUrl("posthog-code://[invalid")).toBe(false);
+      });
+
+      it("does not log malformed URL input", () => {
+        service.handleUrl("posthog-code://[invalid?prompt=do-not-log-this");
+
+        expect(JSON.stringify(mockLog.error.mock.calls)).not.toContain(
+          "do-not-log-this",
+        );
       });
 
       it("returns handler result when handler returns false", () => {

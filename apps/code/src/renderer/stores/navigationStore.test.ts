@@ -63,6 +63,8 @@ describe("navigationStore", () => {
       view: { type: "task-input" },
       history: [{ type: "task-input" }],
       historyIndex: 0,
+      taskInputReportAssociation: undefined,
+      taskInputCloudRepository: undefined,
     });
   });
 
@@ -175,6 +177,26 @@ describe("navigationStore", () => {
         title: "Broken signup",
       });
       expect(getStore().taskInputCloudRepository).toBe("posthog/code");
+    });
+
+    it("clears persisted report context for standalone prompt prefill", () => {
+      getStore().navigateToTaskInput({
+        initialPrompt: "Fix this report",
+        initialCloudRepository: "posthog/code",
+        reportAssociation: { reportId: "report-123", title: "Broken signup" },
+      });
+      getStore().navigateToInbox();
+
+      getStore().navigateToTaskInput({ initialPrompt: "Fix a separate issue" });
+
+      expect(getView()).toMatchObject({
+        type: "task-input",
+        initialPrompt: "Fix a separate issue",
+      });
+      expect(getView().reportAssociation).toBeUndefined();
+      expect(getView().initialCloudRepository).toBeUndefined();
+      expect(getStore().taskInputReportAssociation).toBeUndefined();
+      expect(getStore().taskInputCloudRepository).toBeUndefined();
     });
 
     it("navigates to inbox", () => {

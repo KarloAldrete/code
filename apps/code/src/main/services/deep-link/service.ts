@@ -9,6 +9,17 @@ const log = logger.scope("deep-link-service");
 
 const LEGACY_PROTOCOLS = ["twig", "array"];
 
+export function redactDeepLinkUrlForLog(url: string): string {
+  try {
+    const parsedUrl = new URL(url);
+    const query = parsedUrl.search ? "?<redacted>" : "";
+    const hash = parsedUrl.hash ? "#<redacted>" : "";
+    return `${parsedUrl.protocol}//${parsedUrl.host}${parsedUrl.pathname}${query}${hash}`;
+  } catch {
+    return "(malformed deep link URL)";
+  }
+}
+
 export type DeepLinkHandler = (
   path: string,
   searchParams: URLSearchParams,
@@ -60,7 +71,8 @@ export class DeepLinkService {
    * in production only, legacy twig:// and array:// protocols.
    */
   public handleUrl(url: string): boolean {
-    log.info("Received deep link:", url);
+    const logUrl = redactDeepLinkUrlForLog(url);
+    log.info("Received deep link:", logUrl);
 
     const primary = getDeeplinkProtocol(isDevBuild());
     const isPrimaryProtocol = url.startsWith(`${primary}://`);
@@ -68,7 +80,7 @@ export class DeepLinkService {
       !isDevBuild() && LEGACY_PROTOCOLS.some((p) => url.startsWith(`${p}://`));
 
     if (!isPrimaryProtocol && !isLegacyProtocol) {
-      log.warn("URL does not match protocol:", url);
+      log.warn("URL does not match protocol:", logUrl);
       return false;
     }
 
@@ -79,7 +91,7 @@ export class DeepLinkService {
       const mainKey = parsedUrl.hostname;
 
       if (!mainKey) {
-        log.warn("Deep link has no main key:", url);
+        log.warn("Deep link has no main key:", logUrl);
         return false;
       }
 
@@ -97,7 +109,11 @@ export class DeepLinkService {
       );
       return handler(pathSegments, parsedUrl.searchParams);
     } catch (error) {
-      log.error("Failed to parse deep link URL:", error);
+      const errorForLog =
+        error instanceof Error
+          ? { name: error.name, message: error.message }
+          : error;
+      log.error("Failed to parse deep link URL:", errorForLog);
       return false;
     }
   }

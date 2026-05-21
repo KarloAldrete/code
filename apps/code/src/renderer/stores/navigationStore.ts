@@ -195,7 +195,7 @@ export const useNavigationStore = create<NavigationStore>()(
             !!options.initialPrompt ||
             !!options.initialCloudRepository ||
             !!options.reportAssociation;
-          if (options.reportAssociation || options.initialCloudRepository) {
+          if (hasTransientState) {
             set({
               taskInputReportAssociation: options.reportAssociation,
               taskInputCloudRepository: options.initialCloudRepository,
