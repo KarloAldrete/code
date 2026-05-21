@@ -44,3 +44,18 @@ export function buildAskAgentToIncorporateResolvedThreadPrompt(
     "marker) untouched.",
   ].join("\n");
 }
+
+/**
+ * Prompt sent when the user clicks Reject in the Plan view's approval bar
+ * AND no ExitPlanMode permission is currently pending (i.e. the agent is
+ * mid-iteration on the plan). The agent stays in plan mode and revises.
+ */
+export function buildPlanRejectionPrompt(feedback: string): string {
+  const lines = [
+    "I'm rejecting the current plan. Please revise it (stay in plan mode).",
+  ];
+  if (feedback) {
+    lines.push("", "Feedback:", feedback);
+  }
+  return lines.join("\n");
+}

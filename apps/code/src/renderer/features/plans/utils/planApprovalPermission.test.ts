@@ -1,6 +1,7 @@
+import type { SessionConfigOption } from "@features/sessions/stores/sessionStore";
 import type { PermissionRequest } from "@features/sessions/utils/parseSessionLogs";
 import { describe, expect, it } from "vitest";
-import { findPendingPlanPermission } from "./planApprovalPermission";
+import { buildPlanApprovalState } from "./planApprovalPermission";
 
 type AllowKind = "allow_once" | "allow_always";
 type RejectKind = "reject_once" | "reject_always";
@@ -30,159 +31,184 @@ function makeMap(reqs: PermissionRequest[]): Map<string, PermissionRequest> {
   );
 }
 
-describe("findPendingPlanPermission", () => {
-  it("returns null when there are no permissions", () => {
-    expect(findPendingPlanPermission(new Map())).toBeNull();
-  });
+function makeModeConfigOption(
+  currentValue: string,
+  options: { value: string; name: string }[],
+): SessionConfigOption {
+  return {
+    id: "mode",
+    name: "Approval Preset",
+    type: "select",
+    currentValue,
+    options,
+    category: "mode",
+  } as SessionConfigOption;
+}
 
-  it("ignores permissions whose toolCall is not switch_mode", () => {
-    const map = makeMap([
-      {
-        ...makePermission([{ optionId: "x", name: "x", kind: "allow_once" }]),
-        toolCall: {
-          toolCallId: "tc-1",
-          title: "Edit",
-          kind: "edit",
-          content: [],
-          locations: [],
-          rawInput: {},
-        },
-      } as unknown as PermissionRequest,
-    ]);
-    expect(findPendingPlanPermission(map)).toBeNull();
-  });
-
-  it("returns ALL allow_* options as approve choices (not just the first)", () => {
-    const map = makeMap([
-      makePermission([
-        {
-          optionId: "bypassPermissions",
-          name: "Yes, bypass all permissions",
-          kind: "allow_always",
-        },
-        { optionId: "auto", name: 'Yes, "auto"', kind: "allow_always" },
-        { optionId: "acceptEdits", name: "Yes, accept", kind: "allow_always" },
-        { optionId: "default", name: "Yes, manual", kind: "allow_once" },
-        { optionId: "reject", name: "No", kind: "reject_once" },
-      ]),
-    ]);
-    const found = findPendingPlanPermission(map);
-    expect(found).not.toBeNull();
-    expect(found?.approveOptions.map((o) => o.optionId)).toEqual([
-      "bypassPermissions",
-      "auto",
-      "acceptEdits",
-      "default",
-    ]);
-  });
-
-  it("preserves option names so the UI can label the picker accurately", () => {
-    const map = makeMap([
-      makePermission([
-        { optionId: "auto", name: 'Yes, "auto" mode', kind: "allow_always" },
-        {
-          optionId: "default",
-          name: "Yes, manually approve",
-          kind: "allow_once",
-        },
-      ]),
-    ]);
-    const found = findPendingPlanPermission(map);
-    expect(found?.approveOptions.find((o) => o.optionId === "auto")?.name).toBe(
-      'Yes, "auto" mode',
-    );
-  });
-
-  it("flags bypassPermissions explicitly so the UI can warn before applying it", () => {
-    const map = makeMap([
-      makePermission([
-        {
-          optionId: "bypassPermissions",
-          name: "Yes, bypass all permissions",
-          kind: "allow_always",
-        },
-        { optionId: "default", name: "Yes, manual", kind: "allow_once" },
-      ]),
-    ]);
-    const found = findPendingPlanPermission(map);
+describe("buildPlanApprovalState", () => {
+  it("returns null when neither a pending permission nor plan mode is active", () => {
     expect(
-      found?.approveOptions.find((o) => o.optionId === "bypassPermissions")
-        ?.isBypass,
-    ).toBe(true);
+      buildPlanApprovalState({
+        permissions: new Map(),
+        configOptions: [
+          makeModeConfigOption("default", [
+            { value: "default", name: "Default" },
+            { value: "plan", name: "Plan Mode" },
+          ]),
+        ],
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null when there are no configOptions and no permission", () => {
     expect(
-      found?.approveOptions.find((o) => o.optionId === "default")?.isBypass,
-    ).toBe(false);
+      buildPlanApprovalState({
+        permissions: new Map(),
+        configOptions: undefined,
+      }),
+    ).toBeNull();
   });
 
-  it("computes a safe default that is NOT bypassPermissions when other allow_* options exist", () => {
-    const map = makeMap([
-      makePermission([
-        {
-          optionId: "bypassPermissions",
-          name: "Yes, bypass all permissions",
-          kind: "allow_always",
-        },
-        { optionId: "auto", name: 'Yes, "auto"', kind: "allow_always" },
-        { optionId: "default", name: "Yes, manual", kind: "allow_once" },
-      ]),
-    ]);
-    const found = findPendingPlanPermission(map);
-    expect(found?.defaultOptionId).not.toBe("bypassPermissions");
-    // Prefer the safest non-bypass option — `default` (manual approval).
-    expect(found?.defaultOptionId).toBe("default");
+  describe("source: 'permission' (agent's ExitPlanMode request)", () => {
+    it("returns ALL allow_* options when a switch_mode permission is pending", () => {
+      const state = buildPlanApprovalState({
+        permissions: makeMap([
+          makePermission([
+            {
+              optionId: "bypassPermissions",
+              name: "Yes, bypass",
+              kind: "allow_always",
+            },
+            { optionId: "auto", name: 'Yes, "auto"', kind: "allow_always" },
+            {
+              optionId: "default",
+              name: "Yes, manual",
+              kind: "allow_once",
+            },
+            {
+              optionId: "reject_with_feedback",
+              name: "No",
+              kind: "reject_once",
+            },
+          ]),
+        ]),
+        configOptions: undefined,
+      });
+      if (state?.source !== "permission")
+        throw new Error("expected permission");
+      expect(state.toolCallId).toBe("tc-1");
+      expect(state.approveOptions.map((o) => o.optionId)).toEqual([
+        "bypassPermissions",
+        "auto",
+        "default",
+      ]);
+      expect(state.rejectOptionId).toBe("reject_with_feedback");
+    });
+
+    it("prefers `default` over bypass for the safe default", () => {
+      const state = buildPlanApprovalState({
+        permissions: makeMap([
+          makePermission([
+            {
+              optionId: "bypassPermissions",
+              name: "Yes, bypass",
+              kind: "allow_always",
+            },
+            { optionId: "default", name: "Yes, manual", kind: "allow_once" },
+          ]),
+        ]),
+        configOptions: undefined,
+      });
+      expect(state?.defaultOptionId).toBe("default");
+    });
   });
 
-  it("falls back to the first non-bypass option when `default` is absent", () => {
-    const map = makeMap([
-      makePermission([
-        {
-          optionId: "bypassPermissions",
-          name: "Yes, bypass",
-          kind: "allow_always",
-        },
-        { optionId: "auto", name: 'Yes, "auto"', kind: "allow_always" },
-        { optionId: "acceptEdits", name: "Yes, accept", kind: "allow_always" },
-      ]),
-    ]);
-    const found = findPendingPlanPermission(map);
-    expect(found?.defaultOptionId).toBe("auto");
+  describe("source: 'mode' (no pending permission, session is in plan mode)", () => {
+    it("returns approve options drawn from the mode configOption (excluding `plan` itself)", () => {
+      const state = buildPlanApprovalState({
+        permissions: new Map(),
+        configOptions: [
+          makeModeConfigOption("plan", [
+            { value: "default", name: "Default" },
+            { value: "acceptEdits", name: "Accept Edits" },
+            { value: "plan", name: "Plan Mode" },
+            { value: "bypassPermissions", name: "Bypass Permissions" },
+          ]),
+        ],
+      });
+      expect(state?.source).toBe("mode");
+      expect(state?.approveOptions.map((o) => o.optionId)).toEqual([
+        "default",
+        "acceptEdits",
+        "bypassPermissions",
+      ]);
+    });
+
+    it("returns null when current mode is NOT plan", () => {
+      const state = buildPlanApprovalState({
+        permissions: new Map(),
+        configOptions: [
+          makeModeConfigOption("default", [
+            { value: "default", name: "Default" },
+            { value: "plan", name: "Plan Mode" },
+          ]),
+        ],
+      });
+      expect(state).toBeNull();
+    });
+
+    it("flags bypassPermissions and prefers `default` for the safe default", () => {
+      const state = buildPlanApprovalState({
+        permissions: new Map(),
+        configOptions: [
+          makeModeConfigOption("plan", [
+            { value: "default", name: "Default" },
+            { value: "acceptEdits", name: "Accept Edits" },
+            { value: "plan", name: "Plan Mode" },
+            { value: "bypassPermissions", name: "Bypass Permissions" },
+          ]),
+        ],
+      });
+      expect(state?.defaultOptionId).toBe("default");
+      expect(
+        state?.approveOptions.find((o) => o.optionId === "bypassPermissions")
+          ?.isBypass,
+      ).toBe(true);
+    });
+
+    it("does NOT expose a rejectOptionId in mode-driven flow (Reject sends a prompt, not a permission response)", () => {
+      const state = buildPlanApprovalState({
+        permissions: new Map(),
+        configOptions: [
+          makeModeConfigOption("plan", [
+            { value: "default", name: "Default" },
+            { value: "plan", name: "Plan Mode" },
+          ]),
+        ],
+      });
+      expect(state?.rejectOptionId).toBeUndefined();
+    });
   });
 
-  it("returns bypassPermissions as default ONLY when it is the sole approve option", () => {
-    const map = makeMap([
-      makePermission([
-        {
-          optionId: "bypassPermissions",
-          name: "Yes, bypass",
-          kind: "allow_always",
-        },
-      ]),
-    ]);
-    const found = findPendingPlanPermission(map);
-    expect(found?.defaultOptionId).toBe("bypassPermissions");
-  });
-
-  it("returns the first reject_* option's id for rejection (null if none)", () => {
-    const withReject = makeMap([
-      makePermission([
-        { optionId: "default", name: "Yes", kind: "allow_once" },
-        { optionId: "reject_once", name: "No", kind: "reject_once" },
-        {
-          optionId: "reject_with_feedback",
-          name: "Feedback",
-          kind: "reject_once",
-        },
-      ]),
-    ]);
-    expect(findPendingPlanPermission(withReject)?.rejectOptionId).toBe(
-      "reject_once",
-    );
-
-    const noReject = makeMap([
-      makePermission([
-        { optionId: "default", name: "Yes", kind: "allow_once" },
-      ]),
-    ]);
-    expect(findPendingPlanPermission(noReject)?.rejectOptionId).toBeNull();
+  describe("precedence", () => {
+    it("prefers the pending permission over plan-mode derivation when both exist", () => {
+      const state = buildPlanApprovalState({
+        permissions: makeMap([
+          makePermission([
+            { optionId: "default", name: "Yes", kind: "allow_once" },
+            { optionId: "reject_once", name: "No", kind: "reject_once" },
+          ]),
+        ]),
+        configOptions: [
+          makeModeConfigOption("plan", [
+            { value: "default", name: "Default" },
+            { value: "auto", name: "Auto" },
+            { value: "plan", name: "Plan Mode" },
+          ]),
+        ],
+      });
+      expect(state?.source).toBe("permission");
+      expect(state?.source === "permission" && state.toolCallId).toBe("tc-1");
+    });
   });
 });

@@ -1,6 +1,6 @@
 import { Theme } from "@radix-ui/themes";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { ensureWatchingMutate, planThreadsEnabledMock } = vi.hoisted(() => ({
@@ -55,15 +55,22 @@ vi.mock("@trpc/tanstack-react-query", () => ({
   useSubscription: () => undefined,
 }));
 
-const pendingPermissionsMock = vi.hoisted(() => vi.fn(() => new Map()));
+const { pendingPermissionsMock, modeOptionMock } = vi.hoisted(() => ({
+  pendingPermissionsMock: vi.fn<() => Map<string, unknown>>(() => new Map()),
+  modeOptionMock: vi.fn<() => unknown>(() => undefined),
+}));
 vi.mock("@features/sessions/hooks/useSession", () => ({
   usePendingPermissionsForTask: () => pendingPermissionsMock(),
+  useConfigOptionForTask: () => modeOptionMock(),
 }));
 
+const sessionServiceMock = vi.hoisted(() => ({
+  respondToPermission: vi.fn().mockResolvedValue(undefined),
+  setSessionConfigOption: vi.fn().mockResolvedValue(undefined),
+  sendPrompt: vi.fn().mockResolvedValue({ stopReason: "queued" }),
+}));
 vi.mock("@features/sessions/service/service", () => ({
-  getSessionService: () => ({
-    respondToPermission: vi.fn().mockResolvedValue(undefined),
-  }),
+  getSessionService: () => sessionServiceMock,
 }));
 
 vi.mock("@features/settings/stores/settingsStore", () => ({
@@ -117,7 +124,92 @@ describe("PlanView gating", () => {
 describe("PlanView approval bar", () => {
   beforeEach(() => {
     pendingPermissionsMock.mockReset();
+    pendingPermissionsMock.mockReturnValue(new Map());
+    modeOptionMock.mockReset();
+    modeOptionMock.mockReturnValue(undefined);
+    sessionServiceMock.respondToPermission.mockClear();
+    sessionServiceMock.setSessionConfigOption.mockClear();
+    sessionServiceMock.sendPrompt.mockClear();
     planThreadsEnabledMock.mockReturnValue(true);
+  });
+
+  it("renders the bar from `mode: plan` configOption when NO permission is pending (so it survives the comment loop)", async () => {
+    modeOptionMock.mockReturnValue({
+      id: "mode",
+      name: "Approval Preset",
+      type: "select",
+      currentValue: "plan",
+      options: [
+        { value: "default", name: "Default" },
+        { value: "acceptEdits", name: "Accept Edits" },
+        { value: "plan", name: "Plan Mode" },
+      ],
+      category: "mode",
+    });
+
+    renderPlanView();
+    await screen.findByText("The agent is waiting for plan approval.");
+
+    expect(screen.getByText("Approve plan")).toBeInTheDocument();
+    expect(screen.getByText("Reject")).toBeInTheDocument();
+    expect(screen.getByText("Default")).toBeInTheDocument();
+  });
+
+  it("Approve in mode-driven flow calls setSessionConfigOption('mode', selectedOptionId)", async () => {
+    modeOptionMock.mockReturnValue({
+      id: "mode",
+      name: "Approval Preset",
+      type: "select",
+      currentValue: "plan",
+      options: [
+        { value: "default", name: "Default" },
+        { value: "plan", name: "Plan Mode" },
+      ],
+      category: "mode",
+    });
+
+    renderPlanView();
+    const approveBtn = await screen.findByText("Approve plan");
+    fireEvent.click(approveBtn);
+
+    await waitFor(() => {
+      expect(sessionServiceMock.setSessionConfigOption).toHaveBeenCalledWith(
+        "task-1",
+        "mode",
+        "default",
+      );
+    });
+    expect(sessionServiceMock.respondToPermission).not.toHaveBeenCalled();
+  });
+
+  it("Reject in mode-driven flow sends a rejection prompt (does not change mode)", async () => {
+    modeOptionMock.mockReturnValue({
+      id: "mode",
+      name: "Approval Preset",
+      type: "select",
+      currentValue: "plan",
+      options: [
+        { value: "default", name: "Default" },
+        { value: "plan", name: "Plan Mode" },
+      ],
+      category: "mode",
+    });
+
+    renderPlanView();
+    fireEvent.click(await screen.findByText("Reject"));
+    fireEvent.change(
+      screen.getByPlaceholderText(/Tell the agent what to do differently/i),
+      { target: { value: "Too narrow" } },
+    );
+    fireEvent.click(screen.getByText("Send rejection"));
+
+    await waitFor(() => {
+      expect(sessionServiceMock.sendPrompt).toHaveBeenCalledTimes(1);
+    });
+    expect(sessionServiceMock.setSessionConfigOption).not.toHaveBeenCalled();
+    const [, prompt] = sessionServiceMock.sendPrompt.mock.calls[0];
+    expect(prompt).toContain("rejecting");
+    expect(prompt).toContain("Too narrow");
   });
 
   it("renders Approve, Reject, and the mode Select when a switch_mode permission is pending", async () => {

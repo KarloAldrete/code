@@ -2,7 +2,10 @@ import {
   baseComponents,
   MarkdownRenderer,
 } from "@features/editor/components/MarkdownRenderer";
-import { usePendingPermissionsForTask } from "@features/sessions/hooks/useSession";
+import {
+  useConfigOptionForTask,
+  usePendingPermissionsForTask,
+} from "@features/sessions/hooks/useSession";
 import { getSessionService } from "@features/sessions/service/service";
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { CheckCircle, ListChecks, Warning, X } from "@phosphor-icons/react";
@@ -20,9 +23,10 @@ import { usePlanAgentActivityStore } from "../stores/planAgentActivityStore";
 import { extractThreadKeys } from "../utils/extractThreadKeys";
 import { handlePlanDeletion } from "../utils/handlePlanDeletion";
 import {
-  findPendingPlanPermission,
-  type PendingPlanPermission,
+  buildPlanApprovalState,
+  type PlanApprovalState,
 } from "../utils/planApprovalPermission";
+import { buildPlanRejectionPrompt } from "../utils/planPrompts";
 import { PlanBlockGutter } from "./PlanBlockGutter";
 import { PlanThread } from "./PlanThread";
 
@@ -62,54 +66,80 @@ declare module "react" {
 
 interface PlanApprovalBarProps {
   taskId: string;
-  permission: PendingPlanPermission;
+  state: PlanApprovalState;
 }
 
-function PlanApprovalBar({ taskId, permission }: PlanApprovalBarProps) {
+function PlanApprovalBar({ taskId, state }: PlanApprovalBarProps) {
   const [showRejectInput, setShowRejectInput] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [pending, setPending] = useState<"approve" | "reject" | null>(null);
   const [selectedOptionId, setSelectedOptionId] = useState(
-    permission.defaultOptionId,
+    state.defaultOptionId,
   );
 
   const selectedOption = useMemo(
     () =>
-      permission.approveOptions.find((o) => o.optionId === selectedOptionId) ??
-      permission.approveOptions[0],
-    [permission.approveOptions, selectedOptionId],
+      state.approveOptions.find((o) => o.optionId === selectedOptionId) ??
+      state.approveOptions[0],
+    [state.approveOptions, selectedOptionId],
   );
 
-  const respond = useCallback(
-    async (optionId: string, customInput?: string) => {
-      try {
-        await getSessionService().respondToPermission(
-          taskId,
-          permission.toolCallId,
-          optionId,
-          customInput,
-        );
-      } catch (err) {
-        log.warn("Failed to respond to plan approval", { err });
-      }
-    },
-    [taskId, permission.toolCallId],
-  );
+  // Reject is always available: in permission flow it resolves the permission;
+  // in mode flow it sends a feedback prompt to the agent (mode stays at plan).
+  const canReject =
+    state.source === "permission" ? state.rejectOptionId !== null : true;
 
   const handleApprove = useCallback(async () => {
     setPending("approve");
-    await respond(selectedOption.optionId);
-    setPending(null);
-  }, [respond, selectedOption.optionId]);
+    try {
+      if (state.source === "permission") {
+        await getSessionService().respondToPermission(
+          taskId,
+          state.toolCallId,
+          selectedOption.optionId,
+        );
+      } else {
+        await getSessionService().setSessionConfigOption(
+          taskId,
+          "mode",
+          selectedOption.optionId,
+        );
+      }
+    } catch (err) {
+      log.warn("Failed to approve plan", { err });
+    } finally {
+      setPending(null);
+    }
+  }, [state, selectedOption.optionId, taskId]);
 
   const handleReject = useCallback(async () => {
-    if (!permission.rejectOptionId) return;
+    const trimmed = rejectReason.trim();
     setPending("reject");
-    await respond(permission.rejectOptionId, rejectReason.trim() || undefined);
-    setPending(null);
-    setShowRejectInput(false);
-    setRejectReason("");
-  }, [respond, permission.rejectOptionId, rejectReason]);
+    try {
+      if (state.source === "permission") {
+        if (!state.rejectOptionId) return;
+        await getSessionService().respondToPermission(
+          taskId,
+          state.toolCallId,
+          state.rejectOptionId,
+          trimmed || undefined,
+        );
+      } else {
+        // Mode-driven flow: send a prompt asking the agent to revise. Mode
+        // stays at `plan` so the agent keeps iterating on the plan file.
+        await getSessionService().sendPrompt(
+          taskId,
+          buildPlanRejectionPrompt(trimmed),
+        );
+      }
+    } catch (err) {
+      log.warn("Failed to reject plan", { err });
+    } finally {
+      setPending(null);
+      setShowRejectInput(false);
+      setRejectReason("");
+    }
+  }, [state, rejectReason, taskId]);
 
   return (
     <Box className="sticky top-0 z-10 border-(--gray-5) border-b bg-(--color-background) px-12 py-3">
@@ -128,14 +158,14 @@ function PlanApprovalBar({ taskId, permission }: PlanApprovalBarProps) {
             >
               <Select.Trigger className="min-w-[200px]" />
               <Select.Content>
-                {permission.approveOptions.map((option) => (
+                {state.approveOptions.map((option) => (
                   <Select.Item key={option.optionId} value={option.optionId}>
                     {option.name}
                   </Select.Item>
                 ))}
               </Select.Content>
             </Select.Root>
-            {permission.rejectOptionId && (
+            {canReject && (
               <Button
                 size="sm"
                 onClick={() => setShowRejectInput((v) => !v)}
@@ -165,7 +195,7 @@ function PlanApprovalBar({ taskId, permission }: PlanApprovalBarProps) {
             </Text>
           </Flex>
         )}
-        {showRejectInput && permission.rejectOptionId && (
+        {showRejectInput && canReject && (
           <Flex direction="column" gap="2">
             <textarea
               value={rejectReason}
@@ -231,9 +261,14 @@ function PlanViewInner({ taskId, filePath }: PlanViewProps) {
   );
 
   const pendingPermissions = usePendingPermissionsForTask(taskId);
-  const planPermission = useMemo(
-    () => findPendingPlanPermission(pendingPermissions),
-    [pendingPermissions],
+  const modeOption = useConfigOptionForTask(taskId, "mode");
+  const planApprovalState = useMemo(
+    () =>
+      buildPlanApprovalState({
+        permissions: pendingPermissions,
+        configOptions: modeOption ? [modeOption] : undefined,
+      }),
+    [pendingPermissions, modeOption],
   );
 
   useEffect(() => {
@@ -384,8 +419,8 @@ function PlanViewInner({ taskId, filePath }: PlanViewProps) {
 
   return (
     <Box className="relative h-full overflow-y-auto">
-      {planPermission && (
-        <PlanApprovalBar taskId={taskId} permission={planPermission} />
+      {planApprovalState && (
+        <PlanApprovalBar taskId={taskId} state={planApprovalState} />
       )}
       <Box className="plan-markdown mx-auto max-w-[820px] px-12 py-8 text-(--gray-12)">
         <MarkdownRenderer

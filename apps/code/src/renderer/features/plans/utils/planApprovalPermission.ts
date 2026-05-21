@@ -1,3 +1,4 @@
+import type { SessionConfigOption } from "@features/sessions/stores/sessionStore";
 import type { PermissionRequest } from "@features/sessions/utils/parseSessionLogs";
 
 export interface PlanApproveOption {
@@ -6,20 +7,24 @@ export interface PlanApproveOption {
   isBypass: boolean;
 }
 
-export interface PendingPlanPermission {
-  toolCallId: string;
-  approveOptions: PlanApproveOption[];
-  /**
-   * Safe default the UI should pre-select. `default` (manual approval) is
-   * preferred when present, then any non-bypass `allow_*` option, and
-   * `bypassPermissions` only when it is the sole approve option.
-   */
-  defaultOptionId: string;
-  rejectOptionId: string | null;
-}
+export type PlanApprovalState =
+  | {
+      source: "permission";
+      toolCallId: string;
+      approveOptions: PlanApproveOption[];
+      defaultOptionId: string;
+      rejectOptionId: string | null;
+    }
+  | {
+      source: "mode";
+      approveOptions: PlanApproveOption[];
+      defaultOptionId: string;
+      rejectOptionId?: undefined;
+    };
 
 const BYPASS_OPTION_ID = "bypassPermissions";
 const PREFERRED_DEFAULT_OPTION_ID = "default";
+const PLAN_MODE_ID = "plan";
 
 function pickDefault(approve: PlanApproveOption[]): string {
   if (approve.length === 0) {
@@ -33,17 +38,9 @@ function pickDefault(approve: PlanApproveOption[]): string {
   return (nonBypass ?? approve[0]).optionId;
 }
 
-/**
- * Pulls the pending `ExitPlanMode` switch_mode permission out of the
- * task's permission map and exposes every allow_* option so the UI can
- * render a picker. Refuses to silently auto-pick whichever option the
- * agent happens to put first — the previous behavior caused `Approve plan`
- * to slip the session into `bypassPermissions` mode on fresh tasks
- * (where there is no `previousMode` to promote a safer option).
- */
-export function findPendingPlanPermission(
+function findPermissionState(
   permissions: Map<string, PermissionRequest>,
-): PendingPlanPermission | null {
+): PlanApprovalState | null {
   for (const req of permissions.values()) {
     const toolCallId = req.toolCall?.toolCallId;
     if (!toolCallId) continue;
@@ -63,6 +60,7 @@ export function findPendingPlanPermission(
     );
 
     return {
+      source: "permission",
       toolCallId,
       approveOptions,
       defaultOptionId: pickDefault(approveOptions),
@@ -70,4 +68,66 @@ export function findPendingPlanPermission(
     };
   }
   return null;
+}
+
+function findModeOption(
+  configOptions: SessionConfigOption[] | undefined,
+): SessionConfigOption | undefined {
+  return configOptions?.find((opt) => opt.category === "mode");
+}
+
+function findModeState(
+  configOptions: SessionConfigOption[] | undefined,
+): PlanApprovalState | null {
+  const modeOption = findModeOption(configOptions);
+  if (!modeOption) return null;
+  if (modeOption.currentValue !== PLAN_MODE_ID) return null;
+
+  const options = (modeOption.options ?? []) as {
+    value: string;
+    name: string;
+  }[];
+  const approveOptions: PlanApproveOption[] = options
+    .filter((o) => o.value !== PLAN_MODE_ID)
+    .map((o) => ({
+      optionId: o.value,
+      name: o.name,
+      isBypass: o.value === BYPASS_OPTION_ID,
+    }));
+  if (approveOptions.length === 0) return null;
+
+  return {
+    source: "mode",
+    approveOptions,
+    defaultOptionId: pickDefault(approveOptions),
+  };
+}
+
+/**
+ * Returns the data needed to render the Plan view's Approve/Reject bar.
+ *
+ * The bar must be available whenever the session is in plan mode — not
+ * just when an `ExitPlanMode` permission is pending. The agent processes
+ * comment replies via `handlePlanFileException`, which allows Edit/Write
+ * on plan files even while in plan mode WITHOUT ever calling
+ * ExitPlanMode. That means during an active comment loop there is no
+ * `switch_mode` permission pending, and the original permission-only
+ * bar would (incorrectly) disappear.
+ *
+ * Precedence:
+ *  - If a pending `switch_mode` permission exists, drive the bar from
+ *    that (Approve resolves the permission with the chosen option;
+ *    Reject responds with the permission's reject option).
+ *  - Otherwise, if the session's `mode` configOption is `plan`, build
+ *    the option list from its `options` array, excluding `plan` itself
+ *    (Approve calls `setSessionConfigOption("mode", ...)`; Reject sends
+ *    a feedback prompt and leaves mode unchanged).
+ */
+export function buildPlanApprovalState(args: {
+  permissions: Map<string, PermissionRequest>;
+  configOptions: SessionConfigOption[] | undefined;
+}): PlanApprovalState | null {
+  return (
+    findPermissionState(args.permissions) ?? findModeState(args.configOptions)
+  );
 }
