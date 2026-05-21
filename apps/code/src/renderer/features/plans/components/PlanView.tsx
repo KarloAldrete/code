@@ -382,6 +382,9 @@ function PlanViewInner({ taskId, filePath }: PlanViewProps) {
     // `remarkPlanThreads`'s `ANCHORABLE_TYPES`. The set must agree on
     // both sides — see the comment in `remarkPlanThreads.ts` for why
     // `code` / `table` are excluded.
+    //
+    // For lists: `<ul>`/`<ol>` are NOT wrapped — each `<li>` carries its
+    // own gutter so users can comment on individual items.
     return {
       h1: wrap("h1"),
       h2: wrap("h2"),
@@ -390,8 +393,7 @@ function PlanViewInner({ taskId, filePath }: PlanViewProps) {
       h5: wrap("h5"),
       h6: wrap("h6"),
       p: wrap("p"),
-      ul: wrap("ul"),
-      ol: wrap("ol"),
+      li: wrap("li"),
       "plan-thread": (props: PlanThreadElementProps) => {
         const blockText = props["data-block-text"] ?? "";
         const occurrence = parseOccurrence(props["data-occurrence"]);

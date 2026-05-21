@@ -89,28 +89,40 @@ function isThreadBlockquote(node: MdNodeLike): boolean {
 function parseAstBlocks(source: string): AstBlock[] {
   // Parse the file's top-level markdown structure to identify anchor
   // blocks the same way the renderer does. Doing this with `remark-parse`
-  // means a fenced code block with a blank line — or a loose list with
-  // blank lines between items — counts as ONE block, matching the
-  // renderer's single gutter button for that block. Without AST parsing
-  // we'd split such blocks on blank lines and fail to find an exact match.
+  // means a fenced code block with a blank line counts as ONE block,
+  // matching the renderer's single gutter button for that block.
+  //
+  // Lists are NOT anchorable as a whole — instead we descend into each
+  // `listItem` so users can comment on individual items (mirroring the
+  // renderer's `ANCHORABLE_TYPES`).
   const tree = unified()
     .use(remarkParse)
     .parse(source) as unknown as MdNodeLike;
 
   const blocks: AstBlock[] = [];
-  for (const child of tree.children ?? []) {
-    const startOffset = child.position?.start.offset;
-    const endOffset = child.position?.end.offset;
+  const pushBlock = (node: MdNodeLike, isThread: boolean): void => {
+    const startOffset = node.position?.start.offset;
+    const endOffset = node.position?.end.offset;
     if (typeof startOffset !== "number" || typeof endOffset !== "number") {
-      continue;
+      return;
     }
     const text = source.slice(startOffset, endOffset);
     const endLine = source.slice(0, endOffset).split("\n").length;
-    blocks.push({
-      text,
-      endLine,
-      isThread: isThreadBlockquote(child),
-    });
+    blocks.push({ text, endLine, isThread });
+  };
+
+  for (const child of tree.children ?? []) {
+    if (child.type === "list") {
+      // Walk the list's items as separate anchor blocks. Nested lists are
+      // covered by the parent item's source slice — we don't descend into
+      // them as their own blocks, since the renderer's `data-plan-block`
+      // is the outer item's verbatim source.
+      for (const item of child.children ?? []) {
+        if (item.type === "listItem") pushBlock(item, false);
+      }
+      continue;
+    }
+    pushBlock(child, isThreadBlockquote(child));
   }
   return blocks;
 }

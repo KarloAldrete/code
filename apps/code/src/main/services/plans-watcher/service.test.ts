@@ -144,15 +144,32 @@ describe("plans-watcher helpers", () => {
       expect(findBlockInsertionLine(lines, fencedBlock)).toBe(6);
     });
 
-    it("matches a loose list with blank lines between items", () => {
-      // A loose list (`- a` … blank line … `- b`) is one mdast `list` node,
-      // and the renderer surfaces a single gutter for it.
+    it("matches an individual list item, not the whole list", () => {
+      // The renderer anchors each list item separately so users can
+      // comment per item. The watcher must therefore find a single item
+      // by its source text and return the line right after it.
       const source =
-        "- item one\n\n- item two\n\n- item three\n\nNext paragraph.\n";
+        "- item one\n- item two\n- item three\n\nNext paragraph.\n";
       const lines = source.split("\n");
-      const looseList = "- item one\n\n- item two\n\n- item three";
-      // The list spans lines 0–4; insertion after it is line 5.
-      expect(findBlockInsertionLine(lines, looseList)).toBe(5);
+      // Insertion after "- item one" is line 1 (right between items).
+      expect(findBlockInsertionLine(lines, "- item one")).toBe(1);
+      expect(findBlockInsertionLine(lines, "- item two")).toBe(2);
+      expect(findBlockInsertionLine(lines, "- item three")).toBe(3);
+    });
+
+    it("matches list items in ordered lists by their full marker", () => {
+      const source = "1. first step\n2. second step\n\nNext paragraph.\n";
+      const lines = source.split("\n");
+      expect(findBlockInsertionLine(lines, "1. first step")).toBe(1);
+      expect(findBlockInsertionLine(lines, "2. second step")).toBe(2);
+    });
+
+    it("counts occurrences across identical list items in the doc", () => {
+      const source = "- repeat\n- repeat\n\nNext paragraph.\n";
+      const lines = source.split("\n");
+      expect(findBlockInsertionLine(lines, "- repeat", 0)).toBe(1);
+      expect(findBlockInsertionLine(lines, "- repeat", 1)).toBe(2);
+      expect(findBlockInsertionLine(lines, "- repeat", 2)).toBeNull();
     });
 
     it("matches a GFM table as one block (renderer uses remark-gfm)", () => {
@@ -334,6 +351,31 @@ describe("PlansWatcherService.appendThreadMessage / resolveThread", () => {
     // The line after `> [resolved]` must be blank to terminate the
     // blockquote.
     expect(lines[resolvedIdx + 1]).toBe("");
+  });
+
+  it("appends a thread anchored to a single list item", async () => {
+    const planPath = path.join(plansDir, "plan.md");
+    const original = ["- First item", "- Second item", "- Third item", ""].join(
+      "\n",
+    );
+    await fs.writeFile(planPath, original, "utf8");
+
+    await service.appendThreadMessage({
+      filePath: planPath,
+      blockText: "- Second item",
+      occurrence: 0,
+      message: "Why is this here?",
+      speaker: "H",
+    });
+
+    const updated = await fs.readFile(planPath, "utf8");
+    const lines = updated.split("\n");
+    const threadIdx = lines.findIndex((l) => l.startsWith("> [H]: Why"));
+    // Thread must come AFTER "- Second item" and BEFORE "- Third item".
+    const secondIdx = lines.indexOf("- Second item");
+    const thirdIdx = lines.indexOf("- Third item");
+    expect(threadIdx).toBeGreaterThan(secondIdx);
+    expect(threadIdx).toBeLessThan(thirdIdx);
   });
 
   it("resolves the thread under the requested occurrence", async () => {

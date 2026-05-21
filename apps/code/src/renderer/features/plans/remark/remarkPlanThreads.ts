@@ -160,7 +160,9 @@ function getAnchorOccurrence(node: MdNode): number {
  *
  *  - `heading` → `<h1>`–`<h6>` (wrapped)
  *  - `paragraph` → `<p>` (wrapped)
- *  - `list` → `<ul>` / `<ol>` (wrapped)
+ *  - `listItem` → `<li>` (wrapped) — the parent `<ul>`/`<ol>` is NOT
+ *    annotated; each item carries its own gutter so users can comment on
+ *    individual items.
  *
  * `code` and `table` are deliberately excluded: mdast-util-to-hast moves a
  * fenced `code` node's hProperties onto the inner `<code>` element
@@ -170,7 +172,36 @@ function getAnchorOccurrence(node: MdNode): number {
  * and the user couldn't comment. Re-add them once the renderer wraps
  * those components.
  */
-const ANCHORABLE_TYPES = new Set(["heading", "paragraph", "list"]);
+const ANCHORABLE_TYPES = new Set(["heading", "paragraph", "listItem"]);
+
+/** Walk a node and yield each anchorable descendant in document order. */
+function* iterAnchorableDescendants(node: MdNode): Iterable<MdNode> {
+  if (ANCHORABLE_TYPES.has(node.type)) {
+    yield node;
+    return; // don't descend into a listItem's nested lists — they're
+    // covered by the listItem itself, which carries the whole
+    // source slice as `data-plan-block`.
+  }
+  if (node.type === "list" && node.children) {
+    for (const child of node.children) {
+      yield* iterAnchorableDescendants(child);
+    }
+  }
+}
+
+/**
+ * Return the last anchorable node inside a list/listItem subtree, or
+ * `null` if there are none. Used by thread anchor lookup — when a thread
+ * blockquote follows a list, the natural anchor is the LAST list item
+ * of that list, not the list as a whole.
+ */
+function findLastAnchorIn(node: MdNode): MdNode | null {
+  let last: MdNode | null = null;
+  for (const candidate of iterAnchorableDescendants(node)) {
+    last = candidate;
+  }
+  return last;
+}
 
 // Type the plugin against mdast's `Root` for unified compatibility, then
 // operate on our loose `MdRoot` shape inside (mdast's discriminated children
@@ -195,36 +226,43 @@ export const remarkPlanThreads: Plugin<[], Root> = () => {
       return seen;
     }
 
+    // Pre-pass: annotate every anchorable node in document order. We
+    // descend into lists so each listItem gets its own occurrence and
+    // `data-plan-block`. Doing this BEFORE thread anchor resolution lets
+    // the anchor lookup just read back the annotated occurrence from
+    // whatever node it resolves to (including a listItem inside a list).
+    for (const node of children) {
+      if (node.type === "list" || ANCHORABLE_TYPES.has(node.type)) {
+        for (const anchorable of iterAnchorableDescendants(node)) {
+          const occurrence = occurrenceOf(anchorable);
+          annotateAnchorBlock(anchorable, source, occurrence);
+        }
+      }
+    }
+
+    // Second pass: rewrite thread blockquotes into plan-thread nodes.
     for (let i = 0; i < children.length; i += 1) {
       const node = children[i];
 
       const thread = parseThreadBlockquote(node, source);
-      if (thread) {
-        // Find the nearest preceding non-thread sibling as the anchor.
-        let anchorIndex = i - 1;
-        while (
-          anchorIndex >= 0 &&
-          children[anchorIndex].type === "planThread"
-        ) {
-          anchorIndex -= 1;
-        }
-        const anchor = anchorIndex >= 0 ? children[anchorIndex] : node;
-        // The anchor block's occurrence was assigned earlier in the loop;
-        // read it back rather than re-counting (which would double-count).
-        const anchorOccurrence = getAnchorOccurrence(anchor);
-        children[i] = asPlanThreadNode(
-          thread,
-          anchor,
-          source,
-          anchorOccurrence,
-        );
-        continue;
-      }
+      if (!thread) continue;
 
-      if (ANCHORABLE_TYPES.has(node.type)) {
-        const occurrence = occurrenceOf(node);
-        annotateAnchorBlock(node, source, occurrence);
+      // Find the nearest preceding non-thread sibling as the anchor.
+      // If that sibling is a list, descend to its LAST listItem so the
+      // thread visually attaches to the right item.
+      let anchorIndex = i - 1;
+      while (anchorIndex >= 0 && children[anchorIndex].type === "planThread") {
+        anchorIndex -= 1;
       }
+      const sibling = anchorIndex >= 0 ? children[anchorIndex] : node;
+      const anchor =
+        sibling.type === "list"
+          ? (findLastAnchorIn(sibling) ?? sibling)
+          : sibling;
+      // The anchor block's occurrence was assigned in the pre-pass;
+      // read it back rather than re-counting (which would double-count).
+      const anchorOccurrence = getAnchorOccurrence(anchor);
+      children[i] = asPlanThreadNode(thread, anchor, source, anchorOccurrence);
     }
   };
 };

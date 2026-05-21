@@ -42,8 +42,57 @@ describe("remarkPlanThreads", () => {
     expect(children[1].data?.hProperties?.["data-plan-block"]).toBe(
       "A paragraph of text.",
     );
-    expect(children[2].data?.hProperties?.["data-plan-block"]).toBe(
-      "- list item",
+    // The list itself is NOT annotated — each list item carries its own
+    // gutter so users can comment on individual items.
+    expect(children[2].data?.hProperties?.["data-plan-block"]).toBeUndefined();
+    const items = children[2].children ?? [];
+    expect(items).toHaveLength(1);
+    expect(items[0].data?.hProperties?.["data-plan-block"]).toBe("- list item");
+  });
+
+  it("annotates each list item separately in a multi-item list", () => {
+    const tree = parse(
+      ["- First item", "- Second item", "- Third item"].join("\n"),
+    );
+    const children = getTopChildren(tree);
+    expect(children).toHaveLength(1);
+    const items = children[0].children ?? [];
+    expect(items).toHaveLength(3);
+    expect(items[0].data?.hProperties?.["data-plan-block"]).toBe(
+      "- First item",
+    );
+    expect(items[1].data?.hProperties?.["data-plan-block"]).toBe(
+      "- Second item",
+    );
+    expect(items[2].data?.hProperties?.["data-plan-block"]).toBe(
+      "- Third item",
+    );
+  });
+
+  it("annotates list items in ordered lists too", () => {
+    const tree = parse(["1. one", "2. two"].join("\n"));
+    const items = (getTopChildren(tree)[0].children ?? []) as MdNode[];
+    expect(items).toHaveLength(2);
+    expect(items[0].data?.hProperties?.["data-plan-block"]).toBe("1. one");
+    expect(items[1].data?.hProperties?.["data-plan-block"]).toBe("2. two");
+  });
+
+  it("propagates occurrence to a thread whose anchor is a list item", () => {
+    // Build a doc where a thread blockquote follows a list. Inserting a
+    // top-level blockquote after a list item necessarily breaks the list
+    // (CommonMark), so we expect TWO sibling lists at the top level with
+    // the thread between them. The thread should anchor to the LAST list
+    // item of the preceding list.
+    const tree = parse(
+      ["- First item", "", "> [H]: why this one?", "", "- Second item"].join(
+        "\n",
+      ),
+    );
+    const children = getTopChildren(tree);
+    const threadNodes = children.filter((c) => c.type === "planThread");
+    expect(threadNodes).toHaveLength(1);
+    expect(threadNodes[0].data?.hProperties?.["data-block-text"]).toBe(
+      "- First item",
     );
   });
 
