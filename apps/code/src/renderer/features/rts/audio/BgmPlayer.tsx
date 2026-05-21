@@ -1,13 +1,11 @@
 import { useCommandCenterStore } from "@features/command-center/stores/commandCenterStore";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
-import { RTS_FLAG } from "@shared/constants";
+import { CODE_RTS_ASSETS_BASE_URL, RTS_FLAG } from "@shared/constants";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useEffect, useRef } from "react";
 import { useBgmStore } from "./bgmStore";
 
-const bgmUrl =
-  import.meta.env.VITE_CODE_RTS_BGM_URL ??
-  "https://posthog.com/code-rts/bgm.mp3";
+const bgmUrl = `${import.meta.env.VITE_CODE_RTS_ASSETS_BASE_URL ?? CODE_RTS_ASSETS_BASE_URL}/bgm.mp3`;
 
 export function BgmPlayer() {
   const audioRef = useRef<HTMLAudioElement | null>(null);

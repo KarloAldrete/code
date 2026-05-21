@@ -1,5 +1,6 @@
 import type { FunMode } from "@features/settings/stores/settingsStore";
 import type { HogletGender } from "@main/services/rts/hoglet-names";
+import { CODE_RTS_ASSETS_BASE_URL } from "@shared/constants";
 import { logger } from "@utils/logger";
 import voiceManifest from "./voice-manifest.json";
 
@@ -23,9 +24,7 @@ export type VoiceIntent =
 
 export type VoiceMode = FunMode;
 
-const VOICE_BASE_URL =
-  import.meta.env.VITE_CODE_RTS_VOICE_BASE_URL ??
-  "https://posthog.com/code-rts/voice";
+const VOICE_BASE_URL = `${import.meta.env.VITE_CODE_RTS_ASSETS_BASE_URL ?? CODE_RTS_ASSETS_BASE_URL}/voice`;
 
 const voiceFiles: Record<string, string> = Object.fromEntries(
   (voiceManifest as string[]).map((entry) => [
