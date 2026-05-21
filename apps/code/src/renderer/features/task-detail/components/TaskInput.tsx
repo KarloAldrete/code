@@ -620,7 +620,7 @@ export function TaskInput({
     >
       <DropZoneOverlay isVisible={isDraggingFile} />
       <Flex
-        align="start"
+        align="center"
         justify="center"
         height="100%"
         className="relative px-4 pt-[10vh]"
