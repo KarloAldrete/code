@@ -2,8 +2,11 @@ import { useCommandCenterStore } from "@features/command-center/stores/commandCe
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { CODE_RTS_ASSETS_BASE_URL, RTS_FLAG } from "@shared/constants";
 import { useNavigationStore } from "@stores/navigationStore";
+import { logger } from "@utils/logger";
 import { useEffect, useRef } from "react";
 import { useBgmStore } from "./bgmStore";
+
+const log = logger.scope("rts-bgm");
 
 const bgmUrl = `${import.meta.env.VITE_CODE_RTS_ASSETS_BASE_URL ?? CODE_RTS_ASSETS_BASE_URL}/bgm.mp3`;
 
@@ -24,6 +27,14 @@ export function BgmPlayer() {
       audioRef.current = new Audio(bgmUrl);
       audioRef.current.loop = true;
     }
+    return () => {
+      const audio = audioRef.current;
+      if (audio) {
+        audio.pause();
+        audio.src = "";
+        audioRef.current = null;
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -37,7 +48,9 @@ export function BgmPlayer() {
     if (!audio) return;
 
     if (shouldPlay) {
-      audio.play().catch(() => {});
+      audio.play().catch((error) => {
+        log.warn("Bgm play failed", { error });
+      });
     } else {
       audio.pause();
     }
