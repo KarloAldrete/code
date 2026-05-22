@@ -1,11 +1,11 @@
 import { parseGithubUrl } from "@posthog/git/utils";
 import { inject, injectable } from "inversify";
 import { normalizeRepoKey } from "../../../shared/utils/repo";
+import type { RepositoryRepository } from "../../db/repositories/repository-repository";
 import type { FeedbackEventRepository } from "../../db/repositories/rts/feedback-event-repository";
 import type { HedgehogStateRepository } from "../../db/repositories/rts/hedgehog-state-repository";
 import type { OperatorDecisionRepository } from "../../db/repositories/rts/operator-decision-repository";
 import type { PrDependencyRepository } from "../../db/repositories/rts/pr-dependency-repository";
-import type { RepositoryRepository } from "../../db/repositories/repository-repository";
 import type {
   TickLogRepository,
   TickOutcome,
@@ -13,15 +13,11 @@ import type {
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import type { GitService } from "../git/service";
-import type { PromptWithToolsOutput } from "../llm-gateway/schemas";
 import type { LlmGatewayService } from "../llm-gateway/service";
 import { getRtsMaxTicksPerHour } from "../settingsStore";
 import type { CloudTaskClient } from "./cloud-task-client";
-import type { FeedbackRoutingService } from "./feedback-routing-service";
-import { HEDGEHOG_HANDLERS } from "./hedgehog-handlers/registry";
+import type { HedgehogDecisionRouter } from "./hedgehog-decision-router";
 import {
-  type HandlerResult,
-  type HedgehogToolDeps,
   TickBudget,
   type TickContext,
   type WriteNestMessageInput,
@@ -32,11 +28,17 @@ import {
   buildUserPrompt,
   deriveHogletLastOutput,
   HEDGEHOG_SYSTEM_PROMPT,
-  HOGLET_OUTPUT_KINDS,
   type HogletPrState,
   type HogletWithState,
   type ScratchpadEntry,
 } from "./hedgehog-prompts";
+import {
+  isHogletOutputMessage,
+  latestHogletOutputAt,
+  latestOperatorMessageAt,
+  parseTimestamp,
+  prStatusFingerprint,
+} from "./hedgehog-tick-helpers";
 import { HEDGEHOG_TOOLS } from "./hedgehog-tools";
 import {
   readUserTaskPreferences,
@@ -45,7 +47,6 @@ import {
 import type { HogletService } from "./hoglet-service";
 import type { NestChatService } from "./nest-chat-service";
 import type { NestService } from "./nest-service";
-import type { PrGraphService } from "./pr-graph-service";
 import { parseHedgehogState, parseNestLoadout } from "./schema-parsers";
 import {
   type ActiveHoldState,
@@ -93,12 +94,13 @@ function getHeartbeatIntervalMs(): number {
  * Slice 6 of Rts — the hedgehog. A per-nest ephemeral orchestrator that
  * ticks on (heartbeat | new hoglet event | operator chat message), assembles
  * fresh context from sqlite, calls Claude with the constrained tool list, and
- * dispatches each tool_use block back to a service method. State persists in
- * `rts_hedgehog_state` so force-quit mid-tick recovers cleanly.
+ * hands the response to `HedgehogDecisionRouter` for handler dispatch + free-
+ * text rendering. State persists in `rts_hedgehog_state` so force-quit
+ * mid-tick recovers cleanly.
  *
  * NOT a Task. NOT a long-running agent. The service singleton owns the
- * scheduler and dispatch; each tick is a one-shot function over `(nest,
- * hoglets, recent chat, scratchpad)`.
+ * scheduler and perception; the router owns dispatch. Each tick is a one-shot
+ * function over `(nest, hoglets, recent chat, scratchpad)`.
  */
 @injectable()
 export class HedgehogTickService {
@@ -129,12 +131,8 @@ export class HedgehogTickService {
     private readonly cloudTasks: CloudTaskClient,
     @inject(MAIN_TOKENS.PrDependencyRepository)
     private readonly prDependencies: PrDependencyRepository,
-    @inject(MAIN_TOKENS.PrGraphService)
-    private readonly prGraph: PrGraphService,
     @inject(MAIN_TOKENS.GitService)
     private readonly git: GitService,
-    @inject(MAIN_TOKENS.FeedbackRoutingService)
-    private readonly feedbackRouting: FeedbackRoutingService,
     @inject(MAIN_TOKENS.FeedbackEventRepository)
     private readonly feedbackEvents: FeedbackEventRepository,
     @inject(MAIN_TOKENS.RepositoryRepository)
@@ -145,6 +143,8 @@ export class HedgehogTickService {
     private readonly operatorDecisions: OperatorDecisionRepository,
     @inject(MAIN_TOKENS.UsageAttributionService)
     private readonly usageAttribution: UsageAttributionService,
+    @inject(MAIN_TOKENS.HedgehogDecisionRouter)
+    private readonly decisionRouter: HedgehogDecisionRouter,
   ) {}
 
   /**
@@ -388,7 +388,6 @@ export class HedgehogTickService {
       newScratchpadEntries.push(releasedHoldScratchpad);
     }
     const budget = new TickBudget();
-    const deps = this.buildHandlerDeps();
     let outcome: TickOutcome = "completed";
     let observedTerminalRunKeys: Record<string, string> | null = null;
     let nextActiveHold: ActiveHoldState | null = null;
@@ -401,10 +400,11 @@ export class HedgehogTickService {
         return;
       }
       const persistedState = this.loadPersistedState(nestId);
-      observedTerminalRunKeys = this.emitNewTerminalHogletChanges(
-        context.hoglets,
-        persistedState.observedTerminalRunKeys,
-      );
+      observedTerminalRunKeys =
+        this.decisionRouter.emitNewTerminalHogletChanges(
+          context.hoglets,
+          persistedState.observedTerminalRunKeys,
+        );
       const repositoryContext = this.deriveRepositoryContext(
         nest,
         recentChat,
@@ -442,8 +442,6 @@ export class HedgehogTickService {
         return;
       }
 
-      newScratchpadEntries.push(...this.summariseLlmResponse(reason, response));
-
       try {
         this.usageAttribution.recordHedgehogTick({
           nestId: nest.id,
@@ -458,65 +456,18 @@ export class HedgehogTickService {
         });
       }
 
-      let suppressFreeTextMessage = false;
-      for (const block of response.toolUseBlocks) {
-        if (abortSignal?.aborted) {
-          outcome = "aborted";
-          return;
-        }
-        const handler = HEDGEHOG_HANDLERS.get(
-          block.name as Parameters<typeof HEDGEHOG_HANDLERS.get>[0],
-        );
-        if (!handler) {
-          log.warn("unknown tool name from hedgehog", { name: block.name });
-          newScratchpadEntries.push({
-            ts: new Date().toISOString(),
-            kind: "decision",
-            summary: `Ignored unknown tool ${block.name}`,
-          });
-          continue;
-        }
-        const result = await handler.handle(tickContext, block, deps);
-        newScratchpadEntries.push({
-          ts: new Date().toISOString(),
-          kind: "decision",
-          summary: result.scratchpadSummary,
-        });
-        if (result.hold) {
-          nextActiveHold = this.buildActiveHoldState(
-            result.hold,
-            tickContext,
-            recentChat,
-          );
-          suppressFreeTextMessage = true;
-        }
-        if (result.stopDispatch) break;
-      }
-
-      // Free-form text from the model also gets a single scratchpad note so
-      // the next tick can see her reasoning.
-      const combinedText = response.textBlocks
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0)
-        .join("\n");
-      if (combinedText.length > 0) {
-        if (suppressFreeTextMessage) {
-          newScratchpadEntries.push({
-            ts: new Date().toISOString(),
-            kind: "note",
-            summary: `Hold reasoning: ${truncateForScratchpad(combinedText)}`,
-          });
-        } else {
-          this.writeNestMessage(nestId, {
-            kind: "hedgehog_message",
-            body: combinedText,
-            visibility: "summary",
-            payloadJson: {
-              tickReason: reason,
-              stopReason: response.stopReason,
-            },
-          });
-        }
+      const dispatchResult = await this.decisionRouter.dispatch({
+        tickContext,
+        recentChat,
+        response,
+        reason,
+        abortSignal,
+      });
+      newScratchpadEntries.push(...dispatchResult.scratchpadEntries);
+      nextActiveHold = dispatchResult.nextActiveHold;
+      if (dispatchResult.aborted) {
+        outcome = "aborted";
+        return;
       }
     } catch (error) {
       if (abortSignal?.aborted || isAbortError(error)) {
@@ -571,17 +522,6 @@ export class HedgehogTickService {
         });
       }
     }
-  }
-
-  private buildHandlerDeps(): HedgehogToolDeps {
-    return {
-      cloudTasks: this.cloudTasks,
-      prGraph: this.prGraph,
-      feedbackRouting: this.feedbackRouting,
-      hogletService: this.hogletService,
-      nestService: this.nestService,
-      writeNestMessage: (nestId, input) => this.writeNestMessage(nestId, input),
-    };
   }
 
   private async evaluateActiveHold(
@@ -650,28 +590,6 @@ export class HedgehogTickService {
       return { released: true, reason: "PR status changed" };
     }
     return { released: false, reason: "awaiting PR status change" };
-  }
-
-  private buildActiveHoldState(
-    hold: NonNullable<HandlerResult["hold"]>,
-    ctx: TickContext,
-    recentChat: NestMessage[],
-  ): ActiveHoldState {
-    const createdAt = new Date().toISOString();
-    const timeoutSeconds =
-      hold.timeoutSeconds ?? EVENT_HOLD_FALLBACK_TIMEOUT_SECONDS;
-    return {
-      reason: hold.reason,
-      nextTrigger: hold.nextTrigger,
-      timeoutSeconds,
-      createdAt,
-      timeoutAt: new Date(
-        Date.parse(createdAt) + timeoutSeconds * 1000,
-      ).toISOString(),
-      lastOperatorMessageAt: latestOperatorMessageAt(recentChat),
-      lastHogletOutputAt: latestHogletOutputAt(recentChat),
-      prStatusFingerprint: prStatusFingerprint(ctx.hoglets, ctx.prDependencies),
-    };
   }
 
   private async buildContext(
@@ -987,45 +905,8 @@ export class HedgehogTickService {
     return parseHedgehogState(row?.serializedStateJson ?? null);
   }
 
-  private emitNewTerminalHogletChanges(
-    hoglets: HogletWithState[],
-    previousObservedRunKeys: Record<string, string>,
-  ): Record<string, string> {
-    const nextObservedRunKeys: Record<string, string> = {};
-    for (const entry of hoglets) {
-      const runKey = terminalRunKey(entry);
-      if (!runKey) continue;
-      nextObservedRunKeys[entry.hoglet.taskId] = runKey;
-      if (previousObservedRunKeys[entry.hoglet.taskId] !== runKey) {
-        this.hogletService.emitChanged(entry.hoglet);
-      }
-    }
-    return nextObservedRunKeys;
-  }
-
-  private summariseLlmResponse(
-    reason: string,
-    response: PromptWithToolsOutput,
-  ): ScratchpadEntry[] {
-    return [
-      {
-        ts: new Date().toISOString(),
-        kind: "observation",
-        summary: `Tick ran (reason=${reason}, model=${response.model}, stop=${response.stopReason ?? "?"}, tools=${response.toolUseBlocks.length}, in=${response.usage.inputTokens}, out=${response.usage.outputTokens}).`,
-      },
-    ];
-  }
-
   private writeNestMessage(nestId: string, input: WriteNestMessageInput): void {
-    const message = this.nestChat.recordHedgehogMessage({
-      nestId,
-      kind: input.kind,
-      body: input.body,
-      visibility: input.visibility ?? "summary",
-      sourceTaskId: input.sourceTaskId ?? null,
-      payloadJson: input.payloadJson ?? null,
-    });
-    this.nestService.emitMessageAppended(message);
+    this.decisionRouter.writeNestMessage(nestId, input);
   }
 
   private pruneLastEnqueuedAt(activeNestIds: Set<string>): void {
@@ -1041,23 +922,6 @@ function isAbortError(error: unknown): boolean {
   return error instanceof DOMException
     ? error.name === "AbortError"
     : error instanceof Error && error.name === "AbortError";
-}
-
-function isTerminalTaskRunStatus(
-  status: HogletWithState["taskRunStatus"],
-): boolean {
-  return (
-    status === "completed" || status === "failed" || status === "cancelled"
-  );
-}
-
-function terminalRunKey(entry: HogletWithState): string | null {
-  if (!isTerminalTaskRunStatus(entry.taskRunStatus)) return null;
-  return [
-    entry.latestRunId ?? "missing-run-id",
-    entry.taskRunStatus,
-    entry.latestRunCompletedAt ?? "missing-completed-at",
-  ].join(":");
 }
 
 function computePendingInjections(
@@ -1156,39 +1020,6 @@ function entryHasNoOutput(entry: HogletWithState): boolean {
   return entry.lastOutputAt === null;
 }
 
-function latestOperatorMessageAt(recentChat: NestMessage[]): string | null {
-  return latestMessageAt(
-    recentChat,
-    (message) => message.kind === "user_message",
-  );
-}
-
-function latestHogletOutputAt(recentChat: NestMessage[]): string | null {
-  return latestMessageAt(recentChat, isHogletOutputMessage);
-}
-
-function isHogletOutputMessage(message: NestMessage): boolean {
-  return message.sourceTaskId !== null && HOGLET_OUTPUT_KINDS.has(message.kind);
-}
-
-function latestMessageAt(
-  messages: NestMessage[],
-  predicate: (message: NestMessage) => boolean,
-): string | null {
-  let latest: string | null = null;
-  let latestMs: number | null = null;
-  for (const message of messages) {
-    if (!predicate(message)) continue;
-    const createdMs = parseTimestamp(message.createdAt);
-    if (createdMs === null) continue;
-    if (latestMs === null || createdMs > latestMs) {
-      latest = new Date(createdMs).toISOString();
-      latestMs = createdMs;
-    }
-  }
-  return latest;
-}
-
 function isAfterBaseline(
   value: string | null,
   baseline: string | null,
@@ -1211,45 +1042,4 @@ function holdTimeoutAt(hold: ActiveHoldState): string | null {
   const createdMs = parseTimestamp(hold.createdAt);
   if (createdMs === null) return null;
   return new Date(createdMs + timeoutSeconds * 1000).toISOString();
-}
-
-function prStatusFingerprint(
-  hoglets: HogletWithState[],
-  prDependencies: TickContext["prDependencies"],
-): string {
-  return JSON.stringify({
-    hoglets: hoglets
-      .map((entry) => ({
-        taskId: entry.hoglet.taskId,
-        latestRunId: entry.latestRunId,
-        taskRunStatus: entry.taskRunStatus,
-        latestRunCompletedAt: entry.latestRunCompletedAt,
-        prUrl: entry.prUrl,
-        prState: entry.prState,
-        branch: entry.branch,
-      }))
-      .sort((a, b) => a.taskId.localeCompare(b.taskId)),
-    prDependencies: prDependencies
-      .map((edge) => ({
-        id: edge.id,
-        parentTaskId: edge.parentTaskId,
-        childTaskId: edge.childTaskId,
-        state: edge.state,
-      }))
-      .sort((a, b) => a.id.localeCompare(b.id)),
-  });
-}
-
-function parseTimestamp(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const ms = Date.parse(value);
-  return Number.isNaN(ms) ? null : ms;
-}
-
-function truncateForScratchpad(value: string): string {
-  const singleLine = value.replace(/\s+/g, " ").trim();
-  // Leave room for the "Hold reasoning: " prefix under the 1000-char
-  // scratchpad schema limit.
-  if (singleLine.length <= 900) return singleLine;
-  return `${singleLine.slice(0, 900)}... (truncated)`;
 }

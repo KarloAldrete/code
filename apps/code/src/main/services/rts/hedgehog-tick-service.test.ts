@@ -50,6 +50,10 @@ vi.mock("../settingsStore", () => ({
   getRtsMaxTicksPerHour: () => 60,
 }));
 
+import type {
+  Repository,
+  RepositoryRepository,
+} from "../../db/repositories/repository-repository";
 import type { FeedbackEventRepository } from "../../db/repositories/rts/feedback-event-repository";
 import { createMockFeedbackEventRepository } from "../../db/repositories/rts/feedback-event-repository.mock";
 import type { HedgehogStateRepository } from "../../db/repositories/rts/hedgehog-state-repository";
@@ -61,10 +65,6 @@ import type {
   PrDependencyRepository,
 } from "../../db/repositories/rts/pr-dependency-repository";
 import { createMockPrDependencyRepository } from "../../db/repositories/rts/pr-dependency-repository.mock";
-import type {
-  Repository,
-  RepositoryRepository,
-} from "../../db/repositories/repository-repository";
 import type { TickLogRepository } from "../../db/repositories/rts/tick-log-repository";
 import { createMockTickLogRepository } from "../../db/repositories/rts/tick-log-repository.mock";
 import type { GitService } from "../git/service";
@@ -75,6 +75,7 @@ import type {
 import type { LlmGatewayService } from "../llm-gateway/service";
 import type { CloudTaskClient } from "./cloud-task-client";
 import type { FeedbackRoutingService } from "./feedback-routing-service";
+import { HedgehogDecisionRouter } from "./hedgehog-decision-router";
 import { HedgehogTickService } from "./hedgehog-tick-service";
 import {
   MAX_SPAWN_HOGLET_PROMPT_CHARS,
@@ -88,11 +89,11 @@ import type { PrGraphService } from "./pr-graph-service";
 import {
   DEFAULT_CODEX_REASONING_EFFORT,
   defaultModelForAdapter,
-  RtsEvent,
-  type RtsEvents,
   type Hoglet,
   type Nest,
   type NestMessage,
+  RtsEvent,
+  type RtsEvents,
 } from "./schemas";
 
 type AnyListener = (payload: unknown) => void;
@@ -411,7 +412,15 @@ function buildService(mocks: Mocks): HedgehogTickService {
     })),
     recordHogletTurn: vi.fn(() => null),
     init: vi.fn(),
-  } as unknown as ConstructorParameters<typeof HedgehogTickService>[14];
+  } as unknown as ConstructorParameters<typeof HedgehogTickService>[12];
+  const decisionRouter = new HedgehogDecisionRouter(
+    mocks.nestService,
+    mocks.hogletService,
+    mocks.nestChat,
+    mocks.cloudTasks,
+    mocks.prGraph,
+    mocks.feedbackRouting,
+  );
   return new HedgehogTickService(
     mocks.llm,
     mocks.nestService,
@@ -420,14 +429,13 @@ function buildService(mocks: Mocks): HedgehogTickService {
     mocks.stateRepo,
     mocks.cloudTasks,
     mocks.prDependencies,
-    mocks.prGraph,
     mocks.git,
-    mocks.feedbackRouting,
     mocks.feedbackEvents as unknown as FeedbackEventRepository,
     mocks.repositoryRepo,
     mocks.tickLog as unknown as TickLogRepository,
     mocks.operatorDecisions as unknown as OperatorDecisionRepository,
     usageAttribution,
+    decisionRouter,
   );
 }
 

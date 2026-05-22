@@ -92,6 +92,7 @@ export const MAIN_TOKENS = Object.freeze({
   HogletService: Symbol.for("Main.HogletService"),
   AffinityRouterService: Symbol.for("Main.AffinityRouterService"),
   HedgehogTickService: Symbol.for("Main.HedgehogTickService"),
+  HedgehogDecisionRouter: Symbol.for("Main.HedgehogDecisionRouter"),
   FeedbackRoutingService: Symbol.for("Main.FeedbackRoutingService"),
   PrGraphService: Symbol.for("Main.PrGraphService"),
   CloudTaskClient: Symbol.for("Main.CloudTaskClient"),
