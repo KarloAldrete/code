@@ -6,7 +6,7 @@ import { useSettingsDialogStore } from "@features/settings/stores/settingsDialog
 import { useSidebarData } from "@features/sidebar/hooks/useSidebarData";
 import { useVisualTaskOrder } from "@features/sidebar/hooks/useVisualTaskOrder";
 import { useSidebarStore } from "@features/sidebar/stores/sidebarStore";
-import { useTasks } from "@features/tasks/hooks/useTasks";
+import { useCreateTask, useTasks } from "@features/tasks/hooks/useTasks";
 import { useFocusWorkspace } from "@features/workspace/hooks/useFocusWorkspace";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
 import { SHORTCUTS } from "@renderer/constants/keyboard-shortcuts";
@@ -65,6 +65,7 @@ export function GlobalEventHandlers({
   const isWorktreeTask = currentWorkspace?.mode === "worktree";
 
   const { data: allTasks = [] } = useTasks();
+  const { invalidateTasks } = useCreateTask();
   const sidebarData = useSidebarData({ activeView: view });
   const visualTaskOrder = useVisualTaskOrder(sidebarData);
 
@@ -183,6 +184,9 @@ export function GlobalEventHandlers({
               (params.executionMode as ExecutionMode | null) ?? undefined,
           },
           (output) => {
+            // Push the new task into the cached list so the sidebar
+            // updates immediately, then trigger a refetch.
+            invalidateTasks(output.task);
             navigateToTask(output.task);
           },
         );
@@ -205,7 +209,7 @@ export function GlobalEventHandlers({
         });
       }
     },
-    [navigateToTask],
+    [navigateToTask, invalidateTasks],
   );
 
   const globalOptions = {
