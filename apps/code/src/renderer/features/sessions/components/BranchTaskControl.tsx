@@ -1,3 +1,4 @@
+import { Tooltip } from "@components/ui/Tooltip";
 import { BranchTaskDialog } from "@features/sessions/components/BranchTaskDialog";
 import type { Workspace } from "@main/services/workspace/schemas";
 import { GitFork } from "@phosphor-icons/react";
@@ -16,12 +17,18 @@ export function BranchTaskControl({ task, workspace }: BranchTaskControlProps) {
 
   return (
     <>
-      <div className="no-drag flex items-center">
-        <QuillButton variant="outline" size="sm" onClick={() => setOpen(true)}>
-          <GitFork size={14} weight="regular" className="shrink-0" />
-          Branch
-        </QuillButton>
-      </div>
+      <Tooltip content="Branch task">
+        <div className="no-drag flex shrink-0 items-center">
+          <QuillButton
+            variant="outline"
+            size="sm"
+            aria-label="Branch task"
+            onClick={() => setOpen(true)}
+          >
+            <GitFork size={14} weight="regular" className="shrink-0" />
+          </QuillButton>
+        </div>
+      </Tooltip>
       {open && (
         <BranchTaskDialog
           task={task}
