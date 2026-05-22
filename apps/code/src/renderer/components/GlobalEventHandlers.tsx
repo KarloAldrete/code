@@ -14,6 +14,7 @@ import { useTRPC } from "@renderer/trpc";
 import type { Task } from "@shared/types";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useNavigationStore } from "@stores/navigationStore";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { clearApplicationStorage } from "@utils/clearStorage";
 import { logger } from "@utils/logger";
@@ -62,6 +63,7 @@ export function GlobalEventHandlers({
 
   const { data: allTasks = [] } = useTasks();
   const { invalidateTasks } = useCreateTask();
+  const queryClient = useQueryClient();
   const [pendingOpenTaskId, setPendingOpenTaskId] = useState<string | null>(
     null,
   );
@@ -160,17 +162,24 @@ export function GlobalEventHandlers({
       if (!data || typeof data !== "object") return;
       const { taskId } = data as { taskId?: string };
       if (!taskId) return;
+      // The task may have been created in another window (e.g. quick-entry),
+      // so the main window's caches for workspaces and folders can be stale
+      // and miss the new workspace/folder. Invalidate before navigating.
+      void queryClient.invalidateQueries(
+        trpcReact.workspace.getAll.pathFilter(),
+      );
+      void queryClient.invalidateQueries(
+        trpcReact.folders.getFolders.pathFilter(),
+      );
       const task = taskById.get(taskId);
       if (task) {
         navigateToTask(task);
       } else {
-        // Task was created in another window (e.g. quick-entry). Refetch the
-        // task list and navigate once it lands in the cache.
         setPendingOpenTaskId(taskId);
         invalidateTasks();
       }
     },
-    [taskById, navigateToTask, invalidateTasks],
+    [taskById, navigateToTask, invalidateTasks, queryClient, trpcReact],
   );
 
   useEffect(() => {

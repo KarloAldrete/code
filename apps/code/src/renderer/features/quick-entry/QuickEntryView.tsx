@@ -290,7 +290,7 @@ export function QuickEntryView() {
   }
 
   return (
-    <div className="flex h-full w-full justify-center p-2">
+    <div className="flex h-full w-full items-start justify-center p-2">
       <div className="flex w-full flex-col gap-2">
         <Flex gap="2" align="center" className="min-w-0">
           <ButtonGroup>

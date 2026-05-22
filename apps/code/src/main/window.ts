@@ -112,7 +112,7 @@ export function showAndFocusMainWindow(): void {
 // ===== Quick Entry window =====
 
 const QUICK_ENTRY_WIDTH = 960;
-const QUICK_ENTRY_HEIGHT = 200;
+const QUICK_ENTRY_HEIGHT = 170;
 const QUICK_ENTRY_BOTTOM_MARGIN = 120;
 
 let quickEntryWindow: BrowserWindow | null = null;
