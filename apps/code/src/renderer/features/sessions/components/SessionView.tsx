@@ -39,6 +39,7 @@ import {
 import { CloudInitializingView } from "./CloudInitializingView";
 import { ConversationView } from "./ConversationView";
 import { DropZoneOverlay } from "./DropZoneOverlay";
+import { LocalInitializingView } from "./LocalInitializingView";
 import { ModelSelector } from "./ModelSelector";
 import { PlanStatusBar } from "./PlanStatusBar";
 import { ReasoningLevelSelector } from "./ReasoningLevelSelector";
@@ -66,6 +67,7 @@ interface SessionViewProps {
   onRetry?: () => void;
   onNewSession?: () => void;
   isInitializing?: boolean;
+  isResumingExistingSession?: boolean;
   isCloud?: boolean;
   cloudStatus?: TaskRunStatus | null;
   slackThreadUrl?: string;
@@ -119,6 +121,7 @@ export function SessionView({
   onRetry,
   onNewSession,
   isInitializing = false,
+  isResumingExistingSession = false,
   isCloud = false,
   cloudStatus = null,
   slackThreadUrl,
@@ -513,13 +516,7 @@ export function SessionView({
               isCloud ? (
                 <CloudInitializingView cloudStatus={cloudStatus} />
               ) : (
-                <Flex
-                  align="center"
-                  justify="center"
-                  className="absolute inset-0 bg-background"
-                >
-                  <Spinner size={32} className="animate-spin text-gray-9" />
-                </Flex>
+                <LocalInitializingView isResuming={isResumingExistingSession} />
               )
             ) : (
               <>

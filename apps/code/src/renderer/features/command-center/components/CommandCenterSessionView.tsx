@@ -30,6 +30,7 @@ export function CommandCenterSessionView({
     isPromptPending,
     promptStartedAt,
     isInitializing,
+    isResumingExistingSession,
     cloudBranch,
     cloudStatus,
     errorTitle,
@@ -70,6 +71,7 @@ export function CommandCenterSessionView({
         onRetry={handleRetry}
         onNewSession={isCloud ? undefined : handleNewSession}
         isInitializing={isInitializing}
+        isResumingExistingSession={isResumingExistingSession}
         isCloud={isCloud}
         cloudStatus={cloudStatus}
         compact

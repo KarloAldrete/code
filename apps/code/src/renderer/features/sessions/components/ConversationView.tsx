@@ -23,6 +23,7 @@ import {
   type ConversationItem,
   type TurnContext,
 } from "./buildConversationItems";
+import { ConversationLoadingHint } from "./ConversationLoadingHint";
 import { ConversationSearchBar } from "./ConversationSearchBar";
 import { GitActionMessage } from "./GitActionMessage";
 import { GitActionResult } from "./GitActionResult";
@@ -281,6 +282,13 @@ export function ConversationView({
             itemStyle={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
             footer={
               <div className={compact ? "pb-1" : "pb-16"}>
+                <ConversationLoadingHint
+                  status={session?.status}
+                  isCloud={isCloud}
+                  cloudStatus={session?.cloudStatus ?? null}
+                  eventCount={events.length}
+                  isPromptPending={isPromptPending}
+                />
                 <SessionFooter
                   task={task}
                   isPromptPending={isPromptPending}
