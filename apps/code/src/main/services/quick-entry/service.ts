@@ -27,7 +27,6 @@ const SHOW_GRACE_MS = 200;
 @injectable()
 export class QuickEntryService extends TypedEventEmitter<QuickEntryServiceEvents> {
   private suppressBlurHide = false;
-  private windowCreated = false;
 
   constructor(
     @inject(MAIN_TOKENS.FoldersService)
@@ -36,12 +35,16 @@ export class QuickEntryService extends TypedEventEmitter<QuickEntryServiceEvents
     super();
   }
 
-  createWindow(): void {
-    if (this.windowCreated) return;
+  // Idempotent: window.ts guards against double-creation, and if the window
+  // was destroyed (e.g. renderer crash) this recreates it.
+  private ensureWindow(): void {
     createQuickEntryWindow({
       onBlur: () => this.handleBlur(),
     });
-    this.windowCreated = true;
+  }
+
+  createWindow(): void {
+    this.ensureWindow();
   }
 
   private handleBlur(): void {
@@ -67,6 +70,8 @@ export class QuickEntryService extends TypedEventEmitter<QuickEntryServiceEvents
   }
 
   show(): void {
+    // Lazily recreate the window if it was destroyed (renderer crash, OOM).
+    this.ensureWindow();
     this.suppressBlurHide = true;
     const ok = showQuickEntryWindow();
     if (!ok) {
@@ -111,7 +116,6 @@ export class QuickEntryService extends TypedEventEmitter<QuickEntryServiceEvents
 
   dispose(): void {
     destroyQuickEntryWindow();
-    this.windowCreated = false;
     log.info("Quick entry service disposed");
   }
 }

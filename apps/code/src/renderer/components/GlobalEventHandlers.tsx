@@ -9,6 +9,7 @@ import { useSidebarStore } from "@features/sidebar/stores/sidebarStore";
 import { useCreateTask, useTasks } from "@features/tasks/hooks/useTasks";
 import { useFocusWorkspace } from "@features/workspace/hooks/useFocusWorkspace";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
+import type { CreateTaskRequest } from "@main/services/quick-entry/schemas";
 import { SHORTCUTS } from "@renderer/constants/keyboard-shortcuts";
 import { get } from "@renderer/di/container";
 import { RENDERER_TOKENS } from "@renderer/di/tokens";
@@ -157,18 +158,9 @@ export function GlobalEventHandlers({
   }, []);
 
   const handleCreateTaskFromQuickEntry = useCallback(
-    async (data?: unknown) => {
-      if (!data || typeof data !== "object") return;
-      const params = data as {
-        content: string;
-        repoPath: string;
-        workspaceMode: "local" | "worktree";
-        branch: string | null;
-        adapter: "claude" | "codex";
-        model: string | null;
-        reasoningLevel: string | null;
-        executionMode: string | null;
-      };
+    async (data?: CreateTaskRequest) => {
+      if (!data) return;
+      const params = data;
       try {
         const taskService = get<TaskService>(RENDERER_TOKENS.TaskService);
         const result = await taskService.createTask(

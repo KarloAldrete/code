@@ -92,16 +92,21 @@ export function QuickEntryView() {
   // Populate command list for @ file mentions + / skills.
   useEffect(() => {
     let cancelled = false;
-    trpcClient.skills.list.query().then((skills) => {
-      if (cancelled) return;
-      useDraftStore.getState().actions.setCommands(
-        SESSION_ID,
-        skills.map((s) => ({
-          name: s.name,
-          description: s.description,
-        })),
-      );
-    });
+    trpcClient.skills.list
+      .query()
+      .then((skills) => {
+        if (cancelled) return;
+        useDraftStore.getState().actions.setCommands(
+          SESSION_ID,
+          skills.map((s) => ({
+            name: s.name,
+            description: s.description,
+          })),
+        );
+      })
+      .catch((err) => {
+        log.warn("Failed to load skills for quick entry", { err });
+      });
     return () => {
       cancelled = true;
       useDraftStore.getState().actions.clearCommands(SESSION_ID);
