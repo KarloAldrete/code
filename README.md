@@ -9,6 +9,8 @@ Found a bug or have feedback? [Open an issue](https://github.com/PostHog/code/is
 
 This is the monorepo for PostHog Code apps and the agent framework that powers them.
 
+> Testing whether code signing is working.
+
 ## Development
 
 ### Prerequisites
