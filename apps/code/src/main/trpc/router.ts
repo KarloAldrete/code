@@ -28,6 +28,7 @@ import { oauthRouter } from "./routers/oauth";
 import { osRouter } from "./routers/os";
 import { processTrackingRouter } from "./routers/process-tracking";
 import { provisioningRouter } from "./routers/provisioning";
+import { quickEntryRouter } from "./routers/quick-entry";
 import { secureStoreRouter } from "./routers/secure-store";
 import { shellRouter } from "./routers/shell";
 import { skillsRouter } from "./routers/skills";
@@ -70,6 +71,7 @@ export const trpcRouter = router({
   os: osRouter,
   processTracking: processTrackingRouter,
   provisioning: provisioningRouter,
+  quickEntry: quickEntryRouter,
   sleep: sleepRouter,
   suspension: suspensionRouter,
   secureStore: secureStoreRouter,

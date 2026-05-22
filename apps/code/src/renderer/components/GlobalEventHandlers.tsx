@@ -151,6 +151,19 @@ export function GlobalEventHandlers({
     log.info("Main access token invalidated for testing");
   }, []);
 
+  const handleOpenTask = useCallback(
+    (data?: unknown) => {
+      if (!data || typeof data !== "object") return;
+      const { taskId } = data as { taskId?: string };
+      if (!taskId) return;
+      const task = taskById.get(taskId);
+      if (task) {
+        navigateToTask(task);
+      }
+    },
+    [taskById, navigateToTask],
+  );
+
   const globalOptions = {
     enableOnFormTags: true,
     enableOnContentEditable: true,
@@ -274,6 +287,12 @@ export function GlobalEventHandlers({
   useSubscription(
     trpcReact.ui.onInvalidateToken.subscriptionOptions(undefined, {
       onData: handleInvalidateToken,
+    }),
+  );
+
+  useSubscription(
+    trpcReact.ui.onOpenTask.subscriptionOptions(undefined, {
+      onData: handleOpenTask,
     }),
   );
 

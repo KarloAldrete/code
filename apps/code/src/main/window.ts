@@ -18,6 +18,8 @@ import { isDevBuild } from "./utils/env";
 import { logger, readChromiumLogTail } from "./utils/logger";
 import { type WindowStateSchema, windowStateStore } from "./utils/store";
 
+type IPCHandlerHandle = ReturnType<typeof createIPCHandler>;
+
 const log = logger.scope("window");
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
@@ -70,9 +72,18 @@ export function saveWindowState(window: BrowserWindow): void {
 }
 
 let mainWindow: BrowserWindow | null = null;
+let ipcHandler: IPCHandlerHandle | null = null;
 
 export function getMainWindow(): BrowserWindow | null {
   return mainWindow;
+}
+
+export function attachWindowToIPC(window: BrowserWindow): void {
+  if (!ipcHandler) {
+    log.warn("attachWindowToIPC called before IPC handler was created");
+    return;
+  }
+  ipcHandler.attachWindow(window);
 }
 
 export function focusMainWindow(reason: string): void {
@@ -86,6 +97,148 @@ export function focusMainWindow(reason: string): void {
     });
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
+  }
+}
+
+export function showAndFocusMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (!mainWindow.isVisible()) mainWindow.show();
+  mainWindow.moveTop();
+  mainWindow.focus();
+  app.focus({ steal: true });
+}
+
+// ===== Quick Entry window =====
+
+const QUICK_ENTRY_WIDTH = 720;
+const QUICK_ENTRY_HEIGHT = 132;
+const QUICK_ENTRY_BOTTOM_MARGIN = 120;
+
+let quickEntryWindow: BrowserWindow | null = null;
+
+export interface QuickEntryWindowHandlers {
+  onBlur: () => void;
+}
+
+export function createQuickEntryWindow(
+  handlers: QuickEntryWindowHandlers,
+): void {
+  if (quickEntryWindow && !quickEntryWindow.isDestroyed()) return;
+  const isDev = isDevBuild();
+
+  const window = new BrowserWindow({
+    width: QUICK_ENTRY_WIDTH,
+    height: QUICK_ENTRY_HEIGHT,
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    hasShadow: true,
+    roundedCorners: true,
+    alwaysOnTop: true,
+    backgroundColor: "#00000000",
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: true,
+      preload: path.join(__dirname, "preload.js"),
+      partition: "persist:main",
+      additionalArguments: isDev
+        ? ["--posthog-code-dev", "--posthog-quick-entry"]
+        : ["--posthog-quick-entry"],
+      ...(isDev && { webSecurity: false }),
+    },
+  });
+
+  window.setAlwaysOnTop(true, "floating");
+  if (process.platform === "darwin") {
+    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  }
+
+  window.on("blur", () => {
+    if (!quickEntryWindow || quickEntryWindow.isDestroyed()) return;
+    handlers.onBlur();
+  });
+
+  window.on("closed", () => {
+    if (quickEntryWindow === window) {
+      quickEntryWindow = null;
+    }
+  });
+
+  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+    window.loadURL(`${MAIN_WINDOW_VITE_DEV_SERVER_URL}#quick-entry`);
+  } else {
+    window.loadFile(
+      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
+      { hash: "quick-entry" },
+    );
+  }
+
+  if (ipcHandler) {
+    ipcHandler.attachWindow(window);
+  } else {
+    log.warn("createQuickEntryWindow called before IPC handler exists");
+  }
+
+  quickEntryWindow = window;
+  log.info("Quick entry window created");
+}
+
+export function isQuickEntryWindowVisible(): boolean {
+  return (
+    !!quickEntryWindow &&
+    !quickEntryWindow.isDestroyed() &&
+    quickEntryWindow.isVisible()
+  );
+}
+
+export function isQuickEntryWindowFocused(): boolean {
+  return (
+    !!quickEntryWindow &&
+    !quickEntryWindow.isDestroyed() &&
+    quickEntryWindow.isFocused()
+  );
+}
+
+export function showQuickEntryWindow(): boolean {
+  const window = quickEntryWindow;
+  if (!window || window.isDestroyed()) {
+    log.warn("showQuickEntryWindow called before window exists");
+    return false;
+  }
+  const cursor = screen.getCursorScreenPoint();
+  const display = screen.getDisplayNearestPoint(cursor);
+  const { x: dx, y: dy, width: dw, height: dh } = display.workArea;
+  const x = Math.round(dx + (dw - QUICK_ENTRY_WIDTH) / 2);
+  const y = Math.round(
+    dy + dh - QUICK_ENTRY_HEIGHT - QUICK_ENTRY_BOTTOM_MARGIN,
+  );
+  window.setPosition(x, y, false);
+
+  window.show();
+  window.focus();
+  app.focus({ steal: true });
+  return true;
+}
+
+export function hideQuickEntryWindow(): void {
+  const window = quickEntryWindow;
+  if (!window || window.isDestroyed()) return;
+  if (!window.isVisible()) return;
+  window.hide();
+}
+
+export function destroyQuickEntryWindow(): void {
+  const window = quickEntryWindow;
+  quickEntryWindow = null;
+  if (window && !window.isDestroyed()) {
+    window.destroy();
   }
 }
 
@@ -232,7 +385,7 @@ export function createWindow(): void {
     .get<ElectronMainWindow>(MAIN_TOKENS.MainWindow)
     .setMainWindowGetter(() => mainWindow);
 
-  createIPCHandler({
+  ipcHandler = createIPCHandler({
     router: trpcRouter,
     windows: [mainWindow],
   });

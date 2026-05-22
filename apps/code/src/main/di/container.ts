@@ -57,6 +57,7 @@ import { OAuthService } from "../services/oauth/service";
 import { PosthogPluginService } from "../services/posthog-plugin/service";
 import { ProcessTrackingService } from "../services/process-tracking/service";
 import { ProvisioningService } from "../services/provisioning/service";
+import { QuickEntryService } from "../services/quick-entry/service";
 import { settingsStore } from "../services/settingsStore";
 import { ShellService } from "../services/shell/service";
 import { SlackIntegrationService } from "../services/slack-integration/service";
@@ -148,5 +149,6 @@ container.bind(MAIN_TOKENS.TaskLinkService).to(TaskLinkService);
 container.bind(MAIN_TOKENS.InboxLinkService).to(InboxLinkService);
 container.bind(MAIN_TOKENS.WatcherRegistryService).to(WatcherRegistryService);
 container.bind(MAIN_TOKENS.WorkspaceService).to(WorkspaceService);
+container.bind(MAIN_TOKENS.QuickEntryService).to(QuickEntryService);
 
 container.bind(MAIN_TOKENS.SettingsStore).toConstantValue(settingsStore);

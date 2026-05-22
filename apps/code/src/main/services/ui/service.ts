@@ -33,4 +33,8 @@ export class UIService extends TypedEventEmitter<UIServiceEvents> {
     await this.authService.invalidateAccessTokenForTest();
     this.emit(UIServiceEvent.InvalidateToken, true);
   }
+
+  openTask(taskId: string): void {
+    this.emit(UIServiceEvent.OpenTask, { taskId });
+  }
 }

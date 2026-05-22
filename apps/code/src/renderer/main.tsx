@@ -4,30 +4,35 @@ import "@stores/rendererWindowFocusStore";
 import { Providers } from "@components/Providers";
 import { preloadHighlighter } from "@pierre/diffs";
 import App from "@renderer/App";
+import { QuickEntryRoot } from "@renderer/features/quick-entry/QuickEntryRoot";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "./styles/globals.css";
 
-void preloadHighlighter({
-  themes: ["github-dark", "github-light"],
-  langs: [
-    "typescript",
-    "tsx",
-    "javascript",
-    "jsx",
-    "json",
-    "css",
-    "html",
-    "markdown",
-    "python",
-    "ruby",
-    "go",
-    "rust",
-    "shell",
-    "yaml",
-    "sql",
-  ],
-});
+const isQuickEntry = window.location.hash === "#quick-entry";
+
+if (!isQuickEntry) {
+  void preloadHighlighter({
+    themes: ["github-dark", "github-light"],
+    langs: [
+      "typescript",
+      "tsx",
+      "javascript",
+      "jsx",
+      "json",
+      "css",
+      "html",
+      "markdown",
+      "python",
+      "ruby",
+      "go",
+      "rust",
+      "shell",
+      "yaml",
+      "sql",
+    ],
+  });
+}
 
 // HACK(@posthog/hedgehog-mode): The package bundles react-dom 18 code that
 // accesses React 18 internals at module scope. React 19 moved these to
@@ -55,17 +60,17 @@ void preloadHighlighter({
   }
 }
 
-document.title = import.meta.env.DEV
-  ? "PostHog Code (Development)"
-  : "PostHog Code";
+document.title = isQuickEntry
+  ? "PostHog Code Quick Entry"
+  : import.meta.env.DEV
+    ? "PostHog Code (Development)"
+    : "PostHog Code";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Root element not found");
 
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
-    <Providers>
-      <App />
-    </Providers>
+    <Providers>{isQuickEntry ? <QuickEntryRoot /> : <App />}</Providers>
   </React.StrictMode>,
 );

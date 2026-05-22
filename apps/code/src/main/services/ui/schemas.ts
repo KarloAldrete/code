@@ -5,6 +5,7 @@ export const UIServiceEvent = {
   ResetLayout: "reset-layout",
   ClearStorage: "clear-storage",
   InvalidateToken: "invalidate-token",
+  OpenTask: "open-task",
 } as const;
 
 // UI events are simple signals - payload is just a marker that the event fired
@@ -14,4 +15,5 @@ export interface UIServiceEvents {
   [UIServiceEvent.ResetLayout]: true;
   [UIServiceEvent.ClearStorage]: true;
   [UIServiceEvent.InvalidateToken]: true;
+  [UIServiceEvent.OpenTask]: { taskId: string };
 }

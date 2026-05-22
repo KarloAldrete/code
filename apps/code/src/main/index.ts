@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import os from "node:os";
-import { app, BrowserWindow, dialog } from "electron";
+import { app, BrowserWindow, dialog, globalShortcut } from "electron";
 import log from "electron-log/main";
 import "./utils/logger";
 import "./services/index.js";
@@ -24,6 +24,7 @@ import {
   trackAppEvent,
 } from "./services/posthog-analytics";
 import type { PosthogPluginService } from "./services/posthog-plugin/service";
+import type { QuickEntryService } from "./services/quick-entry/service";
 import type { SlackIntegrationService } from "./services/slack-integration/service";
 import type { SuspensionService } from "./services/suspension/service";
 import type { TaskLinkService } from "./services/task-link/service";
@@ -230,10 +231,40 @@ app.whenReady().then(async () => {
   createWindow();
   await initializeServices();
   initializeDeepLinks();
+  initializeQuickEntry();
 });
+
+function initializeQuickEntry(): void {
+  try {
+    const service = container.get<QuickEntryService>(
+      MAIN_TOKENS.QuickEntryService,
+    );
+    service.createWindow();
+
+    const accelerator = "Alt+Space";
+    const ok = globalShortcut.register(accelerator, () => {
+      try {
+        service.toggle();
+      } catch (err) {
+        log.error("Quick entry toggle failed", err);
+      }
+    });
+    if (!ok) {
+      log.warn(`Failed to register global shortcut: ${accelerator}`);
+    } else {
+      log.info(`Registered quick-entry global shortcut: ${accelerator}`);
+    }
+  } catch (err) {
+    log.error("Failed to initialize quick entry", err);
+  }
+}
 
 app.on("window-all-closed", () => {
   app.quit();
+});
+
+app.on("will-quit", () => {
+  globalShortcut.unregisterAll();
 });
 
 app.on("before-quit", async (event) => {
