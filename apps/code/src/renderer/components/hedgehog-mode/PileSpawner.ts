@@ -12,8 +12,8 @@ const SPAWN_INTERVAL_MS = 15_000;
 const BLOCK_SIZE = 32;
 const REST_LIFETIME_MS = 8_000;
 const REST_SPEED_THRESHOLD = 0.05;
-const PILE_HEIGHT_MIN = 3;
-const PILE_HEIGHT_MAX = 5;
+const PILE_HEIGHT_MIN = 6;
+const PILE_HEIGHT_MAX = 10;
 const PALETTE = [0xf8c537, 0xe36588, 0x5bc0eb, 0x9bc53d, 0xfde74c, 0xc792ea];
 
 class PileBlock implements GameElement {

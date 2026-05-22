@@ -19,7 +19,19 @@ export function HedgehogMode() {
   const pileSpawnerRef = useRef<PileSpawner | null>(null);
 
   useEffect(() => {
-    if (!hedgehogMode || !containerRef.current || gameRef.current) return;
+    if (!hedgehogMode) {
+      if (pileSpawnerRef.current) {
+        pileSpawnerRef.current.destroy();
+        pileSpawnerRef.current = null;
+      }
+      if (gameRef.current) {
+        gameRef.current.destroy();
+        gameRef.current = null;
+      }
+      return;
+    }
+
+    if (!containerRef.current || gameRef.current) return;
 
     let cancelled = false;
     const container = containerRef.current;
@@ -69,19 +81,6 @@ export function HedgehogMode() {
       cancelled = true;
     };
   }, [hedgehogMode, user?.hedgehog_config, setHedgehogMode]);
-
-  useEffect(() => {
-    return () => {
-      if (pileSpawnerRef.current) {
-        pileSpawnerRef.current.destroy();
-        pileSpawnerRef.current = null;
-      }
-      if (gameRef.current) {
-        gameRef.current.destroy();
-        gameRef.current = null;
-      }
-    };
-  }, []);
 
   return (
     <div
