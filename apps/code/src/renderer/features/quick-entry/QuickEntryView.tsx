@@ -251,18 +251,16 @@ export function QuickEntryView() {
   if (!isAuthenticated) {
     return (
       <div className="flex h-full w-full items-center justify-center p-4">
-        <div className="flex w-full max-w-[600px] items-center gap-3 rounded-(--radius-4) border border-(--gray-5) bg-(--gray-2) px-4 py-3 shadow-2xl">
-          <Text className="flex-1 text-(--gray-12) text-sm">
-            Sign in to PostHog Code to use quick entry.
-          </Text>
-        </div>
+        <Text className="text-(--gray-12) text-sm">
+          Sign in to PostHog Code to use quick entry.
+        </Text>
       </div>
     );
   }
 
   return (
     <div className="flex h-full w-full items-center justify-center p-3">
-      <div className="flex w-full max-w-[600px] flex-col gap-2 rounded-(--radius-4) border border-(--gray-5) bg-(--gray-2) p-3 shadow-2xl">
+      <div className="flex w-full flex-col gap-2">
         <Flex gap="2" align="center" className="min-w-0">
           <ButtonGroup>
             <FolderPicker

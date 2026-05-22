@@ -111,7 +111,7 @@ export function showAndFocusMainWindow(): void {
 
 // ===== Quick Entry window =====
 
-const QUICK_ENTRY_WIDTH = 680;
+const QUICK_ENTRY_WIDTH = 960;
 const QUICK_ENTRY_HEIGHT = 260;
 const QUICK_ENTRY_BOTTOM_MARGIN = 120;
 
