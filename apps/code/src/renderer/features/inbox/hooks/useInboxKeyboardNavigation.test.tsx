@@ -61,25 +61,16 @@ describe("useInboxKeyboardNavigation", () => {
   });
 
   describe("arrow navigation from an empty selection", () => {
-    it("ArrowDown selects the first report", () => {
+    it.each<[1 | -1, string]>([
+      [1, "ArrowDown"],
+      [-1, "ArrowUp"],
+    ])("%s selects the first report when nothing is selected", (direction) => {
       const { result } = renderHook(() =>
         useInboxKeyboardNavigation({ reports: REPORTS }),
       );
 
       act(() => {
-        result.current.navigateReport(1, false);
-      });
-
-      expect(getSelection()).toEqual(["a"]);
-    });
-
-    it("ArrowUp also selects the first report when nothing is selected", () => {
-      const { result } = renderHook(() =>
-        useInboxKeyboardNavigation({ reports: REPORTS }),
-      );
-
-      act(() => {
-        result.current.navigateReport(-1, false);
+        result.current.navigateReport(direction, false);
       });
 
       expect(getSelection()).toEqual(["a"]);
@@ -216,33 +207,25 @@ describe("useInboxKeyboardNavigation", () => {
   });
 
   describe("arrow navigation bounds", () => {
-    it("ArrowDown on the last report stays on the last report", () => {
-      const { result } = renderHook(() =>
-        useInboxKeyboardNavigation({ reports: REPORTS }),
-      );
+    it.each<[1 | -1, string]>([
+      [1, "e"],
+      [-1, "a"],
+    ])(
+      "direction %i at the boundary stays on the same report",
+      (direction, reportId) => {
+        const { result } = renderHook(() =>
+          useInboxKeyboardNavigation({ reports: REPORTS }),
+        );
 
-      plainClick("e");
+        plainClick(reportId);
 
-      act(() => {
-        result.current.navigateReport(1, false);
-      });
+        act(() => {
+          result.current.navigateReport(direction, false);
+        });
 
-      expect(getSelection()).toEqual(["e"]);
-    });
-
-    it("ArrowUp on the first report stays on the first report", () => {
-      const { result } = renderHook(() =>
-        useInboxKeyboardNavigation({ reports: REPORTS }),
-      );
-
-      plainClick("a");
-
-      act(() => {
-        result.current.navigateReport(-1, false);
-      });
-
-      expect(getSelection()).toEqual(["a"]);
-    });
+        expect(getSelection()).toEqual([reportId]);
+      },
+    );
   });
 
   describe("shift+arrow range extension", () => {
