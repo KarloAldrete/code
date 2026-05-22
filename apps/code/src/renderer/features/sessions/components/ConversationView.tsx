@@ -168,6 +168,8 @@ export function ConversationView({
       // Only list tools that have a registered UI (true MCP apps).
       if (!mcpUiToolKeys.has(fullToolName)) continue;
 
+      const merged = item.turnContext.toolCalls?.get(update.toolCallId);
+      const toolCall = merged ?? update;
       const { serverName, toolName } = parseMcpToolKey(fullToolName);
       entries.push({
         itemIndex: i,
@@ -175,9 +177,9 @@ export function ConversationView({
         fullToolName,
         serverName,
         toolName,
-        title: update.title,
-        inputPreview: buildInputPreview(update.rawInput),
-        status: update.status ?? null,
+        title: toolCall.title,
+        status: toolCall.status ?? null,
+        toolCall,
       });
     }
     return { mcpAppIndices: indices, mcpEntries: entries };
@@ -347,22 +349,6 @@ export function ConversationView({
       </Flex>
     </WorkerPoolContextProvider>
   );
-}
-
-function buildInputPreview(rawInput: unknown): string | undefined {
-  if (rawInput == null || typeof rawInput !== "object") return undefined;
-  const entries = Object.entries(rawInput as Record<string, unknown>);
-  if (entries.length === 0) return undefined;
-  const [key, value] = entries[0];
-  const formatted =
-    typeof value === "string"
-      ? value
-      : typeof value === "number" || typeof value === "boolean"
-        ? String(value)
-        : JSON.stringify(value);
-  const compact = formatted.replace(/\s+/g, " ").trim();
-  const truncated = compact.length > 60 ? `${compact.slice(0, 60)}…` : compact;
-  return `${key}: ${truncated}`;
 }
 
 const SessionUpdateRow = memo(function SessionUpdateRow({

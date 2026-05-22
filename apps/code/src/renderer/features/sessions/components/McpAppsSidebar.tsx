@@ -1,7 +1,7 @@
-import { Tooltip } from "@components/ui/Tooltip";
+import { McpAppHost } from "@features/mcp-apps/components/McpAppHost";
 import { useMcpAppsSidebarStore } from "@features/sessions/stores/mcpAppsSidebarStore";
-import type { ToolCallStatus } from "@features/sessions/types";
-import { X } from "@phosphor-icons/react";
+import type { ToolCall, ToolCallStatus } from "@features/sessions/types";
+import { ArrowSquareOut, X } from "@phosphor-icons/react";
 import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
 import { useCallback, useEffect, useRef } from "react";
 
@@ -12,8 +12,8 @@ export interface McpAppEntry {
   serverName: string;
   toolName: string;
   title?: string;
-  inputPreview?: string;
   status?: ToolCallStatus | null;
+  toolCall: ToolCall;
 }
 
 interface McpAppsSidebarProps {
@@ -21,8 +21,8 @@ interface McpAppsSidebarProps {
   onSelect: (itemIndex: number) => void;
 }
 
-const MIN_WIDTH = 200;
-const MAX_WIDTH = 480;
+const MIN_WIDTH = 280;
+const MAX_WIDTH = 720;
 
 export function McpAppsSidebar({ entries, onSelect }: McpAppsSidebarProps) {
   const width = useMcpAppsSidebarStore((s) => s.width);
@@ -117,12 +117,12 @@ export function McpAppsSidebar({ entries, onSelect }: McpAppsSidebarProps) {
               </Text>
             </Flex>
           ) : (
-            <Flex direction="column" className="py-1">
+            <Flex direction="column" gap="3" className="p-3">
               {entries.map((entry) => (
-                <McpAppRow
+                <McpAppCard
                   key={entry.toolCallId}
                   entry={entry}
-                  onClick={() => onSelect(entry.itemIndex)}
+                  onJump={() => onSelect(entry.itemIndex)}
                 />
               ))}
             </Flex>
@@ -133,32 +133,48 @@ export function McpAppsSidebar({ entries, onSelect }: McpAppsSidebarProps) {
   );
 }
 
-function McpAppRow({
+function McpAppCard({
   entry,
-  onClick,
+  onJump,
 }: {
   entry: McpAppEntry;
-  onClick: () => void;
+  onJump: () => void;
 }) {
   const label = entry.title?.trim() || entry.toolName || entry.fullToolName;
-  const subtitle = entry.inputPreview;
   return (
-    <Tooltip content={label} side="left" delayDuration={400}>
-      <button
-        type="button"
-        onClick={onClick}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-(--gray-12) text-[13px] transition-colors hover:bg-(--gray-3) focus:bg-(--gray-3) focus:outline-none"
+    <Box className="overflow-hidden rounded-(--radius-2) border border-(--gray-5) bg-(--gray-1)">
+      <Flex
+        align="center"
+        gap="2"
+        className="border-(--gray-5) border-b px-2 py-1.5"
       >
         <StatusDot status={entry.status ?? null} />
         <Flex direction="column" className="min-w-0 flex-1">
-          <Text className="truncate text-(--gray-12) text-[13px]">{label}</Text>
+          <Text className="truncate text-(--gray-12) text-[12px]">{label}</Text>
           <Text className="truncate text-(--gray-9) text-[11px]">
-            {entry.serverName}
-            {subtitle ? ` · ${subtitle}` : ""}
+            {entry.serverName} · {entry.toolName}
           </Text>
         </Flex>
-      </button>
-    </Tooltip>
+        <IconButton
+          size="1"
+          variant="ghost"
+          color="gray"
+          aria-label="Jump to in conversation"
+          title="Jump to in conversation"
+          onClick={onJump}
+        >
+          <ArrowSquareOut size={12} />
+        </IconButton>
+      </Flex>
+      <Box className="p-2">
+        <McpAppHost
+          toolCall={entry.toolCall}
+          mcpToolName={entry.fullToolName}
+          serverName={entry.serverName}
+          toolName={entry.toolName}
+        />
+      </Box>
+    </Box>
   );
 }
 
