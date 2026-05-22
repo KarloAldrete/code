@@ -12,8 +12,8 @@ import {
   showQuickEntryWindow,
 } from "../../window";
 import type { FoldersService } from "../folders/service";
-import type { UIService } from "../ui/service";
 import {
+  type CreateTaskRequest,
   QuickEntryServiceEvent,
   type QuickEntryServiceEvents,
   type RecentRepoEntry,
@@ -30,8 +30,6 @@ export class QuickEntryService extends TypedEventEmitter<QuickEntryServiceEvents
   private windowCreated = false;
 
   constructor(
-    @inject(MAIN_TOKENS.UIService)
-    private readonly uiService: UIService,
     @inject(MAIN_TOKENS.FoldersService)
     private readonly foldersService: FoldersService,
   ) {
@@ -87,12 +85,10 @@ export class QuickEntryService extends TypedEventEmitter<QuickEntryServiceEvents
     this.emit(QuickEntryServiceEvent.Hide, true);
   }
 
-  openTaskInMain(taskId: string): void {
+  requestCreateTask(request: CreateTaskRequest): void {
     this.hide();
     showAndFocusMainWindow();
-    if (taskId) {
-      this.uiService.openTask(taskId);
-    }
+    this.emit(QuickEntryServiceEvent.CreateTaskRequested, request);
   }
 
   async getRecentRepos(limit = 8): Promise<RecentRepoEntry[]> {

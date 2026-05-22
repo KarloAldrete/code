@@ -6,19 +6,22 @@ import { useSettingsDialogStore } from "@features/settings/stores/settingsDialog
 import { useSidebarData } from "@features/sidebar/hooks/useSidebarData";
 import { useVisualTaskOrder } from "@features/sidebar/hooks/useVisualTaskOrder";
 import { useSidebarStore } from "@features/sidebar/stores/sidebarStore";
-import { useCreateTask, useTasks } from "@features/tasks/hooks/useTasks";
+import { useTasks } from "@features/tasks/hooks/useTasks";
 import { useFocusWorkspace } from "@features/workspace/hooks/useFocusWorkspace";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
 import { SHORTCUTS } from "@renderer/constants/keyboard-shortcuts";
+import { get } from "@renderer/di/container";
+import { RENDERER_TOKENS } from "@renderer/di/tokens";
+import type { TaskService } from "@renderer/features/task-detail/service/service";
 import { useTRPC } from "@renderer/trpc";
-import type { Task } from "@shared/types";
+import type { ExecutionMode, Task } from "@shared/types";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useNavigationStore } from "@stores/navigationStore";
-import { useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { clearApplicationStorage } from "@utils/clearStorage";
 import { logger } from "@utils/logger";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "@utils/toast";
+import { useCallback, useEffect, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
 interface GlobalEventHandlersProps {
@@ -62,11 +65,6 @@ export function GlobalEventHandlers({
   const isWorktreeTask = currentWorkspace?.mode === "worktree";
 
   const { data: allTasks = [] } = useTasks();
-  const { invalidateTasks } = useCreateTask();
-  const queryClient = useQueryClient();
-  const [pendingOpenTaskId, setPendingOpenTaskId] = useState<string | null>(
-    null,
-  );
   const sidebarData = useSidebarData({ activeView: view });
   const visualTaskOrder = useVisualTaskOrder(sidebarData);
 
@@ -157,39 +155,58 @@ export function GlobalEventHandlers({
     log.info("Main access token invalidated for testing");
   }, []);
 
-  const handleOpenTask = useCallback(
-    (data?: unknown) => {
+  const handleCreateTaskFromQuickEntry = useCallback(
+    async (data?: unknown) => {
       if (!data || typeof data !== "object") return;
-      const { taskId } = data as { taskId?: string };
-      if (!taskId) return;
-      // The task may have been created in another window (e.g. quick-entry),
-      // so the main window's caches for workspaces and folders can be stale
-      // and miss the new workspace/folder. Invalidate before navigating.
-      void queryClient.invalidateQueries(
-        trpcReact.workspace.getAll.pathFilter(),
-      );
-      void queryClient.invalidateQueries(
-        trpcReact.folders.getFolders.pathFilter(),
-      );
-      const task = taskById.get(taskId);
-      if (task) {
-        navigateToTask(task);
-      } else {
-        setPendingOpenTaskId(taskId);
-        invalidateTasks();
+      const params = data as {
+        content: string;
+        repoPath: string;
+        workspaceMode: "local" | "worktree";
+        branch: string | null;
+        adapter: "claude" | "codex";
+        model: string | null;
+        reasoningLevel: string | null;
+        executionMode: string | null;
+      };
+      try {
+        const taskService = get<TaskService>(RENDERER_TOKENS.TaskService);
+        const result = await taskService.createTask(
+          {
+            content: params.content,
+            repoPath: params.repoPath,
+            workspaceMode: params.workspaceMode,
+            branch: params.branch,
+            adapter: params.adapter,
+            model: params.model ?? undefined,
+            reasoningLevel: params.reasoningLevel ?? undefined,
+            executionMode:
+              (params.executionMode as ExecutionMode | null) ?? undefined,
+          },
+          (output) => {
+            navigateToTask(output.task);
+          },
+        );
+
+        if (!result.success) {
+          const log = logger.scope("global-event-handlers");
+          log.error("Quick entry task creation failed", {
+            failedStep: result.failedStep,
+            error: result.error,
+          });
+          toast.error("Failed to create task", {
+            description: result.error,
+          });
+        }
+      } catch (err) {
+        const log = logger.scope("global-event-handlers");
+        log.error("Quick entry task creation threw", { err });
+        toast.error("Failed to create task", {
+          description: err instanceof Error ? err.message : String(err),
+        });
       }
     },
-    [taskById, navigateToTask, invalidateTasks, queryClient, trpcReact],
+    [navigateToTask],
   );
-
-  useEffect(() => {
-    if (!pendingOpenTaskId) return;
-    const task = taskById.get(pendingOpenTaskId);
-    if (task) {
-      navigateToTask(task);
-      setPendingOpenTaskId(null);
-    }
-  }, [pendingOpenTaskId, taskById, navigateToTask]);
 
   const globalOptions = {
     enableOnFormTags: true,
@@ -318,8 +335,8 @@ export function GlobalEventHandlers({
   );
 
   useSubscription(
-    trpcReact.ui.onOpenTask.subscriptionOptions(undefined, {
-      onData: handleOpenTask,
+    trpcReact.quickEntry.onCreateTaskRequested.subscriptionOptions(undefined, {
+      onData: handleCreateTaskFromQuickEntry,
     }),
   );
 

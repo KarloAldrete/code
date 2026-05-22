@@ -23,6 +23,17 @@ function subscribeToQuickEntryEvent<K extends keyof QuickEntryServiceEvents>(
   });
 }
 
+const createTaskRequestInput = z.object({
+  content: z.string(),
+  repoPath: z.string(),
+  workspaceMode: z.enum(["local", "worktree"]),
+  branch: z.string().nullable(),
+  adapter: z.enum(["claude", "codex"]),
+  model: z.string().nullable(),
+  reasoningLevel: z.string().nullable(),
+  executionMode: z.string().nullable(),
+});
+
 export const quickEntryRouter = router({
   toggle: publicProcedure.mutation(() => {
     getService().toggle();
@@ -36,10 +47,10 @@ export const quickEntryRouter = router({
     getService().hide();
   }),
 
-  openTaskInMain: publicProcedure
-    .input(z.object({ taskId: z.string() }))
+  requestCreateTask: publicProcedure
+    .input(createTaskRequestInput)
     .mutation(({ input }) => {
-      getService().openTaskInMain(input.taskId);
+      getService().requestCreateTask(input);
     }),
 
   getRecentRepos: publicProcedure
@@ -52,4 +63,7 @@ export const quickEntryRouter = router({
 
   onFocusInput: subscribeToQuickEntryEvent(QuickEntryServiceEvent.FocusInput),
   onHide: subscribeToQuickEntryEvent(QuickEntryServiceEvent.Hide),
+  onCreateTaskRequested: subscribeToQuickEntryEvent(
+    QuickEntryServiceEvent.CreateTaskRequested,
+  ),
 });

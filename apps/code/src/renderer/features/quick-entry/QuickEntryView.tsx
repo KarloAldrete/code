@@ -13,10 +13,7 @@ import { getCurrentModeFromConfigOptions } from "@features/sessions/stores/sessi
 import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { ButtonGroup } from "@posthog/quill";
 import { Flex, Text } from "@radix-ui/themes";
-import { get } from "@renderer/di/container";
-import { RENDERER_TOKENS } from "@renderer/di/tokens";
 import { usePreviewConfig } from "@renderer/features/task-detail/hooks/usePreviewConfig";
-import type { TaskService } from "@renderer/features/task-detail/service/service";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { logger } from "@utils/logger";
@@ -214,11 +211,9 @@ export function QuickEntryView() {
       const branchForTaskCreation =
         workspaceMode === "worktree" ? selectedBranch : null;
       const currentModel =
-        modelOption?.type === "select" ? modelOption.currentValue : undefined;
+        modelOption?.type === "select" ? modelOption.currentValue : null;
       const currentReasoningLevel =
-        thoughtOption?.type === "select"
-          ? thoughtOption.currentValue
-          : undefined;
+        thoughtOption?.type === "select" ? thoughtOption.currentValue : null;
       const adapterDefault = adapter === "codex" ? "auto" : "plan";
       const modeFallback =
         defaultInitialTaskMode === "last_used"
@@ -229,8 +224,9 @@ export function QuickEntryView() {
           modeOption ? [modeOption] : undefined,
         ) ?? modeFallback;
 
-      const taskService = get<TaskService>(RENDERER_TOKENS.TaskService);
-      const result = await taskService.createTask({
+      // Hand the request to the main window so it runs the task-creation
+      // saga in its own renderer context (session store, folder cache, etc.).
+      await trpcClient.quickEntry.requestCreateTask.mutate({
         content: xml,
         repoPath: selectedDirectory,
         workspaceMode,
@@ -241,18 +237,7 @@ export function QuickEntryView() {
         executionMode: currentExecutionMode,
       });
 
-      if (!result.success) {
-        setError(result.error ?? "Failed to create task");
-        log.error("Quick entry task creation failed", {
-          failedStep: result.failedStep,
-          error: result.error,
-        });
-        return;
-      }
-
-      const taskId = result.data.task.id;
       editor.clear();
-      await trpcClient.quickEntry.openTaskInMain.mutate({ taskId });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
