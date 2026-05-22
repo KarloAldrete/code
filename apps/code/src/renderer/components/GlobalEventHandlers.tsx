@@ -6,7 +6,7 @@ import { useSettingsDialogStore } from "@features/settings/stores/settingsDialog
 import { useSidebarData } from "@features/sidebar/hooks/useSidebarData";
 import { useVisualTaskOrder } from "@features/sidebar/hooks/useVisualTaskOrder";
 import { useSidebarStore } from "@features/sidebar/stores/sidebarStore";
-import { useTasks } from "@features/tasks/hooks/useTasks";
+import { useCreateTask, useTasks } from "@features/tasks/hooks/useTasks";
 import { useFocusWorkspace } from "@features/workspace/hooks/useFocusWorkspace";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
 import { SHORTCUTS } from "@renderer/constants/keyboard-shortcuts";
@@ -17,7 +17,7 @@ import { useNavigationStore } from "@stores/navigationStore";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { clearApplicationStorage } from "@utils/clearStorage";
 import { logger } from "@utils/logger";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
 interface GlobalEventHandlersProps {
@@ -61,6 +61,10 @@ export function GlobalEventHandlers({
   const isWorktreeTask = currentWorkspace?.mode === "worktree";
 
   const { data: allTasks = [] } = useTasks();
+  const { invalidateTasks } = useCreateTask();
+  const [pendingOpenTaskId, setPendingOpenTaskId] = useState<string | null>(
+    null,
+  );
   const sidebarData = useSidebarData({ activeView: view });
   const visualTaskOrder = useVisualTaskOrder(sidebarData);
 
@@ -159,10 +163,24 @@ export function GlobalEventHandlers({
       const task = taskById.get(taskId);
       if (task) {
         navigateToTask(task);
+      } else {
+        // Task was created in another window (e.g. quick-entry). Refetch the
+        // task list and navigate once it lands in the cache.
+        setPendingOpenTaskId(taskId);
+        invalidateTasks();
       }
     },
-    [taskById, navigateToTask],
+    [taskById, navigateToTask, invalidateTasks],
   );
+
+  useEffect(() => {
+    if (!pendingOpenTaskId) return;
+    const task = taskById.get(pendingOpenTaskId);
+    if (task) {
+      navigateToTask(task);
+      setPendingOpenTaskId(null);
+    }
+  }, [pendingOpenTaskId, taskById, navigateToTask]);
 
   const globalOptions = {
     enableOnFormTags: true,

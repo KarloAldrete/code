@@ -1,5 +1,7 @@
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
 import { FolderPicker } from "@features/folder-picker/components/FolderPicker";
+import { BranchSelector } from "@features/git-interaction/components/BranchSelector";
+import { useGitQueries } from "@features/git-interaction/hooks/useGitQueries";
 import { PromptInput } from "@features/message-editor/components/PromptInput";
 import { useDraftStore } from "@features/message-editor/stores/draftStore";
 import { useTaskInputHistoryStore } from "@features/message-editor/stores/taskInputHistoryStore";
@@ -34,9 +36,13 @@ export function QuickEntryView() {
   const trpcReact = useTRPC();
   const editorRef = useRef<EditorHandle | null>(null);
   const [selectedDirectory, setSelectedDirectory] = useState<string>("");
+  const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editorIsEmpty, setEditorIsEmpty] = useState(true);
+
+  const { currentBranch, branchLoading, defaultBranch, busyState } =
+    useGitQueries(selectedDirectory);
 
   const isAuthenticated = useAuthStateValue(
     (state) => state.status === "authenticated",
@@ -52,6 +58,13 @@ export function QuickEntryView() {
   } = useSettingsStore();
 
   const adapter = lastUsedAdapter ?? "claude";
+  // Cloud isn't supported from quick entry (no cloud repo picker here).
+  // Default to worktree so branch selection is meaningful; otherwise use
+  // the user's preferred local mode.
+  const effectiveWorkspaceMode: "worktree" | "local" =
+    lastUsedWorkspaceMode === "cloud"
+      ? "worktree"
+      : (lastUsedWorkspaceMode as "worktree" | "local");
 
   const {
     modeOption,
@@ -105,6 +118,21 @@ export function QuickEntryView() {
       },
     }),
   );
+
+  useSubscription(
+    trpcReact.quickEntry.onHide.subscriptionOptions(undefined, {
+      onData: () => {
+        editorRef.current?.clear();
+        setError(null);
+      },
+    }),
+  );
+
+  // Reset branch selection when the repo changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally only reset when repo changes
+  useEffect(() => {
+    setSelectedBranch(null);
+  }, [selectedDirectory]);
 
   useHotkeys(
     "escape",
@@ -182,8 +210,9 @@ export function QuickEntryView() {
     setIsSubmitting(true);
 
     try {
-      const workspaceMode =
-        lastUsedWorkspaceMode === "cloud" ? "local" : lastUsedWorkspaceMode;
+      const workspaceMode = effectiveWorkspaceMode;
+      const branchForTaskCreation =
+        workspaceMode === "worktree" ? selectedBranch : null;
       const currentModel =
         modelOption?.type === "select" ? modelOption.currentValue : undefined;
       const currentReasoningLevel =
@@ -205,6 +234,7 @@ export function QuickEntryView() {
         content: xml,
         repoPath: selectedDirectory,
         workspaceMode,
+        branch: branchForTaskCreation,
         adapter,
         model: currentModel,
         reasoningLevel: currentReasoningLevel,
@@ -233,9 +263,10 @@ export function QuickEntryView() {
   }, [
     isSubmitting,
     selectedDirectory,
+    selectedBranch,
     isAuthenticated,
     adapter,
-    lastUsedWorkspaceMode,
+    effectiveWorkspaceMode,
     modelOption,
     thoughtOption,
     modeOption,
@@ -259,7 +290,7 @@ export function QuickEntryView() {
   }
 
   return (
-    <div className="flex h-full w-full items-center justify-center p-3">
+    <div className="flex h-full w-full justify-center p-2">
       <div className="flex w-full flex-col gap-2">
         <Flex gap="2" align="center" className="min-w-0">
           <ButtonGroup>
@@ -267,6 +298,17 @@ export function QuickEntryView() {
               value={selectedDirectory}
               onChange={setSelectedDirectory}
               placeholder="Select repository..."
+            />
+            <BranchSelector
+              repoPath={selectedDirectory || null}
+              currentBranch={currentBranch}
+              defaultBranch={defaultBranch}
+              disabled={isSubmitting}
+              loading={branchLoading}
+              workspaceMode={effectiveWorkspaceMode}
+              selectedBranch={selectedBranch}
+              onBranchSelect={setSelectedBranch}
+              busyState={busyState}
             />
           </ButtonGroup>
         </Flex>
