@@ -56,7 +56,6 @@ export function TaskLogsPanel({ taskId, task, hideInput }: TaskLogsPanelProps) {
     isPromptPending,
     promptStartedAt,
     isInitializing,
-    isResumingExistingSession,
     cloudBranch,
     cloudStatus,
     errorTitle,
@@ -150,7 +149,6 @@ export function TaskLogsPanel({ taskId, task, hideInput }: TaskLogsPanelProps) {
               onRetry={handleRetry}
               onNewSession={isCloud ? undefined : handleNewSession}
               isInitializing={isInitializing}
-              isResumingExistingSession={isResumingExistingSession}
               isCloud={isCloud}
               cloudStatus={cloudStatus}
               slackThreadUrl={slackThreadUrl}

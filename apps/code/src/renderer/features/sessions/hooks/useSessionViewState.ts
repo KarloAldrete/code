@@ -62,7 +62,6 @@ export function useSessionViewState(taskId: string, task: Task) {
     isPromptPending,
     promptStartedAt,
     isInitializing,
-    isResumingExistingSession,
     cloudBranch,
     errorTitle: session?.errorTitle,
     errorMessage:
