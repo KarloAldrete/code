@@ -14,52 +14,75 @@ function task(id: string, overrides: StatusGroupableTask = {}): TestTask {
 }
 
 describe("groupByStatus", () => {
-  it("buckets tasks by their status into the expected groups", () => {
-    const tasks: TestTask[] = [
-      task("idle-1"),
-      task("idle-2", { taskRunStatus: "not_started" }),
-      task("active-1", { isGenerating: true }),
-      task("active-2", { taskRunStatus: "in_progress" }),
-      task("active-3", { taskRunStatus: "queued" }),
-      task("done-1", { taskRunStatus: "completed" }),
-      task("failed-1", { taskRunStatus: "failed" }),
-      task("failed-2", { taskRunStatus: "cancelled" }),
-      task("needs-1", { needsPermission: true }),
-    ];
-
-    const groups = groupByStatus(tasks);
-    const byId = new Map(groups.map((g) => [g.id, g] as const));
-
-    expect(byId.get(STATUS_GROUP_IDS.needsYou)?.tasks.map((t) => t.id)).toEqual(
-      ["needs-1"],
-    );
-    expect(byId.get(STATUS_GROUP_IDS.active)?.tasks.map((t) => t.id)).toEqual([
-      "active-1",
-      "active-2",
-      "active-3",
-    ]);
-    expect(byId.get(STATUS_GROUP_IDS.done)?.tasks.map((t) => t.id)).toEqual([
-      "done-1",
-    ]);
-    expect(byId.get(STATUS_GROUP_IDS.failed)?.tasks.map((t) => t.id)).toEqual([
-      "failed-1",
-      "failed-2",
-    ]);
-    expect(byId.get(STATUS_GROUP_IDS.idle)?.tasks.map((t) => t.id)).toEqual([
-      "idle-1",
-      "idle-2",
-    ]);
+  describe("bucket assignment", () => {
+    it.each<[string, StatusGroupableTask, string]>([
+      ["needsPermission", { needsPermission: true }, STATUS_GROUP_IDS.needsYou],
+      ["isGenerating", { isGenerating: true }, STATUS_GROUP_IDS.active],
+      [
+        "taskRunStatus=queued",
+        { taskRunStatus: "queued" },
+        STATUS_GROUP_IDS.active,
+      ],
+      [
+        "taskRunStatus=in_progress",
+        { taskRunStatus: "in_progress" },
+        STATUS_GROUP_IDS.active,
+      ],
+      [
+        "taskRunStatus=completed",
+        { taskRunStatus: "completed" },
+        STATUS_GROUP_IDS.done,
+      ],
+      [
+        "taskRunStatus=failed",
+        { taskRunStatus: "failed" },
+        STATUS_GROUP_IDS.failed,
+      ],
+      [
+        "taskRunStatus=cancelled",
+        { taskRunStatus: "cancelled" },
+        STATUS_GROUP_IDS.failed,
+      ],
+      [
+        "taskRunStatus=not_started",
+        { taskRunStatus: "not_started" },
+        STATUS_GROUP_IDS.idle,
+      ],
+      ["no signals", {}, STATUS_GROUP_IDS.idle],
+    ])("routes a task with %s to the %s bucket", (_label, props, expected) => {
+      const groups = groupByStatus([task("t", props)]);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].id).toBe(expected);
+      expect(groups[0].tasks.map((t) => t.id)).toEqual(["t"]);
+    });
   });
 
-  it("prefers 'Needs you' over 'Active' when both predicates match", () => {
-    const tasks: TestTask[] = [
-      task("both", { needsPermission: true, taskRunStatus: "in_progress" }),
-    ];
-
-    const groups = groupByStatus(tasks);
-    expect(groups).toHaveLength(1);
-    expect(groups[0].id).toBe(STATUS_GROUP_IDS.needsYou);
-    expect(groups[0].tasks).toHaveLength(1);
+  describe("predicate precedence", () => {
+    it.each<[string, StatusGroupableTask, string]>([
+      [
+        "needsPermission vs in_progress → needs-you",
+        { needsPermission: true, taskRunStatus: "in_progress" },
+        STATUS_GROUP_IDS.needsYou,
+      ],
+      [
+        "needsPermission vs isGenerating → needs-you",
+        { needsPermission: true, isGenerating: true },
+        STATUS_GROUP_IDS.needsYou,
+      ],
+      [
+        "needsPermission vs completed → needs-you",
+        { needsPermission: true, taskRunStatus: "completed" },
+        STATUS_GROUP_IDS.needsYou,
+      ],
+      [
+        "isGenerating vs completed → active",
+        { isGenerating: true, taskRunStatus: "completed" },
+        STATUS_GROUP_IDS.active,
+      ],
+    ])("resolves %s", (_label, props, expected) => {
+      const groups = groupByStatus([task("t", props)]);
+      expect(groups[0].id).toBe(expected);
+    });
   });
 
   it("returns groups in the fixed display order and omits empty buckets", () => {
@@ -81,13 +104,21 @@ describe("groupByStatus", () => {
     expect(groupByStatus([])).toEqual([]);
   });
 
-  it("preserves the input order of tasks within a bucket", () => {
-    const tasks: TestTask[] = [
-      task("a", { taskRunStatus: "completed" }),
-      task("b", { taskRunStatus: "completed" }),
-      task("c", { taskRunStatus: "completed" }),
-    ];
-    const groups = groupByStatus(tasks);
-    expect(groups[0].tasks.map((t) => t.id)).toEqual(["a", "b", "c"]);
+  describe("preserves input order within each bucket", () => {
+    it.each<[string, StatusGroupableTask]>([
+      ["needs-you", { needsPermission: true }],
+      ["active", { taskRunStatus: "in_progress" }],
+      ["done", { taskRunStatus: "completed" }],
+      ["failed", { taskRunStatus: "failed" }],
+      ["idle", {}],
+    ])("for the %s bucket", (_label, props) => {
+      const tasks: TestTask[] = [
+        task("a", props),
+        task("b", props),
+        task("c", props),
+      ];
+      const groups = groupByStatus(tasks);
+      expect(groups[0].tasks.map((t) => t.id)).toEqual(["a", "b", "c"]);
+    });
   });
 });

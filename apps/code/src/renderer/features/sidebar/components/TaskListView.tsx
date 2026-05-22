@@ -42,7 +42,8 @@ interface TaskListViewProps {
   statusGroupedTasks: StatusGroup[];
   activeTaskId: string | null;
   editingTaskId: string | null;
-  onTaskClick: (taskId: string) => void;
+  selectedTaskIds: string[];
+  onTaskClick: (taskId: string, e: React.MouseEvent) => void;
   onTaskDoubleClick: (taskId: string) => void;
   onTaskContextMenu: (
     taskId: string,
@@ -77,6 +78,8 @@ function SectionLabel({
 function TaskRow({
   task,
   isActive,
+  isSelected,
+  hideHoverActions,
   isEditing,
   onClick,
   onDoubleClick,
@@ -90,8 +93,10 @@ function TaskRow({
 }: {
   task: TaskData;
   isActive: boolean;
+  isSelected: boolean;
+  hideHoverActions: boolean;
   isEditing: boolean;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent) => void;
   onDoubleClick: () => void;
   onContextMenu: (e: React.MouseEvent, isPinned: boolean) => void;
   onArchive: () => void;
@@ -113,6 +118,8 @@ function TaskRow({
       taskId={task.id}
       label={task.title}
       isActive={isActive}
+      isSelected={isSelected}
+      hideHoverActions={hideHoverActions}
       isEditing={isEditing}
       workspaceMode={effectiveMode}
       worktreePath={workspace?.worktreePath ?? undefined}
@@ -257,6 +264,7 @@ export function TaskListView({
   statusGroupedTasks,
   activeTaskId,
   editingTaskId,
+  selectedTaskIds,
   onTaskClick,
   onTaskDoubleClick,
   onTaskContextMenu,
@@ -266,6 +274,11 @@ export function TaskListView({
   onTaskEditCancel,
   hasMore,
 }: TaskListViewProps) {
+  const selectedIdSet = useMemo(
+    () => new Set(selectedTaskIds),
+    [selectedTaskIds],
+  );
+  const hasMultiSelection = selectedTaskIds.length > 1;
   const organizeMode = useSidebarStore((state) => state.organizeMode);
   const sortMode = useSidebarStore((state) => state.sortMode);
   const collapsedSections = useSidebarStore((state) => state.collapsedSections);
@@ -318,29 +331,32 @@ export function TaskListView({
     return groups;
   }, [flatTasks, timestampKey]);
 
+  const renderTaskRow = (task: TaskData, opts?: { depth?: number }) => (
+    <TaskRow
+      key={task.id}
+      task={task}
+      isActive={activeTaskId === task.id}
+      isSelected={selectedIdSet.has(task.id)}
+      hideHoverActions={hasMultiSelection}
+      isEditing={editingTaskId === task.id}
+      onClick={(e) => onTaskClick(task.id, e)}
+      onDoubleClick={() => onTaskDoubleClick(task.id)}
+      onContextMenu={(e, isPinned) => onTaskContextMenu(task.id, e, isPinned)}
+      onArchive={() => onTaskArchive(task.id)}
+      onTogglePin={() => onTaskTogglePin(task.id)}
+      onEditSubmit={(newTitle) => onTaskEditSubmit(task.id, newTitle)}
+      onEditCancel={onTaskEditCancel}
+      timestamp={task[timestampKey]}
+      depth={opts?.depth ?? 0}
+    />
+  );
+
   return (
     <Flex direction="column">
       {pinnedTasks.length > 0 && (
         <>
           <SectionLabel label="Pinned" />
-          {pinnedTasks.map((task) => (
-            <TaskRow
-              key={task.id}
-              task={task}
-              isActive={activeTaskId === task.id}
-              isEditing={editingTaskId === task.id}
-              onClick={() => onTaskClick(task.id)}
-              onDoubleClick={() => onTaskDoubleClick(task.id)}
-              onContextMenu={(e, isPinned) =>
-                onTaskContextMenu(task.id, e, isPinned)
-              }
-              onArchive={() => onTaskArchive(task.id)}
-              onTogglePin={() => onTaskTogglePin(task.id)}
-              onEditSubmit={(newTitle) => onTaskEditSubmit(task.id, newTitle)}
-              onEditCancel={onTaskEditCancel}
-              timestamp={task[timestampKey]}
-            />
-          ))}
+          {pinnedTasks.map((task) => renderTaskRow(task))}
         </>
       )}
 
@@ -407,27 +423,7 @@ export function TaskListView({
                 addSpacingBefore={false}
                 tooltipContent={meta.description}
               >
-                {group.tasks.map((task) => (
-                  <TaskRow
-                    key={task.id}
-                    task={task}
-                    isActive={activeTaskId === task.id}
-                    isEditing={editingTaskId === task.id}
-                    onClick={() => onTaskClick(task.id)}
-                    onDoubleClick={() => onTaskDoubleClick(task.id)}
-                    onContextMenu={(e, isPinned) =>
-                      onTaskContextMenu(task.id, e, isPinned)
-                    }
-                    onArchive={() => onTaskArchive(task.id)}
-                    onTogglePin={() => onTaskTogglePin(task.id)}
-                    onEditSubmit={(newTitle) =>
-                      onTaskEditSubmit(task.id, newTitle)
-                    }
-                    onEditCancel={onTaskEditCancel}
-                    timestamp={task[timestampKey]}
-                    depth={1}
-                  />
-                ))}
+                {group.tasks.map((task) => renderTaskRow(task, { depth: 1 }))}
               </SidebarSection>
             );
           })}
@@ -476,27 +472,9 @@ export function TaskListView({
                     }}
                     newTaskTooltip={`Start new task in ${folder?.name ?? group.name}`}
                   >
-                    {group.tasks.map((task) => (
-                      <TaskRow
-                        key={task.id}
-                        task={task}
-                        isActive={activeTaskId === task.id}
-                        isEditing={editingTaskId === task.id}
-                        onClick={() => onTaskClick(task.id)}
-                        onDoubleClick={() => onTaskDoubleClick(task.id)}
-                        onContextMenu={(e, isPinned) =>
-                          onTaskContextMenu(task.id, e, isPinned)
-                        }
-                        onArchive={() => onTaskArchive(task.id)}
-                        onTogglePin={() => onTaskTogglePin(task.id)}
-                        onEditSubmit={(newTitle) =>
-                          onTaskEditSubmit(task.id, newTitle)
-                        }
-                        onEditCancel={onTaskEditCancel}
-                        timestamp={task[timestampKey]}
-                        depth={1}
-                      />
-                    ))}
+                    {group.tasks.map((task) =>
+                      renderTaskRow(task, { depth: 1 }),
+                    )}
                   </SidebarSection>
                 </DraggableFolder>
               );
@@ -508,26 +486,7 @@ export function TaskListView({
           {dateGroupedTasks.map((group, groupIndex) => (
             <Fragment key={`${group.label ?? "today"}-${groupIndex}`}>
               {group.label && <SectionLabel label={group.label} />}
-              {group.tasks.map((task) => (
-                <TaskRow
-                  key={task.id}
-                  task={task}
-                  isActive={activeTaskId === task.id}
-                  isEditing={editingTaskId === task.id}
-                  onClick={() => onTaskClick(task.id)}
-                  onDoubleClick={() => onTaskDoubleClick(task.id)}
-                  onContextMenu={(e, isPinned) =>
-                    onTaskContextMenu(task.id, e, isPinned)
-                  }
-                  onArchive={() => onTaskArchive(task.id)}
-                  onTogglePin={() => onTaskTogglePin(task.id)}
-                  onEditSubmit={(newTitle) =>
-                    onTaskEditSubmit(task.id, newTitle)
-                  }
-                  onEditCancel={onTaskEditCancel}
-                  timestamp={task[timestampKey]}
-                />
-              ))}
+              {group.tasks.map((task) => renderTaskRow(task))}
             </Fragment>
           ))}
           {hasMore && (
