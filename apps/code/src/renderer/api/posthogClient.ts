@@ -665,7 +665,7 @@ export class PostHogAPIClient {
         body: JSON.stringify({ next }),
       },
     });
-    if (!response.ok && response.status !== 204) {
+    if (!response.ok) {
       const err = (await response.json().catch(() => ({}))) as {
         detail?: unknown;
       };

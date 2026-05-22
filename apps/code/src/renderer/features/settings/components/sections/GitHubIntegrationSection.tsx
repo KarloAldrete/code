@@ -20,6 +20,7 @@ import { Button } from "@posthog/quill";
 import { Box, Flex, Spinner, Text, Tooltip } from "@radix-ui/themes";
 import { openUrlInBrowser } from "@utils/browser";
 import { useMemo } from "react";
+import { toast } from "sonner";
 
 /**
  * Past this count, the tooltip would become an unreadable wall of `owner/name`
@@ -73,11 +74,17 @@ export function GitHubIntegrationSection({
     const integration = githubIntegrations[0];
     if (!integration || projectId === null || !client) return;
     const installationId = resolveGithubInstallationId(integration);
-    if (!installationId) return;
+    if (!installationId) {
+      toast.error("Couldn't find GitHub installation details");
+      return;
+    }
     const nextPath = `/account-connected/github-integration?provider=github&project_id=${projectId}&connect_from=posthog_code`;
     try {
       await client.prepareGithubTeamIntegrationCallback(projectId, nextPath);
-    } catch {
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to open GitHub settings",
+      );
       return;
     }
     void openUrlInBrowser(

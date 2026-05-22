@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { Integration } from "../stores/integrationStore";
 import {
   githubInstallationSettingsUrl,
   resolveGithubInstallationId,
@@ -24,28 +25,31 @@ describe("githubInstallationSettingsUrl", () => {
 });
 
 describe("resolveGithubInstallationId", () => {
-  it("prefers top-level installation_id then id then config", () => {
-    expect(
-      resolveGithubInstallationId({
+  it.each([
+    [
+      "prefers top-level installation_id over integration_id and config",
+      {
         id: 99,
         kind: "github",
         installation_id: "a",
         config: { installation_id: "c" },
-      }),
-    ).toBe("a");
-    expect(
-      resolveGithubInstallationId({
-        id: 1,
-        kind: "github",
-        integration_id: 12345,
-      }),
-    ).toBe("12345");
-    expect(
-      resolveGithubInstallationId({
-        id: 1,
-        kind: "github",
-        config: { installation_id: "c" },
-      }),
-    ).toBe("c");
-  });
+      },
+      "a",
+    ],
+    [
+      "falls back to integration_id when installation_id is absent",
+      { id: 1, kind: "github", integration_id: 12345 },
+      "12345",
+    ],
+    [
+      "falls back to config.installation_id as last resort",
+      { id: 1, kind: "github", config: { installation_id: "c" } },
+      "c",
+    ],
+  ] satisfies [string, Integration, string][])(
+    "%s",
+    (_label, input, expected) => {
+      expect(resolveGithubInstallationId(input)).toBe(expected);
+    },
+  );
 });
