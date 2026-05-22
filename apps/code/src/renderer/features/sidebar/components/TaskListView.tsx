@@ -419,15 +419,12 @@ export function TaskListView({
                     addSpacingBefore={false}
                     tooltipContent={folder?.path ?? group.id}
                     onNewTask={() => {
-                      const target = getNewTaskTarget({
-                        groupFolderId,
-                        groupId: group.id,
-                      });
-                      if (target === undefined) {
-                        navigateToTaskInput();
-                      } else {
-                        navigateToTaskInput(target);
-                      }
+                      navigateToTaskInput(
+                        getNewTaskTarget({
+                          groupFolderId,
+                          groupId: group.id,
+                        }),
+                      );
                     }}
                     newTaskTooltip={`Start new task in ${folder?.name ?? group.name}`}
                   >
