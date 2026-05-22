@@ -9,6 +9,9 @@ import { logger } from "../../utils/logger";
 import { shutdownOtelTransport } from "../../utils/otel-log-transport";
 import { shutdownPostHog, trackAppEvent } from "../posthog-analytics";
 import type { ProcessTrackingService } from "../process-tracking/service";
+import type { FeedbackRoutingService } from "../rts/feedback-routing-service";
+import type { HedgehogTickService } from "../rts/hedgehog-tick-service";
+import type { PrGraphService } from "../rts/pr-graph-service";
 import type { SuspensionService } from "../suspension/service.js";
 import type { WatcherRegistryService } from "../watcher-registry/service";
 
@@ -108,6 +111,29 @@ export class AppLifecycleService {
       suspensionService.stopInactivityChecker();
     } catch (error) {
       log.warn("Failed to stop inactivity checker during shutdown", error);
+    }
+
+    // Stop the RTS polling services explicitly so their intervals and event
+    // subscriptions are torn down before container.unbindAll(). Otherwise a
+    // poll that fires mid-shutdown can hit unbound services and throw.
+    try {
+      container
+        .get<HedgehogTickService>(MAIN_TOKENS.HedgehogTickService)
+        .stop();
+    } catch (error) {
+      log.warn("Failed to stop hedgehog tick service during shutdown", error);
+    }
+    try {
+      container
+        .get<FeedbackRoutingService>(MAIN_TOKENS.FeedbackRoutingService)
+        .stop();
+    } catch (error) {
+      log.warn("Failed to stop feedback routing service during shutdown", error);
+    }
+    try {
+      container.get<PrGraphService>(MAIN_TOKENS.PrGraphService).stop();
+    } catch (error) {
+      log.warn("Failed to stop PR graph service during shutdown", error);
     }
 
     try {

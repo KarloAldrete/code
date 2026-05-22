@@ -168,26 +168,23 @@ async function initializeServices(): Promise<void> {
   );
   suspensionService.startInactivityChecker();
 
-  // Boot the per-nest hedgehog scheduler. The service is inert when there are
-  // no active nests, so this is safe even when the Rts flag is off.
+  // The three RTS polling services below start unconditionally. They are
+  // inert-by-design when no work exists: each `runPoll`/`runHeartbeat` opens
+  // with an early return if the relevant table is empty (no active nests, no
+  // pending PR edges, no hoglets). Steady-state cost when `rts-enabled` is
+  // off and the user never opens RTS mode: ~3 indexed SELECTs per minute, no
+  // cloud calls. Lifecycle: stopped explicitly in AppLifecycleService.doShutdown
+  // before container.unbindAll() so intervals + event listeners drain cleanly.
   const hedgehogTickService = container.get<HedgehogTickService>(
     MAIN_TOKENS.HedgehogTickService,
   );
   hedgehogTickService.start();
 
-  // Boot the feedback router. Polls each hoglet's PR for new review comments
-  // and CI failures; emits `injectPrompt` events consumed by a renderer hook
-  // for those external feedback paths. Hedgehog-originated messages are
-  // delivered directly from main to cloud runs.
   const feedbackRoutingService = container.get<FeedbackRoutingService>(
     MAIN_TOKENS.FeedbackRoutingService,
   );
   feedbackRoutingService.start();
 
-  // Boot the PR-graph poller. Polls each `pending` edge's parent PR; when the
-  // parent merges, emits a `rebaseChild` event the renderer hook routes to the
-  // child hoglet's live session (or spawns a follow-up). Inert until edges
-  // exist — safe regardless of feature flag.
   const prGraphService = container.get<PrGraphService>(
     MAIN_TOKENS.PrGraphService,
   );
