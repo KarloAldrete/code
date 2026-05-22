@@ -1,0 +1,368 @@
+import { useInboxReportSelectionStore } from "@features/inbox/stores/inboxReportSelectionStore";
+import type { SignalReport } from "@shared/types";
+import { act, renderHook } from "@testing-library/react";
+import { beforeEach, describe, expect, it } from "vitest";
+import { useInboxKeyboardNavigation } from "./useInboxKeyboardNavigation";
+
+function makeReport(id: string): SignalReport {
+  return {
+    id,
+    title: id,
+    summary: null,
+    status: "potential",
+    total_weight: 0,
+    signal_count: 0,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    artefact_count: 0,
+  };
+}
+
+const REPORTS: SignalReport[] = ["a", "b", "c", "d", "e"].map(makeReport);
+
+function getSelection() {
+  return useInboxReportSelectionStore.getState().selectedReportIds;
+}
+
+function getLastClicked() {
+  return useInboxReportSelectionStore.getState().lastClickedId;
+}
+
+/** Mimic InboxSignalsTab.handleReportClick — plain click. */
+function plainClick(id: string) {
+  act(() => {
+    useInboxReportSelectionStore.getState().setSelectedReportIds([id]);
+  });
+}
+
+/** Mimic InboxSignalsTab.handleReportClick — cmd-click. */
+function cmdClick(id: string) {
+  act(() => {
+    useInboxReportSelectionStore.getState().toggleReportSelection(id);
+  });
+}
+
+/** Mimic InboxSignalsTab.handleReportClick — shift-click. */
+function shiftClick(id: string, reports: SignalReport[] = REPORTS) {
+  act(() => {
+    useInboxReportSelectionStore.getState().selectRange(
+      id,
+      reports.map((r) => r.id),
+    );
+  });
+}
+
+describe("useInboxKeyboardNavigation", () => {
+  beforeEach(() => {
+    useInboxReportSelectionStore.setState({
+      selectedReportIds: [],
+      lastClickedId: null,
+    });
+  });
+
+  describe("arrow navigation from an empty selection", () => {
+    it("ArrowDown selects the first report", () => {
+      const { result } = renderHook(() =>
+        useInboxKeyboardNavigation({ reports: REPORTS }),
+      );
+
+      act(() => {
+        result.current.navigateReport(1, false);
+      });
+
+      expect(getSelection()).toEqual(["a"]);
+    });
+
+    it("ArrowUp also selects the first report when nothing is selected", () => {
+      const { result } = renderHook(() =>
+        useInboxKeyboardNavigation({ reports: REPORTS }),
+      );
+
+      act(() => {
+        result.current.navigateReport(-1, false);
+      });
+
+      expect(getSelection()).toEqual(["a"]);
+    });
+
+    it("returns null when the list is empty", () => {
+      const { result } = renderHook(() =>
+        useInboxKeyboardNavigation({ reports: [] }),
+      );
+
+      let nextId: string | null = "unset";
+      act(() => {
+        nextId = result.current.navigateReport(1, false);
+      });
+
+      expect(nextId).toBeNull();
+      expect(getSelection()).toEqual([]);
+    });
+  });
+
+  describe("arrow navigation after a click (regression for cursor drift)", () => {
+    it("ArrowDown after clicking a report selects the next report below it", () => {
+      const { result } = renderHook(() =>
+        useInboxKeyboardNavigation({ reports: REPORTS }),
+      );
+
+      // Walk the cursor down to "d" via the keyboard.
+      act(() => {
+        result.current.navigateReport(1, false); // a
+        result.current.navigateReport(1, false); // b
+        result.current.navigateReport(1, false); // c
+        result.current.navigateReport(1, false); // d
+      });
+      expect(getSelection()).toEqual(["d"]);
+
+      // Now click report "b" — this is the scenario from the bug report.
+      plainClick("b");
+      expect(getSelection()).toEqual(["b"]);
+
+      // ArrowDown should land on "c" (neighbour of the clicked report),
+      // NOT on "e" (where the keyboard cursor previously left off).
+      act(() => {
+        result.current.navigateReport(1, false);
+      });
+
+      expect(getSelection()).toEqual(["c"]);
+    });
+
+    it("ArrowUp after clicking a report selects the previous report above it", () => {
+      const { result } = renderHook(() =>
+        useInboxKeyboardNavigation({ reports: REPORTS }),
+      );
+
+      // Drift the keyboard cursor first.
+      act(() => {
+        result.current.navigateReport(1, false); // a
+        result.current.navigateReport(1, false); // b
+      });
+
+      // Click somewhere else.
+      plainClick("d");
+
+      act(() => {
+        result.current.navigateReport(-1, false);
+      });
+
+      expect(getSelection()).toEqual(["c"]);
+    });
+
+    it("ArrowDown after cmd-clicking a new report continues from the cmd-clicked id", () => {
+      const { result } = renderHook(() =>
+        useInboxKeyboardNavigation({ reports: REPORTS }),
+      );
+
+      // Keyboard-select "a".
+      act(() => {
+        result.current.navigateReport(1, false);
+      });
+      expect(getSelection()).toEqual(["a"]);
+
+      // Cmd-click "c" — extends the selection AND moves the click anchor to "c".
+      cmdClick("c");
+      expect(getSelection()).toEqual(["a", "c"]);
+      expect(getLastClicked()).toBe("c");
+
+      // ArrowDown should navigate from "c" (the cmd-clicked id), not from "a".
+      act(() => {
+        result.current.navigateReport(1, false);
+      });
+
+      expect(getSelection()).toEqual(["d"]);
+    });
+
+    it("ArrowDown after shift-clicking continues from the shift-clicked id", () => {
+      const { result } = renderHook(() =>
+        useInboxKeyboardNavigation({ reports: REPORTS }),
+      );
+
+      // Plain-click "a" to set an anchor.
+      plainClick("a");
+
+      // Shift-click "c" — selects range a..c, anchor moves to c.
+      shiftClick("c");
+      expect(getSelection()).toEqual(["a", "b", "c"]);
+      expect(getLastClicked()).toBe("c");
+
+      // ArrowDown should navigate from "c".
+      act(() => {
+        result.current.navigateReport(1, false);
+      });
+
+      expect(getSelection()).toEqual(["d"]);
+    });
+
+    it("ArrowDown after clearing selection starts from the top", () => {
+      const { result } = renderHook(() =>
+        useInboxKeyboardNavigation({ reports: REPORTS }),
+      );
+
+      act(() => {
+        result.current.navigateReport(1, false); // a
+        result.current.navigateReport(1, false); // b
+      });
+      act(() => {
+        useInboxReportSelectionStore.getState().clearSelection();
+      });
+
+      act(() => {
+        result.current.navigateReport(1, false);
+      });
+
+      expect(getSelection()).toEqual(["a"]);
+    });
+  });
+
+  describe("arrow navigation bounds", () => {
+    it("ArrowDown on the last report stays on the last report", () => {
+      const { result } = renderHook(() =>
+        useInboxKeyboardNavigation({ reports: REPORTS }),
+      );
+
+      plainClick("e");
+
+      act(() => {
+        result.current.navigateReport(1, false);
+      });
+
+      expect(getSelection()).toEqual(["e"]);
+    });
+
+    it("ArrowUp on the first report stays on the first report", () => {
+      const { result } = renderHook(() =>
+        useInboxKeyboardNavigation({ reports: REPORTS }),
+      );
+
+      plainClick("a");
+
+      act(() => {
+        result.current.navigateReport(-1, false);
+      });
+
+      expect(getSelection()).toEqual(["a"]);
+    });
+  });
+
+  describe("shift+arrow range extension", () => {
+    it("shift+ArrowDown after clicking extends a range from the clicked report", () => {
+      const { result } = renderHook(() =>
+        useInboxKeyboardNavigation({ reports: REPORTS }),
+      );
+
+      plainClick("b");
+
+      act(() => {
+        result.current.navigateReport(1, true);
+      });
+
+      expect(getSelection()).toEqual(["b", "c"]);
+      // Anchor stays put even as the cursor walks.
+      expect(getLastClicked()).toBe("b");
+    });
+
+    it("shift+ArrowDown walks the cursor without disturbing the anchor", () => {
+      const { result } = renderHook(() =>
+        useInboxKeyboardNavigation({ reports: REPORTS }),
+      );
+
+      plainClick("b");
+
+      act(() => {
+        result.current.navigateReport(1, true);
+        result.current.navigateReport(1, true);
+        result.current.navigateReport(1, true);
+      });
+
+      expect(getSelection()).toEqual(["b", "c", "d", "e"]);
+      expect(getLastClicked()).toBe("b");
+    });
+
+    it("shift+ArrowUp contracts a range when reversing direction", () => {
+      const { result } = renderHook(() =>
+        useInboxKeyboardNavigation({ reports: REPORTS }),
+      );
+
+      plainClick("b");
+
+      act(() => {
+        result.current.navigateReport(1, true); // b..c
+        result.current.navigateReport(1, true); // b..d
+        result.current.navigateReport(-1, true); // b..c
+      });
+
+      expect(getSelection()).toEqual(["b", "c"]);
+    });
+
+    it("plain arrow after shift+arrow restarts navigation from the cursor", () => {
+      const { result } = renderHook(() =>
+        useInboxKeyboardNavigation({ reports: REPORTS }),
+      );
+
+      plainClick("b");
+      act(() => {
+        result.current.navigateReport(1, true); // b..c, cursor=c
+        result.current.navigateReport(1, true); // b..d, cursor=d
+      });
+      expect(getSelection()).toEqual(["b", "c", "d"]);
+
+      // Plain ArrowDown — selection collapses to the next item after the cursor.
+      act(() => {
+        result.current.navigateReport(1, false);
+      });
+
+      expect(getSelection()).toEqual(["e"]);
+    });
+
+    it("click after shift+arrow re-seats the cursor at the clicked report", () => {
+      const { result } = renderHook(() =>
+        useInboxKeyboardNavigation({ reports: REPORTS }),
+      );
+
+      plainClick("b");
+      act(() => {
+        result.current.navigateReport(1, true); // cursor=c
+        result.current.navigateReport(1, true); // cursor=d
+      });
+
+      // Click "a" — the cursor should re-seat there.
+      plainClick("a");
+
+      act(() => {
+        result.current.navigateReport(1, false);
+      });
+
+      expect(getSelection()).toEqual(["b"]);
+    });
+  });
+
+  describe("multiple hook instances share cursor via the store", () => {
+    it("a click registered between mounts of two hooks moves the cursor consistently", () => {
+      // First hook walks the cursor, then unmounts.
+      const first = renderHook(() =>
+        useInboxKeyboardNavigation({ reports: REPORTS }),
+      );
+      act(() => {
+        first.result.current.navigateReport(1, false); // a
+        first.result.current.navigateReport(1, false); // b
+        first.result.current.navigateReport(1, false); // c
+      });
+      first.unmount();
+
+      // Click somewhere else, then mount a new hook (e.g., tab re-mount).
+      plainClick("a");
+
+      const second = renderHook(() =>
+        useInboxKeyboardNavigation({ reports: REPORTS }),
+      );
+
+      // The new hook should pick up the clicked id as its cursor seed.
+      act(() => {
+        second.result.current.navigateReport(1, false);
+      });
+
+      expect(getSelection()).toEqual(["b"]);
+    });
+  });
+});

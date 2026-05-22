@@ -14,6 +14,7 @@ import {
 } from "@features/inbox/hooks/useInboxBulkActions";
 import { useInboxDeepLinkListSync } from "@features/inbox/hooks/useInboxDeepLinkListSync";
 import { useInboxEngagementTracker } from "@features/inbox/hooks/useInboxEngagementTracker";
+import { useInboxKeyboardNavigation } from "@features/inbox/hooks/useInboxKeyboardNavigation";
 import {
   useInboxAvailableSuggestedReviewers,
   useInboxReportsInfinite,
@@ -235,9 +236,6 @@ export function InboxSignalsTab() {
     (s) => s.toggleReportSelection,
   );
   const selectRange = useInboxReportSelectionStore((s) => s.selectRange);
-  const selectExactRange = useInboxReportSelectionStore(
-    (s) => s.selectExactRange,
-  );
   const clearSelection = useInboxReportSelectionStore((s) => s.clearSelection);
 
   const [dismissReport, setDismissReport] = useState<SignalReport | null>(null);
@@ -577,52 +575,12 @@ export function InboxSignalsTab() {
     }
   }, [focusListPane, showTwoPaneLayout]);
 
-  // Tracks the cursor position for keyboard navigation (the "moving end" of
-  // Shift+Arrow selection). Separated from `lastClickedId` which acts as the
-  // anchor so that the anchor stays fixed while the cursor extends the range.
-  const keyboardCursorIdRef = useRef<string | null>(null);
+  const { navigateReport } = useInboxKeyboardNavigation({ reports });
 
-  const navigateReport = useCallback(
+  const handleNavigate = useCallback(
     (direction: 1 | -1, shift: boolean) => {
-      const list = reportsRef.current;
-      if (list.length === 0) return;
-
-      // Determine cursor position — the item to navigate away from
-      const cursorId =
-        keyboardCursorIdRef.current ??
-        (selectedReportIdsRef.current.length > 0
-          ? selectedReportIdsRef.current[
-              selectedReportIdsRef.current.length - 1
-            ]
-          : null);
-      const cursorIndex = cursorId
-        ? list.findIndex((r) => r.id === cursorId)
-        : -1;
-      const nextIndex =
-        cursorIndex === -1
-          ? 0
-          : Math.max(0, Math.min(list.length - 1, cursorIndex + direction));
-      const nextId = list[nextIndex].id;
-
-      if (shift) {
-        // Anchor is the store's lastClickedId — the point where shift-selection started.
-        // selectExactRange replaces the selection with the exact range from anchor to cursor,
-        // so reversing direction correctly contracts the selection.
-        const anchor =
-          useInboxReportSelectionStore.getState().lastClickedId ?? nextId;
-        setPendingInboxOpenMethod("keyboard");
-        selectExactRange(
-          anchor,
-          nextId,
-          list.map((r) => r.id),
-        );
-        keyboardCursorIdRef.current = nextId;
-      } else {
-        setPendingInboxOpenMethod("keyboard");
-        setSelectedReportIds([nextId]);
-        keyboardCursorIdRef.current = nextId;
-      }
-
+      const nextId = navigateReport(direction, shift);
+      if (!nextId) return;
       const container = leftPaneRef.current;
       const row = container?.querySelector<HTMLElement>(
         `[data-report-id="${nextId}"]`,
@@ -630,14 +588,12 @@ export function InboxSignalsTab() {
       const stickyHeader = container?.querySelector<HTMLElement>(
         "[data-inbox-sticky-header]",
       );
-
       if (!row) return;
-
       const stickyHeaderHeight = stickyHeader?.offsetHeight ?? 0;
       row.style.scrollMarginTop = `${stickyHeaderHeight}px`;
       row.scrollIntoView({ block: "nearest" });
     },
-    [setSelectedReportIds, selectExactRange],
+    [navigateReport],
   );
 
   // Window-level keyboard handler so arrow keys work regardless of which
@@ -658,10 +614,10 @@ export function InboxSignalsTab() {
 
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        navigateReport(1, e.shiftKey);
+        handleNavigate(1, e.shiftKey);
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
-        navigateReport(-1, e.shiftKey);
+        handleNavigate(-1, e.shiftKey);
       } else if (
         e.key === "Escape" &&
         selectedReportIdsRef.current.length > 0
@@ -672,7 +628,7 @@ export function InboxSignalsTab() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [navigateReport, clearSelection]);
+  }, [handleNavigate, clearSelection]);
 
   const searchDisabledReason =
     !hasReports && !searchQuery.trim()
