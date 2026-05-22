@@ -70,13 +70,14 @@ function makeAgent(): Agent {
 function installFakeSession(
   agent: Agent,
   sessionId: string,
-  overrides: Partial<{ modelId: string }> = {},
+  overrides: Partial<{ modelId: string; localToolsMcpServer: unknown }> = {},
 ) {
   const oldQuery = makeQueryHandle();
   const input = new Pushable();
   const endSpy = vi.spyOn(input, "end");
   const abortController = new AbortController();
 
+  const localToolsMcpServer = overrides.localToolsMcpServer;
   const session = {
     query: oldQuery,
     queryOptions: {
@@ -105,6 +106,7 @@ function installFakeSession(
     notificationHistory: [{ foo: "bar" }],
     taskRunId: "run-1",
     modelId: overrides.modelId,
+    localToolsMcpServer,
   } as unknown as Parameters<typeof Object.assign>[0];
 
   (agent as unknown as { session: unknown }).session = session;
@@ -276,6 +278,43 @@ describe("ClaudeAcpAgent.extMethod refresh_session", () => {
     expect(lastQueryCall.options?.abortController).toBe(
       updated.abortController,
     );
+  });
+
+  it("re-attaches the in-process posthog-local MCP server", async () => {
+    const agent = makeAgent();
+    const localServer = {
+      type: "sdk",
+      name: "posthog-local",
+      instance: { fakeServer: true },
+    };
+    installFakeSession(agent, "s-local-tools", {
+      localToolsMcpServer: localServer,
+    });
+
+    await agent.extMethod(POSTHOG_METHODS.REFRESH_SESSION, {
+      mcpServers: freshMcpServers,
+    });
+
+    expect(lastQueryCall.options?.mcpServers).toMatchObject({
+      posthog: { type: "http", url: "https://fresh" },
+      "posthog-local": localServer,
+    });
+  });
+
+  it("omits posthog-local when none was registered at session creation", async () => {
+    const agent = makeAgent();
+    installFakeSession(agent, "s-no-local-tools");
+
+    await agent.extMethod(POSTHOG_METHODS.REFRESH_SESSION, {
+      mcpServers: freshMcpServers,
+    });
+
+    const servers = lastQueryCall.options?.mcpServers as Record<
+      string,
+      unknown
+    >;
+    expect(servers).toBeDefined();
+    expect(servers["posthog-local"]).toBeUndefined();
   });
 
   it("re-fetches MCP tool metadata for the new query", async () => {

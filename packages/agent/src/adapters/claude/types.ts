@@ -4,6 +4,7 @@ import type {
   TerminalOutputResponse,
 } from "@agentclientprotocol/sdk";
 import type {
+  McpSdkServerConfigWithInstance,
   Options,
   Query,
   SDKUserMessage,
@@ -65,6 +66,13 @@ export type Session = BaseSession & {
   pendingMessages: Map<string, PendingMessage>;
   nextPendingOrder: number;
   emitRawSDKMessages: boolean | SDKMessageFilter[];
+  /**
+   * In-process MCP server hosting PostHog-local tools (e.g. `git_signed_commit`).
+   * Stashed here so `refreshSession` can re-merge it into the rebuilt options —
+   * otherwise the cloud agent-server's pre-prompt TTL refresh would drop it and
+   * the model would lose access to tools registered at session creation.
+   */
+  localToolsMcpServer?: McpSdkServerConfigWithInstance;
 };
 
 export type ToolUseCache = {

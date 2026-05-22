@@ -889,12 +889,19 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     // Reuse every option from the running session; swap mcpServers, re-root
     // identity on `resume` instead of `sessionId`, and give the new Query a
-    // fresh AbortController.
+    // fresh AbortController. Re-attach the in-process local-tools MCP server —
+    // `mcpServers` from the caller only carries external servers, so without
+    // this the rebuilt session would lose `git_signed_commit` and any future
+    // local tools.
     const newAbortController = new AbortController();
     const { sessionId: _drop, ...rest } = prev.queryOptions;
+    const mergedMcpServers: Record<string, McpServerConfig> = { ...mcpServers };
+    if (prev.localToolsMcpServer) {
+      mergedMcpServers[LOCAL_TOOLS_MCP_NAME] = prev.localToolsMcpServer;
+    }
     const newOptions: Options = {
       ...rest,
-      mcpServers,
+      mcpServers: mergedMcpServers,
       resume: this.sessionId,
       forkSession: false,
       abortController: newAbortController,
@@ -1226,6 +1233,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       cwd,
       notificationHistory: [],
       taskRunId: meta?.taskRunId,
+      localToolsMcpServer: localToolsServer,
     };
     this.session = session;
     this.sessionId = sessionId;
