@@ -6,15 +6,48 @@ import { useMeQuery } from "@hooks/useMeQuery";
 import type { Schemas } from "@renderer/api/generated";
 import { useFocusStore } from "@renderer/stores/focusStore";
 import { useNavigationStore } from "@renderer/stores/navigationStore";
+import { useRendererWindowFocusStore } from "@renderer/stores/rendererWindowFocusStore";
 import { trpcClient } from "@renderer/trpc/client";
 import type { Task } from "@shared/types";
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { logger } from "@utils/logger";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 const log = logger.scope("tasks");
 
-const TASK_LIST_POLL_INTERVAL_MS = 30_000;
+// Polling resets to MIN on focus return, doubles toward MAX while focused, and
+// pauses entirely while blurred. The 5-minute global staleTime means
+// refetchOnWindowFocus is unreliable for surfacing tasks created elsewhere
+// (e.g. on mobile), so we drive the refresh on focus explicitly.
+export const TASK_LIST_POLL_MIN_MS = 30_000;
+export const TASK_LIST_POLL_MAX_MS = 3 * 60_000;
+
+function useAdaptiveTaskListPolling(
+  queryKey: readonly unknown[],
+): () => number | false {
+  const focused = useRendererWindowFocusStore((s) => s.focused);
+  const queryClient = useQueryClient();
+  const intervalRef = useRef(TASK_LIST_POLL_MIN_MS);
+  const previousFocusedRef = useRef(focused);
+  const queryKeyRef = useRef(queryKey);
+  queryKeyRef.current = queryKey;
+
+  useEffect(() => {
+    const wasFocused = previousFocusedRef.current;
+    previousFocusedRef.current = focused;
+    if (focused && !wasFocused) {
+      intervalRef.current = TASK_LIST_POLL_MIN_MS;
+      queryClient.invalidateQueries({ queryKey: queryKeyRef.current });
+    }
+  }, [focused, queryClient]);
+
+  return useCallback((): number | false => {
+    if (!focused) return false;
+    const next = intervalRef.current;
+    intervalRef.current = Math.min(next * 2, TASK_LIST_POLL_MAX_MS);
+    return next;
+  }, [focused]);
+}
 
 const taskKeys = {
   all: ["tasks"] as const,
@@ -43,8 +76,15 @@ export function useTasks(
   const createdBy = filters?.showAllUsers ? undefined : currentUser?.id;
   const internal = filters?.showInternal ? true : undefined;
 
+  const queryKey = taskKeys.list({
+    repository: filters?.repository,
+    createdBy,
+    internal,
+  });
+  const refetchInterval = useAdaptiveTaskListPolling(queryKey);
+
   return useAuthenticatedQuery(
-    taskKeys.list({ repository: filters?.repository, createdBy, internal }),
+    queryKey,
     (client) =>
       client.getTasks({
         repository: filters?.repository,
@@ -53,7 +93,8 @@ export function useTasks(
       }) as unknown as Promise<Task[]>,
     {
       enabled: (options?.enabled ?? true) && !!currentUser?.id,
-      refetchInterval: TASK_LIST_POLL_INTERVAL_MS,
+      refetchInterval,
+      refetchIntervalInBackground: false,
     },
   );
 }
@@ -62,12 +103,16 @@ export function useTaskSummaries(
   ids: string[],
   options?: { enabled?: boolean },
 ) {
+  const queryKey = taskKeys.summaries(ids);
+  const refetchInterval = useAdaptiveTaskListPolling(queryKey);
+
   return useAuthenticatedQuery<Schemas.TaskSummary[]>(
-    taskKeys.summaries(ids),
+    queryKey,
     (client) => client.getTaskSummaries(ids),
     {
       enabled: (options?.enabled ?? true) && ids.length > 0,
-      refetchInterval: TASK_LIST_POLL_INTERVAL_MS,
+      refetchInterval,
+      refetchIntervalInBackground: false,
       placeholderData: keepPreviousData,
     },
   );
@@ -82,8 +127,11 @@ export function useSlackTasks(options?: {
   showInternal?: boolean;
 }) {
   const internal = options?.showInternal ? true : undefined;
+  const queryKey = taskKeys.list({ originProduct: "slack", internal });
+  const refetchInterval = useAdaptiveTaskListPolling(queryKey);
+
   return useAuthenticatedQuery<Task[]>(
-    taskKeys.list({ originProduct: "slack", internal }),
+    queryKey,
     (client) =>
       client.getTasks({
         originProduct: "slack",
@@ -91,7 +139,8 @@ export function useSlackTasks(options?: {
       }) as unknown as Promise<Task[]>,
     {
       enabled: options?.enabled ?? true,
-      refetchInterval: TASK_LIST_POLL_INTERVAL_MS,
+      refetchInterval,
+      refetchIntervalInBackground: false,
     },
   );
 }
