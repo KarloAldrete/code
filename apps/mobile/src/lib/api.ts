@@ -60,7 +60,7 @@ export function createTimeoutSignal(ms: number): AbortSignal {
 export async function registerPushToken(args: {
   token: string;
   platform: string;
-}): Promise<void> {
+}): Promise<{ id: string }> {
   const baseUrl = getBaseUrl();
   const headers = getHeaders();
 
@@ -85,6 +85,12 @@ export async function registerPushToken(args: {
       `registerPushToken failed: ${response.status} ${response.statusText} — ${body.slice(0, 200)}`,
     );
   }
+
+  // The `id` is the UserPushToken UUID, used as `device_id` for the task
+  // presence beacon. Returning a sentinel rather than throwing on a missing
+  // field — older server versions don't return the body shape.
+  const body = (await response.json().catch(() => ({}))) as { id?: string };
+  return { id: typeof body.id === "string" ? body.id : "" };
 }
 
 export async function deletePushToken(args: { token: string }): Promise<void> {

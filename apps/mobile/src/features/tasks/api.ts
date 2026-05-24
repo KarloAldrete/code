@@ -178,6 +178,68 @@ export async function getTask(taskId: string): Promise<Task> {
   return await parseJsonResponse<Task>(response);
 }
 
+/**
+ * Claim presence on a task for this device. The server suppresses push
+ * notifications about this task to any device with a non-expired presence
+ * row (TTL ~60s) — so we keep posting on a 30s cadence while the user is
+ * actively viewing the task.
+ *
+ * `deviceId` is the UUID returned by `registerPushToken` (the
+ * `UserPushToken.id` row on the server). Failures are non-fatal: this is
+ * notification routing, not core functionality.
+ */
+export async function postTaskPresence(
+  taskId: string,
+  deviceId: string,
+): Promise<void> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/presence/`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ device_id: deviceId }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to claim task presence",
+    );
+  }
+}
+
+export async function deleteTaskPresence(
+  taskId: string,
+  deviceId: string,
+): Promise<void> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+  const headers = getHeaders();
+
+  const response = await fetch(
+    `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/presence/`,
+    {
+      method: "DELETE",
+      headers,
+      body: JSON.stringify({ device_id: deviceId }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to release task presence",
+    );
+  }
+}
+
 export async function getTaskAutomations(): Promise<TaskAutomation[]> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();

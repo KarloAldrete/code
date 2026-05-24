@@ -31,6 +31,7 @@ import {
   type ReasoningEffort,
 } from "@/features/tasks/composer/options";
 import { TaskChatComposer } from "@/features/tasks/composer/TaskChatComposer";
+import { useTaskPresence } from "@/features/tasks/hooks/useTaskPresence";
 import { taskKeys } from "@/features/tasks/hooks/useTasks";
 import { useTaskSessionStore } from "@/features/tasks/stores/taskSessionStore";
 import { useTaskStore } from "@/features/tasks/stores/taskStore";
@@ -76,6 +77,12 @@ export default function TaskDetailScreen() {
     getSessionForTask,
     setFocusedTaskId,
   } = useTaskSessionStore();
+
+  // Beacon presence to the server while this screen is open + foregrounded.
+  // The server suppresses push notifications about this task to other
+  // registered devices for the same user — kills the "desktop is open, mobile
+  // still rings" noise.
+  useTaskPresence(taskId);
 
   useEffect(() => {
     if (!taskId) return;

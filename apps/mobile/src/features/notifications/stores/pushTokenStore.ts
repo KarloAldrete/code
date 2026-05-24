@@ -9,10 +9,15 @@ const log = logger.scope("push-token-store");
 
 const TOKEN_KEY = "posthog_expo_push_token";
 const LAST_UPLOADED_KEY = "posthog_expo_push_token_uploaded";
+// Server-side `UserPushToken.id` (UUID). Used as the `device_id` for the
+// task presence beacon — the server resolves it back to the user's token row
+// so we don't have to invent our own opaque identifier.
+const DEVICE_ID_KEY = "posthog_push_token_device_id";
 
 interface PushTokenState {
   expoPushToken: string | null;
   lastUploadedToken: string | null;
+  deviceId: string | null;
   isHydrated: boolean;
 
   hydrate: () => Promise<void>;
@@ -44,15 +49,17 @@ async function writeSecure(key: string, value: string | null): Promise<void> {
 export const usePushTokenStore = create<PushTokenState>((set, get) => ({
   expoPushToken: null,
   lastUploadedToken: null,
+  deviceId: null,
   isHydrated: false,
 
   hydrate: async () => {
     if (get().isHydrated) return;
-    const [expoPushToken, lastUploadedToken] = await Promise.all([
+    const [expoPushToken, lastUploadedToken, deviceId] = await Promise.all([
       readSecure(TOKEN_KEY),
       readSecure(LAST_UPLOADED_KEY),
+      readSecure(DEVICE_ID_KEY),
     ]);
-    set({ expoPushToken, lastUploadedToken, isHydrated: true });
+    set({ expoPushToken, lastUploadedToken, deviceId, isHydrated: true });
   },
 
   registerAndUpload: async () => {
@@ -66,12 +73,16 @@ export const usePushTokenStore = create<PushTokenState>((set, get) => ({
       set({ expoPushToken: token });
     }
 
-    if (token === get().lastUploadedToken) return;
+    if (token === get().lastUploadedToken && get().deviceId) return;
 
     try {
-      await registerPushToken({ token, platform: Platform.OS });
+      const { id } = await registerPushToken({ token, platform: Platform.OS });
       await writeSecure(LAST_UPLOADED_KEY, token);
-      set({ lastUploadedToken: token });
+      const nextDeviceId = id || null;
+      if (nextDeviceId !== get().deviceId) {
+        await writeSecure(DEVICE_ID_KEY, nextDeviceId);
+      }
+      set({ lastUploadedToken: token, deviceId: nextDeviceId });
     } catch (err) {
       // Surface as warn so a misconfigured OAuth scope or backend regression
       // doesn't fail silently — push notifications won't work until this row
@@ -94,7 +105,8 @@ export const usePushTokenStore = create<PushTokenState>((set, get) => ({
     await Promise.all([
       writeSecure(TOKEN_KEY, null),
       writeSecure(LAST_UPLOADED_KEY, null),
+      writeSecure(DEVICE_ID_KEY, null),
     ]);
-    set({ expoPushToken: null, lastUploadedToken: null });
+    set({ expoPushToken: null, lastUploadedToken: null, deviceId: null });
   },
 }));
