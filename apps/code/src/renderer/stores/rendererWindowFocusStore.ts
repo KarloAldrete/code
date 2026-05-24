@@ -11,9 +11,22 @@ function computeWindowFocused(): boolean {
   return document.visibilityState === "visible" && document.hasFocus();
 }
 
-export const useRendererWindowFocusStore = create<{ focused: boolean }>(() => ({
-  focused: typeof document !== "undefined" ? computeWindowFocused() : false,
-}));
+interface RendererWindowFocusState {
+  focused: boolean;
+  // Timestamp (ms) of the most recent unfocused→focused transition. Pollers
+  // use this to ramp polling back up after the user returns, then back off.
+  focusedAt: number | null;
+}
+
+const initialFocused =
+  typeof document !== "undefined" ? computeWindowFocused() : false;
+
+export const useRendererWindowFocusStore = create<RendererWindowFocusState>(
+  () => ({
+    focused: initialFocused,
+    focusedAt: initialFocused ? Date.now() : null,
+  }),
+);
 
 let listenersAttached = false;
 
@@ -24,7 +37,13 @@ function ensureWindowFocusListeners(): void {
   listenersAttached = true;
 
   const sync = (): void => {
-    useRendererWindowFocusStore.setState({ focused: computeWindowFocused() });
+    const focused = computeWindowFocused();
+    const prev = useRendererWindowFocusStore.getState().focused;
+    if (focused === prev) return;
+    useRendererWindowFocusStore.setState({
+      focused,
+      focusedAt: focused ? Date.now() : null,
+    });
   };
 
   window.addEventListener("focus", sync);

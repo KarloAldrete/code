@@ -15,7 +15,27 @@ import { useCallback } from "react";
 
 const log = logger.scope("tasks");
 
-const TASK_LIST_POLL_INTERVAL_MS = 3 * 60_000;
+// Poll fast right after focus, then back off to 3 min. Tier thresholds are
+// the cumulative elapsed time at which each tier finishes one tick, so each
+// tier fires roughly once before promoting to the next.
+const TASK_LIST_POLL_MAX_MS = 3 * 60_000;
+
+function taskListPollInterval(elapsedSinceFocusMs: number): number {
+  if (elapsedSinceFocusMs < 30_000) return 30_000;
+  if (elapsedSinceFocusMs < 90_000) return 60_000;
+  if (elapsedSinceFocusMs < 210_000) return 120_000;
+  return TASK_LIST_POLL_MAX_MS;
+}
+
+function useTaskListRefetchInterval(): () => number | false {
+  const focused = useRendererWindowFocusStore((s) => s.focused);
+  return useCallback(() => {
+    if (!focused) return false;
+    const focusedAt = useRendererWindowFocusStore.getState().focusedAt;
+    if (focusedAt == null) return false;
+    return taskListPollInterval(Date.now() - focusedAt);
+  }, [focused]);
+}
 
 const taskKeys = {
   all: ["tasks"] as const,
@@ -43,7 +63,7 @@ export function useTasks(
   const { data: currentUser } = useMeQuery();
   const createdBy = filters?.showAllUsers ? undefined : currentUser?.id;
   const internal = filters?.showInternal ? true : undefined;
-  const windowFocused = useRendererWindowFocusStore((s) => s.focused);
+  const refetchInterval = useTaskListRefetchInterval();
 
   return useAuthenticatedQuery(
     taskKeys.list({ repository: filters?.repository, createdBy, internal }),
@@ -55,7 +75,11 @@ export function useTasks(
       }) as unknown as Promise<Task[]>,
     {
       enabled: (options?.enabled ?? true) && !!currentUser?.id,
-      refetchInterval: windowFocused ? TASK_LIST_POLL_INTERVAL_MS : false,
+      refetchInterval,
+      // The global staleTime is 5 min, so the default `true` would skip the
+      // on-focus refetch when returning within that window — exactly the case
+      // we care about (laptop opened after a short walk). Force the refetch.
+      refetchOnWindowFocus: "always",
     },
   );
 }
@@ -64,13 +88,14 @@ export function useTaskSummaries(
   ids: string[],
   options?: { enabled?: boolean },
 ) {
-  const windowFocused = useRendererWindowFocusStore((s) => s.focused);
+  const refetchInterval = useTaskListRefetchInterval();
   return useAuthenticatedQuery<Schemas.TaskSummary[]>(
     taskKeys.summaries(ids),
     (client) => client.getTaskSummaries(ids),
     {
       enabled: (options?.enabled ?? true) && ids.length > 0,
-      refetchInterval: windowFocused ? TASK_LIST_POLL_INTERVAL_MS : false,
+      refetchInterval,
+      refetchOnWindowFocus: "always",
       placeholderData: keepPreviousData,
     },
   );
@@ -85,7 +110,7 @@ export function useSlackTasks(options?: {
   showInternal?: boolean;
 }) {
   const internal = options?.showInternal ? true : undefined;
-  const windowFocused = useRendererWindowFocusStore((s) => s.focused);
+  const refetchInterval = useTaskListRefetchInterval();
   return useAuthenticatedQuery<Task[]>(
     taskKeys.list({ originProduct: "slack", internal }),
     (client) =>
@@ -95,7 +120,8 @@ export function useSlackTasks(options?: {
       }) as unknown as Promise<Task[]>,
     {
       enabled: options?.enabled ?? true,
-      refetchInterval: windowFocused ? TASK_LIST_POLL_INTERVAL_MS : false,
+      refetchInterval,
+      refetchOnWindowFocus: "always",
     },
   );
 }
