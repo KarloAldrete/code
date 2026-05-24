@@ -2,7 +2,8 @@ import { create } from "zustand";
 
 /**
  * True when the renderer document is visible and the window has OS focus.
- * Used to pause inbox polling when the Electron window is in the background.
+ * Used to pause polling-style queries (inbox, task list, etc.) when the
+ * Electron window is in the background.
  */
 function computeWindowFocused(): boolean {
   if (typeof document === "undefined") {
