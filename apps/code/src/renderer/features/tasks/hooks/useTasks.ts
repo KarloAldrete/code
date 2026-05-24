@@ -1,4 +1,5 @@
 import { pinnedTasksApi } from "@features/sidebar/hooks/usePinnedTasks";
+import { taskListPollInterval } from "@features/tasks/utils/taskListPollInterval";
 import { workspaceApi } from "@features/workspace/hooks/useWorkspace";
 import { useAuthenticatedMutation } from "@hooks/useAuthenticatedMutation";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
@@ -14,18 +15,6 @@ import { logger } from "@utils/logger";
 import { useCallback } from "react";
 
 const log = logger.scope("tasks");
-
-// Poll fast right after focus, then back off to 3 min. Tier thresholds are
-// the cumulative elapsed time at which each tier finishes one tick, so each
-// tier fires roughly once before promoting to the next.
-const TASK_LIST_POLL_MAX_MS = 3 * 60_000;
-
-function taskListPollInterval(elapsedSinceFocusMs: number): number {
-  if (elapsedSinceFocusMs < 30_000) return 30_000;
-  if (elapsedSinceFocusMs < 90_000) return 60_000;
-  if (elapsedSinceFocusMs < 210_000) return 120_000;
-  return TASK_LIST_POLL_MAX_MS;
-}
 
 function useTaskListRefetchInterval(): () => number | false {
   const focused = useRendererWindowFocusStore((s) => s.focused);
