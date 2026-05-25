@@ -22,6 +22,7 @@ import {
 } from "@features/inbox/hooks/useInboxReports";
 import { useSignalSourceConfigs } from "@features/inbox/hooks/useSignalSourceConfigs";
 import { useInboxReportSelectionStore } from "@features/inbox/stores/inboxReportSelectionStore";
+import { useInboxSignalsBoardDetailStore } from "@features/inbox/stores/inboxSignalsBoardDetailStore";
 import { useInboxSignalsFilterStore } from "@features/inbox/stores/inboxSignalsFilterStore";
 import { useInboxSignalsSidebarStore } from "@features/inbox/stores/inboxSignalsSidebarStore";
 import { useInboxSourcesDialogStore } from "@features/inbox/stores/inboxSourcesDialogStore";
@@ -446,6 +447,56 @@ export function InboxSignalsTab() {
     };
   }, [sidebarIsResizing, setSidebarWidth, setSidebarIsResizing]);
 
+  // ── Board-mode detail pane resize ──────────────────────────────────────
+  const boardDetailWidth = useInboxSignalsBoardDetailStore((s) => s.width);
+  const boardDetailIsResizing = useInboxSignalsBoardDetailStore(
+    (s) => s.isResizing,
+  );
+  const setBoardDetailWidth = useInboxSignalsBoardDetailStore(
+    (s) => s.setWidth,
+  );
+  const setBoardDetailIsResizing = useInboxSignalsBoardDetailStore(
+    (s) => s.setIsResizing,
+  );
+  const boardContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleBoardDetailResizeMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      setBoardDetailIsResizing(true);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [setBoardDetailIsResizing],
+  );
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!boardDetailIsResizing || !boardContainerRef.current) return;
+      const rect = boardContainerRef.current.getBoundingClientRect();
+      const containerWidth = rect.width;
+      const maxWidth = Math.max(420, containerWidth * 0.7);
+      const newWidth = Math.max(
+        420,
+        Math.min(maxWidth, rect.right - e.clientX),
+      );
+      setBoardDetailWidth(newWidth);
+    };
+    const handleMouseUp = () => {
+      if (boardDetailIsResizing) {
+        setBoardDetailIsResizing(false);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      }
+    };
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [boardDetailIsResizing, setBoardDetailWidth, setBoardDetailIsResizing]);
+
   // ── Discovered-task suggestions (rendered inline at top of list) ───────
   const discoveredTasks = useSetupStore((s) => s.discoveredTasks);
   const hasDiscoveredTasks = discoveredTasks.length > 0;
@@ -743,7 +794,7 @@ export function InboxSignalsTab() {
             <Box className="shrink-0 border-b border-b-(--gray-5) bg-(--color-background)">
               {toolbar}
             </Box>
-            <Flex className="min-h-0 flex-1">
+            <Flex ref={boardContainerRef} className="min-h-0 flex-1">
               <Box className="min-w-0 flex-1 overflow-hidden">
                 <InboxBoardView
                   reports={reports}
@@ -765,8 +816,13 @@ export function InboxSignalsTab() {
               {hasDetailSelection ? (
                 <Flex
                   direction="column"
-                  className="@container relative h-full w-[480px] shrink-0 border-l border-l-(--gray-5)"
+                  className="@container relative h-full shrink-0 border-l border-l-(--gray-5)"
+                  style={{ width: `${boardDetailWidth}px` }}
                 >
+                  <Box
+                    onMouseDown={handleBoardDetailResizeMouseDown}
+                    className="no-drag absolute top-0 bottom-0 left-0 z-10 w-[4px] cursor-col-resize bg-transparent"
+                  />
                   {detailPaneContent}
                 </Flex>
               ) : null}

@@ -11,7 +11,7 @@ import {
   FileTextIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
-import { Box, Button, Flex, ScrollArea, Text, Tooltip } from "@radix-ui/themes";
+import { Box, Button, Flex, Text, Tooltip } from "@radix-ui/themes";
 import type { SignalReport, SignalReportStatus } from "@shared/types";
 import { motion } from "framer-motion";
 import {
@@ -156,10 +156,10 @@ function BoardLoadMoreTrigger({
   if (!hasNextPage && !isFetchingNextPage) return null;
 
   return (
-    <Flex ref={ref} align="center" justify="center" py="3">
+    <Flex ref={ref} align="center" justify="center" className="px-2 py-2">
       {isFetchingNextPage ? (
-        <Text color="gray" className="text-[12px]">
-          Loading more...
+        <Text color="gray" className="text-[11px]">
+          Loading more…
         </Text>
       ) : null}
     </Flex>
@@ -174,6 +174,7 @@ interface InboxBoardColumnProps {
     id: string,
     event: { metaKey: boolean; shiftKey: boolean },
   ) => void;
+  loadMoreTrigger: React.ReactNode | null;
 }
 
 function InboxBoardColumn({
@@ -181,6 +182,7 @@ function InboxBoardColumn({
   reports,
   selectedIdSet,
   onReportClick,
+  loadMoreTrigger,
 }: InboxBoardColumnProps) {
   const accent = inboxStatusAccentCss(status);
   const label = inboxStatusLabel(status);
@@ -188,7 +190,7 @@ function InboxBoardColumn({
   return (
     <Flex
       direction="column"
-      className="h-full w-[300px] shrink-0 rounded-(--radius-3) border border-(--gray-5) bg-(--gray-2)"
+      className="h-full w-[300px] shrink-0 overflow-hidden rounded-(--radius-3) border border-(--gray-5) bg-(--gray-2)"
     >
       <Flex
         align="center"
@@ -210,7 +212,7 @@ function InboxBoardColumn({
         </Text>
       </Flex>
 
-      <ScrollArea type="auto" className="min-h-0 flex-1">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <Flex direction="column" gap="2" className="p-2">
           {reports.length === 0 ? (
             <Flex
@@ -233,8 +235,9 @@ function InboxBoardColumn({
               />
             ))
           )}
+          {loadMoreTrigger}
         </Flex>
-      </ScrollArea>
+      </div>
     </Flex>
   );
 }
@@ -301,16 +304,30 @@ export function InboxBoardView({
     [selectedReportIds],
   );
 
+  const longestColumnStatus = useMemo<SignalReportStatus | null>(() => {
+    let best: SignalReportStatus | null = null;
+    let bestLen = -1;
+    for (const [status, list] of reportsByStatus) {
+      if (list.length > bestLen) {
+        best = status;
+        bestLen = list.length;
+      }
+    }
+    return best;
+  }, [reportsByStatus]);
+
   if (isLoading && allReports.length === 0 && hasSignalSources) {
     return (
-      <Flex gap="3" className="h-full p-3">
-        {visibleStatuses.map((status) => (
-          <Box
-            key={status}
-            className="w-[300px] shrink-0 animate-pulse rounded-(--radius-3) bg-(--gray-3)"
-          />
-        ))}
-      </Flex>
+      <div className="h-full overflow-hidden p-3">
+        <Flex gap="3" className="h-full">
+          {visibleStatuses.map((status) => (
+            <Box
+              key={status}
+              className="w-[300px] shrink-0 animate-pulse rounded-(--radius-3) bg-(--gray-3)"
+            />
+          ))}
+        </Flex>
+      </div>
     );
   }
 
@@ -361,29 +378,27 @@ export function InboxBoardView({
   }
 
   return (
-    <Flex direction="column" className="h-full min-h-0">
-      <ScrollArea
-        type="auto"
-        scrollbars="horizontal"
-        className="min-h-0 flex-1"
-      >
-        <Flex gap="3" className="h-full p-3">
-          {visibleStatuses.map((status) => (
-            <InboxBoardColumn
-              key={status}
-              status={status}
-              reports={reportsByStatus.get(status) ?? []}
-              selectedIdSet={selectedIdSet}
-              onReportClick={onReportClick}
-            />
-          ))}
-        </Flex>
-      </ScrollArea>
-      <BoardLoadMoreTrigger
-        hasNextPage={hasNextPage}
-        isFetchingNextPage={isFetchingNextPage}
-        fetchNextPage={fetchNextPage}
-      />
-    </Flex>
+    <div className="h-full min-h-0 overflow-x-auto overflow-y-hidden">
+      <Flex gap="3" className="h-full w-max min-w-full p-3">
+        {visibleStatuses.map((status) => (
+          <InboxBoardColumn
+            key={status}
+            status={status}
+            reports={reportsByStatus.get(status) ?? []}
+            selectedIdSet={selectedIdSet}
+            onReportClick={onReportClick}
+            loadMoreTrigger={
+              status === longestColumnStatus ? (
+                <BoardLoadMoreTrigger
+                  hasNextPage={hasNextPage}
+                  isFetchingNextPage={isFetchingNextPage}
+                  fetchNextPage={fetchNextPage}
+                />
+              ) : null
+            }
+          />
+        ))}
+      </Flex>
+    </div>
   );
 }
