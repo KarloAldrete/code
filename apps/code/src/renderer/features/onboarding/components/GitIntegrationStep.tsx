@@ -82,7 +82,7 @@ export function GitIntegrationStep({
   isDetectingRepo,
   onDirectoryChange,
 }: GitIntegrationStepProps) {
-  const currentProjectId = useAuthStateValue((state) => state.projectId);
+  const currentProjectId = useAuthStateValue((state) => state.currentProjectId);
   const selectProjectMutation = useSelectProjectMutation();
 
   const queryClient = useQueryClient();

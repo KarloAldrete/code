@@ -11,7 +11,7 @@ import { openUrlInBrowser } from "@utils/browser";
 import { getPostHogUrl } from "@utils/urls";
 
 export function SlackSettings() {
-  const projectId = useAuthStateValue((s) => s.projectId);
+  const projectId = useAuthStateValue((s) => s.currentProjectId);
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const { isLoading } = useIntegrations();
   const { slackIntegrations, hasSlackIntegration } = useIntegrationSelectors();
