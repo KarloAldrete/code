@@ -68,6 +68,11 @@ import { Pushable } from "../../utils/streams";
 import { BaseAcpAgent } from "../base-acp-agent";
 import { LOCAL_TOOLS_MCP_NAME } from "../local-tools";
 import { resolveTaskId } from "../session-meta";
+import {
+  buildBreakdown,
+  emptyBaseline,
+  estimateSystemPrompt,
+} from "./context-breakdown";
 import { promptToClaude } from "./conversion/acp-to-sdk";
 import {
   handleResultMessage,
@@ -556,6 +561,14 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               });
             }
 
+            // Sum the result's own input categories rather than reusing
+            // `lastAssistantTotalUsage` (which is the streamed delta from the
+            // outermost model only). For subagent turns the two can diverge;
+            // the breakdown is indicative either way.
+            const breakdownInputTokens =
+              (message.usage.input_tokens ?? 0) +
+              (message.usage.cache_read_input_tokens ?? 0) +
+              (message.usage.cache_creation_input_tokens ?? 0);
             await this.client.extNotification(
               POSTHOG_NOTIFICATIONS.USAGE_UPDATE,
               {
@@ -567,6 +580,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                   cachedWriteTokens: message.usage.cache_creation_input_tokens,
                 },
                 cost: message.total_cost_usd,
+                breakdown: buildBreakdown(
+                  this.session.contextBreakdownBaseline ?? emptyBaseline(),
+                  breakdownInputTokens,
+                ),
               },
             );
 
@@ -1221,6 +1238,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       pendingMessages: new Map(),
       nextPendingOrder: 0,
       emitRawSDKMessages: meta?.claudeCode?.emitRawSDKMessages ?? false,
+      contextBreakdownBaseline: {
+        ...emptyBaseline(),
+        systemPrompt: estimateSystemPrompt(systemPrompt),
+      },
 
       // Custom properties
       cwd,
