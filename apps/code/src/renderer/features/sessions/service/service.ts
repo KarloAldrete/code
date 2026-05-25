@@ -1141,6 +1141,7 @@ export class SessionService {
   private updatePromptStateFromEvents(
     taskRunId: string,
     events: AcpMessage[],
+    { isLive = false }: { isLive?: boolean } = {},
   ): void {
     for (const acpMsg of events) {
       const msg = acpMsg.message;
@@ -1192,6 +1193,17 @@ export class SessionService {
             promptStartedAt: null,
             currentPromptId: null,
           });
+          if (isLive) {
+            // Queued messages will start a new turn — suppress the "done" notification in that case.
+            if (session.messageQueue.length === 0) {
+              notifyPromptComplete(
+                session.taskTitle,
+                "end_turn",
+                session.taskId,
+              );
+            }
+            taskViewedApi.markActivity(session.taskId);
+          }
         }
       }
       // Lifecycle handshake from the agent — flip status to "connected"
@@ -1277,7 +1289,7 @@ export class SessionService {
     } else {
       sessionStoreSetters.appendEvents(taskRunId, [acpMsg]);
     }
-    this.updatePromptStateFromEvents(taskRunId, [acpMsg]);
+    this.updatePromptStateFromEvents(taskRunId, [acpMsg], { isLive: true });
 
     const msg = acpMsg.message;
 
@@ -3525,7 +3537,9 @@ export class SessionService {
           sessionStoreSetters.clearTailOptimisticItems(taskRunId);
         }
         sessionStoreSetters.appendEvents(taskRunId, newEvents, expectedCount);
-        this.updatePromptStateFromEvents(taskRunId, newEvents);
+        this.updatePromptStateFromEvents(taskRunId, newEvents, {
+          isLive: true,
+        });
       } else {
         this.reconcileCloudLogGap({
           taskId: update.taskId,
