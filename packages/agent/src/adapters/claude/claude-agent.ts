@@ -496,6 +496,28 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               (message as Record<string, unknown>).state === "idle"
             ) {
               if (!promptReplayed) {
+                // The SDK consumed a slash command we do not handle locally
+                // and produced no output (e.g. /plugin in a non-interactive
+                // context). Without this branch we would loop forever waiting
+                // for an echo that never comes; surface a clear error instead.
+                if (commandMatch && !isLocalOnlyCommand) {
+                  const cmd = commandMatch[1];
+                  this.logger.warn(
+                    "Slash command produced no output; treating as unsupported",
+                    { sessionId: params.sessionId, command: cmd },
+                  );
+                  await this.client.sessionUpdate({
+                    sessionId: params.sessionId,
+                    update: {
+                      sessionUpdate: "agent_message_chunk",
+                      content: {
+                        type: "text",
+                        text: `Unsupported slash command: \`${cmd}\`. PostHog Code does not implement this command.`,
+                      },
+                    },
+                  });
+                  return { stopReason: "end_turn" };
+                }
                 this.logger.debug("Skipping idle state before prompt replay", {
                   sessionId: params.sessionId,
                 });
