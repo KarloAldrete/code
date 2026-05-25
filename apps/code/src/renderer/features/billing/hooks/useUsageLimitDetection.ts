@@ -5,7 +5,7 @@ import { useEffect, useRef } from "react";
 import { useFreeUsage } from "./useFreeUsage";
 
 export function useUsageLimitDetection(billingEnabled: boolean) {
-  const usage = useFreeUsage(billingEnabled);
+  const { usage } = useFreeUsage(billingEnabled);
   const hasAlertedRef = useRef(false);
 
   useEffect(() => {
