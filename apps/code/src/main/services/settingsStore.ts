@@ -11,6 +11,7 @@ interface SettingsSchema {
   autoSuspendEnabled: boolean;
   maxActiveWorktrees: number;
   autoSuspendAfterDays: number;
+  quickEntryEnabled: boolean;
 }
 
 function getDefaultWorktreeLocation(): string {
@@ -84,6 +85,10 @@ const schema = {
     minimum: 1,
     maximum: 365,
   },
+  quickEntryEnabled: {
+    type: "boolean" as const,
+    default: true,
+  },
 };
 
 export const settingsStore = new Store<SettingsSchema>({
@@ -96,6 +101,7 @@ export const settingsStore = new Store<SettingsSchema>({
     autoSuspendEnabled: true,
     maxActiveWorktrees: 5,
     autoSuspendAfterDays: 7,
+    quickEntryEnabled: true,
   },
 });
 

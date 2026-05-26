@@ -1,17 +1,20 @@
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
-import { logger } from "../../utils/logger";
-import { TypedEventEmitter } from "../../utils/typed-event-emitter";
 import {
   createQuickEntryWindow,
   destroyQuickEntryWindow,
   hideQuickEntryWindow,
   isQuickEntryWindowFocused,
   isQuickEntryWindowVisible,
-  showAndFocusMainWindow,
+  registerQuickEntryShortcut,
   showQuickEntryWindow,
-} from "../../window";
+  unregisterQuickEntryShortcut,
+} from "../../quick-entry-window";
+import { logger } from "../../utils/logger";
+import { TypedEventEmitter } from "../../utils/typed-event-emitter";
+import { showAndFocusMainWindow } from "../../window";
 import type { FoldersService } from "../folders/service";
+import { settingsStore } from "../settingsStore";
 import {
   type CreateTaskRequest,
   QuickEntryServiceEvent,
@@ -27,12 +30,14 @@ const SHOW_GRACE_MS = 200;
 @injectable()
 export class QuickEntryService extends TypedEventEmitter<QuickEntryServiceEvents> {
   private suppressBlurHide = false;
+  private enabled: boolean;
 
   constructor(
     @inject(MAIN_TOKENS.FoldersService)
     private readonly foldersService: FoldersService,
   ) {
     super();
+    this.enabled = settingsStore.get("quickEntryEnabled", true);
   }
 
   // Idempotent: window.ts guards against double-creation, and if the window
@@ -43,8 +48,36 @@ export class QuickEntryService extends TypedEventEmitter<QuickEntryServiceEvents
     });
   }
 
-  createWindow(): void {
+  initialize(): void {
     this.ensureWindow();
+    if (this.enabled) {
+      registerQuickEntryShortcut(() => this.safeToggle());
+    }
+  }
+
+  getEnabled(): boolean {
+    return this.enabled;
+  }
+
+  setEnabled(enabled: boolean): void {
+    if (this.enabled === enabled) return;
+    log.info("setEnabled", { enabled });
+    this.enabled = enabled;
+    settingsStore.set("quickEntryEnabled", enabled);
+    if (enabled) {
+      registerQuickEntryShortcut(() => this.safeToggle());
+    } else {
+      unregisterQuickEntryShortcut();
+      this.hide();
+    }
+  }
+
+  private safeToggle(): void {
+    try {
+      this.toggle();
+    } catch (err) {
+      log.error("Quick entry toggle failed", err);
+    }
   }
 
   private handleBlur(): void {

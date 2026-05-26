@@ -236,24 +236,9 @@ app.whenReady().then(async () => {
 
 function initializeQuickEntry(): void {
   try {
-    const service = container.get<QuickEntryService>(
-      MAIN_TOKENS.QuickEntryService,
-    );
-    service.createWindow();
-
-    const accelerator = "Alt+Space";
-    const ok = globalShortcut.register(accelerator, () => {
-      try {
-        service.toggle();
-      } catch (err) {
-        log.error("Quick entry toggle failed", err);
-      }
-    });
-    if (!ok) {
-      log.warn(`Failed to register global shortcut: ${accelerator}`);
-    } else {
-      log.info(`Registered quick-entry global shortcut: ${accelerator}`);
-    }
+    container
+      .get<QuickEntryService>(MAIN_TOKENS.QuickEntryService)
+      .initialize();
   } catch (err) {
     log.error("Failed to initialize quick entry", err);
   }
