@@ -1,5 +1,8 @@
 import { DataSourceSetup } from "@features/inbox/components/DataSourceSetup";
-import { SignalSourceToggles } from "@features/inbox/components/SignalSourceToggles";
+import {
+  SignalSourceToggles,
+  SignalSourceTogglesSkeleton,
+} from "@features/inbox/components/SignalSourceToggles";
 import { useSignalSourceManager } from "@features/inbox/hooks/useSignalSourceManager";
 import { SettingsOptionSelect } from "@features/settings/components/SettingsOptionSelect";
 import { GitHubIntegrationSection } from "@features/settings/components/sections/GitHubIntegrationSection";
@@ -41,18 +44,12 @@ export function SignalSourcesSettings({
     handleSetupComplete,
     handleSetupCancel,
     userAutonomyConfig,
+    userAutonomyConfigLoading,
     handleUpdateUserAutonomyPriority,
   } = useSignalSourceManager();
 
-  const { hasGithubIntegration } = useRepositoryIntegration();
-
-  if (isLoading) {
-    return (
-      <Text color="gray" className="text-[13px]">
-        Loading signal source configurations...
-      </Text>
-    );
-  }
+  const { hasGithubIntegration, isLoadingIntegrations } =
+    useRepositoryIntegration();
 
   const userPriorityValue =
     userAutonomyConfig?.autostart_priority ?? NEVER_VALUE;
@@ -65,40 +62,47 @@ export function SignalSourcesSettings({
         improvements.
       </Text>
 
-      <GitHubIntegrationSection hasGithubIntegration={hasGithubIntegration} />
+      <GitHubIntegrationSection
+        hasGithubIntegration={hasGithubIntegration}
+        isLoading={isLoadingIntegrations}
+      />
 
-      <Tooltip
-        content="Connect code access to configure signal sources"
-        hidden={hasGithubIntegration}
-      >
-        <Box>
-          <Box
-            style={
-              !hasGithubIntegration
-                ? { opacity: 0.45, pointerEvents: "none" }
-                : undefined
-            }
-          >
-            {setupSource ? (
-              <DataSourceSetup
-                source={setupSource}
-                onComplete={() => void handleSetupComplete()}
-                onCancel={handleSetupCancel}
-              />
-            ) : (
-              <SignalSourceToggles
-                value={displayValues}
-                onToggle={(source, enabled) =>
-                  void handleToggle(source, enabled)
-                }
-                disabled={!hasGithubIntegration}
-                sourceStates={sourceStates}
-                onSetup={handleSetup}
-              />
-            )}
+      {isLoading ? (
+        <SignalSourceTogglesSkeleton />
+      ) : (
+        <Tooltip
+          content="Connect code access to configure signal sources"
+          hidden={hasGithubIntegration}
+        >
+          <Box>
+            <Box
+              style={
+                !hasGithubIntegration
+                  ? { opacity: 0.45, pointerEvents: "none" }
+                  : undefined
+              }
+            >
+              {setupSource ? (
+                <DataSourceSetup
+                  source={setupSource}
+                  onComplete={() => void handleSetupComplete()}
+                  onCancel={handleSetupCancel}
+                />
+              ) : (
+                <SignalSourceToggles
+                  value={displayValues}
+                  onToggle={(source, enabled) =>
+                    void handleToggle(source, enabled)
+                  }
+                  disabled={!hasGithubIntegration}
+                  sourceStates={sourceStates}
+                  onSetup={handleSetup}
+                />
+              )}
+            </Box>
           </Box>
-        </Box>
-      </Tooltip>
+        </Tooltip>
+      )}
       <Flex
         direction="column"
         gap="2"
@@ -115,20 +119,25 @@ export function SignalSourcesSettings({
             &quot;Never&quot; to opt out.
           </Text>
         </Flex>
-        <SettingsOptionSelect
-          value={userPriorityValue}
-          options={USER_PRIORITY_OPTIONS}
-          ariaLabel="PR auto-start threshold"
-          className="min-w-[260px] max-w-[300px]"
-          onValueChange={(value) =>
-            void handleUpdateUserAutonomyPriority(
-              value === NEVER_VALUE ? null : value,
-            )
-          }
-        />
+        {userAutonomyConfigLoading ? (
+          <Box className="h-[32px] w-[260px] animate-pulse rounded bg-gray-3" />
+        ) : (
+          <SettingsOptionSelect
+            value={userPriorityValue}
+            options={USER_PRIORITY_OPTIONS}
+            ariaLabel="PR auto-start threshold"
+            className="min-w-[260px] max-w-[300px]"
+            onValueChange={(value) =>
+              void handleUpdateUserAutonomyPriority(
+                value === NEVER_VALUE ? null : value,
+              )
+            }
+          />
+        )}
       </Flex>
       <SignalSlackNotificationsSettings
         channelComboboxModal={slackNotificationsInModal}
+        isLoading={isLoadingIntegrations}
       />
     </Flex>
   );
