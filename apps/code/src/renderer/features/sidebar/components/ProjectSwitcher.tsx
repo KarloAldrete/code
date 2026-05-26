@@ -13,6 +13,7 @@ import { useProjects } from "@features/projects/hooks/useProjects";
 import { useSettingsDialogStore } from "@features/settings/stores/settingsDialogStore";
 import {
   ArrowSquareOut,
+  Building,
   Buildings,
   Check,
   DiscordLogo,
@@ -224,6 +225,7 @@ export function ProjectSwitcher() {
                         key={org.id}
                         onClick={() => handleSwitchOrg(org.id)}
                       >
+                        <Building size={14} className="text-gray-11" />
                         <span className="flex-1">{org.name}</span>
                         {org.id === currentOrgId && (
                           <Check size={14} className="text-accent-11" />
