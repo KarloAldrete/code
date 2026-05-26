@@ -62,8 +62,8 @@ import { ChevronRightIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
 type ProjectInfo = { id: number; name: string };
-type OrgEntry = { id: string; name: string };
 type ProjectGroup = ReturnType<typeof useProjects>["groupedProjects"][number];
+type OrgEntry = Pick<ProjectGroup, "orgId" | "orgName">;
 
 export function ProjectSwitcher() {
   const [popoverOpen, setPopoverOpen] = useState(false);
@@ -82,8 +82,8 @@ export function ProjectSwitcher() {
   const orgs = useMemo<OrgEntry[]>(
     () =>
       Object.entries(orgProjectsMap)
-        .map(([id, { orgName }]) => ({ id, name: orgName }))
-        .sort((a, b) => a.name.localeCompare(b.name)),
+        .map(([orgId, { orgName }]) => ({ orgId, orgName }))
+        .sort((a, b) => a.orgName.localeCompare(b.orgName)),
     [orgProjectsMap],
   );
 
@@ -222,12 +222,12 @@ export function ProjectSwitcher() {
                   <DropdownMenuSubContent side="right" sideOffset={4}>
                     {orgs.map((org) => (
                       <DropdownMenuItem
-                        key={org.id}
-                        onClick={() => handleSwitchOrg(org.id)}
+                        key={org.orgId}
+                        onClick={() => handleSwitchOrg(org.orgId)}
                       >
                         <Building size={14} className="text-gray-11" />
-                        <span className="flex-1">{org.name}</span>
-                        {org.id === currentOrgId && (
+                        <span className="flex-1">{org.orgName}</span>
+                        {org.orgId === currentOrgId && (
                           <Check size={14} className="text-accent-11" />
                         )}
                       </DropdownMenuItem>

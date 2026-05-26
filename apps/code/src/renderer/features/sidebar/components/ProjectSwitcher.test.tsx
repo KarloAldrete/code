@@ -130,8 +130,8 @@ describe("ProjectSwitcher org switcher", () => {
     expect(alpha).toBeInTheDocument();
     expect(beta).toBeInTheDocument();
 
-    expect(alpha.querySelector("svg")).not.toBeNull();
-    expect(beta.querySelector("svg")).toBeNull();
+    expect(alpha.querySelector(".text-accent-11")).not.toBeNull();
+    expect(beta.querySelector(".text-accent-11")).toBeNull();
   });
 
   it("fires switchOrg.mutate when picking a different org and navigates on success", async () => {
