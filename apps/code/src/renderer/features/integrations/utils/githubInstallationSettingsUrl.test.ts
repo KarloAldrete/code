@@ -27,7 +27,12 @@ describe("resolveGithubInstallationId", () => {
   it.each([
     [
       "prefers top-level installation_id over integration_id and config",
-      { id: 99, kind: "github", installation_id: "a", config: { installation_id: "c" } },
+      {
+        id: 99,
+        kind: "github",
+        installation_id: "a",
+        config: { installation_id: "c" },
+      },
       "a",
     ],
     [
@@ -41,10 +46,10 @@ describe("resolveGithubInstallationId", () => {
       "c",
     ],
   ])("%s", (_label, input, expected) => {
-    expect(resolveGithubInstallationId(input as Parameters<typeof resolveGithubInstallationId>[0])).toBe(expected);
+    expect(
+      resolveGithubInstallationId(
+        input as Parameters<typeof resolveGithubInstallationId>[0],
+      ),
+    ).toBe(expected);
   });
-});
-      expect(resolveGithubInstallationId(input)).toBe(expected);
-    },
-  );
 });
