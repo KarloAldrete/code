@@ -48,6 +48,8 @@ function isAllowedGithubPrUrl(value: unknown): boolean {
 const taskRunOutputSchema = z
   .record(z.string(), z.unknown())
   .nullable()
+  .optional()
+  .transform((output) => output ?? null)
   .refine((output) => {
     if (output == null) return true;
     const prUrl = output.pr_url;
@@ -60,6 +62,25 @@ const branchSchema = z
   .min(1)
   .max(256)
   .regex(/^[A-Za-z0-9._\-/]+$/);
+const nullableBranchSchema = branchSchema
+  .nullable()
+  .optional()
+  .transform((value) => value ?? null);
+const nullableStringSchema = z
+  .string()
+  .nullable()
+  .optional()
+  .transform((value) => value ?? null);
+const taskRunStateSchema = z
+  .record(z.string(), z.unknown())
+  .nullable()
+  .optional()
+  .transform((value) => value ?? {});
+const logUrlSchema = z
+  .string()
+  .nullable()
+  .optional()
+  .transform((value) => value ?? "");
 
 const taskRunStatusValues = [
   "not_started",
@@ -94,30 +115,31 @@ const userBasicSchema = z
   .passthrough();
 
 /**
- * Validates a `TaskRun` row returned by the cloud. Required fields are
- * required so the parser fails fast on shapes that would have produced
- * `undefined` field reads downstream. `output` and `state` use
- * `Record<string, unknown>` semantics through `.passthrough()`.
+ * Validates a `TaskRun` row returned by the cloud. The task-run detail
+ * serializer omits a few empty/null fields and project-scoped identifiers, so
+ * defaults below normalize those to the shared main-process shape without
+ * weakening the fields we actively consume (`status`, timestamps, output PR
+ * URL, etc.).
  */
 export const taskRunSchema = z
   .object({
     id: z.string().min(1).max(64),
     task: z.string().min(1).max(64),
-    team: z.number(),
-    branch: branchSchema.nullable(),
+    team: z.number().optional(),
+    branch: nullableBranchSchema,
     runtime_adapter: taskRunRuntimeAdapterSchema.nullable().optional(),
     model: z.string().nullable().optional(),
     reasoning_effort: taskRunReasoningEffortSchema.nullable().optional(),
     stage: z.string().nullable().optional(),
     environment: taskRunEnvironmentSchema.optional(),
     status: taskRunStatusSchema,
-    log_url: z.string(),
-    error_message: z.string().nullable(),
+    log_url: logUrlSchema,
+    error_message: nullableStringSchema,
     output: taskRunOutputSchema,
-    state: z.record(z.string(), z.unknown()),
+    state: taskRunStateSchema,
     created_at: z.string(),
     updated_at: z.string(),
-    completed_at: z.string().nullable(),
+    completed_at: nullableStringSchema,
   })
   .passthrough() satisfies z.ZodType<TaskRun>;
 

@@ -61,7 +61,7 @@ async function parseJsonResponse<TSchema extends z.ZodTypeAny>(
     log.warn("cloud API response rejected by schema", {
       endpoint,
       issues: result.error.issues.slice(0, 8).map((issue) => ({
-        path: issue.path,
+        path: issue.path.length > 0 ? issue.path.join(".") : "<root>",
         code: issue.code,
         message: issue.message,
       })),

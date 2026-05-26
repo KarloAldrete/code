@@ -935,6 +935,50 @@ describe("HedgehogTickService", () => {
     ).toHaveLength(3);
   });
 
+  it("does not dispatch tool calls from a max_tokens hedgehog response", async () => {
+    const mocks = setupMocks({
+      promptResponse: makePromptWithToolsResponse(
+        [
+          {
+            id: "t-1",
+            name: "spawn_hoglet",
+            input: { prompt: "Build the foundation.", repository: "org/repo" },
+          },
+          {
+            id: "t-2",
+            name: "spawn_hoglet",
+            input: { repository: "org/repo" },
+          },
+        ],
+        {
+          stopReason: "max_tokens",
+          text: "I should spawn two hoglets, but the response was truncated.",
+        },
+      ),
+    });
+
+    const service = buildService(mocks);
+    await service.tick("nest-1", "test");
+
+    expect(mocks.hogletService.spawnInNest).not.toHaveBeenCalled();
+    expect(
+      mocks.cloudTasks.resolveGithubUserIntegration,
+    ).not.toHaveBeenCalled();
+    const messages = (
+      mocks.nestChat.recordHedgehogMessage as ReturnType<typeof vi.fn>
+    ).mock.calls.map(([args]) => args);
+    expect(messages.some((m) => m.kind === "hedgehog_message")).toBe(false);
+    expect(
+      messages.some(
+        (m) =>
+          m.kind === "audit" &&
+          typeof m.body === "string" &&
+          m.body.includes("max token limit") &&
+          m.body.includes("discarded"),
+      ),
+    ).toBe(true);
+  });
+
   it("caps raise_hoglet calls at 3 per tick", async () => {
     const idleHoglets = [
       makeHoglet({ id: "h1", taskId: "task-1" }),

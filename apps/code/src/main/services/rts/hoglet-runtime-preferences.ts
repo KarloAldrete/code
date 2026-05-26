@@ -7,12 +7,12 @@ import {
   DEFAULT_HOGLET_RUNTIME_ADAPTER,
   defaultModelForAdapter,
   defaultReasoningEffortForAdapter,
-  type RtsReasoningEffort,
   type HogletRuntimeAdapter,
-  rtsReasoningEffort,
   hogletRuntimeAdapter,
   modelIdentifierSchema,
   type NestLoadout,
+  type RtsReasoningEffort,
+  rtsReasoningEffort,
 } from "./schemas";
 
 const log = logger.scope("hoglet-runtime-preferences");
@@ -57,8 +57,10 @@ export function readUserTaskPreferences(): UserTaskPreferences {
     const reasoningEffort = rtsReasoningEffort.safeParse(
       state.lastUsedReasoningEffort,
     );
-    const modelParse = modelIdentifierSchema.safeParse(state.lastUsedModel);
-    if (!modelParse.success && state.lastUsedModel !== undefined) {
+    const lastUsedModel =
+      state.lastUsedModel == null ? undefined : state.lastUsedModel;
+    const modelParse = modelIdentifierSchema.safeParse(lastUsedModel);
+    if (!modelParse.success && lastUsedModel !== undefined) {
       log.warn("lastUsedModel rejected; using adapter default", {
         issues: modelParse.error.issues.map((issue) => issue.code),
       });

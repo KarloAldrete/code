@@ -115,6 +115,7 @@ Operational posture (how you should behave):
 Output expectations:
 - Emit your decisions as tool_use blocks. The dispatcher executes them in the order you produce.
 - Cap spawn_hoglet to at most 3 per tick. Cap raise_hoglet to at most 3 per tick.
+- Keep each spawn_hoglet prompt concise enough to fit comfortably in one tool call. Prefer one or two high-quality spawns over three verbose spawns if output budget is tight.
 - Keep audit entries one or two sentences. Use the optional detail field only when context is genuinely needed.`;
 
 interface BuildUserPromptInput {

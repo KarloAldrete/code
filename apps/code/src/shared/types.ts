@@ -77,7 +77,7 @@ export function isTerminalStatus(
 export interface TaskRun {
   id: string;
   task: string; // Task ID
-  team: number;
+  team?: number;
   branch: string | null;
   runtime_adapter?: "claude" | "codex" | null;
   model?: string | null;

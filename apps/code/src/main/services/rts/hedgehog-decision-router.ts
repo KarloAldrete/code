@@ -92,6 +92,36 @@ export class HedgehogDecisionRouter {
     let nextActiveHold: ActiveHoldState | null = null;
     let suppressFreeTextMessage = false;
 
+    if (response.stopReason === "max_tokens") {
+      const toolCount = response.toolUseBlocks.length;
+      const body =
+        toolCount > 0
+          ? `Hedgehog response hit the max token limit, so ${toolCount} tool call${toolCount === 1 ? "" : "s"} were discarded instead of executing a partial batch.`
+          : "Hedgehog response hit the max token limit before producing an action.";
+      this.writeNestMessage(tickContext.nest.id, {
+        kind: "audit",
+        body,
+        visibility: "summary",
+        payloadJson: {
+          type: "hedgehog_response_truncated",
+          tickReason: reason,
+          stopReason: response.stopReason,
+          toolUseBlocks: toolCount,
+          inputTokens: response.usage.inputTokens,
+          outputTokens: response.usage.outputTokens,
+        },
+      });
+      scratchpadEntries.push({
+        ts: new Date().toISOString(),
+        kind: "decision",
+        summary:
+          toolCount > 0
+            ? `Discarded ${toolCount} tool call${toolCount === 1 ? "" : "s"} from a max_tokens response; retry with one concise action or a smaller set of hoglets.`
+            : "The hedgehog response hit max_tokens before an action; retry with one concise action.",
+      });
+      return { aborted: false, scratchpadEntries, nextActiveHold };
+    }
+
     for (const block of response.toolUseBlocks) {
       if (abortSignal?.aborted) {
         return { aborted: true, scratchpadEntries, nextActiveHold };

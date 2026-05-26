@@ -124,6 +124,39 @@ describe("CloudTaskClient", () => {
     });
   });
 
+  it("normalizes sparse cloud task run responses", async () => {
+    const auth = createAuthMock(42);
+    (auth.authenticatedFetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      jsonResponse(
+        taskRunFixture({
+          team: undefined,
+          branch: undefined,
+          log_url: null,
+          error_message: undefined,
+          output: undefined,
+          state: undefined,
+          completed_at: undefined,
+        }),
+      ),
+    );
+    const client = new CloudTaskClient(auth);
+
+    const run = await client.createTaskRun("task-1");
+
+    expect(run).toMatchObject({
+      id: "run-1",
+      task: "task-1",
+      branch: null,
+      status: "not_started",
+      log_url: "",
+      error_message: null,
+      output: null,
+      state: {},
+      completed_at: null,
+    });
+    expect(run.team).toBeUndefined();
+  });
+
   it("uses auth project id without fetching the current user", async () => {
     const auth = createAuthMock(77);
     (auth.authenticatedFetch as ReturnType<typeof vi.fn>).mockResolvedValue(
