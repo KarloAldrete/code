@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { Integration } from "../stores/integrationStore";
 import {
   githubInstallationSettingsUrl,
   resolveGithubInstallationId,
