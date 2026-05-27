@@ -577,6 +577,22 @@ export interface InboxReportActionProperties {
   question_text?: string;
 }
 
+export interface SignalSourceConnectedProperties {
+  source_product:
+    | "session_replay"
+    | "error_tracking"
+    | "github"
+    | "linear"
+    | "zendesk"
+    | "conversations"
+    | "pganalyze"
+    | "llm_analytics";
+  /** True when this is a brand-new createSignalSourceConfig, false for re-enable of an existing config. */
+  is_first_connection: boolean;
+  /** True when the connection went through the DataSourceSetup wizard (warehouse OAuth path). */
+  via_setup_wizard: boolean;
+}
+
 // Subscription / billing events
 export interface SubscriptionStartedProperties {
   plan_key: string;
@@ -696,6 +712,7 @@ export const ANALYTICS_EVENTS = {
   INBOX_REPORT_CLOSED: "Inbox report closed",
   INBOX_REPORT_ACTION: "Inbox report action",
   INBOX_REPORT_SCROLLED: "Inbox report scrolled",
+  SIGNAL_SOURCE_CONNECTED: "Signal source connected",
 
   // Spend analysis events
   SPEND_ANALYSIS_TASK_OPENED: "Spend analysis task opened",
@@ -811,6 +828,7 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.INBOX_REPORT_CLOSED]: InboxReportClosedProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_ACTION]: InboxReportActionProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED]: InboxReportScrolledProperties;
+  [ANALYTICS_EVENTS.SIGNAL_SOURCE_CONNECTED]: SignalSourceConnectedProperties;
 
   // Spend analysis events
   [ANALYTICS_EVENTS.SPEND_ANALYSIS_TASK_OPENED]: SpendAnalysisTaskOpenedProperties;
