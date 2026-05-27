@@ -265,7 +265,7 @@ export class HogletService extends TypedEventEmitter<RtsEvents> {
         model: runtime.model,
         reasoningEffort: runtime.reasoningEffort,
         initialPermissionMode: runtime.executionMode,
-        prAuthorshipMode: "bot",
+        prAuthorshipMode: "user",
         runSource: "signal_report",
         signalReportId: input.signalReportId,
       });
@@ -559,7 +559,7 @@ export class HogletService extends TypedEventEmitter<RtsEvents> {
         model: runtime.model,
         reasoningEffort: runtime.reasoningEffort,
         initialPermissionMode: runtime.executionMode,
-        prAuthorshipMode: "bot",
+        prAuthorshipMode: "user",
       },
       prompt: input.prompt,
       ensureCloudWorkspace: (taskId, branch) =>
@@ -660,7 +660,7 @@ export class HogletService extends TypedEventEmitter<RtsEvents> {
         model: runtime.model,
         reasoningEffort: runtime.reasoningEffort,
         initialPermissionMode: runtime.executionMode,
-        prAuthorshipMode: "bot",
+        prAuthorshipMode: "user",
       },
       prompt: input.prompt,
       ensureCloudWorkspace: (taskId, branch) =>

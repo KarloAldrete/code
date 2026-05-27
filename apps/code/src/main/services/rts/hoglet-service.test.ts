@@ -65,9 +65,9 @@ import {
   DEFAULT_CODEX_REASONING_EFFORT,
   DEFAULT_HOGLET_MODEL,
   defaultModelForAdapter,
-  RtsEvent,
   type Hoglet,
   type Nest,
+  RtsEvent,
 } from "./schemas";
 
 function createMockPrGraphService(): PrGraphService {
@@ -876,7 +876,7 @@ describe("HogletService", () => {
           model: DEFAULT_HOGLET_MODEL,
           reasoningEffort: DEFAULT_CLAUDE_REASONING_EFFORT,
           initialPermissionMode: "bypassPermissions",
-          prAuthorshipMode: "bot",
+          prAuthorshipMode: "user",
         }),
       );
       expect(cloudTasks.startTaskRun).toHaveBeenCalledWith(
@@ -1295,7 +1295,7 @@ describe("HogletService", () => {
           model: defaultModelForAdapter("codex"),
           reasoningEffort: "high",
           initialPermissionMode: "full-access",
-          prAuthorshipMode: "bot",
+          prAuthorshipMode: "user",
         }),
       );
       expect(workspaceService.createWorkspace).toHaveBeenCalledWith({

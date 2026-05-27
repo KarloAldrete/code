@@ -69,7 +69,7 @@ export const raiseHogletHandler: HedgehogToolHandler = {
         model: runtime.model,
         reasoningEffort: runtime.reasoningEffort,
         initialPermissionMode: runtime.executionMode,
-        prAuthorshipMode: "bot",
+        prAuthorshipMode: "user",
       });
       createdRunId = run.id;
       await deps.hogletService.ensureCloudWorkspace(

@@ -2012,7 +2012,7 @@ describe("HedgehogTickService", () => {
         reasoningEffort: "high",
         initialPermissionMode: "full-access",
         environment: "local",
-        prAuthorshipMode: "bot",
+        prAuthorshipMode: "user",
       }),
     );
   });
