@@ -57,6 +57,7 @@ export interface TaskCreationInput {
   reasoningLevel?: string;
   environmentId?: string;
   sandboxEnvironmentId?: string;
+  sandboxRuntime?: string;
   cloudPrAuthorshipMode?: PrAuthorshipMode;
   cloudRunSource?: CloudRunSource;
   signalReportId?: string;
@@ -248,6 +249,7 @@ export class TaskCreationSaga extends Saga<
             model: input.model,
             reasoningLevel: input.reasoningLevel,
             sandboxEnvironmentId: input.sandboxEnvironmentId,
+            sandboxRuntime: input.sandboxRuntime,
             prAuthorshipMode,
             runSource: input.cloudRunSource ?? "manual",
             signalReportId: input.signalReportId,

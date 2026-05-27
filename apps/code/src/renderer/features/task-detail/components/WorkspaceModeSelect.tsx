@@ -36,7 +36,11 @@ interface WorkspaceModeSelectProps {
   overrideModes?: WorkspaceMode[];
   selectedCloudEnvironmentId?: string | null;
   onCloudEnvironmentChange?: (envId: string | null) => void;
+  selectedSandboxRuntime?: string | null;
+  onSandboxRuntimeChange?: (runtime: string | null) => void;
 }
+
+const HOGLAND_RUNTIME = "posthog";
 
 const LOCAL_MODES: {
   mode: WorkspaceMode;
@@ -67,9 +71,13 @@ export function WorkspaceModeSelect({
   overrideModes,
   selectedCloudEnvironmentId,
   onCloudEnvironmentChange,
+  selectedSandboxRuntime,
+  onSandboxRuntimeChange,
 }: WorkspaceModeSelectProps) {
   const cloudModeEnabled =
     useFeatureFlag("twig-cloud-mode-toggle") || import.meta.env.DEV;
+  const hoglandRuntimeEnabled =
+    useFeatureFlag("tasks-hogland-runtime") || import.meta.env.DEV;
 
   const { environments } = useSandboxEnvironments();
   const openSettings = useSettingsDialogStore((s) => s.open);
@@ -97,12 +105,17 @@ export function WorkspaceModeSelect({
     return environments.find((e) => e.id === selectedCloudEnvironmentId)?.name;
   }, [value, selectedCloudEnvironmentId, environments]);
 
+  const isHoglandActive =
+    value === "cloud" && selectedSandboxRuntime === HOGLAND_RUNTIME;
+
   const triggerLabel = useMemo(() => {
     if (value === "cloud") {
-      return selectedEnvName ? `Cloud · ${selectedEnvName}` : "Cloud";
+      if (selectedEnvName) return `Cloud · ${selectedEnvName}`;
+      if (isHoglandActive) return "Cloud · Hogland";
+      return "Cloud";
     }
     return LOCAL_MODES.find((m) => m.mode === value)?.label ?? "Worktree";
-  }, [value, selectedEnvName]);
+  }, [value, selectedEnvName, isHoglandActive]);
 
   const triggerIcon = useMemo(() => {
     if (value === "cloud") return CLOUD_ICON;
@@ -145,6 +158,7 @@ export function WorkspaceModeSelect({
               onClick={() => {
                 onChange(item.mode);
                 onCloudEnvironmentChange?.(null);
+                onSandboxRuntimeChange?.(null);
               }}
               render={
                 <ItemMenuItem size="xs" className="w-full">
@@ -164,25 +178,50 @@ export function WorkspaceModeSelect({
         </DropdownMenuGroup>
 
         {showCloud && environments.length === 0 && (
-          <DropdownMenuItem
-            onClick={() => {
-              onChange("cloud");
-              onCloudEnvironmentChange?.(null);
-            }}
-            render={
-              <ItemMenuItem size="xs" className="w-full">
-                <ItemMedia variant="icon" className="mt-2 ml-2">
-                  <span>{CLOUD_ICON}</span>
-                </ItemMedia>
-                <ItemContent variant="menuItem">
-                  <ItemTitle>Cloud</ItemTitle>
-                  <ItemDescription className="whitespace-nowrap leading-none">
-                    Run in a cloud sandbox
-                  </ItemDescription>
-                </ItemContent>
-              </ItemMenuItem>
-            }
-          />
+          <>
+            <DropdownMenuItem
+              onClick={() => {
+                onChange("cloud");
+                onCloudEnvironmentChange?.(null);
+                onSandboxRuntimeChange?.(null);
+              }}
+              render={
+                <ItemMenuItem size="xs" className="w-full">
+                  <ItemMedia variant="icon" className="mt-2 ml-2">
+                    <span>{CLOUD_ICON}</span>
+                  </ItemMedia>
+                  <ItemContent variant="menuItem">
+                    <ItemTitle>Cloud</ItemTitle>
+                    <ItemDescription className="whitespace-nowrap leading-none">
+                      Run in a cloud sandbox
+                    </ItemDescription>
+                  </ItemContent>
+                </ItemMenuItem>
+              }
+            />
+            {hoglandRuntimeEnabled && (
+              <DropdownMenuItem
+                onClick={() => {
+                  onChange("cloud");
+                  onCloudEnvironmentChange?.(null);
+                  onSandboxRuntimeChange?.(HOGLAND_RUNTIME);
+                }}
+                render={
+                  <ItemMenuItem size="xs" className="w-full">
+                    <ItemMedia variant="icon" className="mt-2 ml-2">
+                      <span>{CLOUD_ICON}</span>
+                    </ItemMedia>
+                    <ItemContent variant="menuItem">
+                      <ItemTitle>Cloud · Hogland</ItemTitle>
+                      <ItemDescription className="whitespace-nowrap leading-none">
+                        Run on the PostHog sandbox backend
+                      </ItemDescription>
+                    </ItemContent>
+                  </ItemMenuItem>
+                }
+              />
+            )}
+          </>
         )}
 
         {showCloud && environments.length > 0 && (
@@ -205,6 +244,7 @@ export function WorkspaceModeSelect({
                 onClick={() => {
                   onChange("cloud");
                   onCloudEnvironmentChange?.(null);
+                  onSandboxRuntimeChange?.(null);
                 }}
                 render={
                   <ItemMenuItem size="xs" className="w-full">
@@ -221,12 +261,36 @@ export function WorkspaceModeSelect({
                 }
               />
 
+              {hoglandRuntimeEnabled && (
+                <DropdownMenuItem
+                  onClick={() => {
+                    onChange("cloud");
+                    onCloudEnvironmentChange?.(null);
+                    onSandboxRuntimeChange?.(HOGLAND_RUNTIME);
+                  }}
+                  render={
+                    <ItemMenuItem size="xs" className="w-full">
+                      <ItemMedia variant="icon" className="mt-2 ml-2">
+                        <span>{CLOUD_ICON}</span>
+                      </ItemMedia>
+                      <ItemContent variant="menuItem">
+                        <ItemTitle>Hogland</ItemTitle>
+                        <ItemDescription className="whitespace-nowrap leading-none">
+                          PostHog sandbox backend
+                        </ItemDescription>
+                      </ItemContent>
+                    </ItemMenuItem>
+                  }
+                />
+              )}
+
               {environments.map((env) => (
                 <DropdownMenuItem
                   key={`cloud-env-${env.id}`}
                   onClick={() => {
                     onChange("cloud");
                     onCloudEnvironmentChange?.(env.id);
+                    onSandboxRuntimeChange?.(null);
                   }}
                   render={
                     <ItemMenuItem size="xs" className="w-full">

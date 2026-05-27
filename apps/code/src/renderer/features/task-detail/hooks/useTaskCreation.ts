@@ -44,6 +44,7 @@ interface UseTaskCreationOptions {
   reasoningLevel?: string;
   environmentId?: string | null;
   sandboxEnvironmentId?: string;
+  sandboxRuntime?: string;
   signalReportId?: string;
   onTaskCreated?: (task: Task) => void;
 }
@@ -69,6 +70,7 @@ function prepareTaskInput(
     reasoningLevel?: string;
     environmentId?: string | null;
     sandboxEnvironmentId?: string;
+    sandboxRuntime?: string;
     signalReportId?: string;
   },
 ): TaskCreationInput {
@@ -98,6 +100,7 @@ function prepareTaskInput(
     reasoningLevel: options.reasoningLevel,
     environmentId: options.environmentId ?? undefined,
     sandboxEnvironmentId: options.sandboxEnvironmentId,
+    sandboxRuntime: options.sandboxRuntime,
     cloudPrAuthorshipMode:
       options.signalReportId && options.workspaceMode === "cloud"
         ? "user"
@@ -185,6 +188,7 @@ export function useTaskCreation({
   reasoningLevel,
   environmentId,
   sandboxEnvironmentId,
+  sandboxRuntime,
   signalReportId,
   onTaskCreated,
 }: UseTaskCreationOptions): UseTaskCreationReturn {
@@ -258,6 +262,7 @@ export function useTaskCreation({
           reasoningLevel,
           environmentId,
           sandboxEnvironmentId,
+          sandboxRuntime,
           signalReportId,
         });
 
@@ -332,6 +337,7 @@ export function useTaskCreation({
       reasoningLevel,
       environmentId,
       sandboxEnvironmentId,
+      sandboxRuntime,
       signalReportId,
       clearTaskInputReportAssociation,
       invalidateTasks,

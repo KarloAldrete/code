@@ -122,6 +122,9 @@ export function TaskInput({
   const [selectedCloudEnvId, setSelectedCloudEnvId] = useState<string | null>(
     null,
   );
+  const [selectedSandboxRuntime, setSelectedSandboxRuntime] = useState<
+    string | null
+  >(null);
   const [activeReportAssociation, setActiveReportAssociation] = useState(
     reportAssociation ?? null,
   );
@@ -489,6 +492,10 @@ export function TaskInput({
       effectiveWorkspaceMode === "cloud" && selectedCloudEnvId
         ? selectedCloudEnvId
         : undefined,
+    sandboxRuntime:
+      effectiveWorkspaceMode === "cloud" && selectedSandboxRuntime
+        ? selectedSandboxRuntime
+        : undefined,
     signalReportId: activeReportAssociation?.reportId,
   });
 
@@ -654,6 +661,8 @@ export function TaskInput({
                 onChange={setWorkspaceMode}
                 selectedCloudEnvironmentId={selectedCloudEnvId}
                 onCloudEnvironmentChange={setSelectedCloudEnvId}
+                selectedSandboxRuntime={selectedSandboxRuntime}
+                onSandboxRuntimeChange={setSelectedSandboxRuntime}
                 size="1"
               />
               {workspaceMode === "worktree" && (
