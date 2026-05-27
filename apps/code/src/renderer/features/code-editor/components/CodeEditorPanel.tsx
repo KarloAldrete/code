@@ -68,16 +68,21 @@ function FilePanelImagePreview({
   );
 }
 
+const CLOUD_SANDBOX_REPOS_ROOT = "/tmp/workspace/repos";
+
 function toRepoRelativePath(
-  repoShortName: string | null,
+  owner: string,
+  name: string,
   path: string,
 ): string | null {
   if (!path.startsWith("/")) return path;
-  if (!repoShortName) return null;
-  const marker = `/${repoShortName}/`;
-  const idx = path.lastIndexOf(marker);
-  if (idx < 0) return null;
-  return path.slice(idx + marker.length);
+  const prefix = `${CLOUD_SANDBOX_REPOS_ROOT}/${owner}/${name}/`;
+  if (!path.startsWith(prefix)) return null;
+  return path.slice(prefix.length);
+}
+
+function encodePathSegments(path: string): string {
+  return path.split("/").map(encodeURIComponent).join("/");
 }
 
 export function CodeEditorPanel({
@@ -146,14 +151,14 @@ export function CodeEditorPanel({
     if (!repo || !branch) return null;
     const [owner, name] = repo.split("/");
     if (!owner || !name) return null;
-    const repoRelativePath = toRepoRelativePath(name, filePath);
+    const repoRelativePath = toRepoRelativePath(owner, name, filePath);
     if (!repoRelativePath) return null;
     return {
       owner,
       name,
       branch,
       repoRelativePath,
-      blobUrl: `https://github.com/${owner}/${name}/blob/${branch}/${repoRelativePath}`,
+      blobUrl: `https://github.com/${owner}/${name}/blob/${encodeURIComponent(branch)}/${encodePathSegments(repoRelativePath)}`,
     };
   }, [isCloudRun, task, cloudSession, filePath]);
 
