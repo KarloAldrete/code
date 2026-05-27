@@ -26,6 +26,10 @@ function getExtensionDetails(extension: ExtensionInfo): string {
       extension.sidebar.map((item) => item.title),
     ),
     formatContributionList(
+      "Status bar",
+      extension.statusBar.map((item) => item.title),
+    ),
+    formatContributionList(
       "Commands",
       extension.commands.map((command) => `/${command.name}`),
     ),
@@ -171,6 +175,13 @@ export function ExtensionsSettings() {
                             <PuzzlePiece size={10} /> {extension.sidebar.length}{" "}
                             view
                             {extension.sidebar.length === 1 ? "" : "s"}
+                          </Badge>
+                        )}
+                        {extension.statusBar.length > 0 && (
+                          <Badge size="1" variant="soft" color="blue">
+                            <PuzzlePiece size={10} />{" "}
+                            {extension.statusBar.length} status view
+                            {extension.statusBar.length === 1 ? "" : "s"}
                           </Badge>
                         )}
                         {extension.commands.length > 0 && (

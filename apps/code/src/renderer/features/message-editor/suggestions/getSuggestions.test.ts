@@ -61,6 +61,7 @@ describe("getCommandSuggestions", () => {
           },
         ],
         sidebar: [],
+        statusBar: [],
         skillCount: 0,
         loadErrors: [],
       },

@@ -72,11 +72,21 @@ function writeExampleExtensionZip(): void {
             entry: "frontend/index.html",
           },
         ],
+        statusBar: [
+          {
+            id: "status",
+            title: "Demo Status",
+            entry: "frontend/status.html",
+            priority: 10,
+            width: 160,
+          },
+        ],
         prompts: ["prompts"],
         skills: ["skills"],
       },
     }),
     "frontend/index.html": "<h1>Demo</h1>",
+    "frontend/status.html": "<span>Status</span>",
     "prompts/demo-prompt.md":
       "---\nname: demo-prompt\ndescription: Run demo prompt\n---\nDo the thing.",
     "skills/demo-skill/SKILL.md":
@@ -116,6 +126,18 @@ describe("ExtensionService", () => {
     });
     expect(installed.sidebar[0].url).toBe(
       "file:///mock/appData/extensions/acme-demo-extension/frontend/index.html",
+    );
+    expect(installed.statusBar[0]).toMatchObject({
+      extensionId: "acme-demo-extension",
+      id: "acme-demo-extension.status",
+      location: "status-bar",
+      title: "Demo Status",
+      entry: "frontend/status.html",
+      priority: 10,
+      width: 160,
+    });
+    expect(installed.statusBar[0].url).toBe(
+      "file:///mock/appData/extensions/acme-demo-extension/frontend/status.html",
     );
     expect(installed.prompts).toEqual([
       {

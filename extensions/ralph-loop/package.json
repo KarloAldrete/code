@@ -2,7 +2,10 @@
   "name": "@posthog/ralph-loop",
   "displayName": "Ralph Loop",
   "version": "0.1.0",
-  "description": "Command-only Ralph loops for paced iterative development.",
+  "description": "Ralph loops for paced iterative development with commands, tools, and status bar UI.",
+  "scripts": {
+    "build:status-bar": "esbuild views/status-bar/src/main.tsx --bundle --format=esm --platform=browser --outfile=views/status-bar/build/main.js --jsx=automatic --minify --alias:@posthog/code-extension-api=../../packages/code-extension-api/src/index.ts"
+  },
   "posthogCode": {
     "extensions": [
       "extensions/index.cjs"

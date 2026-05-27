@@ -1,5 +1,5 @@
 import { useExtensionsStore } from "@features/extensions/stores/extensionsStore";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ExtensionView } from "./ExtensionView";
 
@@ -7,6 +7,17 @@ const toastInfoMock = vi.hoisted(() => vi.fn());
 const toastWarningMock = vi.hoisted(() => vi.fn());
 const toastErrorMock = vi.hoisted(() => vi.fn());
 const logInfoMock = vi.hoisted(() => vi.fn());
+const handleViewMessageMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@renderer/trpc/client", () => ({
+  trpcClient: {
+    extensions: {
+      handleViewMessage: {
+        mutate: handleViewMessageMock,
+      },
+    },
+  },
+}));
 
 vi.mock("@utils/toast", () => ({
   toast: {
@@ -46,9 +57,11 @@ function setExtensionSidebarItem(sidebarItem: {
       sidebar: [
         {
           extensionId: "demo-extension",
+          location: "sidebar",
           ...sidebarItem,
         },
       ],
+      statusBar: [],
       skillCount: 0,
       loadErrors: [],
     },
@@ -121,7 +134,54 @@ describe("ExtensionView", () => {
         version: 1,
         extensionId: "demo-extension",
         viewId: "demo-extension.inline",
+        location: "sidebar",
+        repoPath: null,
         theme: "light",
+      },
+      "*",
+    );
+  });
+
+  it("forwards bridge request messages to the extension runtime", async () => {
+    setExtensionSidebarItem({
+      id: "demo-extension.inline",
+      title: "Inline View",
+      html: "<h1>Inline</h1>",
+    });
+    handleViewMessageMock.mockResolvedValue({
+      handled: true,
+      payload: { ok: true },
+    });
+    render(<ExtensionView sidebarItemId="demo-extension.inline" />);
+    const frame = screen.getByTitle("Inline View") as HTMLIFrameElement;
+    const postMessage = vi
+      .spyOn(frame.contentWindow as Window, "postMessage")
+      .mockImplementation(() => {});
+
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: {
+          type: "posthogCode.request",
+          requestId: "request-1",
+          payload: { type: "demo" },
+        },
+        source: frame.contentWindow,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(handleViewMessageMock).toHaveBeenCalledWith({
+        viewId: "demo-extension.inline",
+        message: { type: "demo" },
+        repoPath: null,
+      });
+    });
+    expect(postMessage).toHaveBeenCalledWith(
+      {
+        type: "posthogCode.response",
+        requestId: "request-1",
+        ok: true,
+        payload: { ok: true },
       },
       "*",
     );

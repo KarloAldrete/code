@@ -4,10 +4,13 @@ import {
   executeExtensionCommandInput,
   executeExtensionCommandOutput,
   extensionInfoSchema,
+  handleExtensionViewMessageInput,
+  handleExtensionViewMessageOutput,
   installExtensionInput,
   listExtensionCommandsOutput,
   listExtensionPromptsOutput,
   listExtensionSidebarOutput,
+  listExtensionStatusBarOutput,
   listExtensionsOutput,
   uninstallExtensionInput,
 } from "../../services/extensions/schemas";
@@ -33,6 +36,15 @@ export const extensionsRouter = router({
   listSidebar: publicProcedure
     .output(listExtensionSidebarOutput)
     .query(() => getService().listSidebar()),
+
+  listStatusBar: publicProcedure
+    .output(listExtensionStatusBarOutput)
+    .query(() => getService().listStatusBar()),
+
+  handleViewMessage: publicProcedure
+    .input(handleExtensionViewMessageInput)
+    .output(handleExtensionViewMessageOutput)
+    .mutation(({ input }) => getService().handleViewMessage(input)),
 
   executeCommand: publicProcedure
     .input(executeExtensionCommandInput)

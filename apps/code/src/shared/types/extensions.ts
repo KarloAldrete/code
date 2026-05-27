@@ -18,15 +18,34 @@ export interface ExtensionToolContribution {
   description: string;
 }
 
-export interface ExtensionSidebarContribution {
+export type ExtensionViewLocation = "sidebar" | "status-bar";
+
+export interface ExtensionViewContributionBase {
   extensionId: string;
   id: string;
+  location: ExtensionViewLocation;
   title: string;
-  icon?: string;
   entry?: string;
   url?: string;
   html?: string;
 }
+
+export interface ExtensionSidebarContribution
+  extends ExtensionViewContributionBase {
+  location: "sidebar";
+  icon?: string;
+}
+
+export interface ExtensionStatusBarContribution
+  extends ExtensionViewContributionBase {
+  location: "status-bar";
+  priority?: number;
+  width?: number;
+}
+
+export type ExtensionViewContribution =
+  | ExtensionSidebarContribution
+  | ExtensionStatusBarContribution;
 
 export interface ExtensionInfo {
   id: string;
@@ -39,6 +58,7 @@ export interface ExtensionInfo {
   prompts: ExtensionPromptContribution[];
   tools?: ExtensionToolContribution[];
   sidebar: ExtensionSidebarContribution[];
+  statusBar: ExtensionStatusBarContribution[];
   skillCount: number;
   loadErrors: string[];
 }

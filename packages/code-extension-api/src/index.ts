@@ -15,6 +15,8 @@ export type ExtensionCommandResult =
       prompt?: string;
     };
 
+export type ExtensionViewLocation = "sidebar" | "status-bar";
+
 export interface ExtensionRuntimeContext {
   extensionId: string;
   taskId?: string;
@@ -58,27 +60,45 @@ export interface ExtensionToolOptions {
   ) => MaybePromise<ExtensionToolResult>;
 }
 
-export type ExtensionViewLocation = "sidebar";
-
 export interface ExtensionWebview {
   html: string;
   postMessage(message: unknown): Promise<boolean>;
   onDidReceiveMessage(handler: (message: unknown) => void): Disposable;
 }
 
-export interface ExtensionViewContext {
-  extensionId: string;
+export interface ExtensionViewContext extends ExtensionRuntimeContext {
   viewId: string;
+  location: ExtensionViewLocation;
   readExtensionFile(path: string): Promise<string>;
 }
 
-export interface ExtensionViewOptions {
-  location: ExtensionViewLocation;
+export type ExtensionViewMessageHandler = (
+  message: unknown,
+  context: Omit<ExtensionViewContext, "readExtensionFile">,
+) => MaybePromise<unknown>;
+
+export interface ExtensionSidebarViewOptions {
+  location: "sidebar";
   title: string;
   icon?: string;
   entry?: string;
   html?: string;
+  onMessage?: ExtensionViewMessageHandler;
 }
+
+export interface ExtensionStatusBarViewOptions {
+  location: "status-bar";
+  title: string;
+  entry?: string;
+  html?: string;
+  priority?: number;
+  width?: number;
+  onMessage?: ExtensionViewMessageHandler;
+}
+
+export type ExtensionViewOptions =
+  | ExtensionSidebarViewOptions
+  | ExtensionStatusBarViewOptions;
 
 export interface PostHogCodeExtensionApi {
   registerCommand(name: string, options: ExtensionCommandOptions): Disposable;
@@ -113,10 +133,18 @@ export interface ExtensionBridgeNotifyMessage
   message: string;
 }
 
+export interface ExtensionBridgeRequestMessage
+  extends ExtensionBridgeBaseMessage {
+  type: "posthogCode.request";
+  requestId: string;
+  payload?: unknown;
+}
+
 export type ExtensionViewToHostMessage =
   | ExtensionBridgeReadyMessage
   | ExtensionBridgeLogMessage
-  | ExtensionBridgeNotifyMessage;
+  | ExtensionBridgeNotifyMessage
+  | ExtensionBridgeRequestMessage;
 
 export interface ExtensionBridgeHostReadyMessage
   extends ExtensionBridgeBaseMessage {
@@ -124,6 +152,9 @@ export interface ExtensionBridgeHostReadyMessage
   version: typeof POSTHOG_CODE_EXTENSION_API_VERSION;
   extensionId: string;
   viewId: string;
+  location: ExtensionViewLocation;
+  taskId?: string;
+  repoPath?: string | null;
   theme?: "light" | "dark";
 }
 
@@ -149,7 +180,19 @@ export interface PostHogCodeBridge {
   ready(): void;
   log(message: string, data?: unknown, level?: BridgeMessageLevel): void;
   notify(message: string, level?: Exclude<BridgeMessageLevel, "debug">): void;
+  request(payload?: unknown): Promise<unknown>;
   postMessage(message: ExtensionViewToHostMessage): void;
+}
+
+function isHostResponse(data: unknown): data is ExtensionBridgeResponseMessage {
+  return (
+    !!data &&
+    typeof data === "object" &&
+    "type" in data &&
+    data.type === "posthogCode.response" &&
+    "requestId" in data &&
+    typeof data.requestId === "string"
+  );
 }
 
 export function createPostHogCodeBridge(
@@ -157,6 +200,7 @@ export function createPostHogCodeBridge(
 ): PostHogCodeBridge {
   const targetWindow = options.targetWindow ?? window.parent;
   const targetOrigin = options.targetOrigin ?? "*";
+  let requestCounter = 0;
 
   const postMessage = (message: ExtensionViewToHostMessage): void => {
     targetWindow.postMessage(message, targetOrigin);
@@ -174,6 +218,29 @@ export function createPostHogCodeBridge(
     },
     notify(message, level = "info") {
       postMessage({ type: "posthogCode.notify", level, message });
+    },
+    request(payload) {
+      requestCounter += 1;
+      const requestId = `posthog-code-${Date.now()}-${requestCounter}`;
+
+      return new Promise((resolve, reject) => {
+        const handleMessage = (event: MessageEvent<unknown>) => {
+          if (!isHostResponse(event.data)) return;
+          if (event.data.requestId !== requestId) return;
+
+          window.removeEventListener("message", handleMessage);
+          if (event.data.ok) {
+            resolve(event.data.payload);
+          } else {
+            reject(
+              new Error(event.data.error ?? "PostHog Code request failed"),
+            );
+          }
+        };
+
+        window.addEventListener("message", handleMessage);
+        postMessage({ type: "posthogCode.request", requestId, payload });
+      });
     },
     postMessage,
   };

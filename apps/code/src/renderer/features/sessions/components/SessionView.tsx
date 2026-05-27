@@ -1,6 +1,7 @@
 import { isOtherOption } from "@components/action-selector/constants";
 import { PermissionSelector } from "@components/permissions/PermissionSelector";
 import { showOfflineToast } from "@features/connectivity/connectivityToast";
+import { ExtensionStatusBar } from "@features/extensions/components/ExtensionStatusBar";
 import {
   PromptInput,
   type EditorHandle as PromptInputHandle,
@@ -553,6 +554,14 @@ export function SessionView({
                 />
 
                 <PlanStatusBar plan={latestPlan} />
+
+                {!hideInput && (
+                  <ExtensionStatusBar
+                    repoPath={repoPath}
+                    taskId={taskId}
+                    maxWidth={compact ? undefined : CHAT_CONTENT_MAX_WIDTH}
+                  />
+                )}
 
                 {hasError ? (
                   <Flex

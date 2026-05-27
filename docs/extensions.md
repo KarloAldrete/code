@@ -13,7 +13,7 @@ my-extension.zip
 ├── extensions/
 │   └── index.js                # optional Pi-style runtime commands
 ├── frontend/
-│   └── index.html              # optional custom sidebar view
+│   └── index.html              # optional custom sidebar/status-bar view
 ├── prompts/
 │   └── investigate.md          # optional slash prompt template
 └── skills/
@@ -25,14 +25,14 @@ The zip should contain `package.json` at its root. A single wrapper directory co
 
 ## Manifest
 
-Add a `posthogCode` section to `package.json` when you need non-conventional paths or sidebar views:
+Add a `posthogCode` section to `package.json` when you need non-conventional paths or views:
 
 ```json
 {
   "name": "@acme/posthog-code-demo",
   "displayName": "Demo Extension",
   "version": "1.0.0",
-  "description": "Adds a demo sidebar view, command, prompt, and skill",
+  "description": "Adds demo views, command, prompt, and skill",
   "posthogCode": {
     "extensions": ["extensions/index.js"],
     "sidebar": [
@@ -41,6 +41,15 @@ Add a `posthogCode` section to `package.json` when you need non-conventional pat
         "title": "Demo Dashboard",
         "icon": "sparkle",
         "entry": "frontend/index.html"
+      }
+    ],
+    "statusBar": [
+      {
+        "id": "status",
+        "title": "Demo Status",
+        "entry": "frontend/status.html",
+        "priority": 10,
+        "width": 160
       }
     ],
     "prompts": ["prompts"],
@@ -91,18 +100,31 @@ export default function activate(posthogCode: PostHogCodeExtensionApi) {
     icon: "sparkle",
     entry: "frontend/index.html",
   })
+
+  posthogCode.registerView("status", {
+    location: "status-bar",
+    title: "Demo Status",
+    entry: "frontend/status.html",
+    priority: 10,
+    width: 160,
+    async onMessage(message, ctx) {
+      return { ok: true, repoPath: ctx.repoPath }
+    },
+  })
 }
 ```
 
 `posthogCode.extensions` / `pi.extensions` point to JavaScript runtime files. Conventional `extensions/` is auto-discovered when no explicit extension list is present. Runtime files should export a default factory function or `activate` function.
 
-### Sidebar views
+### Views
 
-Static `sidebar` manifest contributions add menu items to the PostHog Code sidebar. `entry` points to a local HTML file inside the extension package. Runtime extensions can also call `registerView(id, { location: "sidebar", title, icon, entry?, html? })`. `entry` renders a packaged HTML file; `html` renders inline HTML via iframe `srcDoc`.
+Static `sidebar` manifest contributions add menu items to the PostHog Code sidebar. Static `statusBar` manifest contributions add compact views to the chat status area above the message input. `entry` points to a local HTML file inside the extension package.
 
-Views are rendered in sandboxed iframes, so bundled frontend JavaScript does not receive Electron or Node.js privileges.
+Runtime extensions can also call `registerView(id, ...)` with `location: "sidebar"` or `location: "status-bar"`. `entry` renders a packaged HTML file; `html` renders inline HTML via iframe `srcDoc`. Status bar views also support optional `priority` and `width` fields.
 
-Supported icon names: `puzzle` (default), `sparkle`, `browser`, and `terminal`.
+Views are rendered in sandboxed iframes, so bundled frontend JavaScript does not receive Electron or Node.js privileges. Extension authors can write React, Vite, or any other frontend framework, then ship the prebuilt static assets in the zip. PostHog Code loads the built `entry` file; it does not run `npm install`, Vite, or build scripts at install time.
+
+Supported sidebar icon names: `puzzle` (default), `sparkle`, `browser`, and `terminal`.
 
 ### Webview postMessage bridge
 
@@ -115,15 +137,17 @@ const bridge = createPostHogCodeBridge()
 bridge.ready()
 bridge.notify("Dashboard loaded")
 bridge.log("Dashboard rendered", { rows: 10 })
+const result = await bridge.request({ type: "load-data" })
 ```
 
 Supported view-to-host messages:
 
-- `posthogCode.ready` — host replies with `posthogCode.hostReady` including `extensionId`, `viewId`, API `version`, and `theme`.
+- `posthogCode.ready` — host replies with `posthogCode.hostReady` including `extensionId`, `viewId`, `location`, API `version`, `theme`, and current task/repository context when known.
 - `posthogCode.notify` — show an info/warning/error toast.
 - `posthogCode.log` — write a renderer log scoped to the extension view.
+- `posthogCode.request` — call the view's runtime `onMessage(message, ctx)` handler and receive a `posthogCode.response`.
 
-Messages are accepted only from the iframe window for the active extension view. There is no direct tRPC, Electron, filesystem, navigation, or storage bridge yet.
+Messages are accepted only from the iframe window for the active extension view. There is no direct tRPC, Electron, filesystem, navigation, or storage bridge.
 
 ### Pi-style extension commands
 
@@ -176,7 +200,7 @@ Use `"skills": []` to explicitly expose no skills even if the package contains a
 
 1. Open **Settings → Extensions**.
 2. Click **Install .zip** and choose the extension package.
-3. New sidebar views appear immediately. Commands, prompt templates, and skills are available in the `/` picker. Prompt templates and skills are available to new local agent sessions.
+3. New sidebar and status bar views appear immediately. Commands, prompt templates, and skills are available in the `/` picker. Prompt templates and skills are available to new local agent sessions.
 4. Use the trash button in **Settings → Extensions** to uninstall an extension.
 
 Installed extensions live under the app data directory in `extensions/`. Runtime Claude-compatible plugin shims are generated under `plugins/extensions/`. PostHog Code can also ship bundled extensions from `.vite/build/extensions`; these use the same runtime API and contribution model as installed zip extensions.
@@ -185,7 +209,7 @@ Extensions are currently either installed or uninstalled; per-extension enable/d
 
 ## Bundled Ralph Loop extension
 
-PostHog Code ships a command-and-agent-tool Ralph Loop extension. It has no sidebar UI. Use it from the `/` picker in a local repository:
+PostHog Code ships a Ralph Loop extension with slash commands, agent tools, and a compact status bar view. It has no sidebar UI. Use it from the `/` picker in a local repository:
 
 - `/ralph start <name> [task description]` starts a loop and sends the first iteration prompt.
 - `/ralph-done [name]` advances the active loop and sends the next iteration prompt.
@@ -193,6 +217,6 @@ PostHog Code ships a command-and-agent-tool Ralph Loop extension. It has no side
 - `/ralph-stop [name]` pauses a loop.
 - `/ralph-resume <name>` resumes a paused loop.
 
-Loop state and task files are stored in `.ralph/` inside the active local repository. Cloud repositories are not supported yet because the extension needs local file-system access.
+Loop state and task files are stored in `.ralph/` inside the active local repository. The status bar view is authored as a small React app, shipped as prebuilt static assets, and calls its extension runtime through the narrow postMessage bridge. Cloud repositories are not supported yet because the extension needs local file-system access.
 
 The extension also registers `ralph_start` and `ralph_done` as agent tools, so once a loop prompt is sent the agent can advance the loop itself after updating the task file.

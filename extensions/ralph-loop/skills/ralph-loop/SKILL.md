@@ -5,7 +5,7 @@ description: Use Ralph loops for paced, multi-iteration development work in Post
 
 # Ralph Loop
 
-Use Ralph when the user asks for an iterative loop, repeated autonomous passes, or paced development with checkpoints.
+Use Ralph when the user asks for an iterative loop, repeated autonomous passes, or paced development with checkpoints. The active loop is also shown in PostHog Code's status bar.
 
 ## Tools
 

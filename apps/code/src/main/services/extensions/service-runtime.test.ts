@@ -94,6 +94,31 @@ describe("ExtensionService runtime commands", () => {
     await expect(
       readFile(join(repoPath, ".ralph/demo.md"), "utf-8"),
     ).resolves.toContain("Test the Ralph extension");
+    await expect(service.listStatusBar()).resolves.toEqual([
+      expect.objectContaining({
+        extensionId: "posthog-ralph-loop",
+        id: "posthog-ralph-loop.ralph-status",
+        location: "status-bar",
+        title: "Ralph Loop Status",
+        entry: "views/status-bar/build/index.html",
+        priority: 100,
+        width: 190,
+      }),
+    ]);
+    await expect(
+      service.handleViewMessage({
+        viewId: "posthog-ralph-loop.ralph-status",
+        message: { type: "ralph.status" },
+        repoPath,
+      }),
+    ).resolves.toEqual({
+      handled: true,
+      payload: {
+        state: "active",
+        label: "Ralph: demo 1/50",
+        tooltip: "Ralph loop demo: active at iteration 1/50",
+      },
+    });
 
     const tools = await service.getAgentTools();
     expect(tools.map((tool) => tool.name)).toEqual(
@@ -133,6 +158,16 @@ describe("ExtensionService runtime commands", () => {
             icon: "sparkle",
             html: "<h1>Runtime Dashboard</h1>",
           })
+          posthogCode.registerView("status", {
+            location: "status-bar",
+            title: "Runtime Status",
+            html: "<span>Status</span>",
+            priority: 10,
+            width: 120,
+            onMessage(message, ctx) {
+              return { message, viewId: ctx.viewId, location: ctx.location }
+            },
+          })
         }
       `,
     });
@@ -161,6 +196,7 @@ describe("ExtensionService runtime commands", () => {
       {
         extensionId: "runtime-command-extension",
         id: "runtime-command-extension.dashboard",
+        location: "sidebar",
         title: "Runtime Dashboard",
         icon: "sparkle",
         entry: undefined,
@@ -168,6 +204,34 @@ describe("ExtensionService runtime commands", () => {
         html: "<h1>Runtime Dashboard</h1>",
       },
     ]);
+    await expect(service.listStatusBar()).resolves.toEqual([
+      {
+        extensionId: "runtime-command-extension",
+        id: "runtime-command-extension.status",
+        location: "status-bar",
+        title: "Runtime Status",
+        entry: undefined,
+        url: undefined,
+        html: "<span>Status</span>",
+        priority: 10,
+        width: 120,
+      },
+    ]);
+    await expect(
+      service.handleViewMessage({
+        viewId: "runtime-command-extension.status",
+        message: { hello: "world" },
+        repoPath: "/repo",
+      }),
+    ).resolves.toEqual({
+      handled: true,
+      payload: {
+        message: { hello: "world" },
+        viewId: "runtime-command-extension.status",
+        location: "status-bar",
+      },
+    });
+
     await expect(
       service.executeCommand({
         name: "hello",

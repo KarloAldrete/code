@@ -32,6 +32,7 @@ import type {
   ExtensionInfo,
   ExtensionPromptContribution,
   ExtensionSidebarContribution,
+  ExtensionStatusBarContribution,
   ExtensionToolContribution,
 } from "@shared/types/extensions";
 import { inject, injectable } from "inversify";
@@ -70,6 +71,7 @@ interface ExtensionManifest {
   commands: CommandManifestContribution[];
   prompts: PromptManifestContribution[];
   sidebar: SidebarManifestContribution[];
+  statusBar: StatusBarManifestContribution[];
   skillPaths: string[];
   extensionPaths: string[];
 }
@@ -94,6 +96,14 @@ interface SidebarManifestContribution {
   entry: string;
 }
 
+interface StatusBarManifestContribution {
+  id: string;
+  title: string;
+  entry: string;
+  priority?: number;
+  width?: number;
+}
+
 interface ExtensionServiceEvents {
   changed: ExtensionChangedPayload;
 }
@@ -111,6 +121,18 @@ interface ExecuteCommandResult {
   prompt?: string;
 }
 
+interface HandleViewMessageInput {
+  viewId: string;
+  message: unknown;
+  taskId?: string;
+  repoPath?: string | null;
+}
+
+interface HandleViewMessageResult {
+  handled: boolean;
+  payload?: unknown;
+}
+
 type ExtensionRuntimeContext = {
   extensionId: string;
   taskId?: string;
@@ -125,6 +147,14 @@ type ExtensionCommandHandler = (
 type ExtensionToolHandler = (
   args: Record<string, unknown>,
   context: ExtensionRuntimeContext & { toolName: string },
+) => unknown | Promise<unknown>;
+
+type ExtensionViewMessageHandler = (
+  message: unknown,
+  context: ExtensionRuntimeContext & {
+    viewId: string;
+    location: "sidebar" | "status-bar";
+  },
 ) => unknown | Promise<unknown>;
 
 interface RegisteredExtensionCommand extends CommandManifestContribution {
@@ -146,11 +176,14 @@ interface RegisteredExtensionTool extends ExtensionToolContribution {
 interface RegisteredExtensionView {
   extensionId: string;
   id: string;
-  location: "sidebar";
+  location: "sidebar" | "status-bar";
   title: string;
   icon?: string;
   entry?: string;
   html?: string;
+  priority?: number;
+  width?: number;
+  onMessage?: ExtensionViewMessageHandler;
 }
 
 interface ExtensionRuntimeLoadResult {
@@ -173,6 +206,12 @@ function asString(value: unknown): string | undefined {
 
 function asBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 function asStringArray(value: unknown): string[] {
@@ -456,6 +495,41 @@ export class ExtensionService extends TypedEventEmitter<ExtensionServiceEvents> 
     return extensions.flatMap((extension) => extension.sidebar);
   }
 
+  async listStatusBar(): Promise<ExtensionStatusBarContribution[]> {
+    const extensions = await this.list();
+    return extensions
+      .flatMap((extension) => extension.statusBar)
+      .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+  }
+
+  async handleViewMessage(
+    input: HandleViewMessageInput,
+  ): Promise<HandleViewMessageResult> {
+    const extensions = await this.listManifests();
+
+    for (const extension of extensions) {
+      const { views } = await this.loadRuntimeContributionsForExtension(
+        extension.manifest,
+        extension.installPath,
+      );
+      const view = views.find(
+        (item) => `${extension.manifest.id}.${item.id}` === input.viewId,
+      );
+      if (!view?.onMessage) continue;
+
+      const payload = await view.onMessage(input.message, {
+        extensionId: extension.manifest.id,
+        viewId: input.viewId,
+        location: view.location,
+        taskId: input.taskId,
+        repoPath: input.repoPath,
+      });
+      return { handled: true, payload };
+    }
+
+    return { handled: false };
+  }
+
   async listSkills(): Promise<SkillInfo[]> {
     const extensions = await this.listManifests();
     const skills: SkillInfo[] = [];
@@ -573,11 +647,25 @@ export class ExtensionService extends TypedEventEmitter<ExtensionServiceEvents> 
       return {
         extensionId: manifest.id,
         id: `${manifest.id}.${item.id}`,
+        location: "sidebar",
         title: item.title,
         icon: item.icon,
         entry: item.entry,
         url: pathToFileURL(entryPath).toString(),
       } satisfies ExtensionSidebarContribution;
+    });
+    const staticStatusBar = manifest.statusBar.map((item) => {
+      const entryPath = safeResolve(installPath, item.entry);
+      return {
+        extensionId: manifest.id,
+        id: `${manifest.id}.${item.id}`,
+        location: "status-bar",
+        title: item.title,
+        entry: item.entry,
+        url: pathToFileURL(entryPath).toString(),
+        priority: item.priority,
+        width: item.width,
+      } satisfies ExtensionStatusBarContribution;
     });
 
     let skillCount = 0;
@@ -589,9 +677,16 @@ export class ExtensionService extends TypedEventEmitter<ExtensionServiceEvents> 
       manifest,
       installPath,
     );
-    const runtimeSidebar = runtimeResult.views.map((view) =>
-      this.registeredViewToSidebarContribution(view, installPath),
-    );
+    const runtimeSidebar = runtimeResult.views
+      .filter((view) => view.location === "sidebar")
+      .map((view) =>
+        this.registeredViewToSidebarContribution(view, installPath),
+      );
+    const runtimeStatusBar = runtimeResult.views
+      .filter((view) => view.location === "status-bar")
+      .map((view) =>
+        this.registeredViewToStatusBarContribution(view, installPath),
+      );
 
     return {
       id: manifest.id,
@@ -611,6 +706,9 @@ export class ExtensionService extends TypedEventEmitter<ExtensionServiceEvents> 
       })),
       tools: runtimeResult.tools.map(({ handler: _handler, ...tool }) => tool),
       sidebar: [...staticSidebar, ...runtimeSidebar],
+      statusBar: [...staticStatusBar, ...runtimeStatusBar].sort(
+        (a, b) => (b.priority ?? 0) - (a.priority ?? 0),
+      ),
       skillCount,
       loadErrors: runtimeResult.errors,
     };
@@ -676,6 +774,7 @@ export class ExtensionService extends TypedEventEmitter<ExtensionServiceEvents> 
       commands: [],
       prompts: await this.resolvePrompts(packageRoot, codeConfig, piConfig),
       sidebar: this.resolveSidebar(packageRoot, codeConfig),
+      statusBar: this.resolveStatusBar(packageRoot, codeConfig),
       skillPaths: this.resolveSkillPaths(packageRoot, codeConfig, piConfig),
       extensionPaths: await this.resolveExtensionPaths(
         packageRoot,
@@ -879,6 +978,35 @@ export class ExtensionService extends TypedEventEmitter<ExtensionServiceEvents> 
     });
   }
 
+  private resolveStatusBar(
+    packageRoot: string,
+    codeConfig: Record<string, unknown> | null,
+  ): StatusBarManifestContribution[] {
+    const statusBar = codeConfig?.statusBar;
+    if (!Array.isArray(statusBar)) return [];
+
+    return statusBar.flatMap((raw) => {
+      const item = asRecord(raw);
+      if (!item) return [];
+      const id = asString(item.id);
+      const title = asString(item.title) ?? asString(item.name);
+      const entry = asString(item.entry) ?? asString(item.path);
+      if (!id || !title || !entry) return [];
+      if (!existsSync(safeResolve(packageRoot, entry))) {
+        throw new Error(`Extension status bar entry not found: ${entry}`);
+      }
+      return [
+        {
+          id,
+          title,
+          entry,
+          priority: asNumber(item.priority),
+          width: asNumber(item.width),
+        },
+      ];
+    });
+  }
+
   private resolveSkillPaths(
     packageRoot: string,
     codeConfig: Record<string, unknown> | null,
@@ -952,11 +1080,32 @@ export class ExtensionService extends TypedEventEmitter<ExtensionServiceEvents> 
     return {
       extensionId: view.extensionId,
       id: `${view.extensionId}.${view.id}`,
+      location: "sidebar",
       title: view.title,
       icon: view.icon,
       entry: view.entry,
       url: entryPath ? pathToFileURL(entryPath).toString() : undefined,
       html: view.html,
+    };
+  }
+
+  private registeredViewToStatusBarContribution(
+    view: RegisteredExtensionView,
+    installPath: string,
+  ): ExtensionStatusBarContribution {
+    const entryPath = view.entry
+      ? safeResolve(installPath, view.entry)
+      : undefined;
+    return {
+      extensionId: view.extensionId,
+      id: `${view.extensionId}.${view.id}`,
+      location: "status-bar",
+      title: view.title,
+      entry: view.entry,
+      url: entryPath ? pathToFileURL(entryPath).toString() : undefined,
+      html: view.html,
+      priority: view.priority,
+      width: view.width,
     };
   }
 
@@ -1092,15 +1241,23 @@ export class ExtensionService extends TypedEventEmitter<ExtensionServiceEvents> 
               icon?: string;
               entry?: string;
               html?: string;
+              priority?: number;
+              width?: number;
+              onMessage?: ExtensionViewMessageHandler;
             },
           ) => {
-            if (options.location !== "sidebar") {
+            const normalizedId = normalizeViewId(id);
+            if (
+              options.location !== "sidebar" &&
+              options.location !== "status-bar"
+            ) {
               throw new Error(
                 `Extension view ${id} uses unsupported location: ${options.location}`,
               );
             }
 
-            const normalizedId = normalizeViewId(id);
+            const location =
+              options.location === "status-bar" ? "status-bar" : "sidebar";
             const title = asString(options.title);
             if (!title) {
               throw new Error(`Extension view ${id} must provide a title`);
@@ -1117,16 +1274,23 @@ export class ExtensionService extends TypedEventEmitter<ExtensionServiceEvents> 
               throw new Error(`Extension view entry not found: ${entry}`);
             }
 
-            views.set(normalizedId, {
+            const viewKey = normalizedId;
+            views.set(viewKey, {
               extensionId: manifest.id,
               id: normalizedId,
-              location: "sidebar",
+              location,
               title,
               icon: asString(options.icon),
               entry,
               html,
+              priority: asNumber(options.priority),
+              width: asNumber(options.width),
+              onMessage:
+                typeof options.onMessage === "function"
+                  ? options.onMessage
+                  : undefined,
             });
-            return { dispose: () => views.delete(normalizedId) };
+            return { dispose: () => views.delete(viewKey) };
           },
         });
       } catch (error) {

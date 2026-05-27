@@ -4,6 +4,7 @@ import type {
   ExtensionInfo,
   ExtensionPromptContribution,
   ExtensionSidebarContribution,
+  ExtensionStatusBarContribution,
   ExtensionToolContribution,
 } from "@shared/types/extensions";
 import { z } from "zod";
@@ -35,11 +36,25 @@ export const extensionSidebarContributionSchema: z.ZodType<ExtensionSidebarContr
   z.object({
     extensionId: z.string(),
     id: z.string(),
+    location: z.literal("sidebar"),
     title: z.string(),
     icon: z.string().optional(),
     entry: z.string().optional(),
     url: z.string().optional(),
     html: z.string().optional(),
+  });
+
+export const extensionStatusBarContributionSchema: z.ZodType<ExtensionStatusBarContribution> =
+  z.object({
+    extensionId: z.string(),
+    id: z.string(),
+    location: z.literal("status-bar"),
+    title: z.string(),
+    entry: z.string().optional(),
+    url: z.string().optional(),
+    html: z.string().optional(),
+    priority: z.number().optional(),
+    width: z.number().optional(),
   });
 
 export const extensionInfoSchema: z.ZodType<ExtensionInfo> = z.object({
@@ -53,6 +68,7 @@ export const extensionInfoSchema: z.ZodType<ExtensionInfo> = z.object({
   prompts: z.array(extensionPromptContributionSchema),
   tools: z.array(extensionToolContributionSchema).optional(),
   sidebar: z.array(extensionSidebarContributionSchema),
+  statusBar: z.array(extensionStatusBarContributionSchema),
   skillCount: z.number(),
   loadErrors: z.array(z.string()),
 });
@@ -69,6 +85,10 @@ export const listExtensionPromptsOutput = z.array(
 
 export const listExtensionSidebarOutput = z.array(
   extensionSidebarContributionSchema,
+);
+
+export const listExtensionStatusBarOutput = z.array(
+  extensionStatusBarContributionSchema,
 );
 
 export const installExtensionInput = z.object({
@@ -90,6 +110,18 @@ export const executeExtensionCommandOutput = z.object({
   handled: z.boolean(),
   message: z.string().optional(),
   prompt: z.string().optional(),
+});
+
+export const handleExtensionViewMessageInput = z.object({
+  viewId: z.string(),
+  message: z.unknown(),
+  taskId: z.string().optional(),
+  repoPath: z.string().nullable().optional(),
+});
+
+export const handleExtensionViewMessageOutput = z.object({
+  handled: z.boolean(),
+  payload: z.unknown().optional(),
 });
 
 export const extensionChangedOutput: z.ZodType<ExtensionChangedPayload> =

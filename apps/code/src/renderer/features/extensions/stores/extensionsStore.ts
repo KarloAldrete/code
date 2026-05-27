@@ -3,6 +3,7 @@ import type {
   ExtensionInfo,
   ExtensionPromptContribution,
   ExtensionSidebarContribution,
+  ExtensionStatusBarContribution,
 } from "@shared/types/extensions";
 import { create } from "zustand";
 
@@ -11,6 +12,7 @@ interface ExtensionsState {
   commands: ExtensionCommandContribution[];
   prompts: ExtensionPromptContribution[];
   sidebar: ExtensionSidebarContribution[];
+  statusBar: ExtensionStatusBarContribution[];
   isLoaded: boolean;
 }
 
@@ -39,11 +41,20 @@ function flattenSidebar(
   return extensions.flatMap((extension) => extension.sidebar);
 }
 
+function flattenStatusBar(
+  extensions: ExtensionInfo[],
+): ExtensionStatusBarContribution[] {
+  return extensions
+    .flatMap((extension) => extension.statusBar)
+    .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+}
+
 export const useExtensionsStore = create<ExtensionsStore>()((set) => ({
   extensions: [],
   commands: [],
   prompts: [],
   sidebar: [],
+  statusBar: [],
   isLoaded: false,
   actions: {
     setExtensions: (extensions) => {
@@ -52,6 +63,7 @@ export const useExtensionsStore = create<ExtensionsStore>()((set) => ({
         commands: flattenCommands(extensions),
         prompts: flattenPrompts(extensions),
         sidebar: flattenSidebar(extensions),
+        statusBar: flattenStatusBar(extensions),
         isLoaded: true,
       });
     },
@@ -61,6 +73,7 @@ export const useExtensionsStore = create<ExtensionsStore>()((set) => ({
         commands: [],
         prompts: [],
         sidebar: [],
+        statusBar: [],
         isLoaded: false,
       });
     },

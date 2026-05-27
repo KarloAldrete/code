@@ -5,6 +5,8 @@ const extensionServiceMock = vi.hoisted(() => ({
   listCommands: vi.fn(),
   listPrompts: vi.fn(),
   listSidebar: vi.fn(),
+  listStatusBar: vi.fn(),
+  handleViewMessage: vi.fn(),
   executeCommand: vi.fn(),
   installFromZip: vi.fn(),
   uninstall: vi.fn(),

@@ -194,7 +194,7 @@ function buildPrompt(state, taskContent, isReflection) {
   );
   lines.push("\n## Instructions\n");
   lines.push(
-    "You are in a Ralph loop created by a PostHog Code extension. There is no UI yet; loop state lives in `.ralph/`.",
+    "You are in a Ralph loop created by a PostHog Code extension. Loop state lives in `.ralph/`, and the chat status bar above the input shows the active loop.",
   );
   lines.push(
     `You are in iteration ${state.iteration}${state.maxIterations > 0 ? ` of ${state.maxIterations}` : ""}.\n`,
@@ -408,6 +408,30 @@ function doneLoopTool(args, ctx) {
 }
 
 module.exports = function activate(posthogCode) {
+  posthogCode.registerView("ralph-status", {
+    location: "status-bar",
+    title: "Ralph Loop Status",
+    entry: "views/status-bar/build/index.html",
+    priority: 100,
+    width: 190,
+    onMessage(message, ctx) {
+      if (!message || message.type !== "ralph.status") return null;
+      if (!ctx.repoPath || !path.isAbsolute(ctx.repoPath)) {
+        return { state: "unavailable", label: "Ralph unavailable" };
+      }
+
+      const loop = mostRecentActiveLoop(ctx.repoPath);
+      if (!loop) return { state: "idle", label: "Ralph idle" };
+
+      const maxStr = loop.maxIterations > 0 ? `/${loop.maxIterations}` : "";
+      return {
+        state: "active",
+        label: `Ralph: ${loop.name} ${loop.iteration}${maxStr}`,
+        tooltip: `Ralph loop ${loop.name}: ${loop.status} at iteration ${loop.iteration}${maxStr}`,
+      };
+    },
+  });
+
   posthogCode.registerTool("ralph_start", {
     description:
       "Start a Ralph loop for paced iterative development. Creates `.ralph/<name>.md` and returns the first iteration prompt.",
