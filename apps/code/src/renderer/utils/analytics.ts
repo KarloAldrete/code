@@ -14,6 +14,19 @@ const log = logger.scope("analytics");
 
 let isInitialized = false;
 
+// Cached so it can be re-applied after posthog.reset() clears super properties.
+let registeredAppVersion: string | null = null;
+
+// posthog.reset() wipes super properties, so these are re-registered after each reset.
+function registerPersistentSuperProperties() {
+  posthog.register({
+    team: "posthog-code",
+    ...(registeredAppVersion !== null
+      ? { app_version: registeredAppVersion }
+      : {}),
+  });
+}
+
 type PendingFlagListener = {
   callback: () => void;
   unsubscribe: (() => void) | null;
@@ -49,9 +62,9 @@ export function initializePostHog() {
     },
   });
 
-  posthog.register({ team: "posthog-code" });
-
   isInitialized = true;
+
+  registerPersistentSuperProperties();
 
   for (const listener of pendingFlagListeners) {
     listener.unsubscribe = posthog.onFeatureFlags(listener.callback);
@@ -102,6 +115,17 @@ export function startSessionRecording() {
   }, 1000);
 }
 
+// Register the app version as a super property so it rides along on every event.
+export function registerAppVersion(appVersion: string) {
+  registeredAppVersion = appVersion;
+
+  if (!isInitialized) {
+    return;
+  }
+
+  posthog.register({ app_version: appVersion });
+}
+
 export function identifyUser(
   userId: string,
   properties?: UserIdentifyProperties,
@@ -146,6 +170,9 @@ export function resetUser() {
   }
 
   posthog.reset();
+
+  // reset() clears super properties; re-apply the persistent ones.
+  registerPersistentSuperProperties();
 }
 
 export function track<K extends keyof EventPropertyMap>(

@@ -27,7 +27,7 @@ import { isNotAuthenticatedError } from "@shared/errors";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
-import { initializePostHog, track } from "@utils/analytics";
+import { initializePostHog, registerAppVersion, track } from "@utils/analytics";
 import { logger } from "@utils/logger";
 import { toast } from "@utils/toast";
 import { AnimatePresence, motion } from "framer-motion";
@@ -49,9 +49,15 @@ function App() {
   const [showTransition, setShowTransition] = useState(false);
   const wasInMainApp = useRef(isAuthenticated && hasCompletedOnboarding);
 
-  // Initialize PostHog analytics
+  // Initialize PostHog analytics and register the app version super property.
   useEffect(() => {
     initializePostHog();
+    trpcClient.os.getAppVersion
+      .query()
+      .then(registerAppVersion)
+      .catch((error) => {
+        log.warn("Failed to register app version super property", { error });
+      });
   }, []);
 
   // Initialize connectivity monitoring
