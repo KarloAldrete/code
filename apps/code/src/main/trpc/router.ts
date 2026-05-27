@@ -38,6 +38,7 @@ import { uiRouter } from "./routers/ui";
 import { updatesRouter } from "./routers/updates";
 import { usageMonitorRouter } from "./routers/usage-monitor";
 import { workspaceRouter } from "./routers/workspace";
+import { workspaceServerRouter } from "./routers/workspace-server";
 import { router } from "./trpc";
 
 export const trpcRouter = router({
@@ -82,6 +83,7 @@ export const trpcRouter = router({
   usageMonitor: usageMonitorRouter,
   deepLink: deepLinkRouter,
   workspace: workspaceRouter,
+  workspaceServer: workspaceServerRouter,
 });
 
 export type TrpcRouter = typeof trpcRouter;

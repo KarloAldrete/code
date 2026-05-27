@@ -317,8 +317,10 @@
                       "!@posthog/core",
                       "!@posthog/api-client",
                       "!@posthog/workspace-client",
+                      "!@posthog/workspace-client/client",
                       "!@posthog/platform",
-                      "!@posthog/platform/*"
+                      "!@posthog/platform/*",
+                      "!@posthog/quill"
                     ],
                     "message": "ui must run in any JS environment."
                   }

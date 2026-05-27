@@ -70,6 +70,7 @@ import { UpdatesService } from "../services/updates/service";
 import { UsageMonitorService } from "../services/usage-monitor/service";
 import { WatcherRegistryService } from "../services/watcher-registry/service";
 import { WorkspaceService } from "../services/workspace/service";
+import { WorkspaceServerService } from "../services/workspace-server/service";
 import { MAIN_TOKENS } from "./tokens";
 
 export const container = new Container({
@@ -154,5 +155,9 @@ container.bind(MAIN_TOKENS.InboxLinkService).to(InboxLinkService);
 container.bind(MAIN_TOKENS.NewTaskLinkService).to(NewTaskLinkService);
 container.bind(MAIN_TOKENS.WatcherRegistryService).to(WatcherRegistryService);
 container.bind(MAIN_TOKENS.WorkspaceService).to(WorkspaceService);
+container
+  .bind(MAIN_TOKENS.WorkspaceServerService)
+  .to(WorkspaceServerService)
+  .inSingletonScope();
 
 container.bind(MAIN_TOKENS.SettingsStore).toConstantValue(settingsStore);

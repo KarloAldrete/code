@@ -1,4 +1,4 @@
 {
-  "extends": "@posthog/tsconfig/base.json",
+  "extends": "@posthog/tsconfig/react-package.json",
   "include": ["src/**/*"]
 }

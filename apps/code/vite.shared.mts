@@ -60,6 +60,32 @@ const workspaceAliases: Alias[] = [
       "../../packages/enricher/src/index.ts",
     ),
   },
+  {
+    find: /^@posthog\/core\/(.+)$/,
+    replacement: path.resolve(__dirname, "../../packages/core/src/$1"),
+  },
+  {
+    find: /^@posthog\/api-client\/(.+)$/,
+    replacement: path.resolve(__dirname, "../../packages/api-client/src/$1"),
+  },
+  {
+    find: /^@posthog\/ui\/(.+)$/,
+    replacement: path.resolve(__dirname, "../../packages/ui/src/$1"),
+  },
+  {
+    find: /^@posthog\/workspace-client\/(.+)$/,
+    replacement: path.resolve(
+      __dirname,
+      "../../packages/workspace-client/src/$1",
+    ),
+  },
+  {
+    find: /^@posthog\/workspace-server\/(.+)$/,
+    replacement: path.resolve(
+      __dirname,
+      "../../packages/workspace-server/src/$1",
+    ),
+  },
 ];
 
 export const mainAliases: Alias[] = [

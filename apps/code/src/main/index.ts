@@ -30,6 +30,7 @@ import type { SuspensionService } from "./services/suspension/service";
 import type { TaskLinkService } from "./services/task-link/service";
 import type { UpdatesService } from "./services/updates/service";
 import type { WorkspaceService } from "./services/workspace/service";
+import type { WorkspaceServerService } from "./services/workspace-server/service";
 import { ensureClaudeConfigDir } from "./utils/env";
 import {
   getChromiumLogFilePath,
@@ -232,6 +233,10 @@ app.whenReady().then(async () => {
   createWindow();
   await initializeServices();
   initializeDeepLinks();
+  container
+    .get<WorkspaceServerService>(MAIN_TOKENS.WorkspaceServerService)
+    .start()
+    .catch((err) => log.error("workspace-server failed to start", err));
 });
 
 app.on("window-all-closed", () => {
@@ -239,6 +244,11 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", async (event) => {
+  try {
+    container
+      .get<WorkspaceServerService>(MAIN_TOKENS.WorkspaceServerService)
+      .stop();
+  } catch {}
   let lifecycleService: AppLifecycleService;
   try {
     lifecycleService = container.get<AppLifecycleService>(

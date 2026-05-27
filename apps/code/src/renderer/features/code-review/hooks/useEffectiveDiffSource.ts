@@ -3,6 +3,7 @@ import { useLinkedBranchPrUrl } from "@features/git-interaction/hooks/useLinkedB
 import type { DiffStats } from "@features/git-interaction/utils/diffStats";
 import { useCwd } from "@features/sidebar/hooks/useCwd";
 import { useWorkspace } from "@features/workspace/hooks/useWorkspace";
+import { useDiffStats } from "@posthog/ui/features/diff-stats/useDiffStats";
 import { useTRPC } from "@renderer/trpc";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -56,16 +57,7 @@ export function useEffectiveDiffSource(taskId: string): EffectiveDiffSource {
     ),
   );
 
-  const { data: diffStats = emptyDiffStats } = useQuery(
-    trpc.git.getDiffStats.queryOptions(
-      { directoryPath: repoPath as string },
-      {
-        enabled,
-        staleTime: 30_000,
-        placeholderData: (prev) => prev ?? emptyDiffStats,
-      },
-    ),
-  );
+  const { data: diffStats = emptyDiffStats } = useDiffStats(repoPath ?? null);
 
   const aheadOfDefault = syncStatus?.aheadOfDefault ?? 0;
   const defaultBranch = repoInfo?.defaultBranch ?? null;

@@ -1,5 +1,6 @@
+import { Tooltip } from "@components/ui/Tooltip";
 import { useAuthStateValue } from "@features/auth/hooks/authQueries";
-import { DiffStatsBadge } from "@features/code-review/components/DiffStatsBadge";
+import { useDiffStatsToggle } from "@features/code-review/hooks/useDiffStatsToggle";
 import { BranchSelector } from "@features/git-interaction/components/BranchSelector";
 import { CloudGitInteractionHeader } from "@features/git-interaction/components/CloudGitInteractionHeader";
 import { TaskActionsMenu } from "@features/git-interaction/components/TaskActionsMenu";
@@ -14,7 +15,12 @@ import { useWorkspace } from "@features/workspace/hooks/useWorkspace";
 import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { Cloud, Spinner } from "@phosphor-icons/react";
 import { Button as QuillButton } from "@posthog/quill";
+import { DiffStatsBadge } from "@posthog/ui/features/diff-stats/DiffStatsBadge";
 import { Box, Flex } from "@radix-ui/themes";
+import {
+  formatHotkey,
+  SHORTCUTS,
+} from "@renderer/constants/keyboard-shortcuts";
 import type { Task } from "@shared/types";
 import { useHeaderStore } from "@stores/headerStore";
 import { useNavigationStore } from "@stores/navigationStore";
@@ -99,6 +105,26 @@ function LocalHandoffButton({ taskId, task }: { taskId: string; task: Task }) {
         />
       )}
     </>
+  );
+}
+
+function TaskDiffStatsBadge({ task }: { task: Task }) {
+  const { filesChanged, linesAdded, linesRemoved, isOpen, toggle } =
+    useDiffStatsToggle(task, "split");
+  return (
+    <Tooltip
+      content={isOpen ? "Close review panel" : "Open review panel"}
+      shortcut={formatHotkey(SHORTCUTS.TOGGLE_REVIEW_PANEL)}
+      side="bottom"
+    >
+      <DiffStatsBadge
+        filesChanged={filesChanged}
+        linesAdded={linesAdded}
+        linesRemoved={linesRemoved}
+        active={isOpen}
+        onClick={toggle}
+      />
+    </Tooltip>
   );
 }
 
@@ -202,7 +228,7 @@ export function HeaderRow() {
                 />
               </div>
             )}
-          <DiffStatsBadge task={view.data} />
+          <TaskDiffStatsBadge task={view.data} />
 
           {isCloudTask ? (
             <CloudGitInteractionHeader taskId={view.data.id} task={view.data} />

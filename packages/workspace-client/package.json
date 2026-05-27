@@ -5,30 +5,31 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
+    "./*": [
+      "./src/*.ts",
+      "./src/*.tsx"
+    ]
   },
   "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
-    "clean": "node ../../scripts/rimraf.mjs dist .turbo"
+    "clean": "node ../../scripts/rimraf.mjs .turbo"
   },
   "dependencies": {
-    "@posthog/api-client": "workspace:*",
-    "@posthog/core": "workspace:*"
+    "@trpc/client": "catalog:",
+    "superjson": "catalog:"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "catalog:",
+    "@trpc/tanstack-react-query": "catalog:",
+    "react": "catalog:"
   },
   "devDependencies": {
     "@posthog/tsconfig": "workspace:*",
-    "@posthog/tsup-config": "workspace:*",
     "@posthog/workspace-server": "workspace:*",
-    "tsup": "catalog:",
+    "@tanstack/react-query": "catalog:",
+    "@trpc/tanstack-react-query": "catalog:",
+    "@types/react": "catalog:",
+    "react": "catalog:",
     "typescript": "catalog:"
-  },
-  "files": [
-    "dist/**/*",
-    "src/**/*"
-  ]
+  }
 }

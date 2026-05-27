@@ -5,14 +5,12 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
+    "./*": [
+      "./src/*.ts",
+      "./src/*.tsx"
+    ]
   },
   "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "clean": "node ../../scripts/rimraf.mjs dist .turbo"
   },
@@ -23,17 +21,23 @@
     "@posthog/workspace-client": "workspace:*"
   },
   "peerDependencies": {
+    "@phosphor-icons/react": "catalog:",
+    "@posthog/quill": "catalog:",
+    "@radix-ui/themes": "catalog:",
+    "@tanstack/react-query": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:"
   },
   "devDependencies": {
+    "@phosphor-icons/react": "catalog:",
+    "@posthog/quill": "catalog:",
     "@posthog/tsconfig": "workspace:*",
-    "@posthog/tsup-config": "workspace:*",
+    "@radix-ui/themes": "catalog:",
+    "@tanstack/react-query": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
-    "tsup": "catalog:",
     "typescript": "catalog:"
   },
   "files": [

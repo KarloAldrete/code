@@ -6,6 +6,33 @@ settings:
 
 catalogs:
   default:
+    '@hono/node-server':
+      specifier: ^1.13.7
+      version: 1.19.9
+    '@hono/trpc-server':
+      specifier: ^0.3.4
+      version: 0.3.4
+    '@phosphor-icons/react':
+      specifier: ^2.1.10
+      version: 2.1.10
+    '@posthog/quill':
+      specifier: 0.3.0-beta.1
+      version: 0.3.0-beta.1
+    '@radix-ui/themes':
+      specifier: ^3.2.1
+      version: 3.3.0
+    '@tanstack/react-query':
+      specifier: ^5.90.2
+      version: 5.90.20
+    '@trpc/client':
+      specifier: ^11.12.0
+      version: 11.12.0
+    '@trpc/server':
+      specifier: ^11.12.0
+      version: 11.12.0
+    '@trpc/tanstack-react-query':
+      specifier: ^11.12.0
+      version: 11.12.0
     '@types/node':
       specifier: ^20.0.0
       version: 20.19.41
@@ -15,18 +42,33 @@ catalogs:
     '@types/react-dom':
       specifier: ^19.1.0
       version: 19.2.3
+    hono:
+      specifier: ^4.6.14
+      version: 4.11.7
+    inversify:
+      specifier: ^7.10.6
+      version: 7.11.0
     react:
       specifier: 19.1.0
       version: 19.1.0
     react-dom:
       specifier: 19.1.0
       version: 19.1.0
+    reflect-metadata:
+      specifier: ^0.2.2
+      version: 0.2.2
+    superjson:
+      specifier: ^2.2.2
+      version: 2.2.6
     tsup:
       specifier: ^8.5.1
       version: 8.5.1
     typescript:
       specifier: ^5.5.0
       version: 5.9.3
+    zod:
+      specifier: ^3.24.1
+      version: 3.25.76
 
 patchedDependencies:
   node-pty:
@@ -205,6 +247,15 @@ importers:
       '@posthog/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@posthog/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@posthog/workspace-client':
+        specifier: workspace:*
+        version: link:../../packages/workspace-client
+      '@posthog/workspace-server':
+        specifier: workspace:*
+        version: link:../../packages/workspace-server
       '@radix-ui/react-collapsible':
         specifier: ^1.1.12
         version: 1.1.12(@types/react-dom@19.2.3(@types/react@19.2.11))(@types/react@19.2.11)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
@@ -968,12 +1019,21 @@ importers:
         specifier: workspace:*
         version: link:../workspace-client
     devDependencies:
+      '@phosphor-icons/react':
+        specifier: 'catalog:'
+        version: 2.1.10(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+      '@posthog/quill':
+        specifier: 'catalog:'
+        version: 0.3.0-beta.1(@types/react@19.2.11)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(tailwindcss@4.2.2)
       '@posthog/tsconfig':
         specifier: workspace:*
         version: link:../../tooling/typescript
-      '@posthog/tsup-config':
-        specifier: workspace:*
-        version: link:../../tooling/tsup-config
+      '@radix-ui/themes':
+        specifier: 'catalog:'
+        version: 3.3.0(@types/react-dom@19.2.3(@types/react@19.2.11))(@types/react@19.2.11)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+      '@tanstack/react-query':
+        specifier: 'catalog:'
+        version: 5.90.20(react@19.1.0)
       '@types/react':
         specifier: 'catalog:'
         version: 19.2.11
@@ -986,39 +1046,70 @@ importers:
       react-dom:
         specifier: 'catalog:'
         version: 19.1.0(react@19.1.0)
-      tsup:
-        specifier: 'catalog:'
-        version: 8.5.1(jiti@2.6.1)(postcss@8.5.6)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.2)
       typescript:
         specifier: 'catalog:'
         version: 5.9.3
 
   packages/workspace-client:
     dependencies:
-      '@posthog/api-client':
-        specifier: workspace:*
-        version: link:../api-client
-      '@posthog/core':
-        specifier: workspace:*
-        version: link:../core
+      '@trpc/client':
+        specifier: 'catalog:'
+        version: 11.12.0(@trpc/server@11.12.0(typescript@5.9.3))(typescript@5.9.3)
+      superjson:
+        specifier: 'catalog:'
+        version: 2.2.6
     devDependencies:
       '@posthog/tsconfig':
         specifier: workspace:*
         version: link:../../tooling/typescript
-      '@posthog/tsup-config':
-        specifier: workspace:*
-        version: link:../../tooling/tsup-config
       '@posthog/workspace-server':
         specifier: workspace:*
         version: link:../workspace-server
-      tsup:
+      '@tanstack/react-query':
         specifier: 'catalog:'
-        version: 8.5.1(jiti@2.6.1)(postcss@8.5.6)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.2)
+        version: 5.90.20(react@19.1.0)
+      '@trpc/tanstack-react-query':
+        specifier: 'catalog:'
+        version: 11.12.0(@tanstack/react-query@5.90.20(react@19.1.0))(@trpc/client@11.12.0(@trpc/server@11.12.0(typescript@5.9.3))(typescript@5.9.3))(@trpc/server@11.12.0(typescript@5.9.3))(react@19.1.0)(typescript@5.9.3)
+      '@types/react':
+        specifier: 'catalog:'
+        version: 19.2.11
+      react:
+        specifier: 'catalog:'
+        version: 19.1.0
       typescript:
         specifier: 'catalog:'
         version: 5.9.3
 
   packages/workspace-server:
+    dependencies:
+      '@hono/node-server':
+        specifier: 'catalog:'
+        version: 1.19.9(hono@4.11.7)
+      '@hono/trpc-server':
+        specifier: 'catalog:'
+        version: 0.3.4(@trpc/server@11.12.0(typescript@5.9.3))(hono@4.11.7)
+      '@posthog/git':
+        specifier: workspace:*
+        version: link:../git
+      '@trpc/server':
+        specifier: 'catalog:'
+        version: 11.12.0(typescript@5.9.3)
+      hono:
+        specifier: 'catalog:'
+        version: 4.11.7
+      inversify:
+        specifier: 'catalog:'
+        version: 7.11.0(reflect-metadata@0.2.2)
+      reflect-metadata:
+        specifier: 'catalog:'
+        version: 0.2.2
+      superjson:
+        specifier: 'catalog:'
+        version: 2.2.6
+      zod:
+        specifier: 'catalog:'
+        version: 3.25.76
     devDependencies:
       '@posthog/tsconfig':
         specifier: workspace:*
@@ -2807,6 +2898,13 @@ packages:
     engines: {node: '>=18.14.1'}
     peerDependencies:
       hono: ^4
+
+  '@hono/trpc-server@0.3.4':
+    resolution: {integrity: sha512-xFOPjUPnII70FgicDzOJy1ufIoBTu8eF578zGiDOrYOrYN8CJe140s9buzuPkX+SwJRYK8LjEBHywqZtxdm8aA==}
+    engines: {node: '>=16.0.0'}
+    peerDependencies:
+      '@trpc/server': ^10.10.0 || >11.0.0-rc
+      hono: '>=4.*'
 
   '@ide/backoff@1.0.0':
     resolution: {integrity: sha512-F0YfUDjvT+Mtt/R4xdl2X0EYCHMMiJqNLdxHD++jDT5ydEFIyqbCHh51Qx2E211dgZprPKhV7sHmnXKpLuvc5g==}
@@ -14640,6 +14738,11 @@ snapshots:
 
   '@hono/node-server@1.19.9(hono@4.11.7)':
     dependencies:
+      hono: 4.11.7
+
+  '@hono/trpc-server@0.3.4(@trpc/server@11.12.0(typescript@5.9.3))(hono@4.11.7)':
+    dependencies:
+      '@trpc/server': 11.12.0(typescript@5.9.3)
       hono: 4.11.7
 
   '@ide/backoff@1.0.0': {}

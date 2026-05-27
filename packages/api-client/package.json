@@ -4,16 +4,7 @@
   "description": "Client for the PostHog API (auth, projects, task metadata, billing). Pure HTTPS, runs in any JS environment. Constructed via factory function — no DI container.",
   "private": true,
   "type": "module",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
   "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch",
-    "typecheck": "tsc --noEmit",
     "clean": "node ../../scripts/rimraf.mjs dist .turbo"
   },
   "dependencies": {
