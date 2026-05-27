@@ -9,10 +9,7 @@ import { CommandCenterView } from "@features/command-center/components/CommandCe
 import { InboxView } from "@features/inbox/components/InboxView";
 import { useInboxDeepLink } from "@features/inbox/hooks/useInboxDeepLink";
 import { McpServersView } from "@features/mcp-servers/components/McpServersView";
-import { BgmPlayer } from "@features/rts/audio/BgmPlayer";
-import { SfxBridge } from "@features/rts/audio/SfxBridge";
-import { useRtsPrGraphRouter } from "@features/rts/hooks/useRtsPrGraphRouter";
-import { useRtsPromptRouter } from "@features/rts/hooks/useRtsPromptRouter";
+import { RtsRoot } from "@features/rts/components/RtsRoot";
 import { useRtsViewStore } from "@features/rts/stores/rtsViewStore";
 import { FolderSettingsView } from "@features/settings/components/FolderSettingsView";
 import { SettingsDialog } from "@features/settings/components/SettingsDialog";
@@ -83,8 +80,6 @@ export function MainLayout() {
   useIntegrations();
   useTaskDeepLink();
   useInboxDeepLink();
-  useRtsPromptRouter();
-  useRtsPrGraphRouter();
   useSetupDiscovery();
   useNewTaskDeepLink();
 
@@ -217,8 +212,7 @@ export function MainLayout() {
       <TourOverlay />
       {billingEnabled && <UsageLimitModal />}
       <HedgehogMode />
-      <BgmPlayer />
-      <SfxBridge />
+      <RtsRoot />
     </Flex>
   );
 }
