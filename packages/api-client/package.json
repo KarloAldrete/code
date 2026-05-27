@@ -1,0 +1,32 @@
+{
+  "name": "@posthog/api-client",
+  "version": "1.0.0",
+  "description": "Client for the PostHog API (auth, projects, task metadata, billing). Pure HTTPS, runs in any JS environment. Constructed via factory function — no DI container.",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "node ../../scripts/rimraf.mjs dist .turbo"
+  },
+  "dependencies": {
+    "@posthog/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@posthog/tsconfig": "workspace:*",
+    "@posthog/tsup-config": "workspace:*",
+    "tsup": "catalog:",
+    "typescript": "catalog:"
+  },
+  "files": [
+    "dist/**/*",
+    "src/**/*"
+  ]
+}

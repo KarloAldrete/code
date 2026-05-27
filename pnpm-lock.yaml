@@ -4,6 +4,30 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+catalogs:
+  default:
+    '@types/node':
+      specifier: ^20.0.0
+      version: 20.19.41
+    '@types/react':
+      specifier: ^19.1.0
+      version: 19.2.11
+    '@types/react-dom':
+      specifier: ^19.1.0
+      version: 19.2.3
+    react:
+      specifier: 19.1.0
+      version: 19.1.0
+    react-dom:
+      specifier: 19.1.0
+      version: 19.1.0
+    tsup:
+      specifier: ^8.5.1
+      version: 8.5.1
+    typescript:
+      specifier: ^5.5.0
+      version: 5.9.3
+
 patchedDependencies:
   node-pty:
     hash: 4dfdf785f5ac51a03f5d6032371cebe89036381acd403621f250a896245647c5
@@ -800,6 +824,40 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@25.2.0)(jsdom@26.1.0)(lightningcss@1.32.0)(msw@2.12.8(@types/node@25.2.0)(typescript@5.9.3))(terser@5.46.0)
 
+  packages/api-client:
+    dependencies:
+      '@posthog/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@posthog/tsconfig':
+        specifier: workspace:*
+        version: link:../../tooling/typescript
+      '@posthog/tsup-config':
+        specifier: workspace:*
+        version: link:../../tooling/tsup-config
+      tsup:
+        specifier: 'catalog:'
+        version: 8.5.1(jiti@2.6.1)(postcss@8.5.6)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.2)
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+
+  packages/core:
+    devDependencies:
+      '@posthog/tsconfig':
+        specifier: workspace:*
+        version: link:../../tooling/typescript
+      '@posthog/tsup-config':
+        specifier: workspace:*
+        version: link:../../tooling/tsup-config
+      tsup:
+        specifier: 'catalog:'
+        version: 8.5.1(jiti@2.6.1)(postcss@8.5.6)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.2)
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+
   packages/electron-trpc:
     devDependencies:
       '@trpc/client':
@@ -894,6 +952,91 @@ importers:
       typescript:
         specifier: ^5.5.0
         version: 5.9.3
+
+  packages/ui:
+    dependencies:
+      '@posthog/api-client':
+        specifier: workspace:*
+        version: link:../api-client
+      '@posthog/core':
+        specifier: workspace:*
+        version: link:../core
+      '@posthog/platform':
+        specifier: workspace:*
+        version: link:../platform
+      '@posthog/workspace-client':
+        specifier: workspace:*
+        version: link:../workspace-client
+    devDependencies:
+      '@posthog/tsconfig':
+        specifier: workspace:*
+        version: link:../../tooling/typescript
+      '@posthog/tsup-config':
+        specifier: workspace:*
+        version: link:../../tooling/tsup-config
+      '@types/react':
+        specifier: 'catalog:'
+        version: 19.2.11
+      '@types/react-dom':
+        specifier: 'catalog:'
+        version: 19.2.3(@types/react@19.2.11)
+      react:
+        specifier: 'catalog:'
+        version: 19.1.0
+      react-dom:
+        specifier: 'catalog:'
+        version: 19.1.0(react@19.1.0)
+      tsup:
+        specifier: 'catalog:'
+        version: 8.5.1(jiti@2.6.1)(postcss@8.5.6)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.2)
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+
+  packages/workspace-client:
+    dependencies:
+      '@posthog/api-client':
+        specifier: workspace:*
+        version: link:../api-client
+      '@posthog/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@posthog/tsconfig':
+        specifier: workspace:*
+        version: link:../../tooling/typescript
+      '@posthog/tsup-config':
+        specifier: workspace:*
+        version: link:../../tooling/tsup-config
+      '@posthog/workspace-server':
+        specifier: workspace:*
+        version: link:../workspace-server
+      tsup:
+        specifier: 'catalog:'
+        version: 8.5.1(jiti@2.6.1)(postcss@8.5.6)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.2)
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+
+  packages/workspace-server:
+    devDependencies:
+      '@posthog/tsconfig':
+        specifier: workspace:*
+        version: link:../../tooling/typescript
+      '@types/node':
+        specifier: 'catalog:'
+        version: 20.19.41
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+
+  tooling/tsup-config:
+    dependencies:
+      tsup:
+        specifier: 'catalog:'
+        version: 8.5.1(jiti@2.6.1)(postcss@8.5.6)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.2)
+
+  tooling/typescript: {}
 
 packages:
 
@@ -5407,6 +5550,9 @@ packages:
 
   '@types/node@16.9.1':
     resolution: {integrity: sha512-QpLcX9ZSsq3YYUUnD3nFDY8H7wctAhQj/TFKL8Ya8v5fMm3CFXxo8zStsLAl780ltoYoo1WvKUVGBQK+1ifr7g==}
+
+  '@types/node@20.19.41':
+    resolution: {integrity: sha512-ECymXOukMnOoVkC2bb1Vc/w/836DXncOg5m8Xj1RH7xSHZJWNYY6Zh7EH477vcnD5egKNNfy2RpNOmuChhFPgQ==}
 
   '@types/node@22.19.8':
     resolution: {integrity: sha512-ebO/Yl+EAvVe8DnMfi+iaAyIqYdK0q/q0y0rw82INWEKJOBe6b/P3YWE8NW7oOlF/nXFNrHwhARrN/hdgDkraA==}
@@ -17586,6 +17732,10 @@ snapshots:
       '@types/node': 24.12.0
 
   '@types/node@16.9.1': {}
+
+  '@types/node@20.19.41':
+    dependencies:
+      undici-types: 6.21.0
 
   '@types/node@22.19.8':
     dependencies:

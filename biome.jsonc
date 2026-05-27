@@ -163,6 +163,173 @@
       }
     },
     {
+      "includes": ["packages/core/src/**/*.ts", "packages/core/src/**/*.tsx"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "electron",
+                      "react",
+                      "react-dom",
+                      "node:*",
+                      "@posthog/*"
+                    ],
+                    "message": "core is a pure layer that must not depend on any platform-specific dependencies."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "packages/api-client/src/**/*.ts",
+        "packages/api-client/src/**/*.tsx"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "electron",
+                      "node:*",
+                      "@posthog/*",
+                      "!@posthog/core"
+                    ],
+                    "message": "api-client must run in any JS environment."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "packages/workspace-client/src/**/*.ts",
+        "packages/workspace-client/src/**/*.tsx"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "electron",
+                      "node:*",
+                      "@posthog/*",
+                      "!@posthog/core",
+                      "!@posthog/api-client",
+                      "!@posthog/workspace-server"
+                    ],
+                    "message": "workspace-client must run in any JS environment."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "packages/platform/src/**/*.ts",
+        "packages/platform/src/**/*.tsx"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "electron",
+                      "node:*",
+                      "@posthog/*",
+                      "!@posthog/core"
+                    ],
+                    "message": "platform is interface-only."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "packages/workspace-server/src/**/*.ts",
+        "packages/workspace-server/src/**/*.tsx"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "electron": "workspace-server must be host-agnostic."
+                },
+                "patterns": [
+                  {
+                    "group": ["@posthog/ui", "@posthog/api-client"],
+                    "message": "workspace-server must not depend on UI or the PostHog API."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/ui/src/**/*.ts", "packages/ui/src/**/*.tsx"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "electron",
+                      "node:*",
+                      "@posthog/*",
+                      "!@posthog/core",
+                      "!@posthog/api-client",
+                      "!@posthog/workspace-client",
+                      "!@posthog/platform",
+                      "!@posthog/platform/*"
+                    ],
+                    "message": "ui must run in any JS environment."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       // Renderer code should use path aliases
       "includes": [
         "apps/code/src/renderer/**/*.ts",

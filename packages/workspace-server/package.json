@@ -1,0 +1,22 @@
+{
+  "name": "@posthog/workspace-server",
+  "version": "1.0.0",
+  "description": "Workspace server: hosts privileged local/sandbox work (git, fs, watchers, processes) behind a tRPC server",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "clean": "node ../../scripts/rimraf.mjs .turbo"
+  },
+  "devDependencies": {
+    "@posthog/tsconfig": "workspace:*",
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}
