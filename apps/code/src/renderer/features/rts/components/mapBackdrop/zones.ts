@@ -25,8 +25,6 @@ export interface Zone {
   rx: number;
   ry: number;
   rotation: number;
-  label: string;
-  description: string;
   variant: "primary" | "muted";
   propWeights: PropWeights;
   propWeightsDefault: PropType;
@@ -40,8 +38,6 @@ export const ZONES: Zone[] = [
     rx: 950,
     ry: 640,
     rotation: -3,
-    label: "Active nests",
-    description: "goal territory",
     variant: "primary",
     propWeights: [
       [0.32, "wildflower"],
@@ -59,8 +55,6 @@ export const ZONES: Zone[] = [
     rx: 440,
     ry: 260,
     rotation: 8,
-    label: "Wilds",
-    description: "ad-hoc hoglets",
     variant: "muted",
     propWeights: [
       [0.42, "oak"],
@@ -78,8 +72,6 @@ export const ZONES: Zone[] = [
     rx: 450,
     ry: 270,
     rotation: -6,
-    label: "Signal staging",
-    description: "unrouted signal work",
     variant: "muted",
     propWeights: [
       [0.28, "boulder"],

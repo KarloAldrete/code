@@ -99,30 +99,6 @@ export function MapBackdrop({ nests }: { nests: Nest[] }) {
           fill="url(#hm-vignette)"
         />
       </svg>
-
-      {/* Zone labels rendered as DOM so text stays crisp under transform */}
-      {ZONES.map((z) => (
-        <div
-          key={z.id}
-          className="-translate-x-1/2 -translate-y-1/2 absolute top-1/2 left-1/2"
-          style={{
-            transform: `translate(calc(-50% + ${z.cx - z.rx + 80}px), calc(-50% + ${z.cy - z.ry + 56}px))`,
-          }}
-        >
-          <div
-            className="font-medium text-[#f7f3e7] text-[12px] uppercase tracking-[0.18em]"
-            style={{ textShadow: "0 2px 3px rgba(0,0,0,0.75)" }}
-          >
-            {z.label}
-          </div>
-          <div
-            className="mt-0.5 text-[#f7f3e7]/85 text-[11px]"
-            style={{ textShadow: "0 2px 3px rgba(0,0,0,0.7)" }}
-          >
-            {z.description}
-          </div>
-        </div>
-      ))}
     </div>
   );
 }
