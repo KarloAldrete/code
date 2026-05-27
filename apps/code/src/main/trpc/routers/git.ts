@@ -37,6 +37,8 @@ import {
   getFileAtHeadOutput,
   getGitBusyStateInput,
   getGitBusyStateOutput,
+  getGithubFileContentInput,
+  getGithubFileContentOutput,
   getGithubIssueInput,
   getGithubIssueOutput,
   getGithubPullRequestInput,
@@ -461,6 +463,18 @@ export const gitRouter = router({
     .output(getGithubPullRequestOutput)
     .query(({ input }) =>
       getService().getGithubPullRequest(input.owner, input.repo, input.number),
+    ),
+
+  getGithubFileContent: publicProcedure
+    .input(getGithubFileContentInput)
+    .output(getGithubFileContentOutput)
+    .query(({ input }) =>
+      getService().getGithubFileContent(
+        input.owner,
+        input.repo,
+        input.filePath,
+        input.ref,
+      ),
     ),
 
   onCreatePrProgress: publicProcedure.subscription(async function* (opts) {

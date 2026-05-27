@@ -615,6 +615,15 @@ export const getGithubPullRequestInput = getGithubIssueInput;
 
 export const getGithubPullRequestOutput = getGithubIssueOutput;
 
+export const getGithubFileContentInput = z.object({
+  owner: z.string(),
+  repo: z.string(),
+  filePath: z.string(),
+  ref: z.string(),
+});
+
+export const getGithubFileContentOutput = z.string().nullable();
+
 export const createPrProgressPayload = z.object({
   flowId: z.string(),
   step: createPrStep,

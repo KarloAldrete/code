@@ -1957,6 +1957,35 @@ ${truncatedDiff || "(no diff available)"}${contextSection}`;
     return refs[0] ?? null;
   }
 
+  public async getGithubFileContent(
+    owner: string,
+    repo: string,
+    filePath: string,
+    ref: string,
+  ): Promise<string | null> {
+    const encodedPath = filePath
+      .split("/")
+      .map((segment) => encodeURIComponent(segment))
+      .join("/");
+    const result = await execGh([
+      "api",
+      `/repos/${owner}/${repo}/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`,
+      "-H",
+      "Accept: application/vnd.github.raw",
+    ]);
+    if (result.exitCode !== 0) {
+      log.info("Failed to fetch file from GitHub", {
+        owner,
+        repo,
+        filePath,
+        ref,
+        stderr: result.stderr,
+      });
+      return null;
+    }
+    return result.stdout;
+  }
+
   private async fetchGhRefs(
     args: string[],
     repo: string,

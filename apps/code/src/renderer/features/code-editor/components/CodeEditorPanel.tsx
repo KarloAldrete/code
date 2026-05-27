@@ -9,6 +9,7 @@ import { isMarkdownFile } from "@features/code-editor/utils/markdownUtils";
 import { getRelativePath } from "@features/code-editor/utils/pathUtils";
 import { usePanelLayoutStore } from "@features/panels";
 import { useFileTreeStore } from "@features/right-sidebar/stores/fileTreeStore";
+import { useSessionForTask } from "@features/sessions/hooks/useSession";
 import { useCwd } from "@features/sidebar/hooks/useCwd";
 import { useIsWorkspaceCloudRun } from "@features/workspace/hooks/useWorkspace";
 import { Check, Copy } from "@phosphor-icons/react";
@@ -17,7 +18,7 @@ import {
   isRasterImageFile,
   parseImageDataUrl,
 } from "@posthog/shared";
-import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
+import { Box, Button, Flex, IconButton, Text } from "@radix-ui/themes";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
 import type { Task } from "@shared/types";
 
@@ -67,9 +68,21 @@ function FilePanelImagePreview({
   );
 }
 
+function toRepoRelativePath(
+  repoShortName: string | null,
+  path: string,
+): string | null {
+  if (!path.startsWith("/")) return path;
+  if (!repoShortName) return null;
+  const marker = `/${repoShortName}/`;
+  const idx = path.lastIndexOf(marker);
+  if (idx < 0) return null;
+  return path.slice(idx + marker.length);
+}
+
 export function CodeEditorPanel({
   taskId,
-  task: _task,
+  task,
   absolutePath,
 }: CodeEditorPanelProps) {
   const trpcReact = useTRPC();
@@ -125,6 +138,38 @@ export function CodeEditorPanel({
     filePath,
     isCloudRun && !isImage,
   );
+  const cloudSession = useSessionForTask(isCloudRun ? taskId : undefined);
+  const cloudFileMeta = useMemo(() => {
+    if (!isCloudRun) return null;
+    const repo = task.repository ?? null;
+    const branch = task.latest_run?.branch ?? cloudSession?.cloudBranch ?? null;
+    if (!repo || !branch) return null;
+    const [owner, name] = repo.split("/");
+    if (!owner || !name) return null;
+    const repoRelativePath = toRepoRelativePath(name, filePath);
+    if (!repoRelativePath) return null;
+    return {
+      owner,
+      name,
+      branch,
+      repoRelativePath,
+      blobUrl: `https://github.com/${owner}/${name}/blob/${branch}/${repoRelativePath}`,
+    };
+  }, [isCloudRun, task, cloudSession, filePath]);
+
+  const shouldFetchFromGithub =
+    isCloudRun && !isImage && !cloudFile.touched && cloudFileMeta != null;
+  const githubFileQuery = useQuery(
+    trpcReact.git.getGithubFileContent.queryOptions(
+      {
+        owner: cloudFileMeta?.owner ?? "",
+        repo: cloudFileMeta?.name ?? "",
+        filePath: cloudFileMeta?.repoRelativePath ?? "",
+        ref: cloudFileMeta?.branch ?? "",
+      },
+      { enabled: shouldFetchFromGithub, staleTime: 5 * 60 * 1000 },
+    ),
+  );
 
   const repoQuery = useQuery(
     trpcReact.fs.readRepoFile.queryOptions(
@@ -151,8 +196,16 @@ export function CodeEditorPanel({
   );
 
   const localQuery = isInsideRepo ? repoQuery : absoluteQuery;
-  const fileContent = isCloudRun ? cloudFile.content : localQuery.data;
-  const isLoading = isCloudRun ? cloudFile.isLoading : localQuery.isLoading;
+  const cloudContentQuery = shouldFetchFromGithub
+    ? {
+        content: githubFileQuery.data ?? null,
+        isLoading: githubFileQuery.isLoading,
+      }
+    : { content: cloudFile.content, isLoading: cloudFile.isLoading };
+  const fileContent = isCloudRun ? cloudContentQuery.content : localQuery.data;
+  const isLoading = isCloudRun
+    ? cloudContentQuery.isLoading
+    : localQuery.isLoading;
   const error = isCloudRun ? null : localQuery.error;
 
   const enrichment = useFileEnrichment({
@@ -198,10 +251,42 @@ export function CodeEditorPanel({
     return <PanelMessage>Loading file...</PanelMessage>;
   }
 
-  if (isCloudRun && !cloudFile.touched) {
+  if (isCloudRun && !cloudFile.touched && !shouldFetchFromGithub) {
     return (
       <PanelMessage detail={filePath}>
-        File content not available — the agent did not read or write this file
+        File content not available — the agent did not read or write this file,
+        and the cloud run's branch could not be resolved
+      </PanelMessage>
+    );
+  }
+
+  if (
+    isCloudRun &&
+    !cloudFile.touched &&
+    shouldFetchFromGithub &&
+    fileContent == null
+  ) {
+    return (
+      <PanelMessage detail={filePath}>
+        <Flex direction="column" align="center" gap="2">
+          <Text className="text-sm">
+            Couldn't load file from GitHub — the agent did not read or write
+            this file
+          </Text>
+          {cloudFileMeta && (
+            <Button
+              size="1"
+              variant="soft"
+              onClick={() =>
+                trpcClient.os.openExternal.mutate({
+                  url: cloudFileMeta.blobUrl,
+                })
+              }
+            >
+              View on GitHub
+            </Button>
+          )}
+        </Flex>
       </PanelMessage>
     );
   }
