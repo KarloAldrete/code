@@ -1,0 +1,58 @@
+# Bridge from tRPC procedures to MCP tools exposed to the running agent.
+#
+# Re-run `pnpm --filter code scaffold-mcp-tools` after adding or removing
+# tRPC procedures. New entries are scaffolded as enabled: false; the boot-time
+# registry hard-fails if an entry references a procedure that no longer
+# exists, so stale entries must be deleted by hand.
+#
+# Default-deny: every enabled tool is callable by the agent. Review carefully
+# before flipping enabled: true on anything beyond the curated defaults.
+tools:
+  customInstructions.read:
+    operation: customInstructions.read
+    enabled: true
+    title: Read custom instructions
+    description: >
+      Return the user's custom instructions — extra guidance the user has appended to every agent prompt.
+      Returns an empty string if no custom instructions are configured.
+    annotations:
+      readOnly: true
+      destructive: false
+      idempotent: true
+
+  customInstructions.write:
+    operation: customInstructions.write
+    enabled: true
+    title: Write custom instructions
+    description: >
+      Replace the user's custom instructions. Pass the full new text — this overwrites the existing value.
+      Pass an empty string to clear.
+    annotations:
+      readOnly: false
+      destructive: true
+      idempotent: false
+
+  mcpInstallations.list:
+    operation: mcpInstallations.list
+    enabled: true
+    title: List installed MCP servers
+    description: >
+      List the MCP server installations on the current PostHog project. Returns id, name, url, auth_type,
+      and status flags for each installation.
+    annotations:
+      readOnly: true
+      destructive: false
+      idempotent: true
+
+  mcpInstallations.installCustom:
+    operation: mcpInstallations.installCustom
+    enabled: true
+    title: Install a custom MCP server
+    description: >
+      Install a new MCP server on the current PostHog project. Use auth_type="api_key" with `api_key`
+      for static bearer tokens; use auth_type="oauth" to start an OAuth handshake — the response will
+      include a redirectUrl the user must visit.
+    annotations:
+      readOnly: false
+      destructive: false
+      idempotent: false

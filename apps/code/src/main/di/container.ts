@@ -34,6 +34,7 @@ import { AuthProxyService } from "../services/auth-proxy/service";
 import { CloudTaskService } from "../services/cloud-task/service";
 import { ConnectivityService } from "../services/connectivity/service";
 import { ContextMenuService } from "../services/context-menu/service";
+import { CustomInstructionsService } from "../services/custom-instructions/service";
 import { DeepLinkService } from "../services/deep-link/service";
 import { EnrichmentService } from "../services/enrichment/service";
 import { EnvironmentService } from "../services/environment/service";
@@ -52,10 +53,12 @@ import { LlmGatewayService } from "../services/llm-gateway/service";
 import { LocalLogsService } from "../services/local-logs/service";
 import { McpAppsService } from "../services/mcp-apps/service";
 import { McpCallbackService } from "../services/mcp-callback/service";
+import { McpInstallationsService } from "../services/mcp-installations/service";
 import { McpProxyService } from "../services/mcp-proxy/service";
 import { NewTaskLinkService } from "../services/new-task-link/service";
 import { NotificationService } from "../services/notification/service";
 import { OAuthService } from "../services/oauth/service";
+import { PostHogCodeInternalMcpService } from "../services/posthog-code-internal-mcp/service";
 import { PosthogPluginService } from "../services/posthog-plugin/service";
 import { ProcessTrackingService } from "../services/process-tracking/service";
 import { ProvisioningService } from "../services/provisioning/service";
@@ -109,7 +112,14 @@ container.bind(MAIN_TOKENS.AgentAuthAdapter).to(AgentAuthAdapter);
 container.bind(MAIN_TOKENS.AgentService).to(AgentService);
 container.bind(MAIN_TOKENS.AuthService).to(AuthService);
 container.bind(MAIN_TOKENS.AuthProxyService).to(AuthProxyService);
+container
+  .bind(MAIN_TOKENS.CustomInstructionsService)
+  .to(CustomInstructionsService);
+container.bind(MAIN_TOKENS.McpInstallationsService).to(McpInstallationsService);
 container.bind(MAIN_TOKENS.McpProxyService).to(McpProxyService);
+container
+  .bind(MAIN_TOKENS.PostHogCodeInternalMcpService)
+  .to(PostHogCodeInternalMcpService);
 container.bind(MAIN_TOKENS.ArchiveService).to(ArchiveService);
 container.bind(MAIN_TOKENS.SuspensionService).to(SuspensionService);
 container.bind(MAIN_TOKENS.AppLifecycleService).to(AppLifecycleService);

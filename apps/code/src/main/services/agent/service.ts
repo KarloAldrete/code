@@ -15,6 +15,7 @@ import {
 import {
   isMcpToolReadOnly,
   isNotification,
+  POSTHOG_METHODS,
   POSTHOG_NOTIFICATIONS,
 } from "@posthog/agent";
 import type { McpToolApprovals } from "@posthog/agent/adapters/claude/mcp/tool-metadata";
@@ -53,6 +54,8 @@ import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
 import type { FsService } from "../fs/service";
 import type { McpAppsService } from "../mcp-apps/service";
+import { McpInstallationsServiceEvent } from "../mcp-installations/schemas";
+import type { McpInstallationsService } from "../mcp-installations/service";
 import type { PosthogPluginService } from "../posthog-plugin/service";
 import type { ProcessTrackingService } from "../process-tracking/service";
 import { loadSessionEnvOverrides } from "../session-env/loader";
@@ -249,6 +252,8 @@ interface ManagedSession {
   mcpToolApprovals: McpToolApprovals;
   /** Maps tool keys to their installation for backend approval updates */
   toolInstallations: McpToolInstallations;
+  /** Set when an MCP server is installed mid-turn; refresh runs after the turn ends. */
+  pendingMcpRefresh: boolean;
 }
 
 /** Get the agent session ID from a managed session, throwing if not set. */
@@ -323,6 +328,8 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     private readonly defaultAdditionalDirectoryRepository: IDefaultAdditionalDirectoryRepository,
     @inject(MAIN_TOKENS.WorkspaceRepository)
     private readonly workspaceRepository: IWorkspaceRepository,
+    @inject(MAIN_TOKENS.McpInstallationsService)
+    mcpInstallations: McpInstallationsService,
   ) {
     super();
     this.processTracking = processTracking;
@@ -333,6 +340,9 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     this.mcpAppsService = mcpAppsService;
 
     powerManager.onResume(() => this.checkIdleDeadlines());
+    mcpInstallations.on(McpInstallationsServiceEvent.Installed, () => {
+      void this.refreshAllSessionMcpServers();
+    });
   }
 
   private getClaudeCliPath(): string {
@@ -412,6 +422,46 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
 
     this.pendingPermissions.delete(key);
     this.recordActivity(taskRunId);
+  }
+
+  private async refreshSessionMcpServers(
+    session: ManagedSession,
+  ): Promise<void> {
+    try {
+      const { servers } = await this.agentAuthAdapter.buildMcpServers(
+        session.config.credentials,
+      );
+      await session.clientSideConnection.extMethod(
+        POSTHOG_METHODS.REFRESH_SESSION,
+        { mcpServers: servers },
+      );
+      log.info("Refreshed MCP servers for session", {
+        taskRunId: session.taskRunId,
+        serverCount: servers.length,
+      });
+    } catch (err) {
+      log.warn("Failed to refresh MCP servers for session", {
+        taskRunId: session.taskRunId,
+        err,
+      });
+    }
+  }
+
+  private async refreshAllSessionMcpServers(): Promise<void> {
+    const refreshable: ManagedSession[] = [];
+    for (const session of this.sessions.values()) {
+      if (session.promptPending) {
+        // ACP refresh contract requires no prompt in flight; defer until the
+        // turn completes (see prompt() finally block).
+        session.pendingMcpRefresh = true;
+        log.info("Deferring MCP refresh until current turn ends", {
+          taskRunId: session.taskRunId,
+        });
+        continue;
+      }
+      refreshable.push(session);
+    }
+    await Promise.all(refreshable.map((s) => this.refreshSessionMcpServers(s)));
   }
 
   /**
@@ -847,6 +897,7 @@ When creating pull requests, add the following footer at the end of the PR descr
         inFlightMcpToolCalls: new Map(),
         mcpToolApprovals: toolApprovals,
         toolInstallations,
+        pendingMcpRefresh: false,
       };
 
       this.sessions.set(taskRunId, session);
@@ -934,6 +985,11 @@ When creating pull requests, add the following footer at the end of the PR descr
       session.lastActivityAt = Date.now();
       this.recordActivity(sessionId);
       this.sleepService.release(sessionId);
+
+      if (session.pendingMcpRefresh) {
+        session.pendingMcpRefresh = false;
+        void this.refreshSessionMcpServers(session);
+      }
 
       if (!this.hasActiveSessions()) {
         this.emit(AgentServiceEvent.SessionsIdle, undefined);

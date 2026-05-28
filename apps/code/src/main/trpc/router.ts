@@ -6,6 +6,7 @@ import { authRouter } from "./routers/auth";
 import { cloudTaskRouter } from "./routers/cloud-task";
 import { connectivityRouter } from "./routers/connectivity";
 import { contextMenuRouter } from "./routers/context-menu";
+import { customInstructionsRouter } from "./routers/custom-instructions";
 import { deepLinkRouter } from "./routers/deep-link";
 import { encryptionRouter } from "./routers/encryption";
 import { enrichmentRouter } from "./routers/enrichment";
@@ -23,6 +24,7 @@ import { llmGatewayRouter } from "./routers/llm-gateway";
 import { logsRouter } from "./routers/logs";
 import { mcpAppsRouter } from "./routers/mcp-apps";
 import { mcpCallbackRouter } from "./routers/mcp-callback";
+import { mcpInstallationsRouter } from "./routers/mcp-installations";
 import { notificationRouter } from "./routers/notification";
 import { oauthRouter } from "./routers/oauth";
 import { osRouter } from "./routers/os";
@@ -49,6 +51,7 @@ export const trpcRouter = router({
   cloudTask: cloudTaskRouter,
   connectivity: connectivityRouter,
   contextMenu: contextMenuRouter,
+  customInstructions: customInstructionsRouter,
 
   enrichment: enrichmentRouter,
   environment: environmentRouter,
@@ -65,6 +68,7 @@ export const trpcRouter = router({
   llmGateway: llmGatewayRouter,
   mcpApps: mcpAppsRouter,
   mcpCallback: mcpCallbackRouter,
+  mcpInstallations: mcpInstallationsRouter,
   notification: notificationRouter,
   oauth: oauthRouter,
   logs: logsRouter,

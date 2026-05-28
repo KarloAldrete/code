@@ -200,6 +200,9 @@ function createMockDependencies() {
       addAdditionalDirectory: vi.fn(),
       removeAdditionalDirectory: vi.fn(),
     },
+    internalMcp: {
+      on: vi.fn(),
+    },
   };
 }
 
@@ -232,6 +235,7 @@ describe("AgentService", () => {
       deps.storagePaths as never,
       deps.defaultAdditionalDirectoryRepository as never,
       deps.workspaceRepository as never,
+      deps.internalMcp as never,
     );
   });
 
