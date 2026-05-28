@@ -180,9 +180,13 @@
                       "react",
                       "react-dom",
                       "node:*",
-                      "@posthog/*"
+                      "@posthog/*",
+                      "!@posthog/shared",
+                      "!@posthog/platform",
+                      "!@posthog/workspace-client",
+                      "!@posthog/api-client"
                     ],
-                    "message": "core is a pure layer that must not depend on any platform-specific dependencies."
+                    "message": "core is a pure layer. Allowed @posthog deps: shared, platform, workspace-client, api-client. Never ui/* or workspace-server/*."
                   }
                 ]
               }

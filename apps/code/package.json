@@ -132,6 +132,7 @@
     "@pierre/diffs": "^1.1.21",
     "@posthog/agent": "workspace:*",
     "@posthog/api-client": "workspace:*",
+    "@posthog/core": "workspace:*",
     "@posthog/electron-trpc": "workspace:*",
     "@posthog/enricher": "workspace:*",
     "@posthog/git": "workspace:*",

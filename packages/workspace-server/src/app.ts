@@ -19,7 +19,11 @@ export function createApp(options: CreateAppOptions): Hono {
   const expected = Buffer.from(options.sharedSecret);
 
   const requireSecret = createMiddleware(async (c, next) => {
-    const provided = Buffer.from(c.req.header(SECRET_HEADER) ?? "");
+    // EventSource (used by tRPC SSE subscriptions) can't send custom headers,
+    // so subscriptions authenticate via a `secret` query param instead.
+    const headerSecret = c.req.header(SECRET_HEADER);
+    const querySecret = c.req.query("secret");
+    const provided = Buffer.from(headerSecret ?? querySecret ?? "");
     if (
       provided.length !== expected.length ||
       !timingSafeEqual(provided, expected)

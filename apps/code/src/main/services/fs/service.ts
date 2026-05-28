@@ -1,11 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getChangedFiles, listAllFiles } from "@posthog/git/queries";
+import { FileWatcherEventKind as FileWatcherEvent } from "@posthog/workspace-server/services/watcher/schemas";
 import { inject, injectable } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
-import { FileWatcherEvent } from "../file-watcher/schemas";
-import type { FileWatcherService } from "../file-watcher/service";
+import type { FileWatcherBridge } from "../file-watcher/bridge";
 import type { BoundedReadResult, FileEntry } from "./schemas";
 
 const log = logger.scope("fs");
@@ -18,7 +18,7 @@ export class FsService {
 
   constructor(
     @inject(MAIN_TOKENS.FileWatcherService)
-    private fileWatcher: FileWatcherService,
+    private fileWatcher: FileWatcherBridge,
   ) {
     this.fileWatcher.on(FileWatcherEvent.FileChanged, ({ repoPath }) => {
       this.invalidateCache(repoPath);

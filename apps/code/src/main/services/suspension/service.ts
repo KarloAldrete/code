@@ -24,7 +24,7 @@ import { MAIN_TOKENS } from "../../di/tokens.js";
 import { logger } from "../../utils/logger.js";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter.js";
 import type { AgentService } from "../agent/service.js";
-import type { FileWatcherService } from "../file-watcher/service.js";
+import type { FileWatcherBridge } from "../file-watcher/bridge";
 import type { ProcessTrackingService } from "../process-tracking/service.js";
 import {
   getAutoSuspendAfterDays,
@@ -65,7 +65,7 @@ export class SuspensionService extends TypedEventEmitter<SuspensionServiceEvents
     @inject(MAIN_TOKENS.ProcessTrackingService)
     private readonly processTracking: ProcessTrackingService,
     @inject(MAIN_TOKENS.FileWatcherService)
-    private readonly fileWatcher: FileWatcherService,
+    private readonly fileWatcher: FileWatcherBridge,
     @inject(MAIN_TOKENS.RepositoryRepository)
     private readonly repositoryRepo: IRepositoryRepository,
     @inject(MAIN_TOKENS.WorkspaceRepository)

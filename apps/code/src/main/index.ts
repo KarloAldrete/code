@@ -1,7 +1,9 @@
 import "reflect-metadata";
 import os from "node:os";
+import { createWorkspaceClient } from "@posthog/workspace-client/client";
 import { app, BrowserWindow, dialog } from "electron";
 import log from "electron-log/main";
+import { FileWatcherBridge } from "./services/file-watcher/bridge";
 import "./utils/logger";
 import "./services/index.js";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
@@ -231,12 +233,18 @@ app.whenReady().then(async () => {
   ensureClaudeConfigDir();
   registerMcpSandboxProtocol();
   createWindow();
+
+  const wsServer = container.get<WorkspaceServerService>(
+    MAIN_TOKENS.WorkspaceServerService,
+  );
+  const connection = await wsServer.start();
+  const workspaceClient = createWorkspaceClient(connection);
+  container
+    .bind(MAIN_TOKENS.FileWatcherService)
+    .toConstantValue(new FileWatcherBridge(workspaceClient));
+
   await initializeServices();
   initializeDeepLinks();
-  container
-    .get<WorkspaceServerService>(MAIN_TOKENS.WorkspaceServerService)
-    .start()
-    .catch((err) => log.error("workspace-server failed to start", err));
 });
 
 app.on("window-all-closed", () => {

@@ -46,16 +46,22 @@ apps/
 Per-domain folder shape, by package:
 
 ```
-core/sessions/                ui/sessions/                  workspace-server/git/
-├── index.ts                  ├── index.ts                  ├── index.ts
-├── service.ts                ├── SessionList.tsx           ├── procedures.ts
-├── types.ts                  ├── SessionDetail.tsx         ├── git-ops.ts
-└── service.test.ts           ├── useSession.ts             └── git-ops.test.ts
+core/sessions/                ui/sessions/                  workspace-server/services/git/
+├── sessions.ts               ├── SessionList.tsx           ├── git.ts
+├── types.ts                  ├── SessionDetail.tsx         └── schemas.ts
+└── sessions.test.ts          ├── useSession.ts
                               ├── store.ts        (Zustand)
                               └── SessionList.test.tsx
 ```
 
-Flat. No `internal/` folder — `index.ts` is the boundary. Split into more files when a single file gets too long to read, grouped by concept.
+Naming:
+- The main file is named after its domain (`sessions.ts`, `file-watcher.ts`, `git.ts`) — not `service.ts`, not `index.ts`. "Service" is DI culture; in core there's no DI and the suffix is meaningless. The repeated folder/file name is intentional: `file-watcher/file-watcher.ts` reads cleaner than `file-watcher/service.ts` and makes grep-by-filename land on the right file.
+- `types.ts` — pure TS types, interfaces, enums, constants. No runtime cost. Use when the domain has internal-only types not crossing a tRPC boundary.
+- `schemas.ts` — Zod schemas + types inferred from them (`z.infer<typeof xSchema>`). Use when shapes cross a tRPC boundary (workspace-server procedures, anything validated at runtime). The schema is the source of truth; types are inferred from it, never declared separately.
+- A domain can have both `types.ts` and `schemas.ts` when it has internal types AND boundary-validated shapes. Most have one or the other.
+- Tests colocate next to the file under test (`sessions.test.ts`, `git.test.ts`).
+
+Flat. No `internal/` folder. Split into more files when a single file gets too long to read, grouped by concept.
 
 **What each package owns:**
 
@@ -82,6 +88,10 @@ The desktop **main process is not the home of business logic anymore.** It does 
 - **Delete, don't deprecate.** When code moves, the old file is removed in the same change. No shims, no re-exports, no "deprecated" comments.
 - **Banned imports in `packages/core`.** No `electron`, no `node:fs`, no `node:child_process`, no `node:net`, no `node:os`, no `node:path`. Pure JS only. Anything you'd reach for there is either a workspace-server procedure or a `@posthog/platform` interface.
 - **Don't bundle other work.** Wire-format changes, algorithm rewrites, new features, cosmetic renames — keep them out of the move. They double review surface and obscure what's actually being relocated.
+- **Not every feature needs a core module.** `core/` is for domain logic — state machines, retries, dedup, cross-feature coordination, business rules. Features that are pure data-piping (server → useQuery → component) skip `core/` entirely. Don't invent a core file for symmetry; let core stay empty for that feature.
+- **Source-smoothing belongs with the source, not in core.** Debouncing a noisy event stream, dedup, bulk-threshold throttling, filtering source-specific noise (irrelevant git dir events, etc.) — these are properties of the *event source*, not domain decisions. They live in the workspace-server procedure that owns the source, so every client gets the smoothed stream for free. Don't put them in core just because they look like "orchestration."
+- **Hooks are pure react-query idioms.** `useQuery`, `useMutation`, `useSubscription` over a tRPC procedure — that's the whole hook. No `useEffect` constructing services. No `for-await` over async iterables in a hook body. No imperative subscribe/unsubscribe ceremony with a wrappers map. If you find yourself reaching for those, the orchestration is in the wrong place — push it to wherever the tRPC procedure lives (typically workspace-server) and the hook collapses to 5 lines.
+- **`useState`, `useRef`, `useEffect` in a hook are usually a smell.** They mean the hook is holding application state or subscription bookkeeping that should live elsewhere — react-query's cache, a Zustand store, a workspace-server procedure, or just derivation from existing query data. The legitimate uses are narrow: `useRef` for DOM refs (focus, scroll, measurement), `useEffect` for synchronizing imperative browser APIs (event listeners on `window`, `ResizeObserver`, etc.). Anything else — caching a previous value, holding a subscription handle, stashing a callback ref to avoid re-renders, building a wrappers map — means the hook is doing work that belongs upstream.
 
 ## Comment markers
 
@@ -97,13 +107,16 @@ Use these consistently. Grep targets matter — follow-up passes hunt for each m
 
 | Today | New home |
 |---|---|
-| `apps/code/src/main/services/<X>/service.ts` — orchestration, retries, state machines, parsing, OAuth dances | `packages/core/<X>/service.ts` |
-| Same file — the bits that touch git CLI / fs / spawn | `packages/workspace-server/<capability>/` (git → `git/`, fs → `fs/`, spawn → `process/`, etc.) |
-| `apps/code/src/main/trpc/routers/<X>.ts` | Dumb procedures → registered from the relevant `workspace-server/<capability>/`. Orchestrating procedures **disappear** — core calls the clients directly. |
+| `apps/code/src/main/services/<X>/service.ts` — *business* orchestration: state machines, retries, OAuth flows, cross-feature coordination, business rules | `packages/core/<X>/<X>.ts` |
+| Same file — *source smoothing*: debounce, dedup, throttle, batch, source-noise filtering | `packages/workspace-server/services/<capability>/` — alongside whatever procedure produces the noisy events. Don't route through core. |
+| Same file — host syscalls (git CLI, fs, spawn, native modules) | `packages/workspace-server/services/<capability>/` (git → `git/`, fs → `fs/`, spawn → `process/`, etc.) |
+| `apps/code/src/main/trpc/routers/<X>.ts` | Strict one-liner procedures, registered alongside their service in `workspace-server/services/<X>/`. Orchestrating procedures **disappear** — core (or the workspace-server procedure itself) does that work. |
 | `apps/code/src/api/<X>` (Django) | `packages/api-client/<X>` |
 | `apps/code/src/renderer/features/<X>/` (UI) | `packages/ui/<X>/` |
 | `apps/code/src/renderer/stores/<X>.ts` (thin UI state) | `packages/ui/<X>/store.ts` (still Zustand, still thin) |
 | `apps/code/src/main/platform-adapters/<X>.ts` | `apps/desktop/platform-adapters/<X>.ts` |
+
+If the migrated feature is pure data-piping (server → useQuery → component), there's no row to core — that's expected, not a missed step.
 
 ---
 
@@ -111,33 +124,62 @@ Use these consistently. Grep targets matter — follow-up passes hunt for each m
 
 Do these in order. One feature at a time.
 
-1. **Audit.** Grep for the feature. List every file: main service, schemas, router, store, components, hooks, subscriptions, tests. If the audit doesn't fit in one paragraph, split the feature (see [Splitting a mega-feature](#splitting-a-mega-feature)).
-2. **Identify host calls.** Anything touching git CLI, fs, child-process spawn, native modules. Those become workspace-server procedures.
-3. **Identify orchestration.** Retries, polling, dedup, state machines, multi-step flows, error normalization. That's core.
-4. **Define the workspace-server router first.** Dumb procedures only, Zod input + output. Add it to `appRouter` in `packages/workspace-server/src/trpc.ts`.
-5. **Port orchestration to `packages/core/<feature>/`.** Pure JS. Inject `workspace-client` and `api-client` via constructor params — **no Inversify in core.** Unit test it.
-6. **Wire the UI.** Lift to `packages/ui/features/<feature>/` if shareable, or keep in the app. The component imports core; core imports the clients.
-7. **Delete the old main service and router.** No shims, no compatibility re-exports.
+1. **Audit.** Grep for the feature. List every file: main service, schemas, router, store, components, hooks, subscriptions, tests. **Also list fan-in**: which other main services consume this one's events or call its methods. The audit is for *you*, not a gate — most features in this codebase have fan-in, and that's not a reason to abandon the slice. See [Coexistence and bridges](#coexistence-and-bridges) for how to handle it.
+2. **Identify host calls.** Anything touching git CLI, fs, child-process spawn, native modules, OS APIs. Those become workspace-server procedures.
+3. **Sort the rest into one of three buckets:**
+   - **Source-smoothing** — debounce, dedup, throttle, batch, noise-filter events from a host source. Goes alongside the source's procedure in `workspace-server/services/<X>/`. Don't route through core.
+   - **Business orchestration** — state machines, retries, OAuth flows, cross-feature coordination, business rules, error normalization. Goes in `packages/core/<X>/`.
+   - **Neither** — pure data-piping from a server query to a component. There's no core module to write. Skip ahead to step 6.
+4. **Define the workspace-server procedures first.** Strict one-liners over service methods. Zod input + output, schemas in `workspace-server/services/<X>/schemas.ts`.
+5. **(If core applies)** Port business orchestration to `packages/core/<feature>/<feature>.ts`. Pure JS. Constructor injection of `workspace-client` / `api-client` — **no Inversify in core.** Unit test the pure parts directly (extract pure functions for debouncing, drainage, predicates) — don't try to test the async iterable wiring.
+6. **Wire the UI.** Hook in `packages/ui/features/<feature>/` is a thin `useQuery` / `useMutation` / `useSubscription` over the tRPC procedure. No `useEffect` / `useRef` / `useState` ceremony. If you reach for those, the orchestration is in the wrong place — push it upstream and try again.
+7. **Delete the old main service and router.** No shims, no re-exports — unless coexistence is genuinely needed for fan-in consumers ([Coexistence and bridges](#coexistence-and-bridges)).
 8. **Apply in-slice cleanups.** See below.
-9. **Add a MIGRATION.md entry.** What moved, what was cleaned, what was deliberately left.
+9. **Add a MIGRATION.md entry.** What moved, what was cleaned, what was deliberately left, what the retirement condition is for any bridge.
 
 ---
 
-## Splitting a mega-feature
+## Coexistence and bridges
 
-Some features are too large to move in one pass — the canonical example is the renderer-side `sessions` module (thousands of lines, owns its own state machines, holds subscriptions, reaches into other stores). Trying to port that in one go is how a refactor stalls for a week.
+This codebase is heavily inter-coupled — most main-process services consume events from, or call methods on, other main-process services. A pure "one feature, one slice, delete the old" port is the exception, not the rule. Expect coexistence; design for it.
 
-When the audit blows past one paragraph, **carve the feature into slices and migrate slice-by-slice**, not file-by-file. A slice is the smallest user-visible capability that can stand on its own: "list sessions," "create session," "session detail view," "session permissions stream." Each slice is its own pass through the per-feature procedure above, with its own MIGRATION.md entry.
+**The default pattern: bridge the old module.** When you move a feature's guts into `packages/core/<X>/` + `packages/workspace-server/<cap>/` + `packages/ui/<X>/`, the old `apps/code/src/main/services/<X>/service.ts` doesn't have to die in the same change. Keep it as a thin shim that:
 
-Rules for slicing:
+- constructs the new core module (or the workspace-server-backed client) at boot,
+- forwards the events and methods its in-process consumers already depend on,
+- holds no logic of its own — just delegation.
 
-- **Pick the most read-only slice first.** Lists and detail views before mutations. Mutations before subscriptions. Subscriptions before anything that coordinates across other features.
-- **The old module stays alive until the last slice lands.** New `packages/core/<feature>/` and old `apps/code/src/...` coexist during the migration. That's fine — but the coexistence is the cost you're paying to land slices safely, not a permanent state. Don't add new code to the old module.
-- **No shared helpers across the seam.** If a slice in `core/` needs a helper that still lives in the old module, copy it (mark with `// PORT NOTE: duplicated from <old path>, removed when <slice> lands`). Importing across the seam glues the two halves together and defeats the point.
-- **Track the slices explicitly.** Open a tracking issue or a checklist at the top of MIGRATION.md for the feature. Each landed slice ticks a box. The feature isn't "migrated" until every box is ticked and the old module is deleted.
-- **Stop and re-plan if a slice doesn't fit the model.** If you carve off "session detail view" and discover it can't be expressed without dragging half the state machine with it, that's a signal the slice boundary is wrong — not a signal to widen the slice. Re-slice.
+The shim is the seam. Other main services keep depending on it unchanged. As each of *those* services migrates later, they drop their dependency on the shim. When the last one is gone, delete the shim.
 
-If you can't find a clean first slice at all, the feature probably has a layering problem that needs to be named before the move starts. Raise it.
+Mark the shim file with a one-liner at the top: `// PORT NOTE: shim — delegates to <new path>. Delete when <list of remaining consumers> migrate.` That tells the next reader (or agent) exactly what's keeping it alive and what unblocks its removal.
+
+**Skip the shim when the new class is signature-compatible with the old DI binding.** If the new `core/<X>/service.ts` already exposes the same methods and event API the old service did, you don't need a shim at all — just late-bind the new class to the existing DI token at bootstrap. The pattern (taken from the file-watcher migration):
+
+```ts
+// In main bootstrap, after the new class's async prereqs are ready:
+const connection = await wsServer.start();
+const workspaceClient = createWorkspaceClient(connection);
+container
+  .bind(MAIN_TOKENS.FileWatcherService)
+  .toConstantValue(new CoreFileWatcherService({ workspace: workspaceClient }));
+
+await initializeServices(); // existing consumers resolve here, unchanged
+```
+
+Remove the static `container.bind(...).to(OldClass)` from `container.ts`. Consumers keep `@inject(MAIN_TOKENS.X) private x: X` — only the *type import path* changes (from `../X/service` to `@posthog/core/X/service`). The DI token now points at the core class; no delegation layer, no event re-emission, no shim file to delete later.
+
+This works when (a) the core class's public API is a strict superset of the old one, (b) there's a clean bootstrap point where the async prereqs are known to be ready, and (c) nothing tries to resolve the token earlier than that point. Verify (c) by grepping the token — `services/index.ts` side-effect imports, top-level `register*Handlers()` calls, etc. should not transitively `container.get` it before your bind runs.
+
+**When the feature itself is too big to port in one slice** (the renderer-side `sessions` module is the canonical example — thousands of lines, owns state machines, holds subscriptions, reaches into other stores), carve it into smaller user-visible slices: "list sessions," "create session," "session detail view," "session permissions stream." Each slice is its own pass through the per-feature procedure, with its own MIGRATION.md entry. Pick read-only slices before mutations, mutations before subscriptions.
+
+Rules that hold for both bridging and slicing:
+
+- **Don't add new code to the old module.** New logic goes in the new home. The old code is in maintenance mode for the duration.
+- **Don't import across the seam in the wrong direction.** New `core/` code never imports from the old `apps/code/...` module — the dependency goes old → new, not new → old. If `core/` needs a helper that still only lives in the old module, copy it (mark with `// PORT NOTE: duplicated from <old path>, removed when <slice> lands`).
+- **Track open coexistence in MIGRATION.md.** Each entry says what's still in the old location and what triggers its removal — fan-in waiting to migrate, shims keeping the boot path stable, helpers temporarily duplicated.
+- **Coexistence is the cost, not the goal.** Every shim and duplicate is a debt with a known retirement condition. If you find one without a retirement condition, that's the layering problem — name it.
+
+If you genuinely can't find any tractable slice (the feature is so entangled that even a shim doesn't isolate the new code), that's a layering problem, not a porting problem. Raise it before starting.
 
 ---
 
@@ -180,9 +222,12 @@ If you find debt that isn't a forbidden pattern and isn't a layering fix, **leav
 ## Recommended order
 
 1. **Read-only, no subscriptions.** Done — diff-stats.
-2. **Read-only, subscription-based** (file-watcher, sync-status). Proves the streaming transport.
-3. **Write paths** (focus mode, worktree ops).
-4. **Terminal / pty proxying.** Most ambitious. Tests the full pipeline including binary data.
+2. **Read-only, subscription-based** — done. file-watcher proved the SSE streaming transport (workspace-client `splitLink` + `httpSubscriptionLink`, hono server accepting `?secret=` query).
+3. **Auth / api-client-adjacent.** Exercises the api-client path end-to-end. Next.
+4. **Write paths** (focus mode, worktree ops).
+5. **Terminal / pty proxying.** Most ambitious. Tests the full pipeline including binary data.
+
+The first two slices also surfaced two recurring patterns now baked into the ground rules: source-smoothing belongs with the source (not core), and hooks are pure react-query idioms (not useEffect wrappers). Apply them on every slice going forward.
 
 ---
 

@@ -27,7 +27,7 @@ import type { WorktreeRepository } from "../../db/repositories/worktree-reposito
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import type { AgentService } from "../agent/service";
-import type { FileWatcherService } from "../file-watcher/service";
+import type { FileWatcherBridge } from "../file-watcher/bridge";
 import type { ProcessTrackingService } from "../process-tracking/service";
 import { getWorktreeLocation } from "../settingsStore";
 import type { ArchivedTask, ArchiveTaskInput } from "./schemas";
@@ -44,7 +44,7 @@ export class ArchiveService {
     @inject(MAIN_TOKENS.ProcessTrackingService)
     private readonly processTracking: ProcessTrackingService,
     @inject(MAIN_TOKENS.FileWatcherService)
-    private readonly fileWatcher: FileWatcherService,
+    private readonly fileWatcher: FileWatcherBridge,
     @inject(MAIN_TOKENS.RepositoryRepository)
     private readonly repositoryRepo: RepositoryRepository,
     @inject(MAIN_TOKENS.WorkspaceRepository)

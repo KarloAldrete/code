@@ -91,7 +91,7 @@ import type { Workspace } from "../../db/repositories/workspace-repository.js";
 import { createMockWorkspaceRepository } from "../../db/repositories/workspace-repository.mock.js";
 import { createMockWorktreeRepository } from "../../db/repositories/worktree-repository.mock.js";
 import type { AgentService } from "../agent/service.js";
-import type { FileWatcherService } from "../file-watcher/service.js";
+import type { FileWatcherBridge } from "../file-watcher/bridge";
 import type { ProcessTrackingService } from "../process-tracking/service.js";
 import { SuspensionService } from "./service.js";
 
@@ -104,7 +104,7 @@ function createMocks() {
   } as unknown as ProcessTrackingService;
   const fileWatcher = {
     stopWatching: vi.fn(),
-  } as unknown as FileWatcherService;
+  } as unknown as FileWatcherBridge;
   const repositoryRepo = createMockRepositoryRepository();
   const workspaceRepo = createMockWorkspaceRepository();
   const worktreeRepo = createMockWorktreeRepository();

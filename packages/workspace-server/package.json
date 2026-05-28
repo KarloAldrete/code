@@ -17,6 +17,7 @@
   "dependencies": {
     "@hono/node-server": "catalog:",
     "@hono/trpc-server": "catalog:",
+    "@parcel/watcher": "catalog:",
     "@posthog/git": "workspace:*",
     "@trpc/server": "catalog:",
     "hono": "catalog:",

@@ -14,6 +14,7 @@ import {
 import { CreateOrSwitchBranchSaga } from "@posthog/git/sagas/branch";
 import { DetachHeadSaga } from "@posthog/git/sagas/head";
 import { WorktreeManager } from "@posthog/git/worktree";
+import { FileWatcherEventKind as FileWatcherEvent } from "@posthog/workspace-server/services/watcher/schemas";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { inject, injectable } from "inversify";
 import type { RepositoryRepository } from "../../db/repositories/repository-repository";
@@ -26,8 +27,7 @@ import { TypedEventEmitter } from "../../utils/typed-event-emitter";
 import { deriveWorktreePath } from "../../utils/worktree-helpers";
 import { AgentServiceEvent } from "../agent/schemas";
 import type { AgentService } from "../agent/service";
-import { FileWatcherEvent } from "../file-watcher/schemas";
-import type { FileWatcherService } from "../file-watcher/service";
+import type { FileWatcherBridge } from "../file-watcher/bridge";
 import type { FocusService } from "../focus/service";
 import { FocusServiceEvent } from "../focus/service";
 import type { ProcessTrackingService } from "../process-tracking/service";
@@ -248,7 +248,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     if (this.branchWatcherInitialized) return;
     this.branchWatcherInitialized = true;
 
-    const fileWatcher = container.get<FileWatcherService>(
+    const fileWatcher = container.get<FileWatcherBridge>(
       MAIN_TOKENS.FileWatcherService,
     );
     const focusService = container.get<FocusService>(MAIN_TOKENS.FocusService);
@@ -1188,7 +1188,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     branchName: string | null,
   ): Promise<void> {
     try {
-      const fileWatcher = container.get<FileWatcherService>(
+      const fileWatcher = container.get<FileWatcherBridge>(
         MAIN_TOKENS.FileWatcherService,
       );
       await fileWatcher.stopWatching(worktreePath);

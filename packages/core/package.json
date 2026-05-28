@@ -4,17 +4,24 @@
   "description": "Zero-dependency pure domain layer. Types, schemas, pure functions. Runs in any JS environment (Node, Bun, browser, RN, edge). No I/O, no platform calls, no framework deps.",
   "private": true,
   "type": "module",
+  "exports": {
+    "./*": [
+      "./src/*.ts",
+      "./src/*.tsx"
+    ]
+  },
   "scripts": {
-    "clean": "node ../../scripts/rimraf.mjs dist .turbo"
+    "typecheck": "tsc --noEmit",
+    "clean": "node ../../scripts/rimraf.mjs .turbo"
+  },
+  "dependencies": {
+    "@posthog/workspace-client": "workspace:*"
   },
   "devDependencies": {
     "@posthog/tsconfig": "workspace:*",
-    "@posthog/tsup-config": "workspace:*",
-    "tsup": "catalog:",
     "typescript": "catalog:"
   },
   "files": [
-    "dist/**/*",
     "src/**/*"
   ]
 }

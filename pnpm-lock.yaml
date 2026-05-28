@@ -12,6 +12,9 @@ catalogs:
     '@hono/trpc-server':
       specifier: ^0.3.4
       version: 0.3.4
+    '@parcel/watcher':
+      specifier: ^2.5.6
+      version: 2.5.6
     '@phosphor-icons/react':
       specifier: ^2.1.10
       version: 2.1.10
@@ -229,6 +232,9 @@ importers:
       '@posthog/api-client':
         specifier: workspace:*
         version: link:../../packages/api-client
+      '@posthog/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@posthog/electron-trpc':
         specifier: workspace:*
         version: link:../../packages/electron-trpc
@@ -891,16 +897,14 @@ importers:
         version: 2.1.9(@types/node@25.2.0)(jsdom@26.1.0)(lightningcss@1.32.0)(msw@2.12.8(@types/node@25.2.0)(typescript@5.9.3))(terser@5.46.0)
 
   packages/core:
+    dependencies:
+      '@posthog/workspace-client':
+        specifier: workspace:*
+        version: link:../workspace-client
     devDependencies:
       '@posthog/tsconfig':
         specifier: workspace:*
         version: link:../../tooling/typescript
-      '@posthog/tsup-config':
-        specifier: workspace:*
-        version: link:../../tooling/tsup-config
-      tsup:
-        specifier: 'catalog:'
-        version: 8.5.1(jiti@2.6.1)(postcss@8.5.6)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.2)
       typescript:
         specifier: 'catalog:'
         version: 5.9.3
@@ -1085,6 +1089,9 @@ importers:
       '@hono/trpc-server':
         specifier: 'catalog:'
         version: 0.3.4(@trpc/server@11.12.0(typescript@5.9.3))(hono@4.11.7)
+      '@parcel/watcher':
+        specifier: 'catalog:'
+        version: 2.5.6
       '@posthog/git':
         specifier: workspace:*
         version: link:../git

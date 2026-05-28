@@ -9,13 +9,14 @@ import {
 import { useCwd } from "@features/sidebar/hooks/useCwd";
 import { useCloudRunState } from "@features/task-detail/hooks/useCloudRunState";
 import { Cloud } from "@phosphor-icons/react";
+import { useFileWatcher as useFileWatcherUI } from "@posthog/ui/features/file-watcher/useFileWatcher";
+import { useWorkspaceTRPC } from "@posthog/workspace-client/trpc";
 import { Box, Button, Flex, Spinner, Text } from "@radix-ui/themes";
 import { useIsCloudTask } from "@renderer/features/workspace/hooks/useIsCloudTask";
 import { useWorkspace } from "@renderer/features/workspace/hooks/useWorkspace";
-import { trpcClient, useTRPC } from "@renderer/trpc/client";
+import { trpcClient } from "@renderer/trpc/client";
 import type { Task } from "@shared/types";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSubscription } from "@trpc/tanstack-react-query";
 import { handleExternalAppAction } from "@utils/handleExternalAppAction";
 import { toRelativePath } from "@utils/path";
 
@@ -52,10 +53,10 @@ function LazyTreeItem({
   const collapseAll = useFileTreeStore((state) => state.collapseAll);
   const openFileInSplit = usePanelLayoutStore((state) => state.openFileInSplit);
   const workspace = useWorkspace(taskId);
-  const trpc = useTRPC();
 
+  const wsTrpc = useWorkspaceTRPC();
   const { data: children } = useQuery(
-    trpc.fileWatcher.listDirectory.queryOptions(
+    wsTrpc.fs.listDirectory.queryOptions(
       { dirPath: entry.path },
       {
         enabled: entry.type === "directory" && isExpanded,
@@ -205,34 +206,30 @@ export function FileTreePanel({ taskId, task }: FileTreePanelProps) {
 }
 
 function LocalFileTreePanel({ taskId, task: _task }: FileTreePanelProps) {
-  const trpc = useTRPC();
   const workspace = useWorkspace(taskId);
   const repoPath = useCwd(taskId);
   const mainRepoPath = workspace?.folderPath;
   const queryClient = useQueryClient();
   const layout = usePanelLayoutStore((state) => state.getLayout(taskId));
 
+  const wsTrpc = useWorkspaceTRPC();
   const {
     data: rootEntries,
     isLoading,
     error,
   } = useQuery(
-    trpc.fileWatcher.listDirectory.queryOptions(
+    wsTrpc.fs.listDirectory.queryOptions(
       { dirPath: repoPath as string },
       { enabled: !!repoPath, staleTime: Infinity },
     ),
   );
 
-  useSubscription(
-    trpc.fileWatcher.onDirectoryChanged.subscriptionOptions(undefined, {
-      enabled: !!repoPath,
-      onData: ({ dirPath }) => {
-        queryClient.invalidateQueries(
-          trpc.fileWatcher.listDirectory.queryFilter({ dirPath }),
-        );
-      },
-    }),
-  );
+  useFileWatcherUI(repoPath ?? null, (event) => {
+    if (event.kind !== "directory-changed") return;
+    queryClient.invalidateQueries(
+      wsTrpc.fs.listDirectory.queryFilter({ dirPath: event.dirPath }),
+    );
+  });
 
   const isFileActive = (relativePath: string): boolean => {
     if (!layout) return false;
