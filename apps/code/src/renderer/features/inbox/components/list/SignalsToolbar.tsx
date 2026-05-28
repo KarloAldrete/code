@@ -107,7 +107,7 @@ const UP_FOR_REVIEW_TOOLTIP =
   "Reports assigned to you that are ready and immediately actionable.";
 
 const INBOX_TOTAL_TOOLTIP =
-  "All reports currently in your inbox view, after any status, source, or reviewer filters you have applied.";
+  "All reports currently in your inbox view, after any search, status, source, or reviewer filters you have applied.";
 
 function bulkMenuItemTooltip(
   explanationWhenEnabled: string,
