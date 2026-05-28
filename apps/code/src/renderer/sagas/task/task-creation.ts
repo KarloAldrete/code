@@ -11,6 +11,7 @@ import {
   getCloudPromptTransport,
   uploadRunAttachments,
 } from "@features/sessions/utils/cloudArtifacts";
+import { useSettingsStore } from "@features/settings/stores/settingsStore";
 import { getTaskDirectory } from "@hooks/useRepositoryDirectory";
 import type {
   Workspace,
@@ -234,6 +235,13 @@ export class TaskCreationSaga extends Saga<
         name: "cloud_run",
         execute: async () => {
           const prAuthorshipMode = input.cloudPrAuthorshipMode ?? "user";
+          // Personalization the user typed in Settings. Cloud sandboxes have
+          // no view of the desktop settings store, so we forward the raw text
+          // and also persist it onto the task run state below — that way the
+          // cloud agent server can apply it on initial boot regardless of
+          // whether the backend has shipped first-class support for the field.
+          const customInstructions =
+            useSettingsStore.getState().customInstructions?.trim() || undefined;
 
           const transport =
             (input.content || input.filePaths?.length) &&
@@ -255,9 +263,27 @@ export class TaskCreationSaga extends Saga<
               ? (input.executionMode ??
                 (input.adapter === "codex" ? "auto" : "plan"))
               : input.executionMode,
+            customInstructions,
           });
           if (!taskRun?.id) {
             throw new Error("Failed to create cloud run");
+          }
+
+          // Belt-and-suspenders: also PATCH the task run state so the cloud
+          // agent server sees the user's preferences even before backend
+          // support for the `custom_instructions` request field is deployed.
+          // Awaited so the agent server can never race ahead of this write.
+          if (customInstructions) {
+            try {
+              await this.deps.posthogClient.updateTaskRun(task.id, taskRun.id, {
+                state: { custom_instructions: customInstructions },
+              });
+            } catch (err) {
+              log.warn(
+                "Failed to persist custom_instructions on cloud task run state",
+                { taskId: task.id, runId: taskRun.id, err },
+              );
+            }
           }
 
           const pendingUserArtifactIds = transport

@@ -42,6 +42,7 @@ import type { IAppMeta } from "@posthog/platform/app-meta";
 import type { IBundledResources } from "@posthog/platform/bundled-resources";
 import type { IPowerManager } from "@posthog/platform/power-manager";
 import type { IStoragePaths } from "@posthog/platform/storage-paths";
+import { formatUserCustomInstructions } from "@posthog/shared";
 import { isAuthError } from "@shared/errors";
 import type { AcpMessage } from "@shared/types/session-events";
 import { inject, injectable, preDestroy } from "inversify";
@@ -506,8 +507,10 @@ When creating pull requests, add the following footer at the end of the PR descr
 *Created with [PostHog Code](https://posthog.com/code?ref=pr)*
 \`\`\``;
 
-    if (customInstructions) {
-      prompt += `\n\nUser custom instructions:\n${customInstructions}`;
+    const formattedCustomInstructions =
+      formatUserCustomInstructions(customInstructions);
+    if (formattedCustomInstructions) {
+      prompt += `\n\n${formattedCustomInstructions}`;
     }
 
     if (additionalDirectories?.length) {

@@ -13,6 +13,7 @@ import {
 } from "@agentclientprotocol/sdk";
 import { type ServerType, serve } from "@hono/node-server";
 import { getCurrentBranch } from "@posthog/git/queries";
+import { formatUserCustomInstructions } from "@posthog/shared";
 import { Hono } from "hono";
 import { z } from "zod";
 import packageJson from "../../package.json" with { type: "json" };
@@ -879,8 +880,16 @@ export class AgentServer {
       this.detectedPrUrl = prUrl;
     }
 
+    const customInstructions = getTaskRunStateString(
+      preTaskRun,
+      "custom_instructions",
+    );
+
     const runtimeAdapter = this.getRuntimeAdapter();
-    const sessionSystemPrompt = this.buildSessionSystemPrompt(prUrl);
+    const sessionSystemPrompt = this.buildSessionSystemPrompt(
+      prUrl,
+      customInstructions,
+    );
     const codexInstructions =
       runtimeAdapter === "codex"
         ? this.buildCodexInstructions(sessionSystemPrompt)
@@ -1557,24 +1566,39 @@ export class AgentServer {
 
   private buildSessionSystemPrompt(
     prUrl?: string | null,
+    customInstructions?: string | null,
   ): string | { append: string } {
     const cloudAppend = this.buildCloudSystemPrompt(prUrl);
+    // Personalization the user typed in PostHog Code Settings. Wrapped in a
+    // delimiter tag block so user-supplied content can never break out and
+    // impersonate platform-level instructions above.
+    const userInstructionsAppend =
+      formatUserCustomInstructions(customInstructions);
     const userPrompt = this.config.claudeCode?.systemPrompt;
+
+    const segments = (parts: (string | null | undefined)[]) =>
+      parts
+        .filter((segment): segment is string => Boolean(segment))
+        .join("\n\n");
 
     // String override: combine user prompt with cloud instructions
     if (typeof userPrompt === "string") {
-      return [userPrompt, cloudAppend].join("\n\n");
+      return segments([userPrompt, cloudAppend, userInstructionsAppend]);
     }
 
     // Preset with append: merge user append with cloud instructions
     if (typeof userPrompt === "object") {
       return {
-        append: [userPrompt.append, cloudAppend].filter(Boolean).join("\n\n"),
+        append: segments([
+          userPrompt.append,
+          cloudAppend,
+          userInstructionsAppend,
+        ]),
       };
     }
 
-    // Default: just cloud instructions
-    return { append: cloudAppend };
+    // Default: just cloud instructions (+ user personalization, if any)
+    return { append: segments([cloudAppend, userInstructionsAppend]) };
   }
 
   private buildCodexInstructions(
