@@ -3,6 +3,8 @@ import {
   useAuthStateValue,
 } from "@features/auth/hooks/authQueries";
 import { useInboxAvailableSuggestedReviewersStore } from "@features/inbox/stores/inboxAvailableSuggestedReviewersStore";
+import { isReportUpForReview } from "@features/inbox/utils/filterReports";
+import { INBOX_PIPELINE_STATUS_FILTER } from "@features/inbox/utils/inboxConstants";
 import { useAuthenticatedInfiniteQuery } from "@hooks/useAuthenticatedInfiniteQuery";
 import { useAuthenticatedQuery } from "@hooks/useAuthenticatedQuery";
 import type {
@@ -97,6 +99,28 @@ export function useInboxReportsInfinite(
   const totalCount = query.data?.pages[0]?.count ?? 0;
 
   return { ...query, allReports, totalCount };
+}
+
+/**
+ * Count of reports the current user needs to action right now: assigned to
+ * them, status `ready`, and `immediately_actionable`. Drives both the sidebar
+ * Inbox badge and the inbox toolbar headline so the two numbers always agree
+ * (React Query dedupes the underlying fetch by query key).
+ */
+export function useUpForReviewCount(options?: {
+  enabled?: boolean;
+  refetchInterval?: number | false | (() => number | false | undefined);
+  refetchIntervalInBackground?: boolean;
+  staleTime?: number;
+}): number {
+  const { data } = useInboxReports(
+    { status: INBOX_PIPELINE_STATUS_FILTER },
+    options,
+  );
+  return useMemo(
+    () => (data?.results ?? []).filter(isReportUpForReview).length,
+    [data?.results],
+  );
 }
 
 export function useInboxAvailableSuggestedReviewers(options?: {

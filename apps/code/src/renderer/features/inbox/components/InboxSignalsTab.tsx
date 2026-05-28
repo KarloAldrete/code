@@ -757,7 +757,6 @@ export function InboxSignalsTab() {
                     isSearchActive={!!searchQuery.trim()}
                     livePolling={inboxPollingActive}
                     isFetching={isFetching}
-                    readyCount={readyCount}
                     processingCount={processingCount}
                     pipelinePausedUntil={signalProcessingState?.paused_until}
                     reports={reports}

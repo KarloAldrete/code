@@ -1,11 +1,7 @@
 import { DotsCircleSpinner } from "@components/DotsCircleSpinner";
 import { useCommandCenterStore } from "@features/command-center/stores/commandCenterStore";
-import { useInboxReports } from "@features/inbox/hooks/useInboxReports";
-import { isReportUpForReview } from "@features/inbox/utils/filterReports";
-import {
-  INBOX_PIPELINE_STATUS_FILTER,
-  INBOX_REFETCH_INTERVAL_MS,
-} from "@features/inbox/utils/inboxConstants";
+import { useUpForReviewCount } from "@features/inbox/hooks/useInboxReports";
+import { INBOX_REFETCH_INTERVAL_MS } from "@features/inbox/utils/inboxConstants";
 import { getSessionService } from "@features/sessions/service/service";
 import {
   archiveTasksImperative,
@@ -68,16 +64,11 @@ function SidebarMenuComponent() {
     activeView: view,
   });
   const inboxPollingActive = useRendererWindowFocusStore((s) => s.focused);
-  const { data: inboxProbe } = useInboxReports(
-    { status: INBOX_PIPELINE_STATUS_FILTER },
-    {
-      refetchInterval: inboxPollingActive ? INBOX_REFETCH_INTERVAL_MS : false,
-      refetchIntervalInBackground: false,
-      staleTime: inboxPollingActive ? INBOX_REFETCH_INTERVAL_MS : 15_000,
-    },
-  );
-  const inboxResults = inboxProbe?.results ?? [];
-  const inboxSignalCount = inboxResults.filter(isReportUpForReview).length;
+  const inboxSignalCount = useUpForReviewCount({
+    refetchInterval: inboxPollingActive ? INBOX_REFETCH_INTERVAL_MS : false,
+    refetchIntervalInBackground: false,
+    staleTime: inboxPollingActive ? INBOX_REFETCH_INTERVAL_MS : 15_000,
+  });
 
   const taskMap = new Map<string, Task>();
   for (const task of allTasks) {

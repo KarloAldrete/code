@@ -1,6 +1,7 @@
 import { Button, type ButtonProps } from "@components/ui/Button";
 import { Tooltip as ActionTooltip } from "@components/ui/Tooltip";
 import { useInboxBulkActions } from "@features/inbox/hooks/useInboxBulkActions";
+import { useUpForReviewCount } from "@features/inbox/hooks/useInboxReports";
 import { useInboxSignalsFilterStore } from "@features/inbox/stores/inboxSignalsFilterStore";
 import { INBOX_REFETCH_INTERVAL_MS } from "@features/inbox/utils/inboxConstants";
 import {
@@ -42,7 +43,6 @@ interface SignalsToolbarProps {
   isSearchActive: boolean;
   livePolling?: boolean;
   isFetching?: boolean;
-  readyCount?: number;
   processingCount?: number;
   pipelinePausedUntil?: string | null;
   searchDisabledReason?: string | null;
@@ -102,6 +102,12 @@ function formatPauseRemaining(pausedUntil: string): string {
 }
 
 const inboxLivePollingTooltip = `Inbox is focused – syncing reports every ${Math.round(INBOX_REFETCH_INTERVAL_MS / 1000)}s…`;
+
+const UP_FOR_REVIEW_TOOLTIP =
+  "Reports assigned to you that are ready and immediately actionable. This is the same number shown on the badge next to Inbox in the sidebar.";
+
+const INBOX_TOTAL_TOOLTIP =
+  "All reports currently in your inbox view, after any status, source, or reviewer filters you have applied.";
 
 function bulkMenuItemTooltip(
   explanationWhenEnabled: string,
@@ -255,7 +261,6 @@ export function SignalsToolbar({
   isSearchActive,
   livePolling = false,
   isFetching = false,
-  readyCount,
   processingCount = 0,
   pipelinePausedUntil,
   searchDisabledReason,
@@ -268,6 +273,15 @@ export function SignalsToolbar({
   isDismissMutationPending = false,
   onReportAction,
 }: SignalsToolbarProps) {
+  // Shared with the sidebar badge: both call this hook with matching params
+  // and React Query dedupes the underlying fetch, so the two numbers cannot
+  // disagree even when the user has applied filters that hide some reports
+  // from the list below.
+  const upForReviewCount = useUpForReviewCount({
+    refetchInterval: livePolling ? INBOX_REFETCH_INTERVAL_MS : false,
+    refetchIntervalInBackground: false,
+    staleTime: livePolling ? INBOX_REFETCH_INTERVAL_MS : 15_000,
+  });
   const searchQuery = useInboxSignalsFilterStore((s) => s.searchQuery);
   const setSearchQuery = useInboxSignalsFilterStore((s) => s.setSearchQuery);
   const [showSnoozeConfirm, setShowSnoozeConfirm] = useState(false);
@@ -291,21 +305,27 @@ export function SignalsToolbar({
     reingestSelected,
   } = useInboxBulkActions(reports, effectiveBulkIds);
 
-  const countLabel = isSearchActive
-    ? `${filteredCount} of ${totalCount}`
-    : `${totalCount}`;
-
-  const pipelineHintParts = [
-    readyCount != null && processingCount > 0
-      ? `${readyCount} up for review • ${processingCount} in research pipeline`
-      : null,
-    pipelinePausedUntil
-      ? `Pipeline paused · resumes in ${formatPauseRemaining(pipelinePausedUntil)}`
-      : null,
-  ].filter(Boolean);
-
-  const pipelineHint =
-    pipelineHintParts.length > 0 ? pipelineHintParts.join(" · ") : null;
+  // Sub-line: how many reports the user is browsing right now (search-filtered
+  // count when searching, raw inbox total otherwise) plus pipeline status. The
+  // headline above is the narrower "needs your action" count; this line is the
+  // wider "everything in your inbox" context.
+  const inboxSubParts: string[] = [];
+  if (isSearchActive) {
+    inboxSubParts.push(`${filteredCount} of ${totalCount} match search`);
+  } else {
+    inboxSubParts.push(
+      `${totalCount} ${totalCount === 1 ? "report" : "reports"} in inbox`,
+    );
+    if (processingCount > 0) {
+      inboxSubParts.push(`${processingCount} still processing`);
+    }
+  }
+  if (pipelinePausedUntil) {
+    inboxSubParts.push(
+      `Pipeline paused · resumes in ${formatPauseRemaining(pipelinePausedUntil)}`,
+    );
+  }
+  const inboxSubLine = inboxSubParts.join(" · ");
 
   const multiSelectBulkActions = selectedCount > 1;
 
@@ -469,9 +489,11 @@ export function SignalsToolbar({
         <Flex align="center" justify="between" gap="2">
           <Flex direction="column" gap="0" className="min-w-0">
             <Flex align="center" gap="2">
-              <Text color="gray" className="shrink-0 text-[12px]">
-                Reports ({countLabel})
-              </Text>
+              <Tooltip content={UP_FOR_REVIEW_TOOLTIP}>
+                <Text color="gray" className="shrink-0 cursor-help text-[12px]">
+                  Up for review ({upForReviewCount})
+                </Text>
+              </Tooltip>
               {livePolling ? (
                 <Tooltip content={inboxLivePollingTooltip}>
                   <span
@@ -492,11 +514,11 @@ export function SignalsToolbar({
                 </Tooltip>
               ) : null}
             </Flex>
-            {pipelineHint && !isSearchActive ? (
-              <Text color="gray" className="text-[11px] opacity-80">
-                {pipelineHint}
+            <Tooltip content={INBOX_TOTAL_TOOLTIP}>
+              <Text color="gray" className="cursor-help text-[11px] opacity-80">
+                {inboxSubLine}
               </Text>
-            ) : null}
+            </Tooltip>
           </Flex>
           {onConfigureSources ? (
             <button
