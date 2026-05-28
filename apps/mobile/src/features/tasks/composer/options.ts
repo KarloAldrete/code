@@ -37,6 +37,12 @@ export interface ModelOption {
 
 export const MODELS: ModelOption[] = [
   {
+    value: "claude-opus-4-8",
+    label: "Claude Opus 4.8",
+    description: "Most capable, slower",
+    supportsReasoning: true,
+  },
+  {
     value: "claude-opus-4-7",
     label: "Claude Opus 4.7",
     description: "Most capable, slower",
