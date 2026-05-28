@@ -22,7 +22,7 @@
     "build-icons": "bash scripts/generate-icns.sh",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "generate-client": "tsx scripts/update-openapi-client.ts",
-    "scaffold-mcp-tools": "tsx --import ./scripts/scaffold-mcp-tools-preload.mjs scripts/scaffold-mcp-tools.ts",
+    "scaffold-mcp-tools": "tsx scripts/scaffold-mcp-tools.ts",
     "test": "vitest run",
     "test:e2e": "playwright test --config=tests/e2e/playwright.config.ts",
     "test:e2e:headed": "playwright test --config=tests/e2e/playwright.config.ts --headed",

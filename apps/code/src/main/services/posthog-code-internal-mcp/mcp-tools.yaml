@@ -8,51 +8,804 @@
 # Default-deny: every enabled tool is callable by the agent. Review carefully
 # before flipping enabled: true on anything beyond the curated defaults.
 tools:
+  additionalDirectories.addDefault:
+    operation: additionalDirectories.addDefault
+    enabled: false
+  additionalDirectories.addForTask:
+    operation: additionalDirectories.addForTask
+    enabled: false
+  additionalDirectories.listDefaults:
+    operation: additionalDirectories.listDefaults
+    enabled: false
+  additionalDirectories.listForTask:
+    operation: additionalDirectories.listForTask
+    enabled: false
+  additionalDirectories.removeDefault:
+    operation: additionalDirectories.removeDefault
+    enabled: false
+  additionalDirectories.removeForTask:
+    operation: additionalDirectories.removeForTask
+    enabled: false
+  agent.cancel:
+    operation: agent.cancel
+    enabled: false
+  agent.cancelPermission:
+    operation: agent.cancelPermission
+    enabled: false
+  agent.cancelPrompt:
+    operation: agent.cancelPrompt
+    enabled: false
+  agent.getGatewayModels:
+    operation: agent.getGatewayModels
+    enabled: false
+  agent.getPreviewConfigOptions:
+    operation: agent.getPreviewConfigOptions
+    enabled: false
+  agent.hasActiveSessions:
+    operation: agent.hasActiveSessions
+    enabled: false
+  agent.listSessions:
+    operation: agent.listSessions
+    enabled: false
+  agent.notifySessionContext:
+    operation: agent.notifySessionContext
+    enabled: false
+  agent.prompt:
+    operation: agent.prompt
+    enabled: false
+  agent.reconnect:
+    operation: agent.reconnect
+    enabled: false
+  agent.recordActivity:
+    operation: agent.recordActivity
+    enabled: false
+  agent.resetAll:
+    operation: agent.resetAll
+    enabled: false
+  agent.respondToPermission:
+    operation: agent.respondToPermission
+    enabled: false
+  agent.setConfigOption:
+    operation: agent.setConfigOption
+    enabled: false
+  agent.start:
+    operation: agent.start
+    enabled: false
+  analytics.resetUser:
+    operation: analytics.resetUser
+    enabled: false
+  analytics.setUserId:
+    operation: analytics.setUserId
+    enabled: false
+  archive.archive:
+    operation: archive.archive
+    enabled: false
+  archive.archivedTaskIds:
+    operation: archive.archivedTaskIds
+    enabled: false
+  archive.delete:
+    operation: archive.delete
+    enabled: false
+  archive.list:
+    operation: archive.list
+    enabled: false
+  archive.unarchive:
+    operation: archive.unarchive
+    enabled: false
+  auth.getState:
+    operation: auth.getState
+    enabled: false
+  auth.getValidAccessToken:
+    operation: auth.getValidAccessToken
+    enabled: false
+  auth.login:
+    operation: auth.login
+    enabled: false
+  auth.logout:
+    operation: auth.logout
+    enabled: false
+  auth.redeemInviteCode:
+    operation: auth.redeemInviteCode
+    enabled: false
+  auth.refreshAccessToken:
+    operation: auth.refreshAccessToken
+    enabled: false
+  auth.selectProject:
+    operation: auth.selectProject
+    enabled: false
+  auth.signup:
+    operation: auth.signup
+    enabled: false
+  cloudTask.retry:
+    operation: cloudTask.retry
+    enabled: false
+  cloudTask.sendCommand:
+    operation: cloudTask.sendCommand
+    enabled: false
+  cloudTask.unwatch:
+    operation: cloudTask.unwatch
+    enabled: false
+  cloudTask.watch:
+    operation: cloudTask.watch
+    enabled: false
+  connectivity.checkNow:
+    operation: connectivity.checkNow
+    enabled: false
+  connectivity.getStatus:
+    operation: connectivity.getStatus
+    enabled: false
+  contextMenu.confirmDeleteArchivedTask:
+    operation: contextMenu.confirmDeleteArchivedTask
+    enabled: false
+  contextMenu.confirmDeleteTask:
+    operation: contextMenu.confirmDeleteTask
+    enabled: false
+  contextMenu.confirmDeleteWorktree:
+    operation: contextMenu.confirmDeleteWorktree
+    enabled: false
+  contextMenu.showArchivedTaskContextMenu:
+    operation: contextMenu.showArchivedTaskContextMenu
+    enabled: false
+  contextMenu.showBulkTaskContextMenu:
+    operation: contextMenu.showBulkTaskContextMenu
+    enabled: false
+  contextMenu.showFileContextMenu:
+    operation: contextMenu.showFileContextMenu
+    enabled: false
+  contextMenu.showFolderContextMenu:
+    operation: contextMenu.showFolderContextMenu
+    enabled: false
+  contextMenu.showSplitContextMenu:
+    operation: contextMenu.showSplitContextMenu
+    enabled: false
+  contextMenu.showTabContextMenu:
+    operation: contextMenu.showTabContextMenu
+    enabled: false
+  contextMenu.showTaskContextMenu:
+    operation: contextMenu.showTaskContextMenu
+    enabled: false
   customInstructions.read:
     operation: customInstructions.read
     enabled: true
     title: Read custom instructions
     description: >
-      Return the user's custom instructions — extra guidance the user has appended to every agent prompt.
-      Returns an empty string if no custom instructions are configured.
+      Return the user's custom instructions — extra guidance the user has appended to every agent prompt. Returns an
+      empty string if no custom instructions are configured.
     annotations:
       readOnly: true
       destructive: false
       idempotent: true
-
   customInstructions.write:
     operation: customInstructions.write
     enabled: true
     title: Write custom instructions
     description: >
-      Replace the user's custom instructions. Pass the full new text — this overwrites the existing value.
-      Pass an empty string to clear.
+      Replace the user's custom instructions. Pass the full new text — this overwrites the existing value. Pass an empty
+      string to clear.
     annotations:
       readOnly: false
       destructive: true
       idempotent: false
-
-  mcpInstallations.list:
-    operation: mcpInstallations.list
-    enabled: true
-    title: List installed MCP servers
-    description: >
-      List the MCP server installations on the current PostHog project. Returns id, name, url, auth_type,
-      and status flags for each installation.
-    annotations:
-      readOnly: true
-      destructive: false
-      idempotent: true
-
+  deepLink.getPendingDeepLink:
+    operation: deepLink.getPendingDeepLink
+    enabled: false
+  deepLink.getPendingNewTaskLink:
+    operation: deepLink.getPendingNewTaskLink
+    enabled: false
+  deepLink.getPendingReportLink:
+    operation: deepLink.getPendingReportLink
+    enabled: false
+  encryption.decrypt:
+    operation: encryption.decrypt
+    enabled: false
+  encryption.encrypt:
+    operation: encryption.encrypt
+    enabled: false
+  enrichment.detectPosthogInstallState:
+    operation: enrichment.detectPosthogInstallState
+    enabled: false
+  enrichment.enrichFile:
+    operation: enrichment.enrichFile
+    enabled: false
+  enrichment.findStaleFlagSuggestions:
+    operation: enrichment.findStaleFlagSuggestions
+    enabled: false
+  environment.create:
+    operation: environment.create
+    enabled: false
+  environment.delete:
+    operation: environment.delete
+    enabled: false
+  environment.get:
+    operation: environment.get
+    enabled: false
+  environment.list:
+    operation: environment.list
+    enabled: false
+  environment.update:
+    operation: environment.update
+    enabled: false
+  externalApps.copyPath:
+    operation: externalApps.copyPath
+    enabled: false
+  externalApps.getDetectedApps:
+    operation: externalApps.getDetectedApps
+    enabled: false
+  externalApps.getLastUsed:
+    operation: externalApps.getLastUsed
+    enabled: false
+  externalApps.openInApp:
+    operation: externalApps.openInApp
+    enabled: false
+  externalApps.setLastUsed:
+    operation: externalApps.setLastUsed
+    enabled: false
+  fileWatcher.listDirectory:
+    operation: fileWatcher.listDirectory
+    enabled: false
+  fileWatcher.start:
+    operation: fileWatcher.start
+    enabled: false
+  fileWatcher.stop:
+    operation: fileWatcher.stop
+    enabled: false
+  focus.checkout:
+    operation: focus.checkout
+    enabled: false
+  focus.cleanWorkingTree:
+    operation: focus.cleanWorkingTree
+    enabled: false
+  focus.deleteSession:
+    operation: focus.deleteSession
+    enabled: false
+  focus.detachWorktree:
+    operation: focus.detachWorktree
+    enabled: false
+  focus.findWorktreeByBranch:
+    operation: focus.findWorktreeByBranch
+    enabled: false
+  focus.getCommitSha:
+    operation: focus.getCommitSha
+    enabled: false
+  focus.getSession:
+    operation: focus.getSession
+    enabled: false
+  focus.isDirty:
+    operation: focus.isDirty
+    enabled: false
+  focus.isFocusActive:
+    operation: focus.isFocusActive
+    enabled: false
+  focus.reattachWorktree:
+    operation: focus.reattachWorktree
+    enabled: false
+  focus.saveSession:
+    operation: focus.saveSession
+    enabled: false
+  focus.startSync:
+    operation: focus.startSync
+    enabled: false
+  focus.startWatchingMainRepo:
+    operation: focus.startWatchingMainRepo
+    enabled: false
+  focus.stash:
+    operation: focus.stash
+    enabled: false
+  focus.stashApply:
+    operation: focus.stashApply
+    enabled: false
+  focus.stashPop:
+    operation: focus.stashPop
+    enabled: false
+  focus.stopSync:
+    operation: focus.stopSync
+    enabled: false
+  focus.stopWatchingMainRepo:
+    operation: focus.stopWatchingMainRepo
+    enabled: false
+  focus.toAbsoluteWorktreePath:
+    operation: focus.toAbsoluteWorktreePath
+    enabled: false
+  focus.toRelativeWorktreePath:
+    operation: focus.toRelativeWorktreePath
+    enabled: false
+  focus.validateFocusOperation:
+    operation: focus.validateFocusOperation
+    enabled: false
+  focus.worktreeExistsAtPath:
+    operation: focus.worktreeExistsAtPath
+    enabled: false
+  folders.addFolder:
+    operation: folders.addFolder
+    enabled: false
+  folders.clearAllData:
+    operation: folders.clearAllData
+    enabled: false
+  folders.getFolders:
+    operation: folders.getFolders
+    enabled: false
+  folders.getMostRecentlyAccessedRepository:
+    operation: folders.getMostRecentlyAccessedRepository
+    enabled: false
+  folders.getRepositoryByRemoteUrl:
+    operation: folders.getRepositoryByRemoteUrl
+    enabled: false
+  folders.removeFolder:
+    operation: folders.removeFolder
+    enabled: false
+  folders.updateFolderAccessed:
+    operation: folders.updateFolderAccessed
+    enabled: false
+  fs.listRepoFiles:
+    operation: fs.listRepoFiles
+    enabled: false
+  fs.readAbsoluteFile:
+    operation: fs.readAbsoluteFile
+    enabled: false
+  fs.readFileAsBase64:
+    operation: fs.readFileAsBase64
+    enabled: false
+  fs.readRepoFile:
+    operation: fs.readRepoFile
+    enabled: false
+  fs.readRepoFileBounded:
+    operation: fs.readRepoFileBounded
+    enabled: false
+  fs.readRepoFiles:
+    operation: fs.readRepoFiles
+    enabled: false
+  fs.readRepoFilesBounded:
+    operation: fs.readRepoFilesBounded
+    enabled: false
+  fs.writeRepoFile:
+    operation: fs.writeRepoFile
+    enabled: false
+  git.checkoutBranch:
+    operation: git.checkoutBranch
+    enabled: false
+  git.cloneRepository:
+    operation: git.cloneRepository
+    enabled: false
+  git.commit:
+    operation: git.commit
+    enabled: false
+  git.createBranch:
+    operation: git.createBranch
+    enabled: false
+  git.createPr:
+    operation: git.createPr
+    enabled: false
+  git.detectRepo:
+    operation: git.detectRepo
+    enabled: false
+  git.discardFileChanges:
+    operation: git.discardFileChanges
+    enabled: false
+  git.generateCommitMessage:
+    operation: git.generateCommitMessage
+    enabled: false
+  git.generatePrTitleAndBody:
+    operation: git.generatePrTitleAndBody
+    enabled: false
+  git.getAllBranches:
+    operation: git.getAllBranches
+    enabled: false
+  git.getBranchChangedFiles:
+    operation: git.getBranchChangedFiles
+    enabled: false
+  git.getChangedFilesHead:
+    operation: git.getChangedFilesHead
+    enabled: false
+  git.getCommitConventions:
+    operation: git.getCommitConventions
+    enabled: false
+  git.getCurrentBranch:
+    operation: git.getCurrentBranch
+    enabled: false
+  git.getDiffCached:
+    operation: git.getDiffCached
+    enabled: false
+  git.getDiffHead:
+    operation: git.getDiffHead
+    enabled: false
+  git.getDiffStats:
+    operation: git.getDiffStats
+    enabled: false
+  git.getDiffUnstaged:
+    operation: git.getDiffUnstaged
+    enabled: false
+  git.getFileAtHead:
+    operation: git.getFileAtHead
+    enabled: false
+  git.getGhAuthToken:
+    operation: git.getGhAuthToken
+    enabled: false
+  git.getGhStatus:
+    operation: git.getGhStatus
+    enabled: false
+  git.getGitBusyState:
+    operation: git.getGitBusyState
+    enabled: false
+  git.getGithubIssue:
+    operation: git.getGithubIssue
+    enabled: false
+  git.getGithubPullRequest:
+    operation: git.getGithubPullRequest
+    enabled: false
+  git.getGitRepoInfo:
+    operation: git.getGitRepoInfo
+    enabled: false
+  git.getGitStatus:
+    operation: git.getGitStatus
+    enabled: false
+  git.getGitSyncStatus:
+    operation: git.getGitSyncStatus
+    enabled: false
+  git.getLatestCommit:
+    operation: git.getLatestCommit
+    enabled: false
+  git.getLocalBranchChangedFiles:
+    operation: git.getLocalBranchChangedFiles
+    enabled: false
+  git.getPrChangedFiles:
+    operation: git.getPrChangedFiles
+    enabled: false
+  git.getPrDetailsByUrl:
+    operation: git.getPrDetailsByUrl
+    enabled: false
+  git.getPrReviewComments:
+    operation: git.getPrReviewComments
+    enabled: false
+  git.getPrStatus:
+    operation: git.getPrStatus
+    enabled: false
+  git.getPrTemplate:
+    operation: git.getPrTemplate
+    enabled: false
+  git.getPrUrlForBranch:
+    operation: git.getPrUrlForBranch
+    enabled: false
+  git.openPr:
+    operation: git.openPr
+    enabled: false
+  git.publish:
+    operation: git.publish
+    enabled: false
+  git.pull:
+    operation: git.pull
+    enabled: false
+  git.push:
+    operation: git.push
+    enabled: false
+  git.replyToPrComment:
+    operation: git.replyToPrComment
+    enabled: false
+  git.resolveReviewThread:
+    operation: git.resolveReviewThread
+    enabled: false
+  git.searchGithubRefs:
+    operation: git.searchGithubRefs
+    enabled: false
+  git.stageFiles:
+    operation: git.stageFiles
+    enabled: false
+  git.sync:
+    operation: git.sync
+    enabled: false
+  git.unstageFiles:
+    operation: git.unstageFiles
+    enabled: false
+  git.updatePrByUrl:
+    operation: git.updatePrByUrl
+    enabled: false
+  git.validateRepo:
+    operation: git.validateRepo
+    enabled: false
+  githubIntegration.consumePendingCallback:
+    operation: githubIntegration.consumePendingCallback
+    enabled: false
+  githubIntegration.startFlow:
+    operation: githubIntegration.startFlow
+    enabled: false
+  handoff.execute:
+    operation: handoff.execute
+    enabled: false
+  handoff.executeToCloud:
+    operation: handoff.executeToCloud
+    enabled: false
+  handoff.preflight:
+    operation: handoff.preflight
+    enabled: false
+  handoff.preflightToCloud:
+    operation: handoff.preflightToCloud
+    enabled: false
+  linearIntegration.startFlow:
+    operation: linearIntegration.startFlow
+    enabled: false
+  llmGateway.invalidatePlanCache:
+    operation: llmGateway.invalidatePlanCache
+    enabled: false
+  llmGateway.prompt:
+    operation: llmGateway.prompt
+    enabled: false
+  logs.fetchS3Logs:
+    operation: logs.fetchS3Logs
+    enabled: false
+  logs.readLocalLogs:
+    operation: logs.readLocalLogs
+    enabled: false
+  logs.writeLocalLogs:
+    operation: logs.writeLocalLogs
+    enabled: false
+  mcpApps.getToolDefinition:
+    operation: mcpApps.getToolDefinition
+    enabled: false
+  mcpApps.getUiResource:
+    operation: mcpApps.getUiResource
+    enabled: false
+  mcpApps.hasUiForTool:
+    operation: mcpApps.hasUiForTool
+    enabled: false
+  mcpApps.openLink:
+    operation: mcpApps.openLink
+    enabled: false
+  mcpApps.proxyResourceRead:
+    operation: mcpApps.proxyResourceRead
+    enabled: false
+  mcpApps.proxyToolCall:
+    operation: mcpApps.proxyToolCall
+    enabled: false
+  mcpCallback.getCallbackUrl:
+    operation: mcpCallback.getCallbackUrl
+    enabled: false
+  mcpCallback.openAndWaitForCallback:
+    operation: mcpCallback.openAndWaitForCallback
+    enabled: false
   mcpInstallations.installCustom:
     operation: mcpInstallations.installCustom
     enabled: true
     title: Install a custom MCP server
     description: >
-      Install a new MCP server on the current PostHog project. Use auth_type="api_key" with `api_key`
-      for static bearer tokens; use auth_type="oauth" to start an OAuth handshake — the response will
-      include a redirectUrl the user must visit.
+      Install a new MCP server on the current PostHog project. Use auth_type="api_key" with `api_key` for static bearer
+      tokens; use auth_type="oauth" to start an OAuth handshake — the response will include a redirectUrl the user must
+      visit.
     annotations:
       readOnly: false
       destructive: false
       idempotent: false
+  mcpInstallations.list:
+    operation: mcpInstallations.list
+    enabled: true
+    title: List installed MCP servers
+    description: >
+      List the MCP server installations on the current PostHog project. Returns id, name, url, auth_type, and status
+      flags for each installation.
+    annotations:
+      readOnly: true
+      destructive: false
+      idempotent: true
+  notification.bounceDock:
+    operation: notification.bounceDock
+    enabled: false
+  notification.send:
+    operation: notification.send
+    enabled: false
+  notification.showDockBadge:
+    operation: notification.showDockBadge
+    enabled: false
+  oauth.cancelFlow:
+    operation: oauth.cancelFlow
+    enabled: false
+  os.checkWriteAccess:
+    operation: os.checkWriteAccess
+    enabled: false
+  os.downscaleImageFile:
+    operation: os.downscaleImageFile
+    enabled: false
+  os.getAppVersion:
+    operation: os.getAppVersion
+    enabled: false
+  os.getClaudePermissions:
+    operation: os.getClaudePermissions
+    enabled: false
+  os.getWorktreeLocation:
+    operation: os.getWorktreeLocation
+    enabled: false
+  os.openExternal:
+    operation: os.openExternal
+    enabled: false
+  os.readFileAsDataUrl:
+    operation: os.readFileAsDataUrl
+    enabled: false
+  os.saveClipboardFile:
+    operation: os.saveClipboardFile
+    enabled: false
+  os.saveClipboardImage:
+    operation: os.saveClipboardImage
+    enabled: false
+  os.saveClipboardText:
+    operation: os.saveClipboardText
+    enabled: false
+  os.searchDirectories:
+    operation: os.searchDirectories
+    enabled: false
+  os.selectAttachments:
+    operation: os.selectAttachments
+    enabled: false
+  os.selectDirectory:
+    operation: os.selectDirectory
+    enabled: false
+  os.selectFiles:
+    operation: os.selectFiles
+    enabled: false
+  os.showMessageBox:
+    operation: os.showMessageBox
+    enabled: false
+  processTracking.getSnapshot:
+    operation: processTracking.getSnapshot
+    enabled: false
+  processTracking.kill:
+    operation: processTracking.kill
+    enabled: false
+  processTracking.killAll:
+    operation: processTracking.killAll
+    enabled: false
+  processTracking.killByCategory:
+    operation: processTracking.killByCategory
+    enabled: false
+  processTracking.killByTaskId:
+    operation: processTracking.killByTaskId
+    enabled: false
+  processTracking.list:
+    operation: processTracking.list
+    enabled: false
+  processTracking.listByTaskId:
+    operation: processTracking.listByTaskId
+    enabled: false
+  secureStore.clear:
+    operation: secureStore.clear
+    enabled: false
+  secureStore.getItem:
+    operation: secureStore.getItem
+    enabled: false
+  secureStore.removeItem:
+    operation: secureStore.removeItem
+    enabled: false
+  secureStore.setItem:
+    operation: secureStore.setItem
+    enabled: false
+  shell.check:
+    operation: shell.check
+    enabled: false
+  shell.create:
+    operation: shell.create
+    enabled: false
+  shell.createCommand:
+    operation: shell.createCommand
+    enabled: false
+  shell.destroy:
+    operation: shell.destroy
+    enabled: false
+  shell.execute:
+    operation: shell.execute
+    enabled: false
+  shell.getProcess:
+    operation: shell.getProcess
+    enabled: false
+  shell.resize:
+    operation: shell.resize
+    enabled: false
+  shell.write:
+    operation: shell.write
+    enabled: false
+  skills.list:
+    operation: skills.list
+    enabled: false
+  slackIntegration.consumePendingCallback:
+    operation: slackIntegration.consumePendingCallback
+    enabled: false
+  slackIntegration.startFlow:
+    operation: slackIntegration.startFlow
+    enabled: false
+  sleep.getEnabled:
+    operation: sleep.getEnabled
+    enabled: false
+  sleep.setEnabled:
+    operation: sleep.setEnabled
+    enabled: false
+  suspension.list:
+    operation: suspension.list
+    enabled: false
+  suspension.restore:
+    operation: suspension.restore
+    enabled: false
+  suspension.settings:
+    operation: suspension.settings
+    enabled: false
+  suspension.suspend:
+    operation: suspension.suspend
+    enabled: false
+  suspension.suspendedTaskIds:
+    operation: suspension.suspendedTaskIds
+    enabled: false
+  suspension.updateSettings:
+    operation: suspension.updateSettings
+    enabled: false
+  updates.check:
+    operation: updates.check
+    enabled: false
+  updates.install:
+    operation: updates.install
+    enabled: false
+  updates.isEnabled:
+    operation: updates.isEnabled
+    enabled: false
+  usageMonitor.getLatest:
+    operation: usageMonitor.getLatest
+    enabled: false
+  usageMonitor.refresh:
+    operation: usageMonitor.refresh
+    enabled: false
+  workspace.create:
+    operation: workspace.create
+    enabled: false
+  workspace.delete:
+    operation: workspace.delete
+    enabled: false
+  workspace.deleteWorktree:
+    operation: workspace.deleteWorktree
+    enabled: false
+  workspace.getAll:
+    operation: workspace.getAll
+    enabled: false
+  workspace.getAllTaskTimestamps:
+    operation: workspace.getAllTaskTimestamps
+    enabled: false
+  workspace.getInfo:
+    operation: workspace.getInfo
+    enabled: false
+  workspace.getLocalTasks:
+    operation: workspace.getLocalTasks
+    enabled: false
+  workspace.getPinnedTaskIds:
+    operation: workspace.getPinnedTaskIds
+    enabled: false
+  workspace.getTaskPrStatus:
+    operation: workspace.getTaskPrStatus
+    enabled: false
+  workspace.getTaskTimestamps:
+    operation: workspace.getTaskTimestamps
+    enabled: false
+  workspace.getWorktreeFileUsage:
+    operation: workspace.getWorktreeFileUsage
+    enabled: false
+  workspace.getWorktreeSize:
+    operation: workspace.getWorktreeSize
+    enabled: false
+  workspace.getWorktreeTasks:
+    operation: workspace.getWorktreeTasks
+    enabled: false
+  workspace.linkBranch:
+    operation: workspace.linkBranch
+    enabled: false
+  workspace.listGitWorktrees:
+    operation: workspace.listGitWorktrees
+    enabled: false
+  workspace.markActivity:
+    operation: workspace.markActivity
+    enabled: false
+  workspace.markViewed:
+    operation: workspace.markViewed
+    enabled: false
+  workspace.reconcileCloudWorkspaces:
+    operation: workspace.reconcileCloudWorkspaces
+    enabled: false
+  workspace.togglePin:
+    operation: workspace.togglePin
+    enabled: false
+  workspace.unlinkBranch:
+    operation: workspace.unlinkBranch
+    enabled: false
+  workspace.verify:
+    operation: workspace.verify
+    enabled: false

@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import http from "node:http";
 import * as path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -110,8 +110,7 @@ export class PostHogCodeInternalMcpService {
     req: http.IncomingMessage,
     res: http.ServerResponse,
   ): Promise<void> {
-    const auth = req.headers.authorization;
-    if (!auth || auth !== `Bearer ${this.bearerToken}`) {
+    if (!this.isAuthorized(req)) {
       res.writeHead(401).end("Unauthorized");
       return;
     }
@@ -151,6 +150,21 @@ export class PostHogCodeInternalMcpService {
         res.end();
       }
     }
+  }
+
+  /**
+   * Constant-time bearer-token check. The token is per-boot random + the
+   * server only binds to 127.0.0.1, but credential checks should still avoid
+   * leaking length/equality timing.
+   */
+  private isAuthorized(req: http.IncomingMessage): boolean {
+    if (!this.bearerToken) return false;
+    const header = req.headers.authorization;
+    if (!header) return false;
+    const expected = Buffer.from(`Bearer ${this.bearerToken}`, "utf8");
+    const provided = Buffer.from(header, "utf8");
+    if (provided.length !== expected.length) return false;
+    return timingSafeEqual(provided, expected);
   }
 
   private buildServer(): McpServer {

@@ -1,4 +1,4 @@
-import { inject, injectable } from "inversify";
+import { inject, injectable, preDestroy } from "inversify";
 import { MAIN_TOKENS } from "../../di/tokens";
 import { logger } from "../../utils/logger";
 import { TypedEventEmitter } from "../../utils/typed-event-emitter";
@@ -16,6 +16,24 @@ const log = logger.scope("mcp-installations");
 const OAUTH_POLL_INTERVAL_MS = 3000;
 const OAUTH_POLL_TIMEOUT_MS = 10 * 60 * 1000;
 
+function wait(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new Error("aborted"));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new Error("aborted"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 /**
  * Owns the PostHog REST surface for MCP server installations on the active
  * project. Reads/writes against `/api/environments/{projectId}/mcp_server_installations/`.
@@ -26,11 +44,20 @@ const OAUTH_POLL_TIMEOUT_MS = 10 * 60 * 1000;
  */
 @injectable()
 export class McpInstallationsService extends TypedEventEmitter<McpInstallationsServiceEvents> {
+  // Aborts any in-flight OAuth polls when the app shuts down so we don't
+  // keep authenticated HTTP requests running for up to 10 minutes after quit.
+  private readonly shutdown = new AbortController();
+
   constructor(
     @inject(MAIN_TOKENS.AuthService)
     private readonly authService: AuthService,
   ) {
     super();
+  }
+
+  @preDestroy()
+  stop(): void {
+    this.shutdown.abort();
   }
 
   async list(): Promise<ListMcpInstallationsOutput> {
@@ -132,6 +159,8 @@ export class McpInstallationsService extends TypedEventEmitter<McpInstallationsS
     installationId: string | undefined,
     name: string,
   ): Promise<void> {
+    const signal = this.shutdown.signal;
+    if (signal.aborted) return;
     const { apiHost } = await this.authService.getValidAccessToken();
     const projectId = this.authService.getState().projectId;
     if (!projectId) return;
@@ -142,13 +171,17 @@ export class McpInstallationsService extends TypedEventEmitter<McpInstallationsS
 
     const start = Date.now();
     while (Date.now() - start < OAUTH_POLL_TIMEOUT_MS) {
-      await new Promise((resolve) =>
-        setTimeout(resolve, OAUTH_POLL_INTERVAL_MS),
-      );
+      try {
+        await wait(OAUTH_POLL_INTERVAL_MS, signal);
+      } catch {
+        log.info("OAuth poll aborted (shutdown)", { installationId, name });
+        return;
+      }
 
       try {
         const response = await this.authService.authenticatedFetch(fetch, url, {
           headers: { "Content-Type": "application/json" },
+          signal,
         });
         if (!response.ok) continue;
         const data = (await response.json()) as {
@@ -181,6 +214,10 @@ export class McpInstallationsService extends TypedEventEmitter<McpInstallationsS
           return;
         }
       } catch (err) {
+        if (signal.aborted) {
+          log.info("OAuth poll aborted (shutdown)", { installationId, name });
+          return;
+        }
         log.warn("OAuth poll error", { err });
       }
     }

@@ -3,13 +3,11 @@
  * Sync `apps/code/src/main/services/posthog-code-internal-mcp/mcp-tools.yaml`
  * with the live tRPC router.
  *
- * - Walks the router via `_def.procedures` and emits an `enabled: false` stub
- *   for every procedure that isn't already in the YAML.
- * - Leaves existing entries untouched — your hand-authored config (title,
- *   description, annotations, param_overrides) is preserved.
- * - Does NOT remove entries whose procedure has disappeared. It prints them
- *   as warnings; you decide whether to delete. Boot will hard-fail until you
- *   do, which is the forcing function.
+ * Uses the TypeScript compiler API to STATICALLY parse the router and
+ * sub-router source files — no runtime import, no Electron, no Node ESM/CJS
+ * interop. Walks `router({ ... })` object literals, detects whether each
+ * procedure chain ends in `.query`, `.mutation`, or `.subscription`, and
+ * emits `enabled: false` stubs for procedures missing from the YAML.
  *
  * Usage:
  *   pnpm --filter code scaffold-mcp-tools
@@ -17,32 +15,17 @@
  */
 
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
+import * as ts from "typescript";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { McpToolsYamlSchema } from "../src/main/services/posthog-code-internal-mcp/yaml-schema";
 
-// Imports below transitively load main-process services that read env vars
-// at module-load time (see apps/code/src/main/utils/env.ts). Set defaults
-// here so the script works outside an Electron context. Done before any
-// dynamic import below.
-if (!process.env.POSTHOG_CODE_DATA_DIR) {
-  process.env.POSTHOG_CODE_DATA_DIR = path.join(
-    os.tmpdir(),
-    "posthog-code-scaffold-mcp-tools",
-  );
-}
-if (!process.env.POSTHOG_CODE_IS_DEV) process.env.POSTHOG_CODE_IS_DEV = "true";
-if (!process.env.POSTHOG_CODE_VERSION) {
-  process.env.POSTHOG_CODE_VERSION = "0.0.0-scaffold";
-}
-
-const YAML_PATH = path.resolve(
-  __dirname,
-  "..",
-  "src",
-  "main",
-  "services",
-  "posthog-code-internal-mcp",
-  "mcp-tools.yaml",
+const APP_ROOT = path.resolve(__dirname, "..");
+const ROUTER_FILE = path.join(APP_ROOT, "src/main/trpc/router.ts");
+const ROUTERS_DIR = path.join(APP_ROOT, "src/main/trpc/routers");
+const YAML_PATH = path.join(
+  APP_ROOT,
+  "src/main/services/posthog-code-internal-mcp/mcp-tools.yaml",
 );
 
 const YAML_HEADER = `# Bridge from tRPC procedures to MCP tools exposed to the running agent.
@@ -56,29 +39,160 @@ const YAML_HEADER = `# Bridge from tRPC procedures to MCP tools exposed to the r
 # before flipping enabled: true on anything beyond the curated defaults.
 `;
 
+type ProcedureType = "query" | "mutation" | "subscription";
+
 interface Procedure {
   path: string;
-  type: "query" | "mutation" | "subscription";
+  type: ProcedureType;
 }
 
-async function main(): Promise<void> {
+function parseSource(filePath: string): ts.SourceFile {
+  const text = fs.readFileSync(filePath, "utf-8");
+  return ts.createSourceFile(filePath, text, ts.ScriptTarget.Latest, true);
+}
+
+/**
+ * Find the object literal passed to a `router({...})` call inside the
+ * given source file. We look for the FIRST top-level `router(...)` call
+ * expression; that's the canonical pattern in this codebase (one router
+ * declaration per file).
+ */
+function findRouterObjectLiteral(
+  source: ts.SourceFile,
+): ts.ObjectLiteralExpression | undefined {
+  let result: ts.ObjectLiteralExpression | undefined;
+
+  function visit(node: ts.Node): void {
+    if (result) return;
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "router" &&
+      node.arguments.length === 1 &&
+      ts.isObjectLiteralExpression(node.arguments[0])
+    ) {
+      result = node.arguments[0];
+      return;
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(source);
+  return result;
+}
+
+/**
+ * Build a map of namespace → router-file-basename by parsing the root
+ * router.ts. The pattern is:
+ *
+ *   import { fooRouter } from "./routers/foo";
+ *   export const trpcRouter = router({ foo: fooRouter, ... });
+ *
+ * We use the property assignments to map namespace → identifier, then the
+ * import declarations to map identifier → file path.
+ */
+function discoverSubRouters(): Map<string, string> {
+  const source = parseSource(ROUTER_FILE);
+
+  const importMap = new Map<string, string>();
+  for (const stmt of source.statements) {
+    if (!ts.isImportDeclaration(stmt)) continue;
+    if (!ts.isStringLiteral(stmt.moduleSpecifier)) continue;
+    const moduleSpec = stmt.moduleSpecifier.text;
+    if (!moduleSpec.startsWith("./routers/")) continue;
+    const basename = moduleSpec.slice("./routers/".length).replace(/\.js$/, "");
+    const fileAbs = path.join(ROUTERS_DIR, `${basename}.ts`);
+    if (!stmt.importClause?.namedBindings) continue;
+    if (!ts.isNamedImports(stmt.importClause.namedBindings)) continue;
+    for (const spec of stmt.importClause.namedBindings.elements) {
+      importMap.set(spec.name.text, fileAbs);
+    }
+  }
+
+  const literal = findRouterObjectLiteral(source);
+  if (!literal) {
+    throw new Error(`Could not find router({...}) call in ${ROUTER_FILE}`);
+  }
+
+  const namespaces = new Map<string, string>();
+  for (const prop of literal.properties) {
+    if (!ts.isPropertyAssignment(prop)) continue;
+    const key = propertyName(prop.name);
+    if (!key) continue;
+    if (!ts.isIdentifier(prop.initializer)) continue;
+    const filePath = importMap.get(prop.initializer.text);
+    if (!filePath) {
+      throw new Error(
+        `Router namespace '${key}' maps to identifier '${prop.initializer.text}' which has no matching import in router.ts`,
+      );
+    }
+    namespaces.set(key, filePath);
+  }
+
+  return namespaces;
+}
+
+function propertyName(name: ts.PropertyName): string | undefined {
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name)) return name.text;
+  return undefined;
+}
+
+/**
+ * Walk the procedure chain's outermost call to determine its type. The chain
+ * looks like:
+ *   publicProcedure.input(X).output(Y).query(handler)
+ *   publicProcedure.subscription(handler)
+ * The OUTERMOST call's property name tells us the type. Anything that
+ * doesn't end in query/mutation/subscription is skipped (e.g. helpers).
+ */
+function classifyProcedure(expr: ts.Expression): ProcedureType | undefined {
+  if (!ts.isCallExpression(expr)) return undefined;
+  const callee = expr.expression;
+  if (!ts.isPropertyAccessExpression(callee)) return undefined;
+  const method = callee.name.text;
+  if (
+    method === "query" ||
+    method === "mutation" ||
+    method === "subscription"
+  ) {
+    return method;
+  }
+  return undefined;
+}
+
+function parseRouterProcedures(
+  namespace: string,
+  filePath: string,
+): Procedure[] {
+  const source = parseSource(filePath);
+  const literal = findRouterObjectLiteral(source);
+  if (!literal) {
+    throw new Error(`Could not find router({...}) call in ${filePath}`);
+  }
+  const procedures: Procedure[] = [];
+  for (const prop of literal.properties) {
+    if (!ts.isPropertyAssignment(prop)) continue;
+    const key = propertyName(prop.name);
+    if (!key) continue;
+    const type = classifyProcedure(prop.initializer);
+    if (!type) continue;
+    procedures.push({ path: `${namespace}.${key}`, type });
+  }
+  return procedures;
+}
+
+function discoverProcedures(): Procedure[] {
+  const namespaces = discoverSubRouters();
+  const all: Procedure[] = [];
+  for (const [namespace, filePath] of namespaces) {
+    all.push(...parseRouterProcedures(namespace, filePath));
+  }
+  return all.filter((p) => p.type !== "subscription");
+}
+
+function main(): void {
   const check = process.argv.includes("--check");
-
-  // Dynamic import so the env defaults above are in place before the router's
-  // transitive deps load.
-  const { trpcRouter } = await import("../src/main/trpc/router");
-  const { McpToolsYamlSchema } = await import(
-    "../src/main/services/posthog-code-internal-mcp/yaml-schema"
-  );
-  const { parse: parseYaml, stringify: stringifyYaml } = await import("yaml");
-
-  const record = trpcRouter._def.procedures as Record<
-    string,
-    { _def: { type: "query" | "mutation" | "subscription" } }
-  >;
-  const procedures: Procedure[] = Object.entries(record)
-    .map(([p, proc]) => ({ path: p, type: proc._def.type }))
-    .filter((p) => p.type !== "subscription");
+  const procedures = discoverProcedures();
 
   let existing: { tools: Record<string, { operation: string }> } = {
     tools: {},
@@ -177,7 +291,4 @@ async function main(): Promise<void> {
   }
 }
 
-void main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+main();
