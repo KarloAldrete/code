@@ -241,6 +241,9 @@ importers:
       better-sqlite3:
         specifier: ^12.8.0
         version: 12.8.0
+      canvas-confetti:
+        specifier: ^1.9.4
+        version: 1.9.4
       chokidar:
         specifier: ^5.0.0
         version: 5.0.0
@@ -419,6 +422,9 @@ importers:
       '@posthog/rollup-plugin':
         specifier: ^1.4.0
         version: 1.4.0(rollup@4.57.1)
+      '@reforged/maker-appimage':
+        specifier: ^5.2.0
+        version: 5.2.0
       '@storybook/addon-a11y':
         specifier: 10.2.0
         version: 10.2.0(storybook@10.2.0(@testing-library/dom@10.4.1)(prettier@3.8.1)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))
@@ -440,6 +446,9 @@ importers:
       '@types/better-sqlite3':
         specifier: ^7.6.13
         version: 7.6.13
+      '@types/canvas-confetti':
+        specifier: ^1.9.0
+        version: 1.9.0
       '@types/node':
         specifier: ^24.0.0
         version: 24.12.0
@@ -4616,6 +4625,13 @@ packages:
   '@react-navigation/routers@7.5.3':
     resolution: {integrity: sha512-1tJHg4KKRJuQ1/EvJxatrMef3NZXEPzwUIUZ3n1yJ2t7Q97siwRtbynRpQG9/69ebbtiZ8W3ScOZF/OmhvM4Rg==}
 
+  '@reforged/maker-appimage@5.2.0':
+    resolution: {integrity: sha512-5u7spsDMyMfwqAnTRsSipVgTIy+DW+wlfhceaRghCuTvyY8Sti8/tFhVKj4vb+dYTqPvS7m30Gl0InGv22J8RQ==}
+    engines: {node: '>=19.0.0 || ^18.11.0'}
+
+  '@reforged/maker-types@2.1.0':
+    resolution: {integrity: sha512-gNMAFO6mxqGwuUov0CzXGTHUMfAawlM6v/uYrqVnKeMwmceaLBt3HtfPcuNapDSH4br6D4EZ14WuWbgefmDfOQ==}
+
   '@remirror/core-constants@3.0.0':
     resolution: {integrity: sha512-42aWfPrimMfDKDi4YegyS7x+/0tlzaqwPQCULLanv3DMIlu96KTJR0fM5isWX2UViOqlGnX6YFgqWepcX+XMNg==}
 
@@ -4821,6 +4837,9 @@ packages:
 
   '@sinonjs/fake-timers@10.3.0':
     resolution: {integrity: sha512-V4BG07kuYSUkTCSBHG8G8TNhM+F19jXFWnQtzj+we8DrkpSBCee9Z3Ms8yiGer/dlmhe35/Xdgyo3/0rQKg7YA==}
+
+  '@spacingbat3/lss@1.2.0':
+    resolution: {integrity: sha512-aywhxHNb6l7COooF3m439eT/6QN8E/RSl5IVboSKthMHcp0GlZYMSoS7546rqDLmFRxTD8f1tu/NIS9vtDwYAg==}
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
@@ -5352,6 +5371,9 @@ packages:
 
   '@types/cacheable-request@6.0.3':
     resolution: {integrity: sha512-IQ3EbTzGxIigb1I3qPZc1rWJnH0BmSKv5QYTalEwweFvyBDLSAe24zP0le/hyi7ecGfZVlIVAg4BZqb8WBwKqw==}
+
+  '@types/canvas-confetti@1.9.0':
+    resolution: {integrity: sha512-aBGj/dULrimR1XDZLtG9JwxX1b4HPRF6CX9Yfwh3NvstZEm1ZL7RBnel4keCPSqs1ANRu1u2Aoz9R+VmtjYuTg==}
 
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
@@ -6211,6 +6233,9 @@ packages:
 
   caniuse-lite@1.0.30001767:
     resolution: {integrity: sha512-34+zUAMhSH+r+9eKmYG+k2Rpt8XttfE4yXAjoZvkAPs15xcYQhyBYdalJ65BzivAvGRMViEjy6oKr/S91loekQ==}
+
+  canvas-confetti@1.9.4:
+    resolution: {integrity: sha512-yxQbJkAVrFXWNbTUjPqjF7G+g6pDotOUHGbkZq2NELZUMDpiJ85rIEazVb8GTaAptNW2miJAXbs1BtioA251Pw==}
 
   ccount@2.0.1:
     resolution: {integrity: sha512-eyrF0jiFpY+3drT6383f1qhkbGsLSifNAjA61IUjZjmLCWjItY6LB9ft9YhoDgwfmclB2zhu51Lc7+95b8NRAg==}
@@ -16807,6 +16832,18 @@ snapshots:
     dependencies:
       nanoid: 3.3.11
 
+  '@reforged/maker-appimage@5.2.0':
+    dependencies:
+      '@electron-forge/maker-base': 7.11.1
+      '@reforged/maker-types': 2.1.0
+      '@spacingbat3/lss': 1.2.0
+      semver: 7.7.3
+    transitivePeerDependencies:
+      - bluebird
+      - supports-color
+
+  '@reforged/maker-types@2.1.0': {}
+
   '@remirror/core-constants@3.0.0': {}
 
   '@rolldown/pluginutils@1.0.0-beta.27': {}
@@ -16957,6 +16994,8 @@ snapshots:
   '@sinonjs/fake-timers@10.3.0':
     dependencies:
       '@sinonjs/commons': 3.0.1
+
+  '@spacingbat3/lss@1.2.0': {}
 
   '@standard-schema/spec@1.1.0': {}
 
@@ -17532,6 +17571,8 @@ snapshots:
       '@types/keyv': 3.1.4
       '@types/node': 24.12.0
       '@types/responselike': 1.0.3
+
+  '@types/canvas-confetti@1.9.0': {}
 
   '@types/chai@5.2.3':
     dependencies:
@@ -18597,6 +18638,8 @@ snapshots:
   camelcase@6.3.0: {}
 
   caniuse-lite@1.0.30001767: {}
+
+  canvas-confetti@1.9.4: {}
 
   ccount@2.0.1: {}
 
