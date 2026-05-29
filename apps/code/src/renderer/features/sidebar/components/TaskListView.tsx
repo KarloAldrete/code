@@ -51,7 +51,11 @@ interface TaskListViewProps {
   ) => void;
   onTaskArchive: (taskId: string) => void;
   onTaskTogglePin: (taskId: string) => void;
-  onTaskEditSubmit: (taskId: string, newTitle: string) => void;
+  onTaskEditSubmit: (
+    taskId: string,
+    currentTitle: string,
+    newTitle: string,
+  ) => void;
   onTaskEditCancel: () => void;
   hasMore: boolean;
 }
@@ -350,7 +354,9 @@ export function TaskListView({
               }
               onArchive={() => onTaskArchive(task.id)}
               onTogglePin={() => onTaskTogglePin(task.id)}
-              onEditSubmit={(newTitle) => onTaskEditSubmit(task.id, newTitle)}
+              onEditSubmit={(newTitle) =>
+                onTaskEditSubmit(task.id, task.title, newTitle)
+              }
               onEditCancel={onTaskEditCancel}
               timestamp={task[timestampKey]}
             />
@@ -467,7 +473,7 @@ export function TaskListView({
                         onArchive={() => onTaskArchive(task.id)}
                         onTogglePin={() => onTaskTogglePin(task.id)}
                         onEditSubmit={(newTitle) =>
-                          onTaskEditSubmit(task.id, newTitle)
+                          onTaskEditSubmit(task.id, task.title, newTitle)
                         }
                         onEditCancel={onTaskEditCancel}
                         timestamp={task[timestampKey]}
@@ -503,7 +509,7 @@ export function TaskListView({
                   onArchive={() => onTaskArchive(task.id)}
                   onTogglePin={() => onTaskTogglePin(task.id)}
                   onEditSubmit={(newTitle) =>
-                    onTaskEditSubmit(task.id, newTitle)
+                    onTaskEditSubmit(task.id, task.title, newTitle)
                   }
                   onEditCancel={onTaskEditCancel}
                   timestamp={task[timestampKey]}
