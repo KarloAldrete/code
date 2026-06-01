@@ -7,6 +7,7 @@ import { cloudTaskRouter } from "./routers/cloud-task";
 import { connectivityRouter } from "./routers/connectivity";
 import { contextMenuRouter } from "./routers/context-menu";
 import { deepLinkRouter } from "./routers/deep-link";
+import { discordPresenceRouter } from "./routers/discord-presence";
 import { encryptionRouter } from "./routers/encryption";
 import { enrichmentRouter } from "./routers/enrichment";
 import { environmentRouter } from "./routers/environment";
@@ -49,6 +50,7 @@ export const trpcRouter = router({
   cloudTask: cloudTaskRouter,
   connectivity: connectivityRouter,
   contextMenu: contextMenuRouter,
+  discordPresence: discordPresenceRouter,
 
   enrichment: enrichmentRouter,
   environment: environmentRouter,

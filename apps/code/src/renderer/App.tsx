@@ -13,6 +13,7 @@ import {
 import { useAuthSession } from "@features/auth/hooks/useAuthSession";
 import { useIsOrgAdmin } from "@features/auth/hooks/useOrgRole";
 import { registerBillingSubscriptions } from "@features/billing/subscriptions";
+import { registerDiscordPresenceSubscriptions } from "@features/discord-presence/subscriptions";
 import { AddDirectoryDialog } from "@features/folder-picker/components/AddDirectoryDialog";
 import { OnboardingFlow } from "@features/onboarding/components/OnboardingFlow";
 import { useOnboardingStore } from "@features/onboarding/stores/onboardingStore";
@@ -78,6 +79,11 @@ function App() {
   // Initialize update store
   useEffect(() => {
     return initializeUpdateStore();
+  }, []);
+
+  // Keep Discord Rich Presence in sync with what the user is doing
+  useEffect(() => {
+    return registerDiscordPresenceSubscriptions();
   }, []);
 
   // Dev-only inbox demo command for local QA from the renderer console.

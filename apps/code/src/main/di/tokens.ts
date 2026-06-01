@@ -50,6 +50,7 @@ export const MAIN_TOKENS = Object.freeze({
   CloudTaskService: Symbol.for("Main.CloudTaskService"),
   ConnectivityService: Symbol.for("Main.ConnectivityService"),
   ContextMenuService: Symbol.for("Main.ContextMenuService"),
+  DiscordPresenceService: Symbol.for("Main.DiscordPresenceService"),
 
   ExternalAppsService: Symbol.for("Main.ExternalAppsService"),
   LlmGatewayService: Symbol.for("Main.LlmGatewayService"),

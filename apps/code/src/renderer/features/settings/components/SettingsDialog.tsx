@@ -18,6 +18,7 @@ import {
   Code,
   CreditCard,
   Cube,
+  DiscordLogo,
   Folder,
   GearSix,
   GithubLogo,
@@ -36,6 +37,7 @@ import { type ReactNode, useEffect, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { AdvancedSettings } from "./sections/AdvancedSettings";
 import { ClaudeCodeSettings } from "./sections/ClaudeCodeSettings";
+import { DiscordSettings } from "./sections/DiscordSettings";
 import { EnvironmentsSettings } from "./sections/environments/EnvironmentsSettings";
 import { GeneralSettings } from "./sections/GeneralSettings";
 import { GitHubSettings } from "./sections/GitHubSettings";
@@ -76,6 +78,7 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
   { id: "shortcuts", label: "Shortcuts", icon: <Keyboard size={16} /> },
   { id: "github", label: "GitHub", icon: <GithubLogo size={16} /> },
   { id: "slack", label: "Slack", icon: <SlackLogo size={16} /> },
+  { id: "discord", label: "Discord", icon: <DiscordLogo size={16} /> },
 
   {
     id: "signals",
@@ -99,6 +102,7 @@ const CATEGORY_TITLES: Record<SettingsCategory, string> = {
   shortcuts: "Shortcuts",
   github: "GitHub",
   slack: "Slack integration",
+  discord: "Discord",
 
   signals: "Signals",
   updates: "Updates",
@@ -118,6 +122,7 @@ const CATEGORY_COMPONENTS: Record<SettingsCategory, React.ComponentType> = {
   shortcuts: ShortcutsSettings,
   github: GitHubSettings,
   slack: SlackSettings,
+  discord: DiscordSettings,
 
   signals: SignalSourcesSettings,
   updates: UpdatesSettings,

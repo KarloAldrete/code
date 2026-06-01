@@ -13,6 +13,7 @@ export type SettingsCategory =
   | "shortcuts"
   | "github"
   | "slack"
+  | "discord"
   | "signals"
   | "updates"
   | "advanced";

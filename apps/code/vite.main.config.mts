@@ -626,6 +626,9 @@ export default defineConfig(({ mode }) => {
       "process.env.VITE_POSTHOG_ACCESS_TOKEN_OVERRIDE": JSON.stringify(
         env.VITE_POSTHOG_ACCESS_TOKEN_OVERRIDE || "",
       ),
+      "process.env.VITE_DISCORD_CLIENT_ID": JSON.stringify(
+        env.VITE_DISCORD_CLIENT_ID || "",
+      ),
       "process.env.SKILLS_ZIP_URL": JSON.stringify(SKILLS_ZIP_URL),
       "process.env.CONTEXT_MILL_ZIP_URL": JSON.stringify(CONTEXT_MILL_ZIP_URL),
       ...createForceDevModeDefine(),

@@ -12,6 +12,7 @@ import { MAIN_TOKENS } from "./di/tokens";
 import { registerMcpSandboxProtocol } from "./protocols/mcp-sandbox";
 import type { AppLifecycleService } from "./services/app-lifecycle/service";
 import type { AuthService } from "./services/auth/service";
+import type { DiscordPresenceService } from "./services/discord-presence/service";
 import type { ExternalAppsService } from "./services/external-apps/service";
 import type { GitHubIntegrationService } from "./services/github-integration/service";
 import type { InboxLinkService } from "./services/inbox-link/service";
@@ -156,6 +157,8 @@ async function initializeServices(): Promise<void> {
   container.get<SlackIntegrationService>(MAIN_TOKENS.SlackIntegrationService);
   container.get<ExternalAppsService>(MAIN_TOKENS.ExternalAppsService);
   container.get<PosthogPluginService>(MAIN_TOKENS.PosthogPluginService);
+  // Eagerly start the Discord presence service so it connects when enabled.
+  container.get<DiscordPresenceService>(MAIN_TOKENS.DiscordPresenceService);
 
   await authService.initialize();
 
