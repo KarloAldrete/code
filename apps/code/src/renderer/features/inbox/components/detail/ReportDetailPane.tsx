@@ -15,7 +15,9 @@ import {
   ArrowSquareOutIcon,
   CaretDownIcon,
   CaretRightIcon,
+  ChatCircleIcon,
   EyeIcon,
+  InfoIcon,
   LinkSimpleIcon,
   Plus,
   ThumbsDownIcon,
@@ -26,18 +28,21 @@ import { Kbd } from "@posthog/quill";
 import {
   Box,
   Flex,
+  Popover,
   ScrollArea,
   Spinner,
   Text,
+  TextArea,
   Tooltip,
 } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
 import { EXTERNAL_LINKS } from "@renderer/utils/links";
-import { getDeeplinkProtocol } from "@shared/deeplink";
+import { buildInboxDeeplink } from "@shared/deeplink";
 import type {
   ActionabilityJudgmentArtefact,
   ActionabilityJudgmentContent,
   PriorityJudgmentArtefact,
+  Signal,
   SignalFindingArtefact,
   SignalReport,
   SignalReportTask,
@@ -45,17 +50,21 @@ import type {
   SuggestedReviewersArtefact,
   Task,
 } from "@shared/types";
-import { useNavigationStore } from "@stores/navigationStore";
+import type { InboxReportActionProperties } from "@shared/types/analytics";
 import { useQuery } from "@tanstack/react-query";
 import { isMac } from "@utils/platform";
 import {
+  type FormEvent,
   type ReactNode,
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { toast } from "sonner";
+import { useCreatePrReport } from "../../hooks/useCreatePrReport";
+import { useDiscussReport } from "../../hooks/useDiscussReport";
 import { ReportImplementationPrLink } from "../utils/ReportImplementationPrLink";
 import { SignalReportActionabilityBadge } from "../utils/SignalReportActionabilityBadge";
 import { SignalReportPriorityBadge } from "../utils/SignalReportPriorityBadge";
@@ -63,6 +72,7 @@ import { SignalReportStatusBadge } from "../utils/SignalReportStatusBadge";
 import { SignalReportSummaryMarkdown } from "../utils/SignalReportSummaryMarkdown";
 import { ReportTaskLogs } from "./ReportTaskLogs";
 import { SignalCard } from "./SignalCard";
+import type { SignalInteractionAction } from "./signalInteractionContext";
 
 function isSuggestedReviewerRowMe(
   reviewer: SuggestedReviewer,
@@ -109,10 +119,12 @@ function DetailRow({
   label,
   value,
   explanation,
+  onToggleExplanation,
 }: {
   label: string;
   value: ReactNode;
   explanation?: string | null;
+  onToggleExplanation?: (expanded: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const hasExplanation = !!explanation;
@@ -127,7 +139,13 @@ function DetailRow({
         {hasExplanation && (
           <button
             type="button"
-            onClick={() => setExpanded((v) => !v)}
+            onClick={() => {
+              setExpanded((v) => {
+                const next = !v;
+                onToggleExplanation?.(next);
+                return next;
+              });
+            }}
             className="flex items-center gap-0.5 rounded px-1 py-0.5 text-[13px] text-gray-9 hover:bg-gray-3 hover:text-gray-11"
           >
             {expanded ? (
@@ -159,6 +177,16 @@ interface ReportDetailPaneProps {
   onRequestDismissReport: () => void;
   suppressDisabledReason: string | null;
   isDismissMutationPending?: boolean;
+  onReportAction?: (
+    action: Omit<
+      InboxReportActionProperties,
+      "rank" | "list_size" | "priority" | "actionability"
+    > & {
+      priority?: string | null;
+      actionability?: string | null;
+    },
+  ) => void;
+  onScroll?: () => void;
 }
 
 export function ReportDetailPane({
@@ -167,7 +195,11 @@ export function ReportDetailPane({
   onRequestDismissReport,
   suppressDisabledReason,
   isDismissMutationPending = false,
+  onReportAction,
+  onScroll,
 }: ReportDetailPaneProps) {
+  const [discussQuestion, setDiscussQuestion] = useState("");
+  const [discussQuestionOpen, setDiscussQuestionOpen] = useState(false);
   const { data: me } = useMeQuery();
 
   // ── Report data ─────────────────────────────────────────────────────────
@@ -180,8 +212,12 @@ export function ReportDetailPane({
     const reviewerArtefact = allArtefacts.find(
       (a): a is SuggestedReviewersArtefact => a.type === "suggested_reviewers",
     );
-    return reviewerArtefact?.content ?? [];
-  }, [allArtefacts]);
+    const reviewers = reviewerArtefact?.content ?? [];
+    if (!me?.uuid) return reviewers;
+    const meIndex = reviewers.findIndex((r) => r.user?.uuid === me.uuid);
+    if (meIndex <= 0) return reviewers;
+    return [reviewers[meIndex], ...reviewers.filter((_, i) => i !== meIndex)];
+  }, [allArtefacts, me?.uuid]);
 
   const signalFindings = useMemo(() => {
     const map = new Map<string, SignalFindingArtefact["content"]>();
@@ -234,7 +270,6 @@ export function ReportDetailPane({
   );
 
   // ── Task creation ───────────────────────────────────────────────────────
-  const { navigateToTaskInput } = useNavigationStore();
   const { data: reportRepository } = useReportRepository(report.id);
   const trpcReact = useTRPC();
   const { data: mostRecentRepo } = useQuery(
@@ -271,22 +306,131 @@ export function ReportDetailPane({
       report.actionability === "immediately_actionable" &&
       report.already_addressed !== true);
 
-  const handleCreateImplementationTask = useCallback(() => {
-    if (!canCreateImplementationPr) return;
-    navigateToTaskInput({
-      initialPrompt: `Act on this signal report. Investigate the root cause, implement the fix, and open a PR if appropriate.\n\n${report.summary ?? ""}`,
-      initialCloudRepository: effectiveCloudRepository ?? undefined,
-      reportAssociation: {
-        reportId: report.id,
-        title: report.title ?? "Untitled signal",
-      },
-    });
+  // Centralized helper for detail-pane action analytics — fills boilerplate (surface, is_bulk,
+  // bulk_size) and report-scoped context (title, age) so call sites only pass action-specific extras.
+  const fireDetailAction = useCallback(
+    (
+      actionType: InboxReportActionProperties["action_type"],
+      extra?: Partial<
+        Omit<
+          InboxReportActionProperties,
+          | "report_id"
+          | "report_title"
+          | "report_age_hours"
+          | "action_type"
+          | "surface"
+          | "is_bulk"
+          | "bulk_size"
+          | "rank"
+          | "list_size"
+        >
+      >,
+    ) => {
+      const ageMs = Date.now() - new Date(report.created_at).getTime();
+      const reportAgeHours = Number.isFinite(ageMs)
+        ? Math.max(0, Math.round((ageMs / 3_600_000) * 10) / 10)
+        : 0;
+      onReportAction?.({
+        report_id: report.id,
+        report_title: report.title,
+        report_age_hours: reportAgeHours,
+        action_type: actionType,
+        surface: "detail_pane",
+        is_bulk: false,
+        bulk_size: 1,
+        ...extra,
+      });
+    },
+    [onReportAction, report.id, report.title, report.created_at],
+  );
+
+  // Build the signal-card interaction handler used by both signal lists (signals + session-problem evidence).
+  const makeSignalInteractionHandler = useCallback(
+    (signal: Signal) => (action: SignalInteractionAction) => {
+      const signalContext = {
+        signal_id: signal.signal_id,
+        signal_source_product: signal.source_product,
+        signal_source_type: signal.source_type,
+      };
+      if (action.type === "expand_signal_section") {
+        fireDetailAction(action.type, {
+          ...signalContext,
+          signal_section: action.section,
+        });
+      } else {
+        fireDetailAction(action.type, signalContext);
+      }
+    },
+    [fireDetailAction],
+  );
+
+  const { createPrReport, isCreatingPr } = useCreatePrReport({
+    reportId: report.id,
+    reportTitle: report.title,
+    cloudRepository: effectiveCloudRepository,
+  });
+
+  const handleCreateImplementationTask = useCallback(async () => {
+    if (!canCreateImplementationPr || isCreatingPr) return;
+    fireDetailAction("create_pr");
+    await createPrReport();
   }, [
     canCreateImplementationPr,
-    navigateToTaskInput,
-    effectiveCloudRepository,
-    report,
+    isCreatingPr,
+    createPrReport,
+    fireDetailAction,
   ]);
+
+  const { discussReport, isDiscussing } = useDiscussReport({
+    reportId: report.id,
+    reportTitle: report.title,
+    cloudRepository: effectiveCloudRepository,
+  });
+
+  const handleDiscussReport = useCallback(
+    async (question?: string) => {
+      const trimmedQuestion = question?.trim();
+      fireDetailAction("discuss", {
+        has_question: !!trimmedQuestion,
+        question_text: trimmedQuestion
+          ? trimmedQuestion.slice(0, 500)
+          : undefined,
+      });
+      setDiscussQuestionOpen(false);
+      await discussReport(trimmedQuestion);
+    },
+    [discussReport, fireDetailAction],
+  );
+
+  const handleDiscussSubmit = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      handleDiscussReport(discussQuestion);
+    },
+    [discussQuestion, handleDiscussReport],
+  );
+
+  // Bind native scroll listener to the Radix ScrollArea viewport (Radix doesn't forward onScroll).
+  // The viewport's data-report-id attribute is set from report.id so we both (a) track the
+  // current report in the DOM for debugging and (b) give biome's useExhaustiveDependencies
+  // a real reactive use of report.id, ensuring the effect re-binds on every report swap.
+  const scrollAreaRootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!onScroll) return;
+    const root = scrollAreaRootRef.current;
+    if (!root) return;
+    const viewport = root.querySelector<HTMLElement>(
+      "[data-radix-scroll-area-viewport]",
+    );
+    if (!viewport) return;
+    viewport.dataset.reportId = report.id;
+    const handler = () => onScroll();
+    viewport.addEventListener("scroll", handler, { passive: true });
+    return () => {
+      viewport.removeEventListener("scroll", handler);
+      delete viewport.dataset.reportId;
+    };
+  }, [onScroll, report.id]);
 
   useEffect(() => {
     if (!canCreateImplementationPr) return;
@@ -338,15 +482,18 @@ export function ReportDetailPane({
               onClick={async () => {
                 try {
                   await navigator.clipboard.writeText(
-                    `${getDeeplinkProtocol(import.meta.env.DEV)}://inbox/${report.id}`,
+                    buildInboxDeeplink(report.id, report.title, {
+                      isDevBuild: import.meta.env.DEV,
+                    }),
                   );
+                  fireDetailAction("copy_link");
                   toast.success("Link copied");
                 } catch {
                   toast.error("Failed to copy link");
                 }
               }}
               aria-label="Copy link to this report"
-              className="rounded p-0.5 text-gray-11 hover:bg-gray-3 hover:text-gray-12"
+              className="flex h-5 w-5 items-center justify-center rounded text-gray-11 transition-colors hover:bg-gray-3 hover:text-gray-12"
             >
               <LinkSimpleIcon size={14} />
             </button>
@@ -370,10 +517,94 @@ export function ReportDetailPane({
             )}
             Dismiss
           </Button>
+          <Flex align="center" gap="0">
+            <Button
+              size="1"
+              variant="soft"
+              className="gap-1 rounded-r-none text-[12px]"
+              tooltipContent="Discuss this report in a task with your agent"
+              disabled={isDiscussing}
+              onClick={() => handleDiscussReport()}
+            >
+              {isDiscussing ? (
+                <Spinner size="1" />
+              ) : (
+                <ChatCircleIcon size={12} />
+              )}
+              Discuss
+            </Button>
+            <Popover.Root
+              open={discussQuestionOpen}
+              onOpenChange={setDiscussQuestionOpen}
+            >
+              <Popover.Trigger>
+                <Button
+                  size="1"
+                  variant="soft"
+                  className="rounded-l-none border-l border-l-(--gray-5) px-1"
+                  aria-label="Ask an optional first question"
+                  disabled={isDiscussing}
+                >
+                  <CaretDownIcon size={12} />
+                </Button>
+              </Popover.Trigger>
+              <Popover.Content
+                align="end"
+                className="w-[420px] border border-(--gray-6) bg-(--color-panel-solid) p-3 shadow-6"
+                side="bottom"
+                sideOffset={6}
+              >
+                <form
+                  className="flex flex-col gap-2"
+                  onSubmit={handleDiscussSubmit}
+                >
+                  <TextArea
+                    aria-label="Optional first question for Discuss"
+                    autoFocus
+                    placeholder="Ask about this report..."
+                    resize="vertical"
+                    rows={5}
+                    size="2"
+                    value={discussQuestion}
+                    onChange={(event) => setDiscussQuestion(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (
+                        event.key === "Enter" &&
+                        (event.metaKey || event.ctrlKey)
+                      ) {
+                        event.preventDefault();
+                        handleDiscussReport(discussQuestion);
+                      }
+                    }}
+                  />
+                  <Flex justify="between" align="center" gap="2">
+                    <Text size="1" color="gray">
+                      <Kbd>{isMac ? "⌘↵" : "Ctrl+↵"}</Kbd> to send
+                    </Text>
+                    <Flex gap="2">
+                      <Button
+                        color="gray"
+                        size="1"
+                        type="button"
+                        variant="soft"
+                        onClick={() => setDiscussQuestionOpen(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button size="1" type="submit" variant="soft">
+                        Discuss
+                      </Button>
+                    </Flex>
+                  </Flex>
+                </form>
+              </Popover.Content>
+            </Popover.Root>
+          </Flex>
           {headerImplementationPrUrl ? (
             <ReportImplementationPrLink
               prUrl={headerImplementationPrUrl}
               size="md"
+              onLinkClick={() => fireDetailAction("open_pr")}
             />
           ) : canCreateImplementationPr ? (
             <Tooltip
@@ -387,9 +618,10 @@ export function ReportDetailPane({
                 size="1"
                 variant="solid"
                 className="gap-1 text-[12px]"
+                disabled={isCreatingPr}
                 onClick={handleCreateImplementationTask}
               >
-                <Plus size={12} />
+                {isCreatingPr ? <Spinner size="1" /> : <Plus size={12} />}
                 Create PR
               </Button>
             </Tooltip>
@@ -407,6 +639,7 @@ export function ReportDetailPane({
 
       {/* ── Scrollable detail area ──────────────────────────────── */}
       <ScrollArea
+        ref={scrollAreaRootRef}
         type="auto"
         scrollbars="vertical"
         className="scroll-area-constrain-width flex-1"
@@ -488,6 +721,10 @@ export function ReportDetailPane({
                     <SignalReportPriorityBadge priority={report.priority} />
                   }
                   explanation={priorityExplanation}
+                  onToggleExplanation={(expanded) => {
+                    if (!expanded) return;
+                    fireDetailAction("expand_why", { why_field: "priority" });
+                  }}
                 />
               )}
               {report.actionability && (
@@ -499,6 +736,12 @@ export function ReportDetailPane({
                     />
                   }
                   explanation={actionabilityJudgment?.explanation}
+                  onToggleExplanation={(expanded) => {
+                    if (!expanded) return;
+                    fireDetailAction("expand_why", {
+                      why_field: "actionability",
+                    });
+                  }}
                 />
               )}
             </Flex>
@@ -568,6 +811,9 @@ export function ReportDetailPane({
                         target="_blank"
                         rel="noreferrer"
                         className="inline-flex items-center gap-0.5 text-[11px] text-gray-9 hover:text-gray-11"
+                        onClick={() =>
+                          fireDetailAction("click_suggested_reviewer")
+                        }
                       >
                         @{reviewer.github_login}
                         <ArrowSquareOutIcon size={10} />
@@ -577,15 +823,38 @@ export function ReportDetailPane({
                           {reviewer.relevant_commits.map((commit, i) => (
                             <span key={commit.sha}>
                               {i > 0 && ", "}
-                              <Tooltip content={commit.reason || undefined}>
-                                <a
-                                  href={commit.url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="font-mono text-gray-9 hover:text-gray-11"
-                                >
-                                  {commit.sha.slice(0, 7)}
-                                </a>
+                              <Tooltip
+                                content={
+                                  isMe ? (
+                                    <Flex direction="column" gap="1">
+                                      <Text as="div" size="1" weight="bold">
+                                        Why was I assigned?
+                                      </Text>
+                                      <Text as="div" size="1">
+                                        {commit.reason}
+                                      </Text>
+                                    </Flex>
+                                  ) : (
+                                    commit.reason || undefined
+                                  )
+                                }
+                              >
+                                <span className="inline-flex items-center gap-0.5">
+                                  <a
+                                    href={commit.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="font-mono text-gray-9 hover:text-gray-11"
+                                  >
+                                    {commit.sha.slice(0, 7)}
+                                  </a>
+                                  {isMe && commit.reason && (
+                                    <InfoIcon
+                                      size={11}
+                                      className="cursor-help text-gray-9"
+                                    />
+                                  )}
+                                </span>
                               </Tooltip>
                             </span>
                           ))}
@@ -610,6 +879,7 @@ export function ReportDetailPane({
                     key={signal.signal_id}
                     signal={signal}
                     finding={signalFindings.get(signal.signal_id)}
+                    onInteraction={makeSignalInteractionHandler(signal)}
                   />
                 ))}
               </Flex>
@@ -633,6 +903,7 @@ export function ReportDetailPane({
                     key={signal.signal_id}
                     signal={signal}
                     finding={signalFindings.get(signal.signal_id)}
+                    onInteraction={makeSignalInteractionHandler(signal)}
                   />
                 ))}
               </Flex>
@@ -646,6 +917,9 @@ export function ReportDetailPane({
         key={report.id}
         reportId={report.id}
         reportStatus={report.status}
+        onSectionExpand={(section) =>
+          fireDetailAction("expand_task_section", { task_section: section })
+        }
       />
     </>
   );

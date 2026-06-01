@@ -4,7 +4,9 @@ import {
   type FileEnrichmentDeps,
 } from "../../enrichment/file-enricher";
 import type { Logger } from "../../utils/logger";
+import { SIGNED_COMMIT_QUALIFIED_TOOL_NAME } from "../signed-commit-shared";
 import { stripCatLineNumbers } from "./conversion/sdk-to-acp";
+import type { TaskState } from "./conversion/task-state";
 import {
   extractPostHogSubTool,
   isPostHogDestructiveSubTool,
@@ -128,6 +130,48 @@ export const registerHookCallback = (
   };
 };
 
+/**
+ * Pre-populate the per-session task list from SDK TaskCreated/TaskCompleted
+ * hook events. These fire before the matching tool_result chunk arrives, so
+ * by the time TaskUpdate runs (which only carries taskId + status) the entry
+ * already exists with a real subject — no placeholder with empty content.
+ *
+ * Plan-update emission happens in the tool_result handler, which mirrors the
+ * old TodoWrite suppress-tool-call + emit-plan flow.
+ */
+export const createTaskHook =
+  (taskState: TaskState, onChange?: () => Promise<void>): HookCallback =>
+  async (input: HookInput): Promise<{ continue: boolean }> => {
+    const taskId =
+      "task_id" in input && typeof input.task_id === "string"
+        ? input.task_id
+        : undefined;
+    if (!taskId) return { continue: true };
+
+    let mutated = false;
+    if (input.hook_event_name === "TaskCreated") {
+      if (!input.task_subject) return { continue: true };
+      // Guard against the SDK firing TaskCreated twice for the same id —
+      // re-entry would clobber any TaskUpdate that landed in between.
+      if (taskState.has(taskId)) return { continue: true };
+      taskState.set(taskId, {
+        subject: input.task_subject,
+        status: "pending",
+        description: input.task_description,
+      });
+      mutated = true;
+    } else if (input.hook_event_name === "TaskCompleted") {
+      const existing = taskState.get(taskId);
+      if (!existing || existing.status === "completed") {
+        return { continue: true };
+      }
+      taskState.set(taskId, { ...existing, status: "completed" });
+      mutated = true;
+    }
+    if (mutated && onChange) await onChange();
+    return { continue: true };
+  };
+
 export type OnModeChange = (mode: CodeExecutionMode) => Promise<void>;
 
 interface CreatePostToolUseHookParams {
@@ -156,10 +200,8 @@ export const createPostToolUseHook =
             input.tool_input,
             input.tool_response,
           );
-          delete toolUseCallbacks[toolUseID];
-        } else {
-          delete toolUseCallbacks[toolUseID];
         }
+        delete toolUseCallbacks[toolUseID];
       }
     }
     return { continue: true };
@@ -218,6 +260,91 @@ export const createSubagentRewriteHook =
           ...toolInput,
           subagent_type: target,
         },
+      },
+    };
+  };
+
+// git global options that consume the following token as their value, so the
+// subcommand detector must skip both (mirrors the sandbox `git` PATH shim).
+const GIT_VALUE_FLAGS = new Set([
+  "-C",
+  "-c",
+  "--git-dir",
+  "--work-tree",
+  "--namespace",
+  "--exec-path",
+]);
+
+function gitSubcommand(segment: string): string | null {
+  const tokens = segment.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return null;
+  // Strip a leading path so `/usr/bin/git` is still recognised as git.
+  const head = tokens[0].split("/").pop();
+  if (head !== "git") return null;
+
+  let skipNext = false;
+  for (const tok of tokens.slice(1)) {
+    if (skipNext) {
+      skipNext = false;
+      continue;
+    }
+    if (GIT_VALUE_FLAGS.has(tok)) {
+      skipNext = true;
+      continue;
+    }
+    if (tok.startsWith("-")) continue;
+    return tok;
+  }
+  return null;
+}
+
+/**
+ * True when any top-level shell segment of `command` is a direct `git commit` /
+ * `git push` invocation (allowing `git`-level global flags like `-C path` or
+ * `--no-pager`). Does not match subcommands such as `git stash push` or
+ * `git log --grep=commit`. Git reached via command substitution (`$(git push)`)
+ * is not caught here — the sandbox `git` PATH shim is the authoritative backstop;
+ * this hook is a fast in-band deny with a helpful message.
+ */
+function blocksUnsignedGit(command: string): boolean {
+  // Cheap reject for the overwhelmingly common non-git Bash call before splitting.
+  if (!command.includes("git")) return false;
+  return command.split(/&&|\|\||[;\n|]/).some((segment) => {
+    const sub = gitSubcommand(segment);
+    return sub === "commit" || sub === "push";
+  });
+}
+
+/**
+ * Cloud-only guard: blocks raw `git commit` / `git push` so unsigned commits
+ * cannot leave the sandbox. The agent must use the `git_signed_commit` tool,
+ * which creates GitHub-signed (Verified) commits via the API.
+ */
+export const createSignedCommitGuardHook =
+  (logger: Logger): HookCallback =>
+  async (input: HookInput, _toolUseID: string | undefined) => {
+    if (input.hook_event_name !== "PreToolUse") return { continue: true };
+    if (input.tool_name !== "Bash") return { continue: true };
+
+    const command = (input.tool_input as { command?: string } | undefined)
+      ?.command;
+    if (!command || !blocksUnsignedGit(command)) {
+      return { continue: true };
+    }
+
+    logger.info(
+      `[SignedCommitGuard] Blocking unsigned git command: ${command}`,
+    );
+    return {
+      continue: true,
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse" as const,
+        permissionDecision: "deny" as const,
+        permissionDecisionReason:
+          "Commits must be signed: `git commit` and `git push` are disabled here. " +
+          "Stage changes with `git add`, then call the `git_signed_commit` tool " +
+          `(${SIGNED_COMMIT_QUALIFIED_TOOL_NAME}) with a \`message\` to create a signed ` +
+          "commit on the branch.",
       },
     };
   };

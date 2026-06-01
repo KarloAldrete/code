@@ -6,17 +6,16 @@ import {
   INBOX_PIPELINE_STATUS_FILTER,
   INBOX_REFETCH_INTERVAL_MS,
 } from "@features/inbox/utils/inboxConstants";
-import { getSessionService } from "@features/sessions/service/service";
 import {
-  archiveTaskImperative,
+  archiveTasksImperative,
   useArchiveTask,
 } from "@features/tasks/hooks/useArchiveTask";
-import { useTasks, useUpdateTask } from "@features/tasks/hooks/useTasks";
+import { useRenameTask, useTasks } from "@features/tasks/hooks/useTasks";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
 import { useTaskContextMenu } from "@hooks/useTaskContextMenu";
 import { ScrollArea, Separator } from "@posthog/quill";
 import { Box, Flex } from "@radix-ui/themes";
-import type { Schemas } from "@renderer/api/generated";
+import { trpcClient } from "@renderer/trpc/client";
 import type { Task } from "@shared/types";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useNavigationStore } from "@stores/navigationStore";
@@ -24,11 +23,12 @@ import { useRendererWindowFocusStore } from "@stores/rendererWindowFocusStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { logger } from "@utils/logger";
 import { toast } from "@utils/toast";
-import { memo, useCallback, useEffect, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import { usePinnedTasks } from "../hooks/usePinnedTasks";
 import { useSidebarData } from "../hooks/useSidebarData";
 import { useTaskViewed } from "../hooks/useTaskViewed";
 import { useSidebarStore } from "../stores/sidebarStore";
+import { useTaskSelectionStore } from "../stores/taskSelectionStore";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { InboxItem, NewTaskItem } from "./items/HomeItem";
 import { McpServersItem } from "./items/McpServersItem";
@@ -36,6 +36,8 @@ import { SearchItem } from "./items/SearchItem";
 import { SkillsItem } from "./items/SkillsItem";
 import { SidebarItem } from "./SidebarItem";
 import { TaskListView } from "./TaskListView";
+
+const log = logger.scope("sidebar-menu");
 
 function SidebarMenuComponent() {
   const {
@@ -60,6 +62,7 @@ function SidebarMenuComponent() {
   const { showContextMenu, editingTaskId, setEditingTaskId } =
     useTaskContextMenu();
   const { archiveTask } = useArchiveTask();
+  const { renameTask } = useRenameTask();
   const { togglePin } = usePinnedTasks();
 
   const sidebarData = useSidebarData({
@@ -133,23 +136,131 @@ function SidebarMenuComponent() {
     openCommandMenu();
   };
 
-  const handleTaskClick = (taskId: string) => {
+  const queryClient = useQueryClient();
+
+  const selectedTaskIds = useTaskSelectionStore((s) => s.selectedTaskIds);
+  const toggleTaskSelection = useTaskSelectionStore(
+    (s) => s.toggleTaskSelection,
+  );
+  const selectRange = useTaskSelectionStore((s) => s.selectRange);
+  const clearSelection = useTaskSelectionStore((s) => s.clearSelection);
+  const pruneSelection = useTaskSelectionStore((s) => s.pruneSelection);
+
+  const organizeMode = useSidebarStore((s) => s.organizeMode);
+  const collapsedSections = useSidebarStore((s) => s.collapsedSections);
+
+  const allSidebarTasks = useMemo(
+    () => [...sidebarData.pinnedTasks, ...sidebarData.flatTasks],
+    [sidebarData.pinnedTasks, sidebarData.flatTasks],
+  );
+
+  const allSidebarTaskIds = useMemo(
+    () => allSidebarTasks.map((t) => t.id),
+    [allSidebarTasks],
+  );
+
+  // Ordered list of currently visible task IDs in display order. Used as the
+  // index for shift-click range selection so it matches what the user sees —
+  // in by-project mode the chronological flat order would span across project
+  // groups and pull in unrelated tasks.
+  const orderedVisibleTaskIds = useMemo(() => {
+    const ids: string[] = sidebarData.pinnedTasks.map((t) => t.id);
+    if (organizeMode === "by-project") {
+      for (const group of sidebarData.groupedTasks) {
+        if (collapsedSections.has(group.id)) continue;
+        for (const t of group.tasks) ids.push(t.id);
+      }
+    } else {
+      for (const t of sidebarData.flatTasks) ids.push(t.id);
+    }
+    return ids;
+  }, [
+    sidebarData.pinnedTasks,
+    sidebarData.flatTasks,
+    sidebarData.groupedTasks,
+    organizeMode,
+    collapsedSections,
+  ]);
+
+  useEffect(() => {
+    pruneSelection(allSidebarTaskIds);
+  }, [allSidebarTaskIds, pruneSelection]);
+
+  // The active (routed) task is implicitly part of any bulk selection — the
+  // user expects to see and act on it together with cmd/shift-clicked tasks.
+  const activeTaskId = sidebarData.activeTaskId;
+  const effectiveBulkIds = useMemo(() => {
+    if (selectedTaskIds.length === 0) return [];
+    if (!activeTaskId) return selectedTaskIds;
+    if (selectedTaskIds.includes(activeTaskId)) return selectedTaskIds;
+    return [activeTaskId, ...selectedTaskIds];
+  }, [activeTaskId, selectedTaskIds]);
+
+  const handleTaskClick = (taskId: string, e: React.MouseEvent) => {
+    if (e.shiftKey) {
+      e.preventDefault();
+      selectRange(taskId, orderedVisibleTaskIds, activeTaskId);
+      return;
+    }
+    if (e.metaKey || e.ctrlKey) {
+      e.preventDefault();
+      toggleTaskSelection(taskId);
+      return;
+    }
+
+    clearSelection();
     const task = taskMap.get(taskId);
     if (task) {
       navigateToTask(task);
     }
   };
 
-  const allSidebarTasks = [
-    ...sidebarData.pinnedTasks,
-    ...sidebarData.flatTasks,
-  ];
+  const handleBulkContextMenu = useCallback(
+    async (e: React.MouseEvent, taskIds: string[]) => {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        const result =
+          await trpcClient.contextMenu.showBulkTaskContextMenu.mutate({
+            taskCount: taskIds.length,
+          });
+        if (!result.action) return;
+        if (result.action.type === "archive") {
+          const { archived, failed } = await archiveTasksImperative(
+            taskIds,
+            queryClient,
+          );
+          clearSelection();
+          if (failed === 0) {
+            toast.success(
+              `${archived} ${archived === 1 ? "task" : "tasks"} archived`,
+            );
+          } else {
+            toast.error(`${archived} archived, ${failed} failed`);
+          }
+        }
+      } catch (error) {
+        log.error("Failed to show bulk context menu", error);
+      }
+    },
+    [queryClient, clearSelection],
+  );
 
   const handleTaskContextMenu = (
     taskId: string,
     e: React.MouseEvent,
     isPinned: boolean,
   ) => {
+    // Bulk menu when 2+ tasks are in the effective selection (active + cmd/shift-clicked)
+    // and the right-clicked task is one of them. Otherwise clear and fall through.
+    if (effectiveBulkIds.length > 1) {
+      if (effectiveBulkIds.includes(taskId)) {
+        handleBulkContextMenu(e, effectiveBulkIds);
+        return;
+      }
+      clearSelection();
+    }
+
     const task = taskMap.get(taskId);
     if (task) {
       const workspace = workspaces[taskId];
@@ -188,19 +299,15 @@ function SidebarMenuComponent() {
     await archiveTask({ taskId });
   };
 
-  const updateTask = useUpdateTask();
-  const queryClient = useQueryClient();
-
   const handleArchivePrior = useCallback(
     async (taskId: string) => {
       const allVisible = [...sidebarData.pinnedTasks, ...sidebarData.flatTasks];
       const clickedTask = allVisible.find((t) => t.id === taskId);
       if (!clickedTask) return;
 
-      const sortKey = "createdAt" as const;
-      const threshold = clickedTask[sortKey];
+      const threshold = clickedTask.createdAt;
       const priorTaskIds = allVisible
-        .filter((t) => t.id !== taskId && t[sortKey] < threshold)
+        .filter((t) => t.id !== taskId && t.createdAt < threshold)
         .map((t) => t.id);
 
       if (priorTaskIds.length === 0) {
@@ -208,39 +315,21 @@ function SidebarMenuComponent() {
         return;
       }
 
-      const nav = useNavigationStore.getState();
-      const priorSet = new Set(priorTaskIds);
-      if (
-        nav.view.type === "task-detail" &&
-        nav.view.data &&
-        priorSet.has(nav.view.data.id)
-      ) {
-        nav.navigateToTaskInput();
-      }
-
-      let done = 0;
-      let failed = 0;
-      for (const id of priorTaskIds) {
-        try {
-          await archiveTaskImperative(id, queryClient, {
-            skipNavigate: true,
-          });
-          done++;
-        } catch {
-          failed++;
-        }
-      }
+      const { archived, failed } = await archiveTasksImperative(
+        priorTaskIds,
+        queryClient,
+      );
 
       if (failed === 0) {
-        toast.success(`${done} ${done === 1 ? "task" : "tasks"} archived`);
+        toast.success(
+          `${archived} ${archived === 1 ? "task" : "tasks"} archived`,
+        );
       } else {
-        toast.error(`${done} archived, ${failed} failed`);
+        toast.error(`${archived} archived, ${failed} failed`);
       }
     },
     [sidebarData.pinnedTasks, sidebarData.flatTasks, queryClient],
   );
-  const log = logger.scope("sidebar-menu");
-
   const handleTaskDoubleClick = useCallback(
     (taskId: string) => {
       setEditingTaskId(taskId);
@@ -249,43 +338,20 @@ function SidebarMenuComponent() {
   );
 
   const handleTaskEditSubmit = useCallback(
-    async (taskId: string, newTitle: string) => {
+    async (taskId: string, currentTitle: string, newTitle: string) => {
       setEditingTaskId(null);
 
-      // Optimistically update task title in all cached task lists
-      queryClient.setQueriesData<Task[]>(
-        { queryKey: ["tasks", "list"] },
-        (old) =>
-          old?.map((task) =>
-            task.id === taskId
-              ? { ...task, title: newTitle, title_manually_set: true }
-              : task,
-          ),
-      );
-      queryClient.setQueriesData<Schemas.TaskSummary[]>(
-        { queryKey: ["tasks", "summaries"] },
-        (old) =>
-          old?.map((task) =>
-            task.id === taskId ? { ...task, title: newTitle } : task,
-          ),
-      );
-
-      // Sync to session store so notifications use the updated title
-      getSessionService().updateSessionTaskTitle(taskId, newTitle);
-
       try {
-        await updateTask.mutateAsync({
+        await renameTask({
           taskId,
-          updates: { title: newTitle, title_manually_set: true },
+          currentTitle,
+          newTitle,
         });
       } catch (error) {
         log.error("Failed to rename task", error);
-        // Refetch to revert optimistic update on failure
-        queryClient.invalidateQueries({ queryKey: ["tasks", "list"] });
-        queryClient.invalidateQueries({ queryKey: ["tasks", "summaries"] });
       }
     },
-    [setEditingTaskId, updateTask, queryClient, log],
+    [renameTask, setEditingTaskId],
   );
 
   const handleTaskEditCancel = useCallback(() => {
@@ -354,6 +420,7 @@ function SidebarMenuComponent() {
               groupedTasks={sidebarData.groupedTasks}
               activeTaskId={sidebarData.activeTaskId}
               editingTaskId={editingTaskId}
+              selectedTaskIds={effectiveBulkIds}
               onTaskClick={handleTaskClick}
               onTaskDoubleClick={handleTaskDoubleClick}
               onTaskContextMenu={handleTaskContextMenu}

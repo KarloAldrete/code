@@ -3,14 +3,16 @@ export type OnboardingStep =
   | "claude-auth-method"
   | "project-select"
   | "invite-code"
-  | "github"
-  | "install-cli";
+  | "connect-github"
+  | "install-cli"
+  | "select-repo";
 
 export const ONBOARDING_STEPS: OnboardingStep[] = [
   "welcome",
   "claude-auth-method",
   "project-select",
   "invite-code",
-  "github",
+  "connect-github",
   "install-cli",
+  "select-repo",
 ];

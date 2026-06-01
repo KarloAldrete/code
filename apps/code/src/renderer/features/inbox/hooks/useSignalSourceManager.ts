@@ -5,8 +5,14 @@ import type {
   Evaluation,
   SignalSourceConfig,
 } from "@renderer/api/posthogClient";
+import type {
+  SignalReportPriority,
+  SignalUserAutonomyConfig,
+} from "@shared/types";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { getCloudUrlFromRegion } from "@shared/utils/urls";
 import { useQueryClient } from "@tanstack/react-query";
+import { track } from "@utils/analytics";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useEvaluations } from "./useEvaluations";
@@ -108,7 +114,8 @@ export function useSignalSourceManager() {
     useExternalDataSources();
   const { data: evaluations } = useEvaluations();
   const { data: teamConfig } = useSignalTeamConfig();
-  const { data: userAutonomyConfig } = useSignalUserAutonomyConfig();
+  const { data: userAutonomyConfig, isLoading: userAutonomyConfigLoading } =
+    useSignalUserAutonomyConfig();
 
   // Optimistic overrides keyed by source product — only sources actively being
   // toggled get an entry, so unrelated sources never see a prop change.
@@ -326,6 +333,9 @@ export function useSignalSourceManager() {
 
       const label = SOURCE_LABELS[product];
 
+      const hadExistingConfig = configs?.some(
+        (c) => c.source_product === product,
+      );
       try {
         if (product === "error_tracking") {
           for (const sourceType of ERROR_TRACKING_SOURCE_TYPES) {
@@ -365,6 +375,14 @@ export function useSignalSourceManager() {
               enabled: true,
             });
           }
+        }
+
+        if (enabled) {
+          track(ANALYTICS_EVENTS.SIGNAL_SOURCE_CONNECTED, {
+            source_product: product,
+            is_first_connection: !hadExistingConfig,
+            via_setup_wizard: false,
+          });
         }
 
         await invalidateAfterToggle();
@@ -411,6 +429,11 @@ export function useSignalSourceManager() {
             enabled: true,
           });
         }
+        track(ANALYTICS_EVENTS.SIGNAL_SOURCE_CONNECTED, {
+          source_product: completedSource,
+          is_first_connection: !existing,
+          via_setup_wizard: true,
+        });
       } catch {
         toast.error(
           "Data source connected, but failed to enable signal source. Try toggling it on.",
@@ -479,6 +502,80 @@ export function useSignalSourceManager() {
     [client, queryClient],
   );
 
+  const handleUpdateSlackNotifications = useCallback(
+    async (updates: {
+      integrationId?: number | null;
+      channel?: string | null;
+      minPriority?: string | null;
+    }) => {
+      if (!client) return;
+      // Translate frontend camelCase to the API's snake_case body. Only include
+      // keys the caller passed in, so other settings (e.g. autostart_priority)
+      // are not wiped.
+      const body: Record<string, number | string | null> = {};
+      if ("integrationId" in updates) {
+        body.slack_notification_integration_id = updates.integrationId ?? null;
+      }
+      if ("channel" in updates) {
+        body.slack_notification_channel = updates.channel ?? null;
+      }
+      if ("minPriority" in updates) {
+        body.slack_notification_min_priority = updates.minPriority ?? null;
+      }
+
+      const queryKey = ["signals", "user-autonomy-config"];
+      const previous =
+        queryClient.getQueryData<SignalUserAutonomyConfig | null>(queryKey);
+
+      // Optimistic update: reflect the user's choice in the UI before the
+      // server responds. Build the next snapshot from the previous one so
+      // unrelated fields (autostart_priority, etc.) are preserved.
+      const optimisticNext: SignalUserAutonomyConfig = {
+        ...(previous ??
+          ({ autostart_priority: null } as SignalUserAutonomyConfig)),
+        ...("integrationId" in updates
+          ? { slack_notification_integration_id: updates.integrationId ?? null }
+          : {}),
+        ...("channel" in updates
+          ? { slack_notification_channel: updates.channel ?? null }
+          : {}),
+        ...("minPriority" in updates
+          ? {
+              slack_notification_min_priority:
+                (updates.minPriority as
+                  | SignalReportPriority
+                  | null
+                  | undefined) ?? null,
+            }
+          : {}),
+      };
+      queryClient.setQueryData<SignalUserAutonomyConfig | null>(
+        queryKey,
+        optimisticNext,
+      );
+
+      try {
+        const fresh = await client.updateSignalUserAutonomyConfig(body);
+        queryClient.setQueryData<SignalUserAutonomyConfig | null>(
+          queryKey,
+          fresh,
+        );
+      } catch (error: unknown) {
+        // Roll back to whatever was in the cache before this attempt.
+        queryClient.setQueryData<SignalUserAutonomyConfig | null>(
+          queryKey,
+          previous ?? null,
+        );
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to update Slack notification setting";
+        toast.error(message);
+      }
+    },
+    [client, queryClient],
+  );
+
   return {
     displayValues,
     sourceStates,
@@ -495,6 +592,8 @@ export function useSignalSourceManager() {
     teamConfig,
     handleUpdateAutostartPriority,
     userAutonomyConfig,
+    userAutonomyConfigLoading,
     handleUpdateUserAutonomyPriority,
+    handleUpdateSlackNotifications,
   };
 }

@@ -51,10 +51,6 @@ vi.mock("@features/sessions/service/service", () => ({
   }),
 }));
 
-vi.mock("@renderer/utils/generateTitle", () => ({
-  createFileTagRegex: () => /<file\s+path="([^"]+)"\s*\/>/g,
-}));
-
 vi.mock("@utils/logger", () => ({
   logger: {
     scope: () => ({
@@ -375,7 +371,7 @@ describe("TaskCreationSaga", () => {
     );
   });
 
-  it("sets title from plain text when description has text", async () => {
+  it("does not prefill a task title from the prompt", async () => {
     const createdTask = createTask();
     const startedTask = createTask({ latest_run: createRun() });
     const createTaskMock = vi.fn().mockResolvedValue(createdTask);
@@ -403,13 +399,13 @@ describe("TaskCreationSaga", () => {
 
     expect(createTaskMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: "Ship the fix",
         description: "Ship the fix",
       }),
     );
+    expect(createTaskMock.mock.calls[0]?.[0]).not.toHaveProperty("title");
   });
 
-  it("sets fallback title when description is attachment-only", async () => {
+  it("does not prefill a task title for attachment-only prompts", async () => {
     const createdTask = createTask();
     const startedTask = createTask({ latest_run: createRun() });
     const createTaskMock = vi.fn().mockResolvedValue(createdTask);
@@ -430,7 +426,6 @@ describe("TaskCreationSaga", () => {
 
     await saga.run({
       taskDescription: '<file path="/tmp/code.ts" />',
-      content: '<file path="/tmp/code.ts" />',
       repository: "posthog/posthog",
       workspaceMode: "cloud",
       branch: "main",
@@ -438,41 +433,10 @@ describe("TaskCreationSaga", () => {
 
     expect(createTaskMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: "Reading attachment\u2026",
         description: '<file path="/tmp/code.ts" />',
       }),
     );
-  });
-
-  it("truncates title to 255 chars", async () => {
-    const longText = "x".repeat(300);
-    const createdTask = createTask();
-    const startedTask = createTask({ latest_run: createRun() });
-    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
-    const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
-    const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
-
-    const saga = new TaskCreationSaga({
-      posthogClient: {
-        createTask: createTaskMock,
-        deleteTask: vi.fn(),
-        getTask: vi.fn(),
-        createTaskRun: createTaskRunMock,
-        startTaskRun: startTaskRunMock,
-        sendRunCommand: vi.fn(),
-        updateTask: vi.fn(),
-      } as never,
-    });
-
-    await saga.run({
-      content: longText,
-      repository: "posthog/posthog",
-      workspaceMode: "cloud",
-      branch: "main",
-    });
-
-    const calledTitle = createTaskMock.mock.calls[0][0].title;
-    expect(calledTitle).toHaveLength(255);
+    expect(createTaskMock.mock.calls[0]?.[0]).not.toHaveProperty("title");
   });
 
   it("uses user authorship for repo-less cloud tasks with a selected user GitHub integration", async () => {

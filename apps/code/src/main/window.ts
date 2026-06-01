@@ -168,23 +168,34 @@ export function createWindow(): void {
           titleBarStyle: "hiddenInset" as const,
           trafficLightPosition: { x: 12, y: 9 },
         }
-      : {
-          titleBarStyle: "hidden" as const,
-          titleBarOverlay: {
-            color: "#0a0a0a",
-            symbolColor: "#ffffff",
-            height: 36,
-          },
-        };
+      : process.platform === "win32"
+        ? {
+            titleBarStyle: "hidden" as const,
+            titleBarOverlay: {
+              color: "#0a0a0a",
+              symbolColor: "#ffffff",
+              height: 36,
+            },
+          }
+        : {};
+
+  // macOS uses the .app bundle icon, but Linux/Windows need an explicit icon
+  const windowIcon =
+    process.platform !== "darwin"
+      ? app.isPackaged
+        ? path.join(process.resourcesPath, "app-icon.png")
+        : path.join(app.getAppPath(), "build/app-icon.png")
+      : undefined;
 
   mainWindow = new BrowserWindow({
     ...(savedState.x !== undefined && { x: savedState.x }),
     ...(savedState.y !== undefined && { y: savedState.y }),
     width: savedState.width,
     height: savedState.height,
-    minWidth: 1200,
+    minWidth: 800,
     minHeight: 600,
     backgroundColor: "#0a0a0a",
+    ...(windowIcon ? { icon: windowIcon } : {}),
     ...platformWindowConfig,
     show: false,
     webPreferences: {

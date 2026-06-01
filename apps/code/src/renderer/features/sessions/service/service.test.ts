@@ -1,6 +1,7 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import type { AgentSession } from "@features/sessions/stores/sessionStore";
 import type { Task } from "@shared/types";
+import type { AcpMessage } from "@shared/types/session-events";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // --- Hoisted Mocks ---
@@ -1232,6 +1233,101 @@ describe("SessionService", () => {
       });
     });
 
+    it("coalesces repeated idle recovery status updates before the queued flush runs", () => {
+      const service = getSessionService();
+      const queuedMessage = {
+        id: "q-1",
+        content: "follow up",
+        queuedAt: 1700000000,
+      };
+      let messageReads = 0;
+      const runStartedEvent = {
+        type: "acp_message" as const,
+        ts: 1700000000,
+        get message() {
+          messageReads += 1;
+          return {
+            jsonrpc: "2.0" as const,
+            method: "_posthog/run_started",
+            params: { runId: "run-123", taskId: "task-123" },
+          };
+        },
+      } as AcpMessage;
+      const turnCompleteEvent = {
+        type: "acp_message" as const,
+        ts: 1700000001,
+        get message() {
+          messageReads += 1;
+          return {
+            jsonrpc: "2.0" as const,
+            method: "_posthog/turn_complete",
+            params: { sessionId: "acp-session", stopReason: "end_turn" },
+          };
+        },
+      } as AcpMessage;
+      const sessionWithQueue = createMockSession({
+        taskRunId: "run-123",
+        taskId: "task-123",
+        status: "connected",
+        isCloud: true,
+        cloudStatus: "in_progress",
+        agentIdleForRunId: undefined,
+        events: [runStartedEvent, turnCompleteEvent],
+        messageQueue: [queuedMessage],
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        sessionWithQueue,
+      );
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-123": sessionWithQueue,
+      });
+      mockTrpcLogs.readLocalLogs.query.mockResolvedValue("");
+      mockTrpcLogs.fetchS3Logs.query.mockResolvedValue("{}");
+
+      service.watchCloudTask(
+        "task-123",
+        "run-123",
+        "https://api.anthropic.com",
+        123,
+        undefined,
+        "https://logs.example.com/run-123",
+      );
+
+      const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
+        .calls[0][1] as {
+        onData: (update: {
+          kind: "status";
+          taskId: string;
+          runId: string;
+          status: "in_progress";
+        }) => void;
+      };
+
+      vi.useFakeTimers();
+      try {
+        for (let i = 0; i < 100; i += 1) {
+          subscribeOptions.onData({
+            kind: "status",
+            taskId: "task-123",
+            runId: "run-123",
+            status: "in_progress",
+          });
+        }
+
+        // The two reads are the initial incremental scan over
+        // run_started/turn_complete; repeated in_progress updates must not
+        // re-read the same historical events.
+        expect(messageReads).toBe(2);
+        expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+          "run-123",
+          { agentIdleForRunId: "run-123" },
+        );
+      } finally {
+        vi.clearAllTimers();
+        vi.useRealTimers();
+      }
+    });
+
     it("does not flush queued cloud messages when cloudStatus flips to in_progress while still connecting", async () => {
       const service = getSessionService();
       mockBuildAuthenticatedClient.mockReturnValue(mockAuthenticatedClient);
@@ -1612,6 +1708,114 @@ describe("SessionService", () => {
             params: expect.objectContaining({ content: "follow up" }),
           }),
         );
+      });
+    });
+
+    it("restores idle evidence after a failed queued dispatch so recovery can retry", async () => {
+      const service = getSessionService();
+      mockBuildAuthenticatedClient.mockReturnValue(mockAuthenticatedClient);
+      const queuedMessage = {
+        id: "q-1",
+        content: "follow up",
+        queuedAt: 1700000000,
+      };
+      const runStartedEvent = {
+        type: "acp_message" as const,
+        ts: 1700000000,
+        message: {
+          jsonrpc: "2.0" as const,
+          method: "_posthog/run_started",
+          params: {
+            sessionId: "acp-session",
+            runId: "run-123",
+            taskId: "task-123",
+          },
+        },
+      };
+      const turnCompleteEvent = {
+        type: "acp_message" as const,
+        ts: 1700000001,
+        message: {
+          jsonrpc: "2.0" as const,
+          method: "_posthog/turn_complete",
+          params: { sessionId: "acp-session", stopReason: "end_turn" },
+        },
+      };
+      const disconnectedSession = createMockSession({
+        taskRunId: "run-123",
+        taskId: "task-123",
+        status: "disconnected",
+        isCloud: true,
+        cloudStatus: "in_progress",
+        isPromptPending: false,
+        agentIdleForRunId: undefined,
+        events: [runStartedEvent, turnCompleteEvent],
+        messageQueue: [queuedMessage],
+      });
+      const connectedSession = createMockSession({
+        ...disconnectedSession,
+        status: "connected",
+      });
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-123": disconnectedSession,
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        connectedSession,
+      );
+      mockSessionStoreSetters.dequeueMessages.mockReturnValue([queuedMessage]);
+      mockTrpcLogs.readLocalLogs.query.mockResolvedValue("");
+      mockTrpcLogs.fetchS3Logs.query.mockResolvedValue("{}");
+      mockTrpcLogs.writeLocalLogs.mutate.mockResolvedValue(undefined);
+      mockTrpcCloudTask.sendCommand.mutate
+        .mockRejectedValueOnce(new Error("transient backend failure"))
+        .mockResolvedValueOnce({
+          success: true,
+          result: { stopReason: "end_turn" },
+        });
+
+      service.watchCloudTask(
+        "task-123",
+        "run-123",
+        "https://api.anthropic.com",
+        123,
+        undefined,
+        "https://logs.example.com/run-123",
+      );
+
+      const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
+        .calls[0][1] as {
+        onData: (update: {
+          kind: "status";
+          taskId: string;
+          runId: string;
+          status: "in_progress";
+        }) => void;
+      };
+      subscribeOptions.onData({
+        kind: "status",
+        taskId: "task-123",
+        runId: "run-123",
+        status: "in_progress",
+      });
+
+      await vi.waitFor(() => {
+        expect(mockTrpcCloudTask.sendCommand.mutate).toHaveBeenCalledTimes(1);
+      });
+      await vi.waitFor(() => {
+        expect(
+          mockSessionStoreSetters.prependQueuedMessages,
+        ).toHaveBeenCalledWith("task-123", [queuedMessage]);
+      });
+
+      subscribeOptions.onData({
+        kind: "status",
+        taskId: "task-123",
+        runId: "run-123",
+        status: "in_progress",
+      });
+
+      await vi.waitFor(() => {
+        expect(mockTrpcCloudTask.sendCommand.mutate).toHaveBeenCalledTimes(2);
       });
     });
 
@@ -2308,6 +2512,112 @@ describe("SessionService", () => {
       // unbounded growth on long-running cloud runs.
       expect(mockSessionStoreSetters.appendEvents).not.toHaveBeenCalled();
     });
+
+    const setupReconcileLoopTest = (logContent: string) => {
+      const service = getSessionService();
+      const existingSession = createMockSession({
+        taskRunId: "run-123",
+        taskId: "task-123",
+        status: "connected",
+        isCloud: true,
+        logUrl: "https://logs.example.com/run-123",
+        processedLineCount: 5,
+        events: [],
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        existingSession,
+      );
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-123": existingSession,
+      });
+      mockTrpcLogs.readLocalLogs.query.mockResolvedValue(logContent);
+      mockTrpcLogs.fetchS3Logs.query.mockResolvedValue(logContent);
+      service.watchCloudTask(
+        "task-123",
+        "run-123",
+        "https://api.anthropic.com",
+        123,
+      );
+      const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
+        .calls[0][1] as {
+        onData: (update: unknown) => void;
+      };
+      return { subscribeOptions };
+    };
+
+    const newEntry = {
+      type: "notification",
+      timestamp: "2024-01-01T00:00:01Z",
+      notification: { method: "session/update" },
+    };
+    const validLine = JSON.stringify({
+      type: "notification",
+      timestamp: "2024-01-01T00:00:00Z",
+      notification: { method: "session/update" },
+    });
+
+    it("breaks the reconcile loop on first observation when parse failures are present", async () => {
+      const { subscribeOptions } = setupReconcileLoopTest(
+        [
+          ...Array.from({ length: 8 }, () => validLine),
+          "}}not-json{{",
+          "{broken",
+        ].join("\n"),
+      );
+
+      subscribeOptions.onData({
+        kind: "logs",
+        taskId: "task-123",
+        runId: "run-123",
+        totalEntryCount: 20,
+        newEntries: [newEntry],
+      });
+
+      await vi.waitFor(() => {
+        expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+          "run-123",
+          expect.objectContaining({ processedLineCount: 20 }),
+        );
+      });
+    });
+
+    it("breaks the reconcile loop after a repeated stable deficiency", async () => {
+      const { subscribeOptions } = setupReconcileLoopTest(
+        Array.from({ length: 8 }, () => validLine).join("\n"),
+      );
+
+      subscribeOptions.onData({
+        kind: "logs",
+        taskId: "task-123",
+        runId: "run-123",
+        totalEntryCount: 14,
+        newEntries: [newEntry],
+      });
+      await vi.waitFor(() => {
+        expect(mockTrpcLogs.fetchS3Logs.query).toHaveBeenCalledTimes(1);
+      });
+
+      expect(mockSessionStoreSetters.updateSession).not.toHaveBeenCalledWith(
+        "run-123",
+        expect.objectContaining({ processedLineCount: 14 }),
+      );
+
+      subscribeOptions.onData({
+        kind: "logs",
+        taskId: "task-123",
+        runId: "run-123",
+        totalEntryCount: 14,
+        newEntries: [newEntry],
+      });
+
+      await vi.waitFor(() => {
+        expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+          "run-123",
+          expect.objectContaining({ processedLineCount: 14 }),
+        );
+      });
+    });
+
     it("flips status to connected on _posthog/run_started", async () => {
       const service = getSessionService();
       const hydratedSession = createMockSession({

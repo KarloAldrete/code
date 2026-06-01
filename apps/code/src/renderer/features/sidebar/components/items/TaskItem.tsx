@@ -13,6 +13,8 @@ interface TaskItemProps {
   taskId: string;
   label: string;
   isActive: boolean;
+  isSelected?: boolean;
+  hideHoverActions?: boolean;
   workspaceMode?: WorkspaceMode;
   worktreePath?: string;
   isGenerating?: boolean;
@@ -21,11 +23,13 @@ interface TaskItemProps {
   isSuspended?: boolean;
   needsPermission?: boolean;
   taskRunStatus?: TaskRunStatus;
+  originProduct?: string;
+  slackThreadUrl?: string;
   prState?: SidebarPrState;
   hasDiff?: boolean;
   timestamp?: number;
   isEditing?: boolean;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent) => void;
   onDoubleClick?: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
   onArchive?: () => void;
@@ -106,6 +110,8 @@ export function TaskItem({
   taskId,
   label,
   isActive,
+  isSelected = false,
+  hideHoverActions = false,
   workspaceMode,
   isSuspended = false,
   isGenerating,
@@ -113,6 +119,8 @@ export function TaskItem({
   isPinned = false,
   needsPermission = false,
   taskRunStatus,
+  originProduct,
+  slackThreadUrl,
   prState,
   hasDiff,
   timestamp,
@@ -134,6 +142,8 @@ export function TaskItem({
       isSuspended={isSuspended}
       needsPermission={needsPermission}
       taskRunStatus={taskRunStatus}
+      originProduct={originProduct}
+      slackThreadUrl={slackThreadUrl}
       prState={prState}
       hasDiff={hasDiff}
     />
@@ -146,7 +156,7 @@ export function TaskItem({
   ) : null;
 
   const toolbar =
-    onArchive || onTogglePin ? (
+    !hideHoverActions && (onArchive || onTogglePin) ? (
       <TaskHoverToolbar
         isPinned={isPinned}
         onTogglePin={onTogglePin}
@@ -189,6 +199,7 @@ export function TaskItem({
       icon={icon}
       label={label}
       isActive={isActive}
+      isSelected={isSelected}
       draggable
       onDragStart={handleDragStart}
       onClick={onClick}

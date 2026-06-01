@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { authedFetch, getBaseUrl } from "@/lib/api";
 import { useAuthStore } from "../stores/authStore";
 
 export interface UserData {
@@ -7,6 +8,7 @@ export interface UserData {
   first_name: string;
   last_name?: string;
   email: string;
+  is_staff?: boolean;
   organization?: {
     id: string;
     name: string;
@@ -18,19 +20,12 @@ export interface UserData {
 }
 
 export function useUserQuery() {
-  const { cloudRegion, oauthAccessToken, getCloudUrlFromRegion } =
-    useAuthStore();
+  const { cloudRegion, oauthAccessToken } = useAuthStore();
 
   return useQuery({
     queryKey: ["user", "me"],
     queryFn: async (): Promise<UserData> => {
-      if (!cloudRegion) throw new Error("No cloud region");
-      const baseUrl = getCloudUrlFromRegion(cloudRegion);
-      const response = await fetch(`${baseUrl}/api/users/@me/`, {
-        headers: {
-          Authorization: `Bearer ${oauthAccessToken}`,
-        },
-      });
+      const response = await authedFetch(`${getBaseUrl()}/api/users/@me/`);
 
       if (!response.ok) {
         throw new Error(`Failed to fetch user: ${response.statusText}`);

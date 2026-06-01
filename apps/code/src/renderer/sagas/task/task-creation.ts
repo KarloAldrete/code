@@ -18,7 +18,6 @@ import type {
 import { Saga, type SagaLogger } from "@posthog/shared";
 import type { PostHogAPIClient } from "@renderer/api/posthogClient";
 import { trpcClient } from "@renderer/trpc";
-import { createFileTagRegex } from "@renderer/utils/generateTitle";
 import { getTaskRepository } from "@renderer/utils/repository";
 import {
   type ExecutionMode,
@@ -401,9 +400,7 @@ export class TaskCreationSaga extends Saga<
       name: "task_creation",
       execute: async () => {
         const description = input.taskDescription ?? input.content ?? "";
-        const plainText = description.replace(createFileTagRegex(), "").trim();
         const result = await this.deps.posthogClient.createTask({
-          title: (plainText || "Reading attachment\u2026").slice(0, 255),
           description,
           repository: repository ?? undefined,
           github_integration:

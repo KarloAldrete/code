@@ -16,6 +16,179 @@ import type { TaskRun } from "../types";
 import { AgentServer, SSE_KEEPALIVE_INTERVAL_MS } from "./agent-server";
 import { type JwtPayload, SANDBOX_CONNECTION_AUDIENCE } from "./jwt";
 
+const mockedClaudeSdk = vi.hoisted(() => {
+  const createSuccessResult = () => ({
+    type: "result",
+    subtype: "success",
+    duration_ms: 100,
+    duration_api_ms: 50,
+    is_error: false,
+    num_turns: 1,
+    result: "Done",
+    stop_reason: null,
+    total_cost_usd: 0.01,
+    usage: {
+      input_tokens: 100,
+      output_tokens: 50,
+      output_tokens_details: { thinking_tokens: 0 },
+      cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0,
+      cache_creation: {
+        ephemeral_1h_input_tokens: 0,
+        ephemeral_5m_input_tokens: 0,
+      },
+      server_tool_use: { web_search_requests: 0, web_fetch_requests: 0 },
+      service_tier: "standard",
+      inference_geo: "us",
+      iterations: [],
+      speed: "standard",
+    },
+    modelUsage: {},
+    permission_denials: [],
+    uuid: crypto.randomUUID() as `${string}-${string}-${string}-${string}-${string}`,
+    session_id: "test-session",
+  });
+
+  const query = vi.fn(
+    (params: { prompt?: { push?: (message: unknown) => void } }) => {
+      const queuedMessages: unknown[] = [];
+      let resolveNext: ((value: IteratorResult<unknown, void>) => void) | null =
+        null;
+      let isDone = false;
+
+      const flushQueue = () => {
+        if (!resolveNext) {
+          return;
+        }
+
+        if (queuedMessages.length > 0) {
+          const resolve = resolveNext;
+          resolveNext = null;
+          resolve({
+            value: queuedMessages.shift(),
+            done: false,
+          });
+          return;
+        }
+
+        if (isDone) {
+          const resolve = resolveNext;
+          resolveNext = null;
+          resolve({ value: undefined, done: true });
+        }
+      };
+
+      const enqueue = (message: unknown) => {
+        if (isDone) {
+          return;
+        }
+        queuedMessages.push(message);
+        flushQueue();
+      };
+
+      const prompt = params.prompt;
+      if (prompt && typeof prompt.push === "function") {
+        const originalPush = prompt.push.bind(prompt);
+        prompt.push = (message: unknown) => {
+          originalPush(message);
+
+          if (
+            message &&
+            typeof message === "object" &&
+            "uuid" in message &&
+            typeof message.uuid === "string"
+          ) {
+            enqueue({
+              type: "user",
+              uuid: message.uuid,
+              parent_tool_use_id: null,
+              message: {
+                content: [],
+              },
+            });
+            enqueue(createSuccessResult());
+          }
+        };
+      }
+
+      return {
+        next: vi.fn(() => {
+          if (queuedMessages.length > 0) {
+            return Promise.resolve({
+              value: queuedMessages.shift(),
+              done: false as const,
+            });
+          }
+
+          if (isDone) {
+            return Promise.resolve({
+              value: undefined,
+              done: true as const,
+            });
+          }
+
+          return new Promise<IteratorResult<unknown, void>>((resolve) => {
+            resolveNext = resolve;
+          });
+        }),
+        return: vi.fn(() => {
+          isDone = true;
+          flushQueue();
+          return Promise.resolve({ value: undefined, done: true as const });
+        }),
+        throw: vi.fn((error: Error) => {
+          isDone = true;
+          flushQueue();
+          return Promise.reject(error);
+        }),
+        [Symbol.asyncIterator]() {
+          return this;
+        },
+        interrupt: vi.fn(async () => {
+          isDone = true;
+          flushQueue();
+        }),
+        setPermissionMode: vi.fn().mockResolvedValue(undefined),
+        setModel: vi.fn().mockResolvedValue(undefined),
+        setMaxThinkingTokens: vi.fn().mockResolvedValue(undefined),
+        supportedCommands: vi.fn().mockResolvedValue([]),
+        supportedModels: vi.fn().mockResolvedValue([]),
+        mcpServerStatus: vi.fn().mockResolvedValue([]),
+        accountInfo: vi.fn().mockResolvedValue({}),
+        rewindFiles: vi.fn().mockResolvedValue({ canRewind: false }),
+        setMcpServers: vi
+          .fn()
+          .mockResolvedValue({ added: [], removed: [], errors: {} }),
+        streamInput: vi.fn().mockResolvedValue(undefined),
+        close: vi.fn(),
+        initializationResult: vi.fn().mockResolvedValue({
+          result: "success",
+          commands: [],
+          models: [],
+        }),
+        reconnectMcpServer: vi.fn().mockResolvedValue(undefined),
+        toggleMcpServer: vi.fn().mockResolvedValue(undefined),
+        supportedAgents: vi.fn().mockResolvedValue([]),
+        stopTask: vi.fn().mockResolvedValue(undefined),
+        applyFlagSettings: vi.fn().mockResolvedValue(undefined),
+        getContextUsage: vi.fn().mockResolvedValue({}),
+        reloadPlugins: vi.fn().mockResolvedValue(undefined),
+        seedReadState: vi.fn().mockResolvedValue(undefined),
+        readFile: vi.fn().mockResolvedValue(""),
+        backgroundTasks: vi.fn().mockResolvedValue([]),
+        [Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
+      };
+    },
+  );
+
+  return { query };
+});
+
+vi.mock("@anthropic-ai/claude-agent-sdk", async (importOriginal) => ({
+  ...(await importOriginal()),
+  query: mockedClaudeSdk.query,
+}));
+
 interface TestableServer {
   getInitialPromptOverride(run: TaskRun): string | null;
   getClearedPendingUserState(run: TaskRun | null): string[] | null;
@@ -203,6 +376,247 @@ describe("AgentServer HTTP Mode", () => {
   });
 
   describe("turn completion", () => {
+    function stubSessionCleanup(testServer: unknown): {
+      cleanupSession: (options?: {
+        completeEventStream?: boolean;
+      }) => Promise<void>;
+      eventStreamSender: {
+        enqueue: ReturnType<typeof vi.fn>;
+        stop: ReturnType<typeof vi.fn>;
+      };
+    } {
+      const cleanupServer = testServer as {
+        session: unknown;
+        eventStreamSender: {
+          enqueue: ReturnType<typeof vi.fn>;
+          stop: ReturnType<typeof vi.fn>;
+        };
+        captureCheckpointState: ReturnType<typeof vi.fn>;
+        cleanupSession: (options?: {
+          completeEventStream?: boolean;
+        }) => Promise<void>;
+      };
+      cleanupServer.captureCheckpointState = vi.fn(async () => {});
+      cleanupServer.eventStreamSender = {
+        enqueue: vi.fn(),
+        stop: vi.fn(async () => {}),
+      };
+      cleanupServer.session = {
+        payload: { run_id: "run-1" },
+        pendingHandoffGitState: undefined,
+        logWriter: { flush: vi.fn(async () => {}) },
+        acpConnection: { cleanup: vi.fn(async () => {}) },
+        sseController: { close: vi.fn() },
+      };
+      return cleanupServer;
+    }
+
+    it("keeps event ingest open for non-terminal session cleanup", async () => {
+      const testServer = stubSessionCleanup(createServer());
+
+      await testServer.cleanupSession();
+
+      expect(testServer.eventStreamSender.enqueue).not.toHaveBeenCalled();
+      expect(testServer.eventStreamSender.stop).not.toHaveBeenCalled();
+    });
+
+    it("stops event ingest for terminal session cleanup without fake task completion", async () => {
+      const testServer = stubSessionCleanup(createServer());
+
+      await testServer.cleanupSession({ completeEventStream: true });
+
+      expect(testServer.eventStreamSender.enqueue).not.toHaveBeenCalled();
+      expect(testServer.eventStreamSender.stop).toHaveBeenCalledOnce();
+    });
+
+    it("writes terminal failure status before completing event ingest", async () => {
+      const order: string[] = [];
+      const testServer = new AgentServer({
+        port,
+        jwtPublicKey: TEST_PUBLIC_KEY,
+        repositoryPath: repo.path,
+        apiUrl: "http://localhost:8000",
+        apiKey: "test-api-key",
+        projectId: 1,
+        mode: "interactive",
+        taskId: "test-task-id",
+        runId: "test-run-id",
+      }) as unknown as {
+        eventStreamSender: {
+          enqueue: (event: Record<string, unknown>) => void;
+          stop: () => Promise<void>;
+        };
+        posthogAPI: {
+          updateTaskRun: (
+            taskId: string,
+            runId: string,
+            payload: Record<string, unknown>,
+          ) => Promise<unknown>;
+        };
+        signalTaskComplete(
+          payload: JwtPayload,
+          stopReason: string,
+          errorMessage?: string,
+        ): Promise<void>;
+      };
+      testServer.eventStreamSender = {
+        enqueue: vi.fn(() => {
+          order.push("enqueue");
+        }),
+        stop: vi.fn(async () => {
+          order.push("stop");
+        }),
+      };
+      testServer.posthogAPI = {
+        updateTaskRun: vi.fn(async () => {
+          order.push("update");
+          return {};
+        }),
+      };
+
+      await testServer.signalTaskComplete(
+        {
+          run_id: "run-1",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode: "interactive",
+        },
+        "error",
+        "boom",
+      );
+
+      expect(order).toEqual(["enqueue", "update", "stop"]);
+      expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "notification",
+          notification: expect.objectContaining({
+            method: "_posthog/error",
+            params: expect.objectContaining({ error: "boom" }),
+          }),
+        }),
+      );
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenCalledWith(
+        "task-1",
+        "run-1",
+        {
+          status: "failed",
+          error_message: "boom",
+        },
+      );
+    });
+
+    it("still stops event ingest when terminal failure status update fails", async () => {
+      const testServer = new AgentServer({
+        port,
+        jwtPublicKey: TEST_PUBLIC_KEY,
+        repositoryPath: repo.path,
+        apiUrl: "http://localhost:8000",
+        apiKey: "test-api-key",
+        projectId: 1,
+        mode: "interactive",
+        taskId: "test-task-id",
+        runId: "test-run-id",
+      }) as unknown as {
+        eventStreamSender: {
+          enqueue: (event: Record<string, unknown>) => void;
+          stop: () => Promise<void>;
+        };
+        posthogAPI: {
+          updateTaskRun: (
+            taskId: string,
+            runId: string,
+            payload: Record<string, unknown>,
+          ) => Promise<unknown>;
+        };
+        signalTaskComplete(
+          payload: JwtPayload,
+          stopReason: string,
+          errorMessage?: string,
+        ): Promise<void>;
+      };
+      testServer.eventStreamSender = {
+        enqueue: vi.fn(),
+        stop: vi.fn(async () => {}),
+      };
+      testServer.posthogAPI = {
+        updateTaskRun: vi.fn(async () => {
+          throw new Error("update failed");
+        }),
+      };
+
+      await testServer.signalTaskComplete(
+        {
+          run_id: "run-1",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode: "interactive",
+        },
+        "error",
+        "boom",
+      );
+
+      expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledOnce();
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenCalledOnce();
+      expect(testServer.eventStreamSender.stop).toHaveBeenCalledOnce();
+    });
+
+    it("leaves event ingest open for non-error stop reasons", async () => {
+      const testServer = new AgentServer({
+        port,
+        jwtPublicKey: TEST_PUBLIC_KEY,
+        repositoryPath: repo.path,
+        apiUrl: "http://localhost:8000",
+        apiKey: "test-api-key",
+        projectId: 1,
+        mode: "interactive",
+        taskId: "test-task-id",
+        runId: "test-run-id",
+      }) as unknown as {
+        eventStreamSender: {
+          enqueue: (event: Record<string, unknown>) => void;
+          stop: () => Promise<void>;
+        };
+        posthogAPI: {
+          updateTaskRun: (
+            taskId: string,
+            runId: string,
+            payload: Record<string, unknown>,
+          ) => Promise<unknown>;
+        };
+        signalTaskComplete(
+          payload: JwtPayload,
+          stopReason: string,
+        ): Promise<void>;
+      };
+      testServer.eventStreamSender = {
+        enqueue: vi.fn(),
+        stop: vi.fn(async () => {}),
+      };
+      testServer.posthogAPI = {
+        updateTaskRun: vi.fn(async () => ({})),
+      };
+
+      await testServer.signalTaskComplete(
+        {
+          run_id: "run-1",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode: "interactive",
+        },
+        "end_turn",
+      );
+
+      expect(testServer.eventStreamSender.enqueue).not.toHaveBeenCalled();
+      expect(testServer.eventStreamSender.stop).not.toHaveBeenCalled();
+      expect(testServer.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
+    });
+
     it("persists structured turn completion notifications", () => {
       const appendRawLine = vi.fn();
       const testServer = new AgentServer({
@@ -900,10 +1314,8 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toContain(
         "gh pr checkout https://github.com/org/repo/pull/1",
       );
-      expect(prompt).toContain(
-        "Stage and commit all changes with a clear commit message",
-      );
-      expect(prompt).toContain("Push to the existing PR branch");
+      expect(prompt).toContain("git_signed_commit");
+      expect(prompt).toContain("Committing (signed commits required)");
       expect(prompt).not.toContain("Create a draft pull request");
       // Review-comment thread handling: reply + resolve
       expect(prompt).toContain("review thread");

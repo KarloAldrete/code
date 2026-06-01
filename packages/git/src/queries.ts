@@ -2,6 +2,7 @@ import { createReadStream } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { CreateGitClientOptions } from "./client";
+import { mapWithConcurrency } from "./concurrency";
 import { getGitOperationManager } from "./operation-manager";
 import { streamGitStatus } from "./status-stream";
 
@@ -547,28 +548,6 @@ async function countFileLines(
   }
 }
 
-async function mapWithConcurrency<T, R>(
-  items: readonly T[],
-  concurrency: number,
-  mapper: (item: T) => Promise<R>,
-  options?: { signal?: AbortSignal },
-): Promise<R[]> {
-  if (items.length === 0) return [];
-  const results = new Array<R>(items.length);
-  let index = 0;
-  const worker = async () => {
-    while (index < items.length) {
-      if (options?.signal?.aborted) return;
-      const i = index++;
-      results[i] = await mapper(items[i]);
-    }
-  };
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, items.length) }, () => worker()),
-  );
-  return results;
-}
-
 export async function getChangedFilesDetailed(
   baseDir: string,
   options?: GetChangedFilesDetailedOptions,
@@ -1042,6 +1021,28 @@ export async function fetch(
     },
     { signal: options?.abortSignal },
   );
+}
+
+export async function hasRef(git: GitLike, ref: string): Promise<boolean> {
+  try {
+    await git.revparse(["--verify", "--quiet", `${ref}^{commit}`]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchRef(
+  git: GitLike,
+  remote: string,
+  ref: string,
+): Promise<boolean> {
+  try {
+    await git.raw(["fetch", "--quiet", "--no-tags", remote, ref]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function listFiles(
