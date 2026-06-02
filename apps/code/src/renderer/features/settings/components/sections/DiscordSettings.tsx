@@ -1,4 +1,5 @@
 import { SettingRow } from "@features/settings/components/SettingRow";
+import { DiscordPresencePreview } from "@features/settings/components/sections/DiscordPresencePreview";
 import type { DiscordPresenceState } from "@main/services/discord-presence/schemas";
 import { Flex, Switch, Text } from "@radix-ui/themes";
 import { useTRPC } from "@renderer/trpc";
@@ -72,9 +73,9 @@ export function DiscordSettings() {
   return (
     <Flex direction="column">
       <SettingRow
-        label="Discord Rich Presence"
-        description="Show what you're working on in PostHog Code on your Discord profile"
-        noBorder={!enabled}
+        label="Rich Presence"
+        description="Show what you're working on in PostHog Code on your profile"
+        noBorder
       >
         <Switch
           checked={enabled}
@@ -86,28 +87,28 @@ export function DiscordSettings() {
       {enabled && (
         <>
           {!configured ? (
-            <Text color="yellow" className="pb-3 text-[13px]">
+            <Text color="yellow" className="-mt-3 pb-3 text-[13px]">
               No Discord application is configured for this build, so nothing
               will appear yet. Set VITE_DISCORD_CLIENT_ID to connect.
             </Text>
           ) : (
             <Text
-              color={connected ? "green" : "gray"}
-              className="pb-3 text-[13px]"
+              color={connected ? "green" : "amber"}
+              className="-mt-3 pb-3 text-[13px]"
             >
               {connected
-                ? "Connected to Discord."
-                : "Waiting for Discord — make sure the desktop app is running."}
+                ? "Connected to Discord"
+                : "Waiting for Discord (desktop app needs to be running)..."}
             </Text>
           )}
 
-          <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">
+          <Text className="block border-gray-6 border-t pt-4 font-medium text-sm">
             Privacy
           </Text>
 
           <SettingRow
             label="Show task title"
-            description="Include the focused task's title. Off by default to keep titles private on your public profile."
+            description="Include the focused task's title"
           >
             <Switch
               checked={state?.showTaskTitle ?? false}
@@ -129,6 +130,12 @@ export function DiscordSettings() {
           </SettingRow>
         </>
       )}
+
+      <DiscordPresencePreview
+        enabled={enabled}
+        showTaskTitle={state?.showTaskTitle ?? false}
+        showRepoName={state?.showRepoName ?? false}
+      />
     </Flex>
   );
 }
