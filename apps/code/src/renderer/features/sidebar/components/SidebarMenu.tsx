@@ -12,10 +12,12 @@ import {
 } from "@features/tasks/hooks/useArchiveTask";
 import { useRenameTask, useTasks } from "@features/tasks/hooks/useTasks";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
+import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { useTaskContextMenu } from "@hooks/useTaskContextMenu";
 import { ScrollArea, Separator } from "@posthog/quill";
 import { Box, Flex } from "@radix-ui/themes";
 import { trpcClient } from "@renderer/trpc/client";
+import { FILE_SYSTEM_SIDEBAR_FLAG } from "@shared/constants";
 import type { Task } from "@shared/types";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useNavigationStore } from "@stores/navigationStore";
@@ -24,11 +26,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { logger } from "@utils/logger";
 import { toast } from "@utils/toast";
 import { memo, useCallback, useEffect, useMemo, useRef } from "react";
+import { useDesktopFileSystem } from "../hooks/useDesktopFileSystem";
 import { usePinnedTasks } from "../hooks/usePinnedTasks";
 import { useSidebarData } from "../hooks/useSidebarData";
 import { useTaskViewed } from "../hooks/useTaskViewed";
 import { useSidebarStore } from "../stores/sidebarStore";
 import { useTaskSelectionStore } from "../stores/taskSelectionStore";
+import { buildFileSystemTree } from "../utils/fileSystemTree";
+import { FileSystemTreeView } from "./FileSystemTreeView";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { InboxItem, NewTaskItem } from "./items/HomeItem";
 import { McpServersItem } from "./items/McpServersItem";
@@ -68,6 +73,13 @@ function SidebarMenuComponent() {
   const sidebarData = useSidebarData({
     activeView: view,
   });
+
+  const useFsSidebar =
+    useFeatureFlag(FILE_SYSTEM_SIDEBAR_FLAG) || import.meta.env.DEV;
+  const { data: fsItems = [], isLoading: fsLoading } = useDesktopFileSystem({
+    enabled: useFsSidebar,
+  });
+  const fsTree = useMemo(() => buildFileSystemTree(fsItems), [fsItems]);
   const inboxPollingActive = useRendererWindowFocusStore((s) => s.focused);
   const { data: inboxProbe } = useInboxReports(
     { status: INBOX_PIPELINE_STATUS_FILTER },
@@ -406,7 +418,18 @@ function SidebarMenuComponent() {
 
           <Separator className="mx-2 my-2" />
 
-          {sidebarData.isLoading ? (
+          {useFsSidebar ? (
+            fsLoading ? (
+              <SidebarItem
+                depth={0}
+                icon={<DotsCircleSpinner size={12} className="text-gray-10" />}
+                label="Loading..."
+                disabled
+              />
+            ) : (
+              <FileSystemTreeView nodes={fsTree} />
+            )
+          ) : sidebarData.isLoading ? (
             <SidebarItem
               depth={0}
               icon={<DotsCircleSpinner size={12} className="text-gray-10" />}

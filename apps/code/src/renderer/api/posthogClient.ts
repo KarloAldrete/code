@@ -957,6 +957,39 @@ export class PostHogAPIClient {
     return all;
   }
 
+  // The desktop file system tree lives on its own server-controlled "desktop"
+  // surface, served from a route that is not in the generated OpenAPI client,
+  // so we use the raw fetcher and follow pagination manually.
+  async getDesktopFileSystem(): Promise<Schemas.FileSystem[]> {
+    const DESKTOP_FILE_SYSTEM_MAX_PAGES = 50;
+    const teamId = await this.getTeamId();
+    const all: Schemas.FileSystem[] = [];
+    let urlPath: string = `/api/projects/${teamId}/desktop_file_system/`;
+    for (let i = 0; i < DESKTOP_FILE_SYSTEM_MAX_PAGES; i++) {
+      const url = new URL(`${this.api.baseUrl}${urlPath}`);
+      const response = await this.api.fetcher.fetch({
+        method: "get",
+        url,
+        path: urlPath,
+      });
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch desktop file system: ${response.statusText}`,
+        );
+      }
+      const page = (await response.json()) as Schemas.PaginatedFileSystemList;
+      all.push(...page.results);
+      if (!page.next) return all;
+      const nextUrl = new URL(page.next);
+      urlPath = `${nextUrl.pathname}${nextUrl.search}`;
+    }
+    log.warn(
+      `getDesktopFileSystem hit MAX_PAGES (${DESKTOP_FILE_SYSTEM_MAX_PAGES}); returning partial results`,
+      { returned: all.length },
+    );
+    return all;
+  }
+
   async getTask(taskId: string) {
     const teamId = await this.getTeamId();
     const data = await this.api.get(`/api/projects/{project_id}/tasks/{id}/`, {

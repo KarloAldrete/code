@@ -4,6 +4,10 @@ import { Button } from "@posthog/quill";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import { useState } from "react";
 
+// Mirrors SidebarItem's indent math so folder headers and leaf rows align at
+// each nesting level.
+const INDENT_SIZE = 8;
+
 interface SidebarSectionProps {
   id: string;
   label: string;
@@ -12,6 +16,7 @@ interface SidebarSectionProps {
   onToggle: () => void;
   children: React.ReactNode;
   addSpacingBefore?: boolean;
+  depth?: number;
   onContextMenu?: (e: React.MouseEvent) => void;
   tooltipContent?: string;
   onNewTask?: () => void;
@@ -26,6 +31,7 @@ export function SidebarSection({
   onToggle,
   children,
   addSpacingBefore,
+  depth = 0,
   onContextMenu,
   tooltipContent,
   onNewTask,
@@ -40,8 +46,9 @@ export function SidebarSection({
         <Button
           ref={dragHandleRef}
           type="button"
-          className="flex w-full items-center justify-between pl-2 not-hover:aria-expanded:bg-transparent"
+          className="flex w-full items-center justify-between not-hover:aria-expanded:bg-transparent"
           style={{
+            paddingLeft: `${depth * INDENT_SIZE + 8 + (depth > 0 ? 4 : 0)}px`,
             marginTop: addSpacingBefore ? "12px" : undefined,
           }}
           onContextMenu={onContextMenu}
