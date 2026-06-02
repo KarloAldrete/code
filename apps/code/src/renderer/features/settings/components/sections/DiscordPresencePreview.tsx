@@ -35,11 +35,17 @@ export function DiscordPresencePreview({
   const [running, setRunning] = useState(true);
   const [elapsed, setElapsed] = useState(197); // 3:17, like a session in progress
 
-  // Tick the elapsed timer so the card feels live, the way Discord shows it.
+  // While enabled, tick the elapsed timer so the card feels live, the way
+  // Discord shows it. When disabled, the integration is dormant: stop the timer
+  // and fall back to the idle state.
   useEffect(() => {
+    if (!enabled) {
+      setRunning(false);
+      return;
+    }
     const interval = setInterval(() => setElapsed((s) => s + 1), 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [enabled]);
 
   const details = showTaskTitle
     ? `Working on "${SAMPLE_TASK_TITLE}"`
@@ -55,14 +61,18 @@ export function DiscordPresencePreview({
         className="border-gray-6 border-t pt-4"
       >
         <Text className="font-medium text-sm">Preview</Text>
-        <SegmentedControl.Root
-          size="1"
-          value={running ? "running" : "idle"}
-          onValueChange={(value) => setRunning(value === "running")}
-        >
-          <SegmentedControl.Item value="running">Running</SegmentedControl.Item>
-          <SegmentedControl.Item value="idle">Idle</SegmentedControl.Item>
-        </SegmentedControl.Root>
+        <div className={enabled ? "" : "pointer-events-none opacity-50"}>
+          <SegmentedControl.Root
+            size="1"
+            value={running ? "running" : "idle"}
+            onValueChange={(value) => setRunning(value === "running")}
+          >
+            <SegmentedControl.Item value="running">
+              Running
+            </SegmentedControl.Item>
+            <SegmentedControl.Item value="idle">Idle</SegmentedControl.Item>
+          </SegmentedControl.Root>
+        </div>
       </Flex>
 
       <div
