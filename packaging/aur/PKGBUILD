@@ -1,0 +1,52 @@
+# Maintainer: PostHog <eng@posthog.com>
+pkgname=posthog-code-bin
+_appname='PostHog Code'
+pkgver=0.0.0
+pkgrel=1
+pkgdesc='PostHog Code desktop app'
+arch=('x86_64' 'aarch64')
+url='https://github.com/PostHog/code'
+license=('MIT')
+depends=('gtk3' 'nss' 'alsa-lib' 'libnotify' 'libxtst' 'libxss' 'xdg-utils')
+optdepends=('git: repository operations'
+            'github-cli: GitHub and pull-request integration')
+provides=('posthog-code')
+conflicts=('posthog-code')
+options=('!strip')  # prebuilt binaries; stripping can corrupt them
+
+_relbase="${url}/releases/download/v${pkgver}"
+source=('posthog-code.sh'
+        'posthog-code.desktop'
+        "LICENSE::https://raw.githubusercontent.com/PostHog/code/v${pkgver}/LICENSE")
+source_x86_64=("posthog-code-${pkgver}-x64.zip::${_relbase}/PostHog.Code-linux-x64-${pkgver}.zip")
+source_aarch64=("posthog-code-${pkgver}-arm64.zip::${_relbase}/PostHog.Code-linux-arm64-${pkgver}.zip")
+# 'SKIP' placeholders are filled in by `updpkgsums` (run in CI per release).
+sha256sums=('SKIP' 'SKIP' 'SKIP')
+sha256sums_x86_64=('SKIP')
+sha256sums_aarch64=('SKIP')
+
+package() {
+  install -dm755 "${pkgdir}/opt/posthog-code"
+  # electron-forge's zip maker extracts to "<name>-linux-<arch>/"; the glob
+  # matches both x64 and arm64 so the same recipe works for either source.
+  cp -a "${srcdir}/${_appname}-linux-"*/. "${pkgdir}/opt/posthog-code/"
+
+  # Chromium's setuid sandbox helper must be 4755 on hosts without
+  # unprivileged user namespaces, otherwise the app refuses to start.
+  chmod 4755 "${pkgdir}/opt/posthog-code/chrome-sandbox"
+
+  # Launcher on PATH (wraps the space in the executable name).
+  install -Dm755 "${srcdir}/posthog-code.sh" "${pkgdir}/usr/bin/posthog-code"
+
+  # Desktop entry: registers the posthog-code:// scheme handler at install time
+  # via pacman's desktop-file-utils hook (update-desktop-database).
+  install -Dm644 "${srcdir}/posthog-code.desktop" \
+    "${pkgdir}/usr/share/applications/posthog-code.desktop"
+
+  # Icon (bundled in the artifact via forge `extraResource`).
+  install -Dm644 "${pkgdir}/opt/posthog-code/resources/app-icon.png" \
+    "${pkgdir}/usr/share/pixmaps/posthog-code.png"
+
+  install -Dm644 "${srcdir}/LICENSE" \
+    "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

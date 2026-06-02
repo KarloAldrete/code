@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=PostHog Code
+Exec=posthog-code %U
+Icon=posthog-code
+Terminal=false
+Categories=Development;
+MimeType=x-scheme-handler/posthog-code;
+StartupWMClass=PostHog Code

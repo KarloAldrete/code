@@ -1,0 +1,98 @@
+name: Publish to AUR
+
+# Publishes the posthog-code-bin AUR package after a release is published.
+# Releases are created as drafts by electron-forge and promoted manually; the
+# `published` event fires once assets exist, so the release zips are downloadable
+# by the time this runs. Use workflow_dispatch to (re)publish a specific version.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish, without leading v (e.g. 0.53.50)"
+        required: true
+
+concurrency:
+  group: aur-publish
+  cancel-in-progress: false
+
+jobs:
+  aur-publish:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install tooling
+        # --disable-sandbox: pacman 7's landlock/seccomp sandbox can fail under
+        # Docker's default seccomp profile ("error restricting syscalls").
+        run: |
+          pacman -Syu --noconfirm --needed --disable-sandbox \
+            base-devel git openssh pacman-contrib
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            v="${{ github.event.inputs.version }}"
+          else
+            v="${{ github.event.release.tag_name }}"
+          fi
+          v="${v#v}"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Create build user
+        # makepkg/updpkgsums refuse to run as root.
+        run: |
+          useradd -m builder
+          echo 'builder ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builder
+
+      - name: Stage package
+        run: |
+          install -d -o builder -g builder /tmp/pkg
+          cp packaging/aur/PKGBUILD \
+             packaging/aur/posthog-code.sh \
+             packaging/aur/posthog-code.desktop /tmp/pkg/
+          sed -i \
+            -e "s/^pkgver=.*/pkgver=${{ steps.ver.outputs.version }}/" \
+            -e "s/^pkgrel=.*/pkgrel=1/" \
+            /tmp/pkg/PKGBUILD
+          chown -R builder:builder /tmp/pkg
+
+      - name: Compute checksums and .SRCINFO
+        run: |
+          cd /tmp/pkg
+          sudo -u builder updpkgsums
+          sudo -u builder makepkg --printsrcinfo > .SRCINFO
+
+      - name: Configure SSH for AUR
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          cat > ~/.ssh/config <<'EOF'
+          Host aur.archlinux.org
+            User aur
+            IdentityFile ~/.ssh/aur
+            StrictHostKeyChecking accept-new
+          EOF
+
+      - name: Push to AUR
+        run: |
+          git config --global user.name "posthog-bot"
+          git config --global user.email "eng@posthog.com"
+          git config --global --add safe.directory '*'
+          git clone ssh://aur@aur.archlinux.org/posthog-code-bin.git /tmp/aur
+          cp /tmp/pkg/PKGBUILD /tmp/pkg/.SRCINFO \
+             /tmp/pkg/posthog-code.sh /tmp/pkg/posthog-code.desktop /tmp/aur/
+          cd /tmp/aur
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to publish for ${{ steps.ver.outputs.version }}"
+            exit 0
+          fi
+          git commit -m "Update to ${{ steps.ver.outputs.version }}"
+          git push
