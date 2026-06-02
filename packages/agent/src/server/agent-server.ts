@@ -1893,7 +1893,9 @@ ${signedCommitInstructions}
     // Forward task metadata as `x-posthog-property-*` headers so the gateway
     // lifts them onto the $ai_generation event. Routes through the Anthropic
     // SDK's ANTHROPIC_CUSTOM_HEADERS env var; the OpenAI/codex path has no
-    // equivalent today.
+    // equivalent today. (The `team_id` attribution header is added downstream
+    // in the Claude session builder from POSTHOG_PROJECT_ID — see
+    // adapters/claude/session/options.ts.)
     const customHeaders = buildGatewayPropertyHeaders({
       task_origin_product: originProduct,
       task_internal: isInternal,

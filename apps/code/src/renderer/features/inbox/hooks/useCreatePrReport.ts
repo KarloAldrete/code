@@ -131,6 +131,7 @@ export function useCreatePrReport({
           has_branch: false,
           cloud_run_source: "signal_report",
           cloud_pr_authorship_mode: "user",
+          signal_report_id: reportId,
           adapter,
         });
       } else {
