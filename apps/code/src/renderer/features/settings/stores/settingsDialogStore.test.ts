@@ -4,6 +4,7 @@ vi.mock("@renderer/router", () => ({
   router: {
     navigate: vi.fn(),
     state: { matches: [] },
+    history: { back: vi.fn() },
   },
 }));
 
@@ -11,8 +12,6 @@ import { useSettingsDialogStore } from "./settingsDialogStore";
 
 describe("settingsDialogStore", () => {
   beforeEach(() => {
-    vi.spyOn(window.history, "pushState").mockImplementation(() => {});
-    vi.spyOn(window.history, "back").mockImplementation(() => {});
     useSettingsDialogStore.setState({
       isOpen: false,
       activeCategory: "general",

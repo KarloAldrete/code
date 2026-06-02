@@ -11,8 +11,6 @@ out/
 storybook-static
 bin/
 
-# TanStack Router generated route tree
-apps/code/src/renderer/routeTree.gen.ts
 
 # Environment
 .env

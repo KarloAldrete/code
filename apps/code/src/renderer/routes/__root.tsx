@@ -5,7 +5,6 @@ import { SpaceSwitcher } from "@components/SpaceSwitcher";
 import { UsageLimitModal } from "@features/billing/components/UsageLimitModal";
 import { CommandMenu } from "@features/command/components/CommandMenu";
 import { useInboxDeepLink } from "@features/inbox/hooks/useInboxDeepLink";
-import { SettingsDialog } from "@features/settings/components/SettingsDialog";
 import { useSetupDiscovery } from "@features/setup/hooks/useSetupDiscovery";
 import { MainSidebar } from "@features/sidebar/components/MainSidebar";
 import { useSidebarData } from "@features/sidebar/hooks/useSidebarData";
@@ -25,10 +24,25 @@ import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useNavigationStore } from "@stores/navigationStore";
 import { useShortcutsSheetStore } from "@stores/shortcutsSheetStore";
 import { useQueryClient } from "@tanstack/react-query";
-import { createRootRoute, Outlet } from "@tanstack/react-router";
-import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
+import {
+  createRootRoute,
+  Outlet,
+  useRouterState,
+} from "@tanstack/react-router";
 import { logger } from "@utils/logger";
-import { useCallback, useEffect, useRef } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef } from "react";
+
+// Dynamic import keeps the devtools chunk out of the prod bundle. Without the
+// gate at the import level, conditional render alone still ships ~50KB of
+// devtools code to users.
+const TanStackRouterDevtools = import.meta.env.DEV
+  ? lazy(() =>
+      import("@tanstack/react-router-devtools").then((m) => ({
+        default: m.TanStackRouterDevtools,
+      })),
+    )
+  : () => null;
+
 import { GlobalEventHandlers } from "../components/GlobalEventHandlers";
 import { useNewTaskDeepLink } from "../hooks/useNewTaskDeepLink";
 import { useTaskDeepLink } from "../hooks/useTaskDeepLink";
@@ -122,6 +136,35 @@ function RootLayout() {
     toggleCommandMenu();
   }, [toggleCommandMenu]);
 
+  // Settings is a full-page route — drop the app chrome (header/sidebar/
+  // space-switcher) so the panel occupies the full window.
+  const isSettingsRoute = useRouterState({
+    select: (s) => s.matches.some((m) => m.routeId.startsWith("/settings")),
+  });
+
+  if (isSettingsRoute) {
+    return (
+      <Flex direction="column" height="100vh">
+        <Outlet />
+        <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
+        <KeyboardShortcutsSheet
+          open={shortcutsSheetOpen}
+          onOpenChange={(open) => (open ? null : closeShortcutsSheet())}
+        />
+        <GlobalEventHandlers
+          onToggleCommandMenu={handleToggleCommandMenu}
+          onToggleShortcutsSheet={toggleShortcutsSheet}
+        />
+        {billingEnabled && <UsageLimitModal />}
+        {import.meta.env.DEV && (
+          <Suspense fallback={null}>
+            <TanStackRouterDevtools position="bottom-right" />
+          </Suspense>
+        )}
+      </Flex>
+    );
+  }
+
   return (
     <Flex direction="column" height="100vh">
       <HeaderRow />
@@ -149,12 +192,13 @@ function RootLayout() {
         onToggleCommandMenu={handleToggleCommandMenu}
         onToggleShortcutsSheet={toggleShortcutsSheet}
       />
-      <SettingsDialog />
       <TourOverlay />
       {billingEnabled && <UsageLimitModal />}
       <HedgehogMode />
       {import.meta.env.DEV && (
-        <TanStackRouterDevtools position="bottom-right" />
+        <Suspense fallback={null}>
+          <TanStackRouterDevtools position="bottom-right" />
+        </Suspense>
       )}
     </Flex>
   );

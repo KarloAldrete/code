@@ -1,22 +1,12 @@
-import { router } from "@renderer/router";
+import type { SettingsCategory } from "@features/settings/types";
+import {
+  goBackInHistory,
+  isOnSettingsRoute,
+  navigateToSettings,
+} from "@renderer/navigationBridge";
 import { create } from "zustand";
 
-export type SettingsCategory =
-  | "general"
-  | "plan-usage"
-  | "workspaces"
-  | "worktrees"
-  | "environments"
-  | "cloud-environments"
-  | "personalization"
-  | "terminal"
-  | "claude-code"
-  | "shortcuts"
-  | "github"
-  | "slack"
-  | "signals"
-  | "updates"
-  | "advanced";
+export type { SettingsCategory };
 
 interface SettingsDialogContext {
   repoPath?: string;
@@ -53,9 +43,6 @@ export const useSettingsDialogStore = create<SettingsDialogStore>()(
     formMode: false,
 
     open: (category, contextOrAction) => {
-      if (!get().isOpen) {
-        window.history.pushState({ settingsOpen: true }, "");
-      }
       const isAction = typeof contextOrAction === "string";
       const nextCategory = category ?? get().activeCategory;
       set({
@@ -65,38 +52,28 @@ export const useSettingsDialogStore = create<SettingsDialogStore>()(
         initialAction: isAction ? contextOrAction : null,
         formMode: false,
       });
-      void router.navigate({
-        to: "/settings/$category",
-        params: { category: nextCategory },
-      });
+      // Router push handles browser-history integration; we no longer need a
+      // manual window.history.pushState (which was colliding with hashHistory).
+      navigateToSettings(nextCategory);
     },
     close: () => {
       const wasOpen = get().isOpen;
-      if (wasOpen && window.history.state?.settingsOpen) {
-        window.history.back();
-      }
       set({
         isOpen: false,
         context: {},
         initialAction: null,
         formMode: false,
       });
-      if (wasOpen) {
-        const matches = router.state.matches;
-        const onSettings = matches.some((m) =>
-          m.routeId.startsWith("/settings"),
-        );
-        if (onSettings) {
-          void router.navigate({ to: "/code" });
-        }
+      if (!wasOpen) return;
+      if (isOnSettingsRoute()) {
+        // Prefer history.back() so the user returns to their prior context
+        // (e.g. /code/inbox), not a hard reset to /code.
+        goBackInHistory();
       }
     },
     setCategory: (category) => {
       set({ activeCategory: category, initialAction: null, formMode: false });
-      void router.navigate({
-        to: "/settings/$category",
-        params: { category },
-      });
+      navigateToSettings(category);
     },
     clearContext: () => set({ context: {} }),
     consumeInitialAction: () => {
