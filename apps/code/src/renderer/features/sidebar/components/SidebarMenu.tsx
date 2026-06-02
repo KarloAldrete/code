@@ -94,7 +94,7 @@ function SidebarMenuComponent() {
 
   useEffect(() => {
     const currentTaskId =
-      view.type === "task-detail" && view.data ? view.data.id : null;
+      view.type === "task-detail" && view.taskId ? view.taskId : null;
 
     if (
       previousTaskIdRef.current &&

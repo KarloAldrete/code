@@ -24,9 +24,9 @@ import { useTRPC } from "@renderer/trpc/client";
 import { BILLING_FLAG, SYNC_CLOUD_TASKS_FLAG } from "@shared/constants";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useShortcutsSheetStore } from "@stores/shortcutsSheetStore";
-import { useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import {
-  createRootRoute,
+  createRootRouteWithContext,
   Outlet,
   useRouterState,
 } from "@tanstack/react-router";
@@ -50,7 +50,11 @@ import { useTaskDeepLink } from "../hooks/useTaskDeepLink";
 
 const log = logger.scope("root-route");
 
-export const Route = createRootRoute({
+export interface RouterContext {
+  queryClient: QueryClient;
+}
+
+export const Route = createRootRouteWithContext<RouterContext>()({
   component: RootLayout,
 });
 

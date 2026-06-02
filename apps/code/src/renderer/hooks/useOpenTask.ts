@@ -1,5 +1,6 @@
 import { foldersApi } from "@features/folders/hooks/useFolders";
 import { useTaskInputPrefillStore } from "@features/task-detail/stores/taskInputPrefillStore";
+import { taskDetailQuery } from "@features/tasks/queries";
 import { workspaceApi } from "@features/workspace/hooks/useWorkspace";
 import { getTaskDirectory } from "@hooks/useRepositoryDirectory";
 import * as nav from "@renderer/navigationBridge";
@@ -7,6 +8,7 @@ import type { Task } from "@shared/types";
 import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { track } from "@utils/analytics";
 import { logger } from "@utils/logger";
+import { queryClient } from "@utils/queryClient";
 import { getTaskRepository } from "@utils/repository";
 import { useCallback } from "react";
 
@@ -20,6 +22,10 @@ const log = logger.scope("open-task");
  * Replaces the old `navigationStore.navigateToTask` action.
  */
 export async function openTask(task: Task): Promise<void> {
+  // Seed the detail cache so the route loader resolves from cache and never
+  // fetches — critical for optimistic/local/cloud-pending tasks that the API
+  // can't yet return, which would otherwise hang the route in its pending state.
+  queryClient.setQueryData(taskDetailQuery(task.id).queryKey, task);
   nav.navigateToTaskDetail(task.id);
   track(ANALYTICS_EVENTS.TASK_VIEWED, { task_id: task.id });
 

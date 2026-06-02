@@ -2,6 +2,9 @@ import {
   createHashHistory,
   createRouter as createTanStackRouter,
 } from "@tanstack/react-router";
+import { queryClient } from "@utils/queryClient";
+import { RoutePending } from "./components/RoutePending";
+import { setRouter } from "./routerRef";
 import { routeTree } from "./routeTree.gen";
 
 const LAST_ROUTE_KEY = "code:last-route-hash";
@@ -24,9 +27,20 @@ if (typeof window !== "undefined" && !window.location.hash) {
 export const router = createTanStackRouter({
   routeTree,
   history: createHashHistory(),
+  context: { queryClient },
   defaultPreload: "intent",
+  // Show the route's pending UI the instant its loader is still resolving, so
+  // navigation commits immediately instead of stalling on the previous screen.
+  // defaultPendingMinMs (500ms default) keeps it on screen long enough to avoid
+  // a flicker once shown; cache hits resolve before this fires and skip it.
+  defaultPendingMs: 0,
+  defaultPendingComponent: RoutePending,
   scrollRestoration: false,
 });
+
+// Publish the instance to the leaf ref so imperative callers reach it without a
+// static import of this module (which would re-create the route-tree cycle).
+setRouter(router);
 
 // Persist current hash on every navigation so we can restore it next boot.
 if (typeof window !== "undefined") {
