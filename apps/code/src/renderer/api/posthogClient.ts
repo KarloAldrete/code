@@ -990,6 +990,48 @@ export class PostHogAPIClient {
     return all;
   }
 
+  // Create a top-level channel (a folder row whose path is a single segment) on
+  // the desktop file system surface. Uses the raw fetcher for the same reason as
+  // getDesktopFileSystem: this route is not in the generated OpenAPI client.
+  async createDesktopFileSystemChannel(
+    name: string,
+  ): Promise<Schemas.FileSystem> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/desktop_file_system/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({ path: name, type: "folder", depth: 1 }),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to create desktop file system channel: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as Schemas.FileSystem;
+  }
+
+  // Delete a desktop file system entry by id (used to remove top-level channels).
+  async deleteDesktopFileSystem(id: string): Promise<void> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/desktop_file_system/${encodeURIComponent(id)}/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "delete",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok && response.status !== 404) {
+      throw new Error(
+        `Failed to delete desktop file system channel: ${response.statusText}`,
+      );
+    }
+  }
+
   async getTask(taskId: string) {
     const teamId = await this.getTeamId();
     const data = await this.api.get(`/api/projects/{project_id}/tasks/{id}/`, {

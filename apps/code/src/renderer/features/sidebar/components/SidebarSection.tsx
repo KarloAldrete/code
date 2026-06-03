@@ -1,5 +1,10 @@
 import { Tooltip } from "@components/ui/Tooltip";
-import { CaretDownIcon, CaretRightIcon, Plus } from "@phosphor-icons/react";
+import {
+  CaretDownIcon,
+  CaretRightIcon,
+  Plus,
+  Trash,
+} from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import { useState } from "react";
@@ -21,6 +26,8 @@ interface SidebarSectionProps {
   tooltipContent?: string;
   onNewTask?: () => void;
   newTaskTooltip?: string;
+  onDelete?: () => void;
+  deleteTooltip?: string;
   dragHandleRef?: React.RefCallback<HTMLButtonElement>;
 }
 
@@ -36,6 +43,8 @@ export function SidebarSection({
   tooltipContent,
   onNewTask,
   newTaskTooltip,
+  onDelete,
+  deleteTooltip,
   dragHandleRef,
 }: SidebarSectionProps) {
   const [isHovered, setIsHovered] = useState(false);
@@ -103,6 +112,30 @@ export function SidebarSection({
                   }}
                 >
                   <Plus size={12} />
+                </span>
+              </Tooltip>
+            )}
+            {onDelete && isHovered && (
+              <Tooltip content={deleteTooltip ?? "Delete"} side="left">
+                {/* biome-ignore lint/a11y/useSemanticElements: Cannot use button inside parent button (Collapsible.Trigger) */}
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="flex h-[18px] w-[18px] items-center justify-center rounded-sm border-0 bg-transparent p-0 hover:bg-gray-3 hover:text-red-9"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onDelete();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onDelete();
+                    }
+                  }}
+                >
+                  <Trash size={12} />
                 </span>
               </Tooltip>
             )}

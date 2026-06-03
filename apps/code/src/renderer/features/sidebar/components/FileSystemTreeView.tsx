@@ -1,5 +1,7 @@
 import { Hash } from "@phosphor-icons/react";
-import { Flex, Text } from "@radix-ui/themes";
+import { AlertDialog, Button, Flex, Spinner, Text } from "@radix-ui/themes";
+import { useState } from "react";
+import { useDesktopFileSystemMutations } from "../hooks/useDesktopFileSystem";
 import { useSidebarStore } from "../stores/sidebarStore";
 import type { FileSystemTreeNode } from "../utils/fileSystemTree";
 import { SidebarItem } from "./SidebarItem";
@@ -18,6 +20,7 @@ interface FileSystemTreeNodeRowProps {
   depth: number;
   collapsedSections: Set<string>;
   toggleSection: (id: string) => void;
+  onDeleteChannel: (node: FileSystemTreeNode) => void;
 }
 
 function FileSystemTreeNodeRow({
@@ -25,6 +28,7 @@ function FileSystemTreeNodeRow({
   depth,
   collapsedSections,
   toggleSection,
+  onDeleteChannel,
 }: FileSystemTreeNodeRowProps) {
   const visualDepth = Math.min(depth, MAX_VISUAL_DEPTH);
 
@@ -35,6 +39,9 @@ function FileSystemTreeNodeRow({
 
   const key = collapseKey(node.path);
   const isExpanded = !collapsedSections.has(key);
+  // Only real top-level channel rows are deletable: depth 0 with a backing cloud
+  // row (derived intermediate folders have no item/id and can't be removed).
+  const isDeletableChannel = depth === 0 && Boolean(node.item?.id);
 
   return (
     <SidebarSection
@@ -46,6 +53,8 @@ function FileSystemTreeNodeRow({
       onToggle={() => toggleSection(key)}
       addSpacingBefore={false}
       tooltipContent={node.path}
+      onDelete={isDeletableChannel ? () => onDeleteChannel(node) : undefined}
+      deleteTooltip="Delete channel"
     >
       {node.children.map((child) => (
         <FileSystemTreeNodeRow
@@ -54,6 +63,7 @@ function FileSystemTreeNodeRow({
           depth={depth + 1}
           collapsedSections={collapsedSections}
           toggleSection={toggleSection}
+          onDeleteChannel={onDeleteChannel}
         />
       ))}
     </SidebarSection>
@@ -63,26 +73,84 @@ function FileSystemTreeNodeRow({
 export function FileSystemTreeView({ nodes }: { nodes: FileSystemTreeNode[] }) {
   const collapsedSections = useSidebarStore((state) => state.collapsedSections);
   const toggleSection = useSidebarStore((state) => state.toggleSection);
+  const { deleteChannel, isDeleting } = useDesktopFileSystemMutations();
+  const [pendingDelete, setPendingDelete] = useState<FileSystemTreeNode | null>(
+    null,
+  );
+
+  const confirmDelete = async () => {
+    const id = pendingDelete?.item?.id;
+    if (!id) return;
+    try {
+      await deleteChannel(id);
+    } finally {
+      setPendingDelete(null);
+    }
+  };
 
   if (nodes.length === 0) {
     return (
       <Flex direction="column" align="center" className="px-4 pt-6 pb-4">
-        <Text className="text-[13px] text-gray-10">Nothing here yet</Text>
+        <Text className="text-[13px] text-gray-10">No channels yet</Text>
       </Flex>
     );
   }
 
   return (
-    <Flex direction="column">
-      {nodes.map((node) => (
-        <FileSystemTreeNodeRow
-          key={node.id}
-          node={node}
-          depth={0}
-          collapsedSections={collapsedSections}
-          toggleSection={toggleSection}
-        />
-      ))}
-    </Flex>
+    <>
+      <Flex direction="column">
+        {nodes.map((node) => (
+          <FileSystemTreeNodeRow
+            key={node.id}
+            node={node}
+            depth={0}
+            collapsedSections={collapsedSections}
+            toggleSection={toggleSection}
+            onDeleteChannel={setPendingDelete}
+          />
+        ))}
+      </Flex>
+
+      <AlertDialog.Root
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !isDeleting) setPendingDelete(null);
+        }}
+      >
+        <AlertDialog.Content maxWidth="420px" size="1">
+          <AlertDialog.Title className="text-sm">
+            Delete channel "{pendingDelete?.name}"?
+          </AlertDialog.Title>
+          <AlertDialog.Description>
+            <Text color="gray" className="text-[13px]">
+              This removes the channel for everyone in your project. This can't
+              be undone here.
+            </Text>
+          </AlertDialog.Description>
+          <Flex justify="end" gap="3" mt="3">
+            <AlertDialog.Cancel>
+              <Button
+                variant="soft"
+                color="gray"
+                size="1"
+                disabled={isDeleting}
+              >
+                Cancel
+              </Button>
+            </AlertDialog.Cancel>
+            <Button
+              variant="solid"
+              color="red"
+              size="1"
+              disabled={isDeleting}
+              onClick={confirmDelete}
+            >
+              {isDeleting ? <Spinner size="1" /> : null}
+              Delete
+            </Button>
+          </Flex>
+        </AlertDialog.Content>
+      </AlertDialog.Root>
+    </>
   );
 }

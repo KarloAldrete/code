@@ -33,6 +33,7 @@ import { useTaskViewed } from "../hooks/useTaskViewed";
 import { useSidebarStore } from "../stores/sidebarStore";
 import { useTaskSelectionStore } from "../stores/taskSelectionStore";
 import { buildFileSystemTree } from "../utils/fileSystemTree";
+import { ChannelsHeader } from "./ChannelsHeader";
 import { FileSystemTreeView } from "./FileSystemTreeView";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { InboxItem, NewTaskItem } from "./items/HomeItem";
@@ -434,16 +435,21 @@ function SidebarMenuComponent() {
           )}
 
           {showFiles ? (
-            fsLoading ? (
-              <SidebarItem
-                depth={0}
-                icon={<DotsCircleSpinner size={12} className="text-gray-10" />}
-                label="Loading..."
-                disabled
-              />
-            ) : (
-              <FileSystemTreeView nodes={fsTree} />
-            )
+            <>
+              <ChannelsHeader />
+              {fsLoading ? (
+                <SidebarItem
+                  depth={0}
+                  icon={
+                    <DotsCircleSpinner size={12} className="text-gray-10" />
+                  }
+                  label="Loading..."
+                  disabled
+                />
+              ) : (
+                <FileSystemTreeView nodes={fsTree} />
+              )}
+            </>
           ) : sidebarData.isLoading ? (
             <SidebarItem
               depth={0}

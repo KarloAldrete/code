@@ -1,12 +1,15 @@
-import { FileText, ListChecks } from "@phosphor-icons/react";
+import { Hash, ListChecks } from "@phosphor-icons/react";
 import { Button, cn } from "@posthog/quill";
 import { Flex } from "@radix-ui/themes";
 
 type SidebarPanel = "tasks" | "files";
 
+// The "files" value is persisted as activePanel in the sidebar store; keep it as
+// "files" so existing persisted state isn't orphaned. Only the visible label is
+// "Channels".
 const PANELS: { value: SidebarPanel; label: string; icon: React.ReactNode }[] =
   [
-    { value: "files", label: "Files", icon: <FileText size={14} /> },
+    { value: "files", label: "Channels", icon: <Hash size={14} /> },
     { value: "tasks", label: "Tasks", icon: <ListChecks size={14} /> },
   ];
 
