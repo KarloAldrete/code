@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { EventEmitter } from "node:events";
 import net from "node:net";
 import path from "node:path";
 import { logger } from "../../utils/logger";
+import { TypedEventEmitter } from "../../utils/typed-event-emitter";
 
 const log = logger.scope("discord-ipc");
 
@@ -29,9 +29,10 @@ export interface DiscordActivity {
   instance?: boolean;
 }
 
+/** Event → payload map for {@link TypedEventEmitter}. Both are payload-less. */
 interface DiscordIpcClientEvents {
-  ready: () => void;
-  disconnect: () => void;
+  ready: undefined;
+  disconnect: undefined;
 }
 
 /**
@@ -44,24 +45,13 @@ interface DiscordIpcClientEvents {
  * It performs no reconnection of its own; the owning service decides when to
  * retry so the policy lives in one place.
  */
-export class DiscordIpcClient extends EventEmitter {
+export class DiscordIpcClient extends TypedEventEmitter<DiscordIpcClientEvents> {
   private socket: net.Socket | null = null;
   private readBuffer = Buffer.alloc(0);
   private ready = false;
 
   constructor(private readonly clientId: string) {
     super();
-  }
-
-  override on<K extends keyof DiscordIpcClientEvents>(
-    event: K,
-    listener: DiscordIpcClientEvents[K],
-  ): this {
-    return super.on(event, listener);
-  }
-
-  override emit<K extends keyof DiscordIpcClientEvents>(event: K): boolean {
-    return super.emit(event);
   }
 
   isReady(): boolean {
@@ -101,7 +91,7 @@ export class DiscordIpcClient extends EventEmitter {
   private tryConnect(paths: string[], index: number): void {
     if (index >= paths.length) {
       log.debug("No reachable Discord IPC socket");
-      super.emit("disconnect");
+      this.emit("disconnect", undefined);
       return;
     }
 
@@ -179,7 +169,7 @@ export class DiscordIpcClient extends EventEmitter {
       if (msg?.cmd === "DISPATCH" && msg.evt === "READY") {
         this.ready = true;
         log.info("Discord IPC handshake complete");
-        super.emit("ready");
+        this.emit("ready", undefined);
       }
     }
   }
@@ -194,7 +184,7 @@ export class DiscordIpcClient extends EventEmitter {
       // best effort
     }
     this.socket = null;
-    super.emit("disconnect");
+    this.emit("disconnect", undefined);
   }
 
   private write(op: number, payload: unknown): void {
