@@ -1330,6 +1330,23 @@ export class SessionService {
         };
       };
 
+      // [THINKING-DEBUG] Temporary diagnostic: log every thought chunk that
+      // reaches the renderer, so we can tell whether extended-thinking text is
+      // actually arriving. Remove once the thinking-visibility issue is fixed.
+      if (params?.update?.sessionUpdate === "agent_thought_chunk") {
+        const u = params.update as {
+          content?: { type?: string; text?: string };
+          _meta?: unknown;
+        };
+        log.info("[THINKING-DEBUG] agent_thought_chunk", {
+          taskRunId,
+          contentType: u.content?.type,
+          textLength: u.content?.text?.length ?? 0,
+          preview: (u.content?.text ?? "").slice(0, 80),
+          hasMeta: u._meta != null,
+        });
+      }
+
       // Handle config option updates (replaces current_mode_update)
       if (
         params?.update?.sessionUpdate === "config_option_update" &&

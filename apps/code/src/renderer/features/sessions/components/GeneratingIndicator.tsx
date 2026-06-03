@@ -86,7 +86,6 @@ const THINKING_MESSAGES = [
   "Galumphing",
   "Puttering",
   "Whiffling",
-  "Thinking",
 ];
 
 function getRandomThinkingMessage(): string {

@@ -585,6 +585,16 @@ function streamEventToAcpNotifications(
   switch (event.type) {
     case "content_block_start": {
       const block = event.content_block;
+      // [THINKING-DEBUG] Temporary: trace thinking block starts in the stream.
+      if (block.type === "thinking" || block.type === "redacted_thinking") {
+        logger.info("[THINKING-DEBUG] stream content_block_start", {
+          blockType: block.type,
+          thinkingLength:
+            "thinking" in block && typeof block.thinking === "string"
+              ? block.thinking.length
+              : 0,
+        });
+      }
       if (block.type === "tool_use" || block.type === "mcp_tool_use") {
         toolUseStreamCache.set(event.index, {
           toolUseId: block.id,
@@ -609,6 +619,16 @@ function streamEventToAcpNotifications(
       );
     }
     case "content_block_delta": {
+      // [THINKING-DEBUG] Temporary: trace thinking deltas in the stream.
+      if (event.delta.type === "thinking_delta") {
+        logger.info("[THINKING-DEBUG] stream thinking_delta", {
+          deltaLength:
+            "thinking" in event.delta &&
+            typeof event.delta.thinking === "string"
+              ? event.delta.thinking.length
+              : 0,
+        });
+      }
       if (event.delta.type === "input_json_delta") {
         return inputJsonDeltaToAcpNotifications(
           event.index,
@@ -1080,6 +1100,33 @@ export async function handleUserAssistantMessage(
   }
 
   const content = message.message.content;
+  // [THINKING-DEBUG] Temporary: report whether the final assistant message
+  // carries thinking blocks (which filterMessageContent strips). If thinking
+  // arrives here but never via the stream, this is the loss point.
+  if (message.type === "assistant" && Array.isArray(content)) {
+    const blockTypes = content.map((b) => b.type);
+    const thinking = content.filter(
+      (b) => b.type === "thinking" || b.type === "redacted_thinking",
+    );
+    if (thinking.length > 0) {
+      logger.info("[THINKING-DEBUG] final assistant message has thinking", {
+        blockTypes,
+        thinkingBlockCount: thinking.length,
+        thinkingTextLength: thinking.reduce(
+          (n, b) =>
+            n +
+            ("thinking" in b && typeof b.thinking === "string"
+              ? b.thinking.length
+              : 0),
+          0,
+        ),
+      });
+    } else {
+      logger.info("[THINKING-DEBUG] final assistant message blocks", {
+        blockTypes,
+      });
+    }
+  }
   const contentToProcess =
     message.type === "assistant" ? filterMessageContent(content) : content;
   const parentToolCallId =

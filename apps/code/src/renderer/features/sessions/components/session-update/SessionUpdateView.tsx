@@ -75,7 +75,8 @@ export const SessionUpdateView = memo(function SessionUpdateView({
         <AgentMessage content={item.content.text} />
       ) : null;
     case "agent_thought_chunk":
-      return item.content.type === "text" ? (
+      return item.content.type === "text" &&
+        item.content.text.trim().length > 0 ? (
         <ThoughtView content={item.content.text} isLoading={!thoughtComplete} />
       ) : null;
     case "tool_call":
