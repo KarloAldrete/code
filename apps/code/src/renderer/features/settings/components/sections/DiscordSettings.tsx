@@ -9,6 +9,18 @@ import { useSubscription } from "@trpc/tanstack-react-query";
 import { track } from "@utils/analytics";
 import { useEffect, useState } from "react";
 
+// Fallback used for optimistic toggle updates that fire before the initial
+// getState query resolves, so the Switch reflects the change immediately
+// instead of appearing stuck at its default. The query/subscription reconciles
+// the remaining fields (connected, configured) right after.
+const DEFAULT_STATE: DiscordPresenceState = {
+  enabled: false,
+  connected: false,
+  configured: false,
+  showTaskTitle: false,
+  showRepoName: false,
+};
+
 export function DiscordSettings() {
   const trpcReact = useTRPC();
   const { data } = useQuery(trpcReact.discordPresence.getState.queryOptions());
@@ -46,7 +58,7 @@ export function DiscordSettings() {
       new_value: checked,
       old_value: enabled,
     });
-    setState((prev) => (prev ? { ...prev, enabled: checked } : prev));
+    setState((prev) => ({ ...(prev ?? DEFAULT_STATE), enabled: checked }));
     setEnabled.mutate({ enabled: checked });
   };
 
@@ -56,7 +68,10 @@ export function DiscordSettings() {
       new_value: checked,
       old_value: state?.showTaskTitle ?? false,
     });
-    setState((prev) => (prev ? { ...prev, showTaskTitle: checked } : prev));
+    setState((prev) => ({
+      ...(prev ?? DEFAULT_STATE),
+      showTaskTitle: checked,
+    }));
     setShowTaskTitle.mutate({ value: checked });
   };
 
@@ -66,7 +81,7 @@ export function DiscordSettings() {
       new_value: checked,
       old_value: state?.showRepoName ?? false,
     });
-    setState((prev) => (prev ? { ...prev, showRepoName: checked } : prev));
+    setState((prev) => ({ ...(prev ?? DEFAULT_STATE), showRepoName: checked }));
     setShowRepoName.mutate({ value: checked });
   };
 
