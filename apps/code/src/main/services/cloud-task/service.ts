@@ -570,10 +570,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       return;
     }
 
-    if (
-      watcher.needsStopAfterBootstrap ||
-      isTerminalStatus(watcher.lastStatus)
-    ) {
+    if (watcher.needsStopAfterBootstrap) {
       watcher.needsStopAfterBootstrap = false;
       this.stopWatcher(key);
       return;
@@ -727,7 +724,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         return;
       }
 
-      await this.handleStreamCompletion(key, { reconnectIfNonTerminal: true });
+      await this.handleStreamCompletion(key, { reconnectOnDisconnect: true });
     } catch (error) {
       this.flushLogBatch(key);
 
@@ -768,7 +765,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         isBackendError,
       });
       await this.handleStreamCompletion(key, {
-        reconnectIfNonTerminal: true,
+        reconnectOnDisconnect: true,
         reconnectError: error,
         countReconnectAttempt: !isBackendError && !wasHealthyStream,
       });
@@ -1084,7 +1081,9 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     options: { countAttempt?: boolean } = {},
   ): void {
     const watcher = this.watchers.get(key);
-    if (!watcher || watcher.failed || isTerminalStatus(watcher.lastStatus)) {
+    // No isTerminalStatus gate: the reconnect loop is status-unaware and only stops on the
+    // stream-end sentinel (handled in handleStreamCompletion) or the budget exhaustion below.
+    if (!watcher || watcher.failed) {
       return;
     }
 
@@ -1155,7 +1154,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
   private async handleStreamCompletion(
     key: string,
     options: {
-      reconnectIfNonTerminal: boolean;
+      reconnectOnDisconnect: boolean;
       reconnectError?: unknown;
       countReconnectAttempt?: boolean;
     },
@@ -1164,92 +1163,38 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     if (!watcher) return;
     if (watcher.failed) return;
 
-    // Durable end-of-stream: the server signalled this run's stream is complete, so
-    // stop without polling run status. This is the status-unaware durable-stream contract
-    // — absent this sentinel we keep reconnecting (below) to ride out transport churn.
+    // The durable end-of-stream sentinel is the ONLY signal that ends the watch. The client is
+    // unaware of sandbox/run status and assumes the transport breaks mid-message constantly, so any
+    // disconnect without stream-end is just transport churn to ride out by reconnecting. We never
+    // poll run status to decide whether to stop — that would drop the tail if the stream cut right as
+    // the run went terminal but before stream-end arrived. Status is updated for display only, from
+    // the task_run_state events the stream itself carries.
     if (watcher.streamEnded) {
       this.emitStatusUpdate(watcher);
       this.stopWatcher(key);
       return;
     }
 
-    const { reconnectIfNonTerminal } = options;
-    const run = await this.fetchTaskRun(watcher);
-    const currentWatcher = this.watchers.get(key);
-    if (!currentWatcher || currentWatcher !== watcher) return;
-    if (watcher.failed) return;
+    const { reconnectOnDisconnect } = options;
 
     if (watcher.isBootstrapping) {
-      if (!run) {
+      // Bootstrap still owns the snapshot lifecycle; record reconnect intent and let it finish.
+      if (reconnectOnDisconnect) {
         watcher.needsPostBootstrapReconnect = true;
-        return;
-      }
-
-      this.applyTaskRunState(watcher, run);
-      if (isTerminalStatus(watcher.lastStatus) || !reconnectIfNonTerminal) {
-        watcher.needsStopAfterBootstrap = true;
       } else {
-        watcher.needsPostBootstrapReconnect = true;
+        watcher.needsStopAfterBootstrap = true;
       }
       return;
     }
 
-    if (!run) {
-      this.scheduleReconnect(
-        key,
-        new CloudTaskStreamError("Failed to fetch terminal cloud run state", {
-          title: "Cloud run state unavailable",
-          message:
-            "Could not fetch the latest cloud run state after the stream ended. Retry to reconnect.",
-          retryable: true,
-        }),
-        { countAttempt: options.countReconnectAttempt ?? true },
-      );
-      return;
-    }
-
-    const stateChanged = this.applyTaskRunState(watcher, run);
-
-    if (!isTerminalStatus(watcher.lastStatus) && reconnectIfNonTerminal) {
-      if (stateChanged) {
-        // Polled progress proves the run is alive — reset both budgets.
-        watcher.reconnectAttempts = 0;
-        watcher.cumulativeReconnectAttempts = 0;
-        this.emit(CloudTaskEvent.Update, {
-          taskId: watcher.taskId,
-          runId: watcher.runId,
-          kind: "status",
-          status: watcher.lastStatus ?? undefined,
-          stage: watcher.lastStage,
-          output: watcher.lastOutput,
-          errorMessage: watcher.lastErrorMessage,
-          branch: watcher.lastBranch,
-        });
-      }
-      log.warn("Cloud task stream ended before terminal status", {
-        key,
-        status: watcher.lastStatus,
-      });
+    if (reconnectOnDisconnect) {
       this.scheduleReconnect(key, options.reconnectError, {
         countAttempt: options.countReconnectAttempt ?? false,
       });
       return;
     }
 
-    // Always emit the latest status before stopping. Terminal states are
-    // intentionally deferred until stream completion; clean EOFs can also mean
-    // the backend has no more stream events even when the run status remains active.
-    this.emit(CloudTaskEvent.Update, {
-      taskId: watcher.taskId,
-      runId: watcher.runId,
-      kind: "status",
-      status: watcher.lastStatus ?? undefined,
-      stage: watcher.lastStage,
-      output: watcher.lastOutput,
-      errorMessage: watcher.lastErrorMessage,
-      branch: watcher.lastBranch,
-    });
-
+    this.emitStatusUpdate(watcher);
     this.stopWatcher(key);
   }
 
