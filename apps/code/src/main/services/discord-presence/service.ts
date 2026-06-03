@@ -39,6 +39,7 @@ export class DiscordPresenceService extends TypedEventEmitter<DiscordPresenceSer
   private showTaskTitle: boolean;
   private showRepoName: boolean;
   private connected = false;
+  private waiting = false;
   private intent: PresenceIntent = IDLE_INTENT;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private throttleTimer: NodeJS.Timeout | null = null;
@@ -120,13 +121,24 @@ export class DiscordPresenceService extends TypedEventEmitter<DiscordPresenceSer
     this.client = client;
     client.on("ready", () => {
       this.connected = true;
+      this.waiting = false;
       log.info("Connected to Discord");
       this.render(true);
       this.emitStatus();
     });
     client.on("disconnect", () => {
+      const wasConnected = this.connected;
       this.connected = false;
-      this.emitStatus();
+      if (wasConnected) {
+        log.info("Lost Discord connection; retrying in the background");
+        this.emitStatus();
+      } else if (!this.waiting) {
+        this.waiting = true;
+        log.debug(
+          "Discord not running; retrying in the background until it appears",
+        );
+        this.emitStatus();
+      }
       this.scheduleReconnect();
     });
     client.connect();
@@ -139,6 +151,7 @@ export class DiscordPresenceService extends TypedEventEmitter<DiscordPresenceSer
       this.client = null;
     }
     this.connected = false;
+    this.waiting = false;
   }
 
   private scheduleReconnect(): void {

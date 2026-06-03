@@ -90,7 +90,6 @@ export class DiscordIpcClient extends TypedEventEmitter<DiscordIpcClientEvents> 
 
   private tryConnect(paths: string[], index: number): void {
     if (index >= paths.length) {
-      log.debug("No reachable Discord IPC socket");
       this.emit("disconnect", undefined);
       return;
     }
