@@ -1,14 +1,18 @@
 /**
  * Discord Rich Presence configuration.
  *
- * The client id identifies the Discord Application whose name and uploaded
+ * The client id is the public Discord Application ID whose name and uploaded
  * Rich Presence art (the `*_IMAGE_KEY` assets below) show up on a user's
- * profile. Register an application at https://discord.com/developers and wire
- * its id through `VITE_DISCORD_CLIENT_ID` (see `.env.example`). Until a real id
- * is configured the service stays dormant and never opens a socket.
+ * profile. It is a public identifier — only the application's client *secret*
+ * (unused by Rich Presence) is sensitive — so it ships in the build for every
+ * client. Register an application at https://discord.com/developers, upload the
+ * art assets, then drop its ID here.
  */
+// TODO: replace with the real PostHog Code Discord Application ID.
+const DISCORD_CLIENT_ID = "1511709200017920020";
+
 export function getDiscordClientId(): string {
-  return process.env.VITE_DISCORD_CLIENT_ID ?? "";
+  return DISCORD_CLIENT_ID;
 }
 
 /** Asset keys uploaded under the Discord app's Rich Presence → Art Assets. */

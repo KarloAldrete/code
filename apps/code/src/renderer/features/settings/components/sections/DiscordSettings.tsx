@@ -104,7 +104,7 @@ export function DiscordSettings() {
           {!configured ? (
             <Text color="yellow" className="-mt-3 pb-3 text-[13px]">
               No Discord application is configured for this build, so nothing
-              will appear yet. Set VITE_DISCORD_CLIENT_ID to connect.
+              will appear yet.
             </Text>
           ) : (
             <Text

@@ -110,7 +110,7 @@ export class DiscordPresenceService extends TypedEventEmitter<DiscordPresenceSer
   private connect(): void {
     if (!this.clientId) {
       log.warn(
-        "VITE_DISCORD_CLIENT_ID is not configured; Discord Rich Presence will stay dormant",
+        "No Discord Application ID is set; Discord Rich Presence will stay dormant",
       );
       return;
     }
