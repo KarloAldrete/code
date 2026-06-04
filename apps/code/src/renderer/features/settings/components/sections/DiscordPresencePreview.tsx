@@ -89,11 +89,8 @@ export function DiscordPresencePreview({
 
         <Flex align="start" gap="3" className="mt-2">
           <div className="relative shrink-0">
-            <div className="flex h-16 w-16 flex-col items-center justify-center gap-1 overflow-hidden rounded-lg bg-[#eeefe9]">
+            <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-lg bg-[#eeefe9]">
               <img src={posthogIcon} alt="" className="h-auto w-12" />
-              <span className="font-bold text-[#111] text-[12px] leading-none">
-                PostHog
-              </span>
             </div>
             <div
               className="-right-1.5 -bottom-1.5 absolute flex h-7 w-7 items-center justify-center rounded-full ring-4 ring-gray-2"
