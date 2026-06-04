@@ -3,12 +3,6 @@ import { CodeIcon, HouseIcon, TrayIcon } from "@phosphor-icons/react";
 import { Badge, Button } from "@posthog/quill";
 import { Box, Flex } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { isMac } from "@utils/platform";
-
-// macOS draws the traffic lights over the top-left of the window
-// (titleBarStyle: hiddenInset). Reserve space so the first rail button clears
-// them.
-const MAC_TRAFFIC_LIGHT_INSET = 28;
 
 type AppNavItem = {
   id: "home" | "inbox" | "code";
@@ -59,9 +53,7 @@ export function AppNav() {
       direction="column"
       align="center"
       gap="2"
-      p="2"
-      className="drag h-full shrink-0 border-gray-6 border-r bg-gray-2"
-      style={{ paddingTop: isMac ? MAC_TRAFFIC_LIGHT_INSET : undefined }}
+      className="drag h-full shrink-0 border-gray-6 border-r bg-gray-2 px-2 pt-10 pb-2"
     >
       {NAV_ITEMS.map((item) => {
         const active = item.isActive(pathname);
