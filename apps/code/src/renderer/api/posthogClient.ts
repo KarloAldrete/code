@@ -1016,6 +1016,41 @@ export class PostHogAPIClient {
     return (await response.json()) as Schemas.FileSystem;
   }
 
+  // Create a leaf file system entry (e.g. filing a task under a channel folder)
+  // on the desktop surface. `path` is slash-delimited and includes the parent
+  // folder path; `ref` links the entry back to its source domain object.
+  async createDesktopFileSystemEntry(input: {
+    path: string;
+    type: string;
+    ref?: string;
+    href?: string;
+  }): Promise<Schemas.FileSystem> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/desktop_file_system/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const depth = input.path.split("/").filter((s) => s.length > 0).length;
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({
+          path: input.path,
+          type: input.type,
+          depth,
+          ref: input.ref,
+          href: input.href,
+        }),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to create desktop file system entry: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as Schemas.FileSystem;
+  }
+
   // Delete a desktop file system entry by id (used to remove top-level channels).
   async deleteDesktopFileSystem(id: string): Promise<void> {
     const teamId = await this.getTeamId();

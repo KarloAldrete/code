@@ -1,5 +1,6 @@
-import { Hash } from "@phosphor-icons/react";
+import { Code, Hash } from "@phosphor-icons/react";
 import { AlertDialog, Button, Flex, Spinner, Text } from "@radix-ui/themes";
+import { navigateToTaskDetail } from "@renderer/navigationBridge";
 import { useState } from "react";
 import { useDesktopFileSystemMutations } from "../hooks/useDesktopFileSystem";
 import { useSidebarStore } from "../stores/sidebarStore";
@@ -33,8 +34,18 @@ function FileSystemTreeNodeRow({
   const visualDepth = Math.min(depth, MAX_VISUAL_DEPTH);
 
   if (!node.isFolder) {
-    // Leaf rows are inert for now — a click hook is intentionally left unwired.
-    return <SidebarItem depth={visualDepth} label={node.name} />;
+    // Task leaves (filed via the task context menu) carry `ref = taskId`;
+    // clicking navigates to the task detail in the main pane.
+    const isTask = node.item?.type === "task";
+    const taskRef = isTask && node.item?.ref ? node.item.ref : null;
+    return (
+      <SidebarItem
+        depth={Math.min(visualDepth + 1, MAX_VISUAL_DEPTH)}
+        label={node.name}
+        icon={isTask ? <Code size={14} className="text-gray-10" /> : undefined}
+        onClick={taskRef ? () => navigateToTaskDetail(taskRef) : undefined}
+      />
+    );
   }
 
   const key = collapseKey(node.path);

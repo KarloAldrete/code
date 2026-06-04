@@ -113,13 +113,32 @@ export class ContextMenuService {
       isSuspended,
       isInCommandCenter,
       hasEmptyCommandCenterCell,
+      fileToFolders,
     } = input;
     const { apps, lastUsedAppId } = await this.getExternalAppsData();
     const hasPath = worktreePath || folderPath;
+    const fileToItems: MenuItemDef<TaskAction>[] =
+      fileToFolders && fileToFolders.length > 0
+        ? [
+            this.separator(),
+            {
+              type: "submenu",
+              label: "File to...",
+              items: fileToFolders.map((folder) => ({
+                label: folder.path,
+                action: {
+                  type: "file-to" as const,
+                  folderPath: folder.path,
+                },
+              })),
+            },
+          ]
+        : [];
 
     return this.showMenu<TaskAction>([
       this.item(isPinned ? "Unpin" : "Pin", { type: "pin" }),
       this.item("Rename", { type: "rename" }),
+      ...fileToItems,
       ...(worktreePath
         ? [
             this.separator(),

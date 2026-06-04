@@ -47,6 +47,19 @@ export function useDesktopFileSystemMutations() {
     onSuccess: invalidate,
   });
 
+  const fileEntryMutation = useMutation({
+    mutationFn: async (input: {
+      path: string;
+      type: string;
+      ref?: string;
+      href?: string;
+    }) => {
+      if (!client) throw new Error("Not authenticated");
+      return client.createDesktopFileSystemEntry(input);
+    },
+    onSuccess: invalidate,
+  });
+
   const createChannel = useCallback(
     (name: string) => createMutation.mutateAsync(name),
     [createMutation],
@@ -57,10 +70,18 @@ export function useDesktopFileSystemMutations() {
     [deleteMutation],
   );
 
+  const fileEntry = useCallback(
+    (input: { path: string; type: string; ref?: string; href?: string }) =>
+      fileEntryMutation.mutateAsync(input),
+    [fileEntryMutation],
+  );
+
   return {
     createChannel,
     deleteChannel,
+    fileEntry,
     isCreating: createMutation.isPending,
     isDeleting: deleteMutation.isPending,
+    isFiling: fileEntryMutation.isPending,
   };
 }

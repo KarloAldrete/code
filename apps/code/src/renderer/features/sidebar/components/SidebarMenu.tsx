@@ -34,7 +34,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { logger } from "@utils/logger";
 import { toast } from "@utils/toast";
 import { memo, useCallback, useEffect, useMemo, useRef } from "react";
-import { useDesktopFileSystem } from "../hooks/useDesktopFileSystem";
+import {
+  useDesktopFileSystem,
+  useDesktopFileSystemMutations,
+} from "../hooks/useDesktopFileSystem";
 import { usePinnedTasks } from "../hooks/usePinnedTasks";
 import { useSidebarData } from "../hooks/useSidebarData";
 import { useTaskViewed } from "../hooks/useTaskViewed";
@@ -83,10 +86,22 @@ function SidebarMenuComponent() {
   // The file-system tree is only ever shown behind the flag; without it we
   // always fall back to the task list regardless of the persisted panel.
   const showFiles = fsSidebarEnabled && activePanel === "files";
+  // Keep the file-system list loaded whenever the feature is available, not
+  // only when its panel is active, so the task right-click "File to..." submenu
+  // has the channel list ready immediately.
   const { data: fsItems = [], isLoading: fsLoading } = useDesktopFileSystem({
-    enabled: showFiles,
+    enabled: fsSidebarEnabled,
   });
   const fsTree = useMemo(() => buildFileSystemTree(fsItems), [fsItems]);
+  const { fileEntry } = useDesktopFileSystemMutations();
+  const fileToFolders = useMemo(
+    () =>
+      fsItems
+        .filter((item) => item.type === "folder")
+        .map((item) => ({ id: item.id, path: item.path }))
+        .sort((a, b) => a.path.localeCompare(b.path)),
+    [fsItems],
+  );
   const inboxPollingActive = useRendererWindowFocusStore((s) => s.focused);
   const { data: inboxProbe } = useInboxReports(
     { status: INBOX_PIPELINE_STATUS_FILTER },
@@ -303,6 +318,7 @@ function SidebarMenuComponent() {
         isSuspended: taskData?.isSuspended,
         isInCommandCenter,
         hasEmptyCommandCenterCell,
+        fileToFolders: fsSidebarEnabled ? fileToFolders : undefined,
         onTogglePin: () => togglePin(taskId),
         onArchivePrior: handleArchivePrior,
         onAddToCommandCenter: () => {
@@ -313,6 +329,19 @@ function SidebarMenuComponent() {
             navigateToCommandCenter();
           } else {
             toast.info("Command center is full");
+          }
+        },
+        onFileTo: async (channelPath) => {
+          try {
+            await fileEntry({
+              path: `${channelPath}/${task.title}`,
+              type: "task",
+              ref: task.id,
+            });
+            toast.success(`Filed to ${channelPath}`);
+          } catch (error) {
+            log.error("Failed to file task", error);
+            toast.error("Failed to file task");
           }
         },
       });
