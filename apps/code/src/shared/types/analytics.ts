@@ -503,6 +503,8 @@ export type InboxReportActionType =
   | "view_signal_external"
   | "expand_why"
   | "click_suggested_reviewer"
+  | "add_suggested_reviewer"
+  | "remove_suggested_reviewer"
   | "expand_task_section"
   | "play_session_recording";
 
@@ -607,6 +609,10 @@ export interface InboxReportActionProperties {
   signal_section?: "relevant_code" | "data_queried";
   why_field?: "priority" | "actionability";
   task_section?: "research" | "implementation";
+  // Identity of the reviewer added/removed/clicked, for the suggested-reviewer
+  // actions. Login is absent when the org-member lookup doesn't expose one.
+  suggested_reviewer_login?: string;
+  suggested_reviewer_uuid?: string;
   // True when the user submitted Discuss with a first question via the popover.
   has_question?: boolean;
   // The first question text the user typed before hitting Discuss. Truncated to
@@ -743,6 +749,7 @@ export const ANALYTICS_EVENTS = {
   ONBOARDING_ABANDONED: "Onboarding abandoned",
   AI_CONSENT_GATE_SHOWN: "Ai consent gate shown",
   AI_CONSENT_APPROVED: "Ai consent approved",
+  AI_CONSENT_GRANTED_INAPP: "Ai consent granted in-app",
 
   // Setup / onboarding events
   SETUP_DISCOVERY_STARTED: "Setup discovery started",
@@ -864,6 +871,7 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.ONBOARDING_ABANDONED]: OnboardingAbandonedProperties;
   [ANALYTICS_EVENTS.AI_CONSENT_GATE_SHOWN]: AiConsentGateShownProperties;
   [ANALYTICS_EVENTS.AI_CONSENT_APPROVED]: never;
+  [ANALYTICS_EVENTS.AI_CONSENT_GRANTED_INAPP]: never;
 
   // Setup / onboarding events
   [ANALYTICS_EVENTS.SETUP_DISCOVERY_STARTED]: SetupDiscoveryStartedProperties;

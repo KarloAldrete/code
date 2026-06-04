@@ -253,6 +253,7 @@ export class AgentServer {
         outcome: { outcome: "selected"; optionId: string };
         _meta?: Record<string, unknown>;
       }) => void;
+      toolCallId?: string;
     }
   >();
 
@@ -1683,6 +1684,13 @@ export class AgentServer {
   private buildCloudSystemPrompt(prUrl?: string | null): string {
     const taskId = this.config.taskId;
     const shouldAutoCreatePr = this.shouldAutoPublishCloudChanges();
+    const isSlack = this.getCloudInteractionOrigin() === "slack";
+    const identityInstructions = isSlack
+      ? `
+# Identity
+You are the PostHog Slack app, PostHog's agent for helping users with their product data and coding tasks from Slack. When introducing yourself or referring to yourself in messages to the user, identify as "PostHog Slack app". Do NOT refer to yourself as Claude, an Anthropic assistant, or any underlying model name.
+`
+      : "";
     const signedCommitInstructions = `
 ## Committing (signed commits required)
 Commits MUST be signed. \`git commit\` and \`git push\` are blocked in this environment.
@@ -1701,7 +1709,7 @@ we want:
 
     if (prUrl) {
       if (!shouldAutoCreatePr) {
-        return `
+        return `${identityInstructions}
 # Cloud Task Execution
 
 This task already has an open pull request: ${prUrl}
@@ -1715,7 +1723,7 @@ ${signedCommitInstructions}
 `;
       }
 
-      return `
+      return `${identityInstructions}
 # Cloud Task Execution
 
 This task already has an open pull request: ${prUrl}
@@ -1749,7 +1757,7 @@ When the user explicitly asks to clone or work in a GitHub repository:
 - If the user explicitly asks you to open or update a pull request, create a branch, stage your changes with \`git add\` and commit them with the \`git_signed_commit\` tool (do NOT use \`git commit\`/\`git push\` — they are blocked), and open a draft pull request from inside the clone. Before opening the PR, check the cloned repo for a PR template at \`.github/pull_request_template.md\` (or variants; fall back to the org's \`.github\` repo via \`gh api\`) and use it as the body structure, and search for matching open issues with \`gh issue list --search\` to include \`Closes #<n>\` / \`Refs #<n>\` links.
 - Do NOT create branches, commits, push changes, or open pull requests unless the user explicitly asks for that`;
 
-      return `
+      return `${identityInstructions}
 # Cloud Task Execution — No Repository Mode
 
 You are a helpful assistant with access to PostHog via MCP tools. You can help with both code tasks and data/analytics questions.
@@ -1771,7 +1779,7 @@ ${signedCommitInstructions}
     }
 
     if (!shouldAutoCreatePr) {
-      return `
+      return `${identityInstructions}
 # Cloud Task Execution
 
 Do the requested work, but stop with local changes ready for review.
@@ -1782,7 +1790,7 @@ ${signedCommitInstructions}
 `;
     }
 
-    return `
+    return `${identityInstructions}
 # Cloud Task Execution
 
 After completing the requested changes:
@@ -2501,6 +2509,7 @@ ${signedCommitInstructions}
     _meta?: Record<string, unknown>;
   }> {
     const requestId = crypto.randomUUID();
+    const toolCallId = params.toolCall?.toolCallId as string | undefined;
 
     this.broadcastEvent({
       type: "permission_request",
@@ -2509,9 +2518,31 @@ ${signedCommitInstructions}
       toolCall: params.toolCall,
     });
 
-    return new Promise((resolve) => {
-      this.pendingPermissions.set(requestId, { resolve });
+    // Persist the request so a client that connects after the live event can
+    // recover the requestId from the log and re-surface the prompt.
+    this.persistPermissionLifecycle(POSTHOG_NOTIFICATIONS.PERMISSION_REQUEST, {
+      requestId,
+      toolCallId,
+      options: params.options,
+      toolCall: params.toolCall,
     });
+
+    return new Promise((resolve) => {
+      this.pendingPermissions.set(requestId, { resolve, toolCallId });
+    });
+  }
+
+  private persistPermissionLifecycle(
+    method: string,
+    params: Record<string, unknown>,
+  ): void {
+    if (!this.session) return;
+    // appendRawLine wraps the line in the {type, timestamp, notification}
+    // envelope, so pass the bare notification (matching broadcastTurnComplete).
+    this.session.logWriter.appendRawLine(
+      this.session.payload.run_id,
+      JSON.stringify({ jsonrpc: "2.0", method, params }),
+    );
   }
 
   private resolvePermission(
@@ -2524,6 +2555,12 @@ ${signedCommitInstructions}
     if (!pending) return false;
 
     this.pendingPermissions.delete(requestId);
+
+    this.persistPermissionLifecycle(POSTHOG_NOTIFICATIONS.PERMISSION_RESOLVED, {
+      requestId,
+      toolCallId: pending.toolCallId,
+      optionId,
+    });
 
     const meta: Record<string, unknown> = {};
     if (customInput) meta.customInput = customInput;

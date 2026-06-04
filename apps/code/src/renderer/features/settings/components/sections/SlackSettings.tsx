@@ -12,14 +12,14 @@ import { getPostHogUrl } from "@utils/urls";
 import { SignalSlackNotificationsSettings } from "./SignalSlackNotificationsSettings";
 
 export function SlackSettings() {
-  const projectId = useAuthStateValue((s) => s.projectId);
+  const projectId = useAuthStateValue((s) => s.currentProjectId);
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const { isLoading } = useIntegrations();
   const { slackIntegrations, hasSlackIntegration } = useIntegrationSelectors();
 
   const slackSettingsUrl = projectId
     ? getPostHogUrl(
-        `/project/${projectId}/settings/environment-posthog-code#integration-posthog-code-slack`,
+        `/project/${projectId}/settings/project-integrations#integration-slack`,
         cloudRegion,
       )
     : null;
