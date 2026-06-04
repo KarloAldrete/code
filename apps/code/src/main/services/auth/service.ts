@@ -551,15 +551,23 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     options: TokenResponseOptions,
   ): Promise<InMemorySession> {
     const scopedOrgIds = tokenResponse.scoped_organizations ?? [];
+    const scopedTeamIds = tokenResponse.scoped_teams ?? [];
     const { accountKey, currentOrgId } = await this.fetchUserContext(
       tokenResponse.access_token,
       options.cloudRegion,
     );
-    const orgProjectsMap = await this.buildOrgProjectsMap(
-      tokenResponse.access_token,
-      options.cloudRegion,
-      scopedOrgIds,
-    );
+    const orgProjectsMap =
+      scopedOrgIds.length > 0
+        ? await this.buildOrgProjectsMap(
+            tokenResponse.access_token,
+            options.cloudRegion,
+            scopedOrgIds,
+          )
+        : await this.buildOrgProjectsMapFromTeams(
+            tokenResponse.access_token,
+            options.cloudRegion,
+            scopedTeamIds,
+          );
     const lastPrefs = accountKey
       ? this.authPreferenceRepository.get(accountKey, options.cloudRegion)
       : null;
@@ -601,6 +609,72 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     );
 
     return Object.fromEntries(entries);
+  }
+  private async buildOrgProjectsMapFromTeams(
+    accessToken: string,
+    cloudRegion: CloudRegion,
+    teamIds: number[],
+  ): Promise<OrgProjectsMap> {
+    if (teamIds.length === 0) return {};
+
+    const teamMetas = await Promise.all(
+      teamIds.map((id) => this.fetchProjectMeta(accessToken, cloudRegion, id)),
+    );
+
+    const projectsByOrg = new Map<string, { id: number; name: string }[]>();
+    for (const meta of teamMetas) {
+      if (!meta) continue;
+      const bucket = projectsByOrg.get(meta.organization) ?? [];
+      bucket.push({ id: meta.id, name: meta.name });
+      projectsByOrg.set(meta.organization, bucket);
+    }
+
+    const entries = await Promise.all(
+      Array.from(projectsByOrg.entries()).map(
+        async ([orgId, projects]): Promise<[string, OrgProjects]> => {
+          const org = await this.fetchOrgWithProjects(
+            accessToken,
+            cloudRegion,
+            orgId,
+          );
+          return [orgId, { orgName: org?.orgName ?? "(unknown)", projects }];
+        },
+      ),
+    );
+
+    return Object.fromEntries(entries);
+  }
+  private async fetchProjectMeta(
+    accessToken: string,
+    cloudRegion: CloudRegion,
+    teamId: number,
+  ): Promise<{ id: number; name: string; organization: string } | null> {
+    const apiHost = getCloudUrlFromRegion(cloudRegion);
+    try {
+      const res = await this.executeAuthenticatedFetch(
+        fetch,
+        `${apiHost}/api/projects/${teamId}/`,
+        {},
+        accessToken,
+      );
+      if (!res.ok) return null;
+      const raw = (await res.json().catch(() => null)) as {
+        id?: unknown;
+        name?: unknown;
+        organization?: unknown;
+      } | null;
+      if (
+        typeof raw?.id !== "number" ||
+        typeof raw?.name !== "string" ||
+        typeof raw?.organization !== "string"
+      ) {
+        return null;
+      }
+      return { id: raw.id, name: raw.name, organization: raw.organization };
+    } catch (error) {
+      log.warn("Failed to fetch project meta", { teamId, error });
+      return null;
+    }
   }
   private async fetchOrgProjects(
     accessToken: string,
