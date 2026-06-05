@@ -48,6 +48,7 @@ import { PendingChatView } from "./PendingChatView";
 import { PlanStatusBar } from "./PlanStatusBar";
 import { ReasoningLevelSelector } from "./ReasoningLevelSelector";
 import { RawLogsView } from "./raw-logs/RawLogsView";
+import { SessionResourcesBar } from "./SessionResourcesBar";
 
 interface SessionViewProps {
   events: AcpMessage[];
@@ -603,6 +604,8 @@ export function SessionView({
                   slackThreadUrl={slackThreadUrl}
                   compact={compact}
                 />
+
+                <SessionResourcesBar events={events} />
 
                 <PlanStatusBar plan={latestPlan} />
 

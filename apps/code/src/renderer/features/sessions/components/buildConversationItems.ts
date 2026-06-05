@@ -380,6 +380,10 @@ function handleNotification(
     return;
   }
 
+  // `_posthog/resources_used` is intentionally NOT rendered inline here — the
+  // products are surfaced as a persistent, de-duplicated bar above the composer
+  // (see accumulateSessionResources / SessionResourcesBar).
+
   if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.TURN_COMPLETE)) {
     const params = msg.params as { stopReason?: string } | undefined;
     if (!b.currentTurn) return;
