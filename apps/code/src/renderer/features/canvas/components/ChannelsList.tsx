@@ -70,8 +70,7 @@ function NavButton({
   );
 }
 
-// Dummy session-status filters (no behaviour yet) for the channel's Sessions
-// group, mirroring the task status set.
+// Dummy task-status filters (no behaviour yet) for the channel's Tasks group.
 const SESSION_STATUSES: { label: string; icon: ReactNode }[] = [
   {
     label: "Backlog",
@@ -192,7 +191,7 @@ function ChannelSection({ channel }: { channel: Channel }) {
               }
             />
             <Collapsible variant="folder" defaultOpen>
-              <CollapsibleTrigger>Sessions</CollapsibleTrigger>
+              <CollapsibleTrigger>Tasks</CollapsibleTrigger>
               <CollapsibleContent>
                 <Flex direction="column" gap="1" pt="1" pl="3">
                   <NavButton
