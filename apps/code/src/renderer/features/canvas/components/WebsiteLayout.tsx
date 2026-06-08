@@ -37,12 +37,6 @@ function threadIdFor(dashboardId: string): string {
   return `dashboard:${dashboardId}`;
 }
 
-// The active dashboard's name as a plain breadcrumb crumb.
-function DashboardCrumb({ dashboardId }: { dashboardId: string }) {
-  const { dashboard } = useDashboard(dashboardId);
-  return <CrumbText>{dashboard?.name || "Dashboard"}</CrumbText>;
-}
-
 // Edit toggle + (in edit mode) Save / Save-as-fork for the active dashboard.
 function DashboardControls({
   channelId,
@@ -173,11 +167,13 @@ export function WebsiteLayout() {
       </ChannelGridLink>,
     ];
     if (isDashboardDetail && dashboardId) {
+      // The dashboard's own name is the big h1 just below, so the breadcrumb
+      // stops at "Dashboards" (still a link back to the grid) rather than
+      // repeating it.
       crumbs.push(
         <ChannelGridLink key="dashboards" channelId={channelId}>
           Dashboards
         </ChannelGridLink>,
-        <DashboardCrumb key="dashboard" dashboardId={dashboardId} />,
       );
     } else if (pathname === `${base}/new`) {
       crumbs.push(<CrumbText key="new">New task</CrumbText>);
@@ -190,7 +186,13 @@ export function WebsiteLayout() {
     }
 
     return (
-      <Flex align="center" justify="between" gap="2" className="w-full min-w-0">
+      <Flex
+        align="center"
+        justify="between"
+        gap="2"
+        pr="3"
+        className="w-full min-w-0"
+      >
         <Flex align="center" gap="1" className="min-w-0">
           {crumbs.map((crumb, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: crumb order is stable
