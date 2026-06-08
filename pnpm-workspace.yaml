@@ -70,9 +70,6 @@ minimumReleaseAgeExclude:
   - '@tanstack/virtual-core'
   - '@tanstack/virtual-file-routes'
 
-overrides:
-  zod: 4.3.6
-
 onlyBuiltDependencies:
   - '@parcel/watcher'
   - '@posthog/cli'
@@ -88,11 +85,13 @@ onlyBuiltDependencies:
 
 patchedDependencies:
   node-pty: patches/node-pty.patch
+  # Forward-port of the V8 sandbox external-pointer-tag fix for Electron 42's V8
+  # (14.6+). Drop once better-sqlite3 ships it upstream.
   better-sqlite3@12.10.0: patches/better-sqlite3@12.10.0.patch
 
 # node-abi 3.87.0 (pulled transitively) predates Electron 42 and cannot resolve
 # its ABI, which breaks @electron/rebuild and prebuild-install while packaging.
-# Force a release that knows Electron 42 (ABI 146).
+# ^3.92.0 is the first release that knows Electron 42 (ABI 146).
 overrides:
   node-abi: ^3.92.0
   # Dedupe the zod 4.x line to one version so cross-package schema types stay
