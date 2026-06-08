@@ -1,5 +1,4 @@
 import { DotsCircleSpinner } from "@components/DotsCircleSpinner";
-import { ChannelsList } from "@features/canvas/components/ChannelsList";
 import { useCommandCenterStore } from "@features/command-center/stores/commandCenterStore";
 import { useInboxReports } from "@features/inbox/hooks/useInboxReports";
 import { isReportUpForReview } from "@features/inbox/utils/filterReports";
@@ -14,16 +13,9 @@ import {
 import { useRenameTask, useTasks } from "@features/tasks/hooks/useTasks";
 import { useWorkspaces } from "@features/workspace/hooks/useWorkspace";
 import { useAppView } from "@hooks/useAppView";
-import { useFeatureFlag } from "@hooks/useFeatureFlag";
 import { openTask, openTaskInput } from "@hooks/useOpenTask";
 import { useTaskContextMenu } from "@hooks/useTaskContextMenu";
-import {
-  Separator,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@posthog/quill";
+import { Separator } from "@posthog/quill";
 import { Box, Flex } from "@radix-ui/themes";
 import {
   navigateToCommandCenter,
@@ -33,15 +25,13 @@ import {
   navigateToTaskDetail,
 } from "@renderer/navigationBridge";
 import { trpcClient } from "@renderer/trpc/client";
-import { PROJECT_BLUEBIRD_FLAG } from "@shared/constants";
 import type { Task } from "@shared/types";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useRendererWindowFocusStore } from "@stores/rendererWindowFocusStore";
 import { useQueryClient } from "@tanstack/react-query";
-import { useRouterState } from "@tanstack/react-router";
 import { logger } from "@utils/logger";
 import { toast } from "@utils/toast";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import { usePinnedTasks } from "../hooks/usePinnedTasks";
 import { useSidebarData } from "../hooks/useSidebarData";
 import { useTaskViewed } from "../hooks/useTaskViewed";
@@ -60,19 +50,6 @@ const log = logger.scope("sidebar-menu");
 
 function SidebarMenuComponent() {
   const view = useAppView();
-
-  // The Channels tab (folds the canvas channels into this sidebar) is gated
-  // behind project-bluebird; without it the sidebar is the task list as today.
-  const bluebirdEnabled = useFeatureFlag(
-    PROJECT_BLUEBIRD_FLAG,
-    import.meta.env.DEV,
-  );
-  const onWebsite = useRouterState({
-    select: (s) => s.location.pathname.startsWith("/website"),
-  });
-  const [sidebarTab, setSidebarTab] = useState<"tasks" | "channels">(
-    onWebsite ? "channels" : "tasks",
-  );
 
   // Must mirror useSidebarData's filters so taskMap covers every rendered
   // task — otherwise handleTaskClick silently bails for tasks not in the map.
@@ -464,42 +441,15 @@ function SidebarMenuComponent() {
         </Box>
       </Flex>
 
-      {bluebirdEnabled ? (
-        <Tabs
-          value={sidebarTab}
-          onValueChange={(value) =>
-            setSidebarTab(value as "tasks" | "channels")
-          }
-          className="flex min-h-0 flex-1 flex-col gap-0 px-2"
-        >
-          <TabsList className="w-full shrink-0 bg-muted">
-            <TabsTrigger value="tasks">Tasks</TabsTrigger>
-            <TabsTrigger value="channels">Channels</TabsTrigger>
-          </TabsList>
-          <div className="scroll-mask-4 min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-            <TabsContent value="tasks" className="mt-1">
-              <Flex direction="column" className="gap-px pb-2">
-                {taskList}
-              </Flex>
-            </TabsContent>
-            <TabsContent value="channels" className="mt-1">
-              <ChannelsList />
-            </TabsContent>
-          </div>
-        </Tabs>
-      ) : (
-        <>
-          <Separator className="mx-2 my-2 shrink-0" />
+      <Separator className="mx-2 my-2 shrink-0" />
 
-          <TasksHeader />
+      <TasksHeader />
 
-          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-            <Flex direction="column" className="gap-px px-2 pb-2">
-              {taskList}
-            </Flex>
-          </div>
-        </>
-      )}
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+        <Flex direction="column" className="gap-px px-2 pb-2">
+          {taskList}
+        </Flex>
+      </div>
     </Box>
   );
 }

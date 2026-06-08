@@ -14,7 +14,6 @@ import {
   useIsDashboardEditing,
 } from "@features/canvas/stores/dashboardEditStore";
 import { useTasks } from "@features/tasks/hooks/useTasks";
-import { useSetHeaderContent } from "@hooks/useSetHeaderContent";
 import { isNonEmptySpec } from "@json-render/core";
 import {
   CaretRightIcon,
@@ -154,10 +153,10 @@ export function WebsiteLayout() {
     ? tasks?.find((t) => t.id === taskId)?.title
     : undefined;
 
-  // Breadcrumbs + (on a dashboard) its controls live in the global title bar via
-  // the header store — there's no second bar, so the channel space reclaims the
-  // ~40px the standalone breadcrumb row used to take.
-  const headerContent = useMemo(() => {
+  // Breadcrumbs + (on a dashboard) its controls. The Channels space has its own
+  // chrome (rail + channel list), no code HeaderRow, so this renders as the
+  // space's own top bar rather than going through the header store.
+  const breadcrumbs = useMemo(() => {
     if (!channelId) return null;
 
     // The channel (links to its dashboards grid), then the active sub-view.
@@ -217,12 +216,18 @@ export function WebsiteLayout() {
     taskTitle,
   ]);
 
-  useSetHeaderContent(headerContent);
-
   return (
-    <Box height="100%" overflow="hidden">
-      <Outlet />
-    </Box>
+    <Flex direction="column" height="100%" overflow="hidden">
+      <Flex
+        align="center"
+        className="h-10 shrink-0 border-gray-6 border-b px-3"
+      >
+        {breadcrumbs}
+      </Flex>
+      <Box flexGrow="1" overflow="hidden">
+        <Outlet />
+      </Box>
+    </Flex>
   );
 }
 

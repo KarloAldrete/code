@@ -1,8 +1,10 @@
+import { AppNav } from "@components/AppNav";
 import { HeaderRow } from "@components/HeaderRow";
 import { HedgehogMode } from "@components/HedgehogMode";
 import { KeyboardShortcutsSheet } from "@components/KeyboardShortcutsSheet";
 import { SpaceSwitcher } from "@components/SpaceSwitcher";
 import { UsageLimitModal } from "@features/billing/components/UsageLimitModal";
+import { ChannelsList } from "@features/canvas/components/ChannelsList";
 import { CommandMenu } from "@features/command/components/CommandMenu";
 import { useInboxDeepLink } from "@features/inbox/hooks/useInboxDeepLink";
 import { useSetupDiscovery } from "@features/setup/hooks/useSetupDiscovery";
@@ -16,12 +18,17 @@ import {
   workspaceApi,
 } from "@features/workspace/hooks/useWorkspace";
 import { useAppView } from "@hooks/useAppView";
-import { useFeatureFlag } from "@hooks/useFeatureFlag";
+import { useFeatureFlag, useFeatureFlagsLoaded } from "@hooks/useFeatureFlag";
 import { useIntegrations } from "@hooks/useIntegrations";
 import { openTask, openTaskInput } from "@hooks/useOpenTask";
 import { Box, Flex } from "@radix-ui/themes";
+import { navigateToCode } from "@renderer/navigationBridge";
 import { useTRPC } from "@renderer/trpc/client";
-import { BILLING_FLAG, SYNC_CLOUD_TASKS_FLAG } from "@shared/constants";
+import {
+  BILLING_FLAG,
+  PROJECT_BLUEBIRD_FLAG,
+  SYNC_CLOUD_TASKS_FLAG,
+} from "@shared/constants";
 import { useCommandMenuStore } from "@stores/commandMenuStore";
 import { useShortcutsSheetStore } from "@stores/shortcutsSheetStore";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
@@ -102,6 +109,10 @@ function RootLayout() {
   const reconcilingTaskIds = useRef<Set<string>>(new Set());
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
   const syncCloudTasksEnabled = useFeatureFlag(SYNC_CLOUD_TASKS_FLAG);
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
 
   const sidebarData = useSidebarData({ activeView: view });
   const visualTaskOrder = useVisualTaskOrder(sidebarData);
@@ -159,11 +170,35 @@ function RootLayout() {
     toggleCommandMenu();
   }, [toggleCommandMenu]);
 
-  // Settings is a full-page route — drop the app chrome (header/sidebar/
+  // Settings is a full-page route — drop the app chrome (rail/header/sidebar/
   // space-switcher) so the panel occupies the full window.
   const isSettingsRoute = useRouterState({
     select: (s) => s.matches.some((m) => m.routeId.startsWith("/settings")),
   });
+
+  // The Inbox and Channels spaces are reached only through the rail, so they
+  // exist only when project-bluebird is on. Inbox renders chrome-less; Channels
+  // gets its own [channel list | outlet] chrome (no code header/sidebar).
+  const onInboxPath = useRouterState({
+    select: (s) => s.location.pathname === "/inbox",
+  });
+  const onChannelsPath = useRouterState({
+    select: (s) =>
+      s.location.pathname === "/website" ||
+      s.location.pathname.startsWith("/website/"),
+  });
+  const isInboxSpace = bluebirdEnabled && onInboxPath;
+  const isChannelsSpace = bluebirdEnabled && onChannelsPath;
+
+  // With the rail hidden there's no way to leave a rail-only space, so a user
+  // stranded on /inbox or /website (cold-boot restore, stale deep link) with the
+  // flag off goes to /code — but only once flags resolve, so a flagged user
+  // isn't bounced mid-load.
+  const flagsLoaded = useFeatureFlagsLoaded();
+  useEffect(() => {
+    if (!flagsLoaded || bluebirdEnabled) return;
+    if (onInboxPath || onChannelsPath) navigateToCode();
+  }, [flagsLoaded, bluebirdEnabled, onInboxPath, onChannelsPath]);
 
   if (isSettingsRoute) {
     return (
@@ -189,23 +224,45 @@ function RootLayout() {
   }
 
   return (
-    <Flex direction="column" height="100vh">
-      <HeaderRow />
-      <Flex flexGrow="1" overflow="hidden">
-        <MainSidebar />
-        <Box flexGrow="1" overflow="hidden">
-          <Outlet />
-        </Box>
-      </Flex>
+    <Flex height="100vh" overflow="hidden">
+      {bluebirdEnabled && <AppNav />}
+      <Flex direction="column" flexGrow="1" overflow="hidden">
+        {isInboxSpace ? (
+          <Box flexGrow="1" overflow="hidden">
+            <Outlet />
+          </Box>
+        ) : isChannelsSpace ? (
+          <Flex flexGrow="1" overflow="hidden">
+            <Box className="w-[260px] shrink-0 overflow-y-auto border-gray-6 border-r bg-gray-2">
+              <ChannelsList />
+            </Box>
+            <Box flexGrow="1" overflow="hidden">
+              <Outlet />
+            </Box>
+          </Flex>
+        ) : (
+          <>
+            <HeaderRow />
+            <Flex flexGrow="1" overflow="hidden">
+              <MainSidebar />
+              <Box flexGrow="1" overflow="hidden">
+                <Outlet />
+              </Box>
+            </Flex>
 
-      <SpaceSwitcher
-        tasks={visualTaskOrder}
-        activeTaskId={activeTaskId}
-        allTasks={tasks ?? []}
-        isOnNewTask={view.type === "task-input" || view.type === "task-pending"}
-        onNavigateToTask={openTask}
-        onNewTask={openTaskInput}
-      />
+            <SpaceSwitcher
+              tasks={visualTaskOrder}
+              activeTaskId={activeTaskId}
+              allTasks={tasks ?? []}
+              isOnNewTask={
+                view.type === "task-input" || view.type === "task-pending"
+              }
+              onNavigateToTask={openTask}
+              onNewTask={openTaskInput}
+            />
+          </>
+        )}
+      </Flex>
 
       <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
       <KeyboardShortcutsSheet

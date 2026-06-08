@@ -4,14 +4,21 @@ Conventions for the channel-scoped Website space: channels, dashboards, and the
 gen-UI canvas. Read this before changing breadcrumbs, dashboard naming, or the
 canvas generation harness. The root `AGENTS.md` architecture rules still apply.
 
+## Spaces & chrome
+
+- Channels is a **top-level space** reached through the app rail (`AppNav`),
+  gated behind `project-bluebird` and wired in `routes/__root.tsx`. The rail's
+  spaces are Code (`/code`), Inbox (`/inbox`), and Channels (`/website`).
+- The Channels space has **its own chrome**: rail + a persistent channel-list
+  sidebar (`ChannelsList`, rendered in `__root`) + the `WebsiteLayout` outlet. It
+  does NOT use the code `HeaderRow`/`MainSidebar`, so breadcrumbs render in
+  `WebsiteLayout`'s own top bar (below).
+
 ## Breadcrumbs
 
-- **Breadcrumbs live in the global title bar, not a local bar.** `WebsiteLayout`
-  builds the crumb row and pushes it into `HeaderRow` via
-  `useSetHeaderContent(node)` (`@hooks/useSetHeaderContent`). There is no second
-  breadcrumb bar — that reclaims the vertical space. Interactive crumbs/buttons
-  must be `no-drag` islands (the title bar is a window `drag` region); keep the
-  gaps draggable.
+- **`WebsiteLayout` renders its own top bar.** The Channels space has no code
+  `HeaderRow`, so breadcrumbs (and the dashboard controls) are a local bar inside
+  `WebsiteLayout`, not pushed through the header store.
 - **A page does not get its own crumb — its H1 is the title.** A view that
   renders its own `<h1>` is NOT repeated as a breadcrumb segment for itself. The
   dashboards grid's h1 is "Dashboards"; a single dashboard's h1 is its name.
