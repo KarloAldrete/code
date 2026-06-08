@@ -470,15 +470,15 @@ function SidebarMenuComponent() {
           onValueChange={(value) =>
             setSidebarTab(value as "tasks" | "channels")
           }
-          className="flex min-h-0 flex-1 flex-col gap-0"
+          className="flex min-h-0 flex-1 flex-col gap-0 px-2"
         >
-          <TabsList className="w-full shrink-0 px-2">
+          <TabsList className="w-full shrink-0 bg-muted">
             <TabsTrigger value="tasks">Tasks</TabsTrigger>
             <TabsTrigger value="channels">Channels</TabsTrigger>
           </TabsList>
           <div className="scroll-mask-4 min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
             <TabsContent value="tasks" className="mt-1">
-              <Flex direction="column" className="gap-px px-2 pb-2">
+              <Flex direction="column" className="gap-px pb-2">
                 {taskList}
               </Flex>
             </TabsContent>
