@@ -4,7 +4,6 @@ import {
   useChannelMutations,
   useChannels,
 } from "@features/canvas/hooks/useChannels";
-import { useAdoptOrphanDashboards } from "@features/canvas/hooks/useDashboards";
 import {
   useChannelTaskIds,
   useChannelTasksStore,
@@ -197,11 +196,8 @@ export function ChannelsList() {
   const { channels, isLoading } = useChannels();
   const [modalOpen, setModalOpen] = useState(false);
 
-  // Backfill dashboards saved before channel scoping into the first channel.
-  useAdoptOrphanDashboards(channels[0]?.id);
-
   return (
-    <Flex direction="column" gap="1" className="px-1 pb-2">
+    <Flex direction="column" gap="1">
       <Flex align="center" justify="end" className="px-1">
         <IconButton
           variant="ghost"

@@ -36,10 +36,6 @@ export const dashboardsRouter = router({
   delete: publicProcedure
     .input(dashboardIdInput)
     .mutation(({ input }) => getService().delete(input.id)),
-  adoptOrphans: publicProcedure
-    .input(listDashboardsInput)
-    .output(z.number())
-    .mutation(({ input }) => getService().adoptOrphans(input.channelId)),
   refresh: publicProcedure
     .input(refreshDashboardInput)
     .mutation(({ input }) => getService().refresh(input)),

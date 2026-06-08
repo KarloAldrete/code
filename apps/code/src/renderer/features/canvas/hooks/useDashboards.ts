@@ -9,7 +9,7 @@ import { toast } from "@renderer/utils/toast";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { logger } from "@utils/logger";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback } from "react";
 
 const log = logger.scope("dashboards");
 
@@ -82,33 +82,6 @@ export function useDashboardMutations() {
     isCreating: create.isPending,
     isDeleting: remove.isPending,
   };
-}
-
-/**
- * One-time-per-session migration: adopt any channel-less dashboards (saved
- * before channel scoping) into `channelId`. No-op once none remain.
- */
-export function useAdoptOrphanDashboards(channelId: string | undefined): void {
-  const trpc = useTRPC();
-  const queryClient = useQueryClient();
-  const adopt = useMutation(trpc.dashboards.adoptOrphans.mutationOptions());
-  const done = useRef(false);
-
-  useEffect(() => {
-    if (done.current || !channelId) return;
-    done.current = true;
-    adopt
-      .mutateAsync({ channelId })
-      .then((adopted) => {
-        if (adopted > 0) {
-          void queryClient.invalidateQueries(trpc.dashboards.list.pathFilter());
-        }
-      })
-      .catch((error) => {
-        done.current = false;
-        log.warn("Failed to adopt orphan dashboards", { error });
-      });
-  }, [channelId, adopt, queryClient, trpc]);
 }
 
 /** Create a blank dashboard in a channel, enter edit mode, and navigate to it. */

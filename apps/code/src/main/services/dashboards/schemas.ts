@@ -16,6 +16,23 @@ export const dashboardRecordSchema = z.object({
 });
 export type DashboardRecord = z.infer<typeof dashboardRecordSchema>;
 
+// What a dashboard stores in its desktop file-system row's free-form `meta` JSON
+// blob. The FileSystem row itself carries id/path/type/created_at; everything
+// below is our own payload that the model has no columns for. Documenting the
+// shape here keeps the otherwise-untyped `meta` honest.
+export const dashboardFileMetaSchema = z.object({
+  // The json-render Spec (root + flat element map). null/absent = empty board.
+  spec: dashboardSpecSchema.optional(),
+  // The channel folder's stable file-system id. Stored here rather than derived
+  // from the path so renaming/moving the channel folder can't reparent the board.
+  channelId: z.string().optional(),
+  // Epoch ms. createdAt mirrors the row's created_at; updatedAt is ours because
+  // the FileSystem row has no updated_at column to sort the dashboards list by.
+  createdAt: z.number().optional(),
+  updatedAt: z.number().optional(),
+});
+export type DashboardFileMeta = z.infer<typeof dashboardFileMetaSchema>;
+
 export const dashboardSummarySchema = z.object({
   id: z.string(),
   channelId: z.string(),

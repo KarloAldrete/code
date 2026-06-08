@@ -3,26 +3,24 @@ import { MAIN_TOKENS } from "../../di/tokens";
 import type { AuthService } from "../auth/service";
 import type { DashboardQuery } from "../dashboard-query/schemas";
 import type { DashboardQueryService } from "../dashboard-query/service";
-import type { DashboardRecord, DashboardSummary } from "./schemas";
+import type {
+  DashboardFileMeta,
+  DashboardRecord,
+  DashboardSummary,
+} from "./schemas";
 
 // Desktop file-system "type" tag for a dashboard entry. Channels are `folder`
 // rows (depth 1); dashboards are these `dashboard` files nested beneath them.
 const DASHBOARD_TYPE = "dashboard";
 const MAX_PAGES = 50;
 
-// Shape of the slice of a desktop file-system row we care about. The dashboard
-// spec and our own bookkeeping ride along in the free-form `meta` JSON blob.
-interface DashboardMeta {
-  spec?: Record<string, unknown> | null;
-  channelId?: string;
-  createdAt?: number;
-  updatedAt?: number;
-}
+// The slice of a desktop file-system row we read back. Our payload rides in
+// `meta` — see DashboardFileMeta for what that blob holds.
 interface FsEntry {
   id: string;
   path: string;
   type?: string;
-  meta?: DashboardMeta | null;
+  meta?: DashboardFileMeta | null;
   created_at?: string;
 }
 
@@ -97,12 +95,6 @@ export class DashboardsService {
     return entry ? toRecord(entry) : null;
   }
 
-  // Orphan adoption only made sense for the old local-file store; with the
-  // file-system backing every dashboard is already scoped to a channel folder.
-  async adoptOrphans(_channelId: string): Promise<number> {
-    return 0;
-  }
-
   async create(input: {
     channelId: string;
     name: string;
@@ -110,7 +102,7 @@ export class DashboardsService {
   }): Promise<DashboardRecord> {
     const channelPath = await this.channelPath(input.channelId);
     const now = Date.now();
-    const meta: DashboardMeta = {
+    const meta: DashboardFileMeta = {
       spec: input.spec,
       channelId: input.channelId,
       createdAt: now,
@@ -137,7 +129,7 @@ export class DashboardsService {
     const entry = await this.getEntry(input.id);
     const now = Date.now();
     const prevMeta = entry?.meta ?? {};
-    const meta: DashboardMeta = {
+    const meta: DashboardFileMeta = {
       ...prevMeta,
       spec: input.spec,
       updatedAt: now,
@@ -208,9 +200,15 @@ export class DashboardsService {
       }
     }
 
+    // Only write when a value actually changed (the `updated > 0` guard already
+    // skips no-op polls). This is still last-write-wins on `meta.spec`: a polling
+    // refresh and a concurrent edit on another client can clobber each other. The
+    // desktop FS rows carry no `base_version` for `meta` (unlike folder
+    // instructions), so true optimistic concurrency is deferred — for now refresh
+    // is UI-gated to view mode, which avoids self-clobber within one client.
     if (updated > 0) {
       const prevMeta = entry.meta ?? {};
-      const meta: DashboardMeta = {
+      const meta: DashboardFileMeta = {
         ...prevMeta,
         spec: nextSpec,
         updatedAt:

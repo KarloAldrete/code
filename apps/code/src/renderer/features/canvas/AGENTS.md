@@ -12,16 +12,17 @@ canvas generation harness. The root `AGENTS.md` architecture rules still apply.
   breadcrumb bar — that reclaims the vertical space. Interactive crumbs/buttons
   must be `no-drag` islands (the title bar is a window `drag` region); keep the
   gaps draggable.
-- **A page does not get its own crumb — its H1 is the title.** The leaf view
-  (e.g. a single dashboard) is NOT represented as a breadcrumb segment. The
-  breadcrumb stops at the parent index and the page renders its own `<h1>` for
-  the name. So on a dashboard the trail is `#channel / Dashboards`, not
-  `#channel / Dashboards / #dashboardName` — the big H1 below is the name.
-- **The last shown crumb still links to its index.** On a dashboard, the
-  `Dashboards` crumb links back to the dashboards grid (`/website/$channelId`)
-  rather than being inert text, because it's no longer the current leaf.
-- Don't add a crumb per route segment reflexively. Crumbs reflect navigable
-  parents; the current leaf is the H1.
+- **A page does not get its own crumb — its H1 is the title.** A view that
+  renders its own `<h1>` is NOT repeated as a breadcrumb segment for itself. The
+  dashboards grid's h1 is "Dashboards"; a single dashboard's h1 is its name.
+- **A parent index IS a crumb when you're on a child, but not when you're on it.**
+  - On the grid (`/website/$channelId`): trail is `#channel` only — no
+    "Dashboards" crumb (its own h1 covers it, and `#channel` already links here).
+  - On a single dashboard (`/website/$channelId/dashboards/$id`): trail is
+    `#channel / Dashboards`, where `Dashboards` links back to the grid. The
+    dashboard's name is the h1 below, not a crumb.
+- Crumbs reflect navigable parents above the current page; the current page is
+  the H1, never a crumb of itself.
 
 ## Dashboard naming
 
@@ -37,6 +38,11 @@ canvas generation harness. The root `AGENTS.md` architecture rules still apply.
 - Dashboards are **backed by the PostHog desktop file system**, not local files.
   A dashboard is a `dashboard`-typed row nested under its channel folder; its
   name is the last path segment (the H1) and the json-render spec rides in
-  `meta.spec`. See `@main/services/dashboards/service.ts`. This keeps dashboard
-  and channel names in sync with the backend — the same surface that owns
-  channels (top-level `folder` rows, see `hooks/useChannels.ts`).
+  `meta.spec`. See `@main/services/dashboards/service.ts`; the `meta` payload is
+  typed + documented as `DashboardFileMeta` in that service's `schemas.ts`. This
+  keeps dashboard and channel names in sync with the backend — the same surface
+  that owns channels (top-level `folder` rows, see `hooks/useChannels.ts`).
+- `meta.spec` is **last-write-wins, unversioned**. A polling refresh and a
+  concurrent edit elsewhere can clobber each other (no `base_version` on `meta`).
+  Acceptable for now; revisit with optimistic concurrency / versioning if
+  multi-client editing becomes real.
