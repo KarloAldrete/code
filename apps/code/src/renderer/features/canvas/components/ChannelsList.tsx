@@ -11,10 +11,15 @@ import {
 } from "@features/canvas/stores/websiteTasksStore";
 import { useTasks } from "@features/tasks/hooks/useTasks";
 import {
+  CheckCircleIcon,
+  CircleDashedIcon,
+  CircleIcon,
   DotsThreeIcon,
   PencilSimpleIcon,
   PlusIcon,
+  RecordIcon,
   TrashIcon,
+  XCircleIcon,
 } from "@phosphor-icons/react";
 import {
   Badge,
@@ -31,15 +36,17 @@ import {
 import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
 import { toast } from "@renderer/utils/toast";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 
 function NavButton({
   label,
+  icon,
   active,
   count,
   onClick,
 }: {
   label: string;
+  icon?: ReactNode;
   active?: boolean;
   count?: number;
   onClick?: () => void;
@@ -50,8 +57,9 @@ function NavButton({
       size="sm"
       data-selected={active || undefined}
       onClick={onClick}
-      className="w-full justify-start data-selected:bg-fill-selected data-selected:text-gray-12"
+      className="w-full justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
     >
+      {icon}
       {label}
       {count != null && (
         <Badge variant="default" className="ml-auto">
@@ -61,6 +69,28 @@ function NavButton({
     </Button>
   );
 }
+
+// Dummy session-status filters (no behaviour yet) for the channel's Sessions
+// group, mirroring the task status set.
+const SESSION_STATUSES: { label: string; icon: ReactNode }[] = [
+  {
+    label: "Backlog",
+    icon: <CircleDashedIcon size={14} className="text-gray-9" />,
+  },
+  { label: "Todo", icon: <CircleIcon size={14} className="text-gray-9" /> },
+  {
+    label: "Needs Review",
+    icon: <RecordIcon size={14} weight="fill" className="text-orange-9" />,
+  },
+  {
+    label: "Done",
+    icon: <CheckCircleIcon size={14} weight="fill" className="text-violet-9" />,
+  },
+  {
+    label: "Cancelled",
+    icon: <XCircleIcon size={14} weight="fill" className="text-gray-9" />,
+  },
+];
 
 // Hover-revealed "..." menu on a channel header: rename or delete the channel.
 function ChannelMenu({ channel }: { channel: Channel }) {
@@ -161,16 +191,46 @@ function ChannelSection({ channel }: { channel: Channel }) {
                 })
               }
             />
-            <NavButton
-              label="New task"
-              active={pathname === `${base}/new`}
-              onClick={() =>
-                navigate({
-                  to: "/website/$channelId/new",
-                  params: { channelId: channel.id },
-                })
-              }
-            />
+            <Collapsible variant="folder" defaultOpen>
+              <CollapsibleTrigger>Sessions</CollapsibleTrigger>
+              <CollapsibleContent>
+                <Flex direction="column" gap="1" pt="1" pl="3">
+                  <NavButton
+                    label="New task"
+                    active={pathname === `${base}/new`}
+                    onClick={() =>
+                      navigate({
+                        to: "/website/$channelId/new",
+                        params: { channelId: channel.id },
+                      })
+                    }
+                  />
+                  {SESSION_STATUSES.map((status) => (
+                    <NavButton
+                      key={status.label}
+                      label={status.label}
+                      icon={status.icon}
+                    />
+                  ))}
+                  {taskIds.map((taskId) => {
+                    const title = tasks?.find((t) => t.id === taskId)?.title;
+                    return (
+                      <NavButton
+                        key={taskId}
+                        label={title || "Untitled task"}
+                        active={pathname === `${base}/tasks/${taskId}`}
+                        onClick={() =>
+                          navigate({
+                            to: "/website/$channelId/tasks/$taskId",
+                            params: { channelId: channel.id, taskId },
+                          })
+                        }
+                      />
+                    );
+                  })}
+                </Flex>
+              </CollapsibleContent>
+            </Collapsible>
             <NavButton
               label="Settings"
               active={pathname.startsWith(`${base}/settings`)}
@@ -181,27 +241,6 @@ function ChannelSection({ channel }: { channel: Channel }) {
                 })
               }
             />
-            {taskIds.length > 0 && (
-              <Text size="1" className="px-2 pt-2 text-gray-9">
-                Tasks
-              </Text>
-            )}
-            {taskIds.map((taskId) => {
-              const title = tasks?.find((t) => t.id === taskId)?.title;
-              return (
-                <NavButton
-                  key={taskId}
-                  label={title || "Untitled task"}
-                  active={pathname === `${base}/tasks/${taskId}`}
-                  onClick={() =>
-                    navigate({
-                      to: "/website/$channelId/tasks/$taskId",
-                      params: { channelId: channel.id, taskId },
-                    })
-                  }
-                />
-              );
-            })}
           </Flex>
         </CollapsibleContent>
       </Collapsible>
