@@ -56,6 +56,29 @@ export class SeatPaymentFailedError extends Error {
   }
 }
 
+export type UsageLimitType = "burst" | "sustained" | null;
+
+// Stable message so callers recognize this after a saga reduces the error to a string.
+export const CLOUD_USAGE_LIMIT_ERROR_MESSAGE = "Cloud usage limit reached";
+
+/** Thrown when the backend rejects a cloud run with a 429 usage-limit error. */
+export class CloudUsageLimitError extends Error {
+  limitType: UsageLimitType;
+  resetAt: string | null;
+  isPro: boolean;
+  constructor(params: {
+    limitType: UsageLimitType;
+    resetAt: string | null;
+    isPro: boolean;
+  }) {
+    super(CLOUD_USAGE_LIMIT_ERROR_MESSAGE);
+    this.name = "CloudUsageLimitError";
+    this.limitType = params.limitType;
+    this.resetAt = params.resetAt;
+    this.isPro = params.isPro;
+  }
+}
+
 const log = logger.scope("posthog-client");
 
 export const MCP_CATEGORIES = [
@@ -101,7 +124,8 @@ export interface SignalSourceConfig {
     | "zendesk"
     | "conversations"
     | "error_tracking"
-    | "pganalyze";
+    | "pganalyze"
+    | "signals_scout";
   source_type:
     | "session_analysis_cluster"
     | "evaluation"
@@ -109,7 +133,8 @@ export interface SignalSourceConfig {
     | "ticket"
     | "issue_created"
     | "issue_reopened"
-    | "issue_spiking";
+    | "issue_spiking"
+    | "cross_source_issue";
   enabled: boolean;
   config: Record<string, unknown>;
   created_at: string;
@@ -1104,12 +1129,11 @@ export class PostHogAPIClient {
       mode: "interactive",
     });
 
-    const data = await this.api.post(
-      `/api/projects/{project_id}/tasks/{id}/run/`,
-      {
+    const data = await this.withCloudUsageLimitCheck(() =>
+      this.api.post(`/api/projects/{project_id}/tasks/{id}/run/`, {
         path: { project_id: teamId.toString(), id: taskId },
         body,
-      },
+      }),
     );
 
     return data as unknown as Task;
@@ -1326,20 +1350,22 @@ export class PostHogAPIClient {
     const url = new URL(
       `${this.api.baseUrl}/api/projects/${teamId}/tasks/${taskId}/runs/`,
     );
-    const response = await this.api.fetcher.fetch({
-      method: "post",
-      url,
-      path: `/api/projects/${teamId}/tasks/${taskId}/runs/`,
-      overrides: {
-        body: JSON.stringify({
-          ...buildCloudRunRequestBody({
-            ...options,
-            mode: options?.mode ?? "background",
+    const response = await this.withCloudUsageLimitCheck(() =>
+      this.api.fetcher.fetch({
+        method: "post",
+        url,
+        path: `/api/projects/${teamId}/tasks/${taskId}/runs/`,
+        overrides: {
+          body: JSON.stringify({
+            ...buildCloudRunRequestBody({
+              ...options,
+              mode: options?.mode ?? "background",
+            }),
+            environment: options?.environment ?? "local",
           }),
-          environment: options?.environment ?? "local",
-        }),
-      },
-    });
+        },
+      }),
+    );
 
     if (!response.ok) {
       throw new Error(`Failed to create task run: ${response.statusText}`);
@@ -1357,17 +1383,19 @@ export class PostHogAPIClient {
     const url = new URL(
       `${this.api.baseUrl}/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/start/`,
     );
-    const response = await this.api.fetcher.fetch({
-      method: "post",
-      url,
-      path: `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/start/`,
-      overrides: {
-        body: JSON.stringify({
-          pending_user_message: options?.pendingUserMessage,
-          pending_user_artifact_ids: options?.pendingUserArtifactIds,
-        }),
-      },
-    });
+    const response = await this.withCloudUsageLimitCheck(() =>
+      this.api.fetcher.fetch({
+        method: "post",
+        url,
+        path: `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/start/`,
+        overrides: {
+          body: JSON.stringify({
+            pending_user_message: options?.pendingUserMessage,
+            pending_user_artifact_ids: options?.pendingUserArtifactIds,
+          }),
+        },
+      }),
+    );
 
     if (!response.ok) {
       throw new Error(`Failed to start task run: ${response.statusText}`);
@@ -2270,9 +2298,12 @@ export class PostHogAPIClient {
     return (await response.json()) as SignalTeamConfig;
   }
 
-  async updateSignalTeamConfig(updates: {
-    default_autostart_priority: string;
-  }): Promise<SignalTeamConfig> {
+  async updateSignalTeamConfig(
+    updates: Partial<{
+      default_autostart_priority: string;
+      default_slack_notification_channel: string | null;
+    }>,
+  ): Promise<SignalTeamConfig> {
     const teamId = await this.getTeamId();
     const url = new URL(
       `${this.api.baseUrl}/api/projects/${teamId}/signals/config/`,
@@ -2769,6 +2800,37 @@ export class PostHogAPIClient {
       };
     } catch {
       return { status: Number.parseInt(match[1], 10), body: {} };
+    }
+  }
+
+  /**
+   * Run a cloud-run request, re-throwing a backend 429 usage-limit error as a
+   * typed CloudUsageLimitError so the UI can show the upgrade prompt.
+   */
+  private async withCloudUsageLimitCheck<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (error) {
+      const parsed = this.parseFetcherError(error);
+      if (
+        parsed &&
+        parsed.status === 429 &&
+        parsed.body.code === "usage_limit_exceeded"
+      ) {
+        const limitType = parsed.body.limit_type;
+        throw new CloudUsageLimitError({
+          limitType:
+            limitType === "burst" || limitType === "sustained"
+              ? limitType
+              : null,
+          resetAt:
+            typeof parsed.body.reset_at === "string"
+              ? parsed.body.reset_at
+              : null,
+          isPro: parsed.body.is_pro === true,
+        });
+      }
+      throw error;
     }
   }
 

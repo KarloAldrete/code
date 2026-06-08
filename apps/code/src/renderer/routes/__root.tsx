@@ -34,14 +34,39 @@ import { logger } from "@utils/logger";
 import { lazy, Suspense, useCallback, useEffect, useRef } from "react";
 
 // Dynamic import keeps the devtools chunk out of the prod bundle. Without the
-// gate at the import level, conditional render alone still ships ~50KB of
-// devtools code to users.
-const TanStackRouterDevtools = import.meta.env.DEV
-  ? lazy(() =>
-      import("@tanstack/react-router-devtools").then((m) => ({
-        default: m.TanStackRouterDevtools,
-      })),
-    )
+// gate at the import level, conditional render alone still ships the devtools
+// code to users.
+//
+// We embed the router devtools as a plugin inside the unified TanStack Devtools
+// shell rather than rendering the standalone floating logo. The shell owns a
+// single trigger that can be dragged, dismissed, and hidden-until-hover, and it
+// persists those choices to localStorage — so the panel stays out of the way.
+const TanStackDevtools = import.meta.env.DEV
+  ? lazy(async () => {
+      const [
+        { TanStackDevtools: DevtoolsShell },
+        { TanStackRouterDevtoolsPanel },
+      ] = await Promise.all([
+        import("@tanstack/react-devtools"),
+        import("@tanstack/react-router-devtools"),
+      ]);
+      // Hoisted so the config/plugins keep stable references across the
+      // RootLayout re-renders that fire on every navigation — otherwise the
+      // shell could remount the panel (and flash) on each route change.
+      const config = {
+        position: "bottom-right",
+        hideUntilHover: true,
+      } as const;
+      const plugins = [
+        {
+          name: "TanStack Router",
+          render: <TanStackRouterDevtoolsPanel />,
+        },
+      ];
+      return {
+        default: () => <DevtoolsShell config={config} plugins={plugins} />,
+      };
+    })
   : () => null;
 
 import { GlobalEventHandlers } from "../components/GlobalEventHandlers";
@@ -156,7 +181,7 @@ function RootLayout() {
         {billingEnabled && <UsageLimitModal />}
         {import.meta.env.DEV && (
           <Suspense fallback={null}>
-            <TanStackRouterDevtools position="bottom-right" />
+            <TanStackDevtools />
           </Suspense>
         )}
       </Flex>
@@ -195,7 +220,7 @@ function RootLayout() {
       <HedgehogMode />
       {import.meta.env.DEV && (
         <Suspense fallback={null}>
-          <TanStackRouterDevtools position="bottom-right" />
+          <TanStackDevtools />
         </Suspense>
       )}
     </Flex>

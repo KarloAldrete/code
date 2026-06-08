@@ -9,6 +9,7 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
 } from "react";
 
 interface VirtualizedListProps<T> {
@@ -31,7 +32,9 @@ export interface VirtualizedListHandle {
 const AT_BOTTOM_THRESHOLD = 50;
 const ESTIMATED_ROW_SIZE = 80;
 const OVERSCAN = 6;
-const FOOTER_KEY = "__virtualized_footer__";
+// A real upward drift, not a 1-frame measure transient: the DOM bottom sits
+// this far below the viewport. Well above any single append's measure gap.
+const FAR_DRIFT_THRESHOLD = 400;
 
 function VirtualizedListInner<T>(
   {
@@ -48,26 +51,53 @@ function VirtualizedListInner<T>(
   ref: React.ForwardedRef<VirtualizedListHandle>,
 ) {
   const parentRef = useRef<HTMLDivElement>(null);
+  const footerRef = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
   const isAtBottomRef = useRef(true);
+  const lastScrollTopRef = useRef(0);
   const settlingRef = useRef(false);
   const settleRafRef = useRef<number | null>(null);
   const onScrollStateChangeRef = useRef(onScrollStateChange);
   onScrollStateChangeRef.current = onScrollStateChange;
 
   const hasFooter = footer != null;
-  const totalCount = items.length + (hasFooter ? 1 : 0);
+
+  // The footer is real trailing content, NOT a fake virtual row. As a virtual
+  // row it would have a constant key and always be last, which permanently
+  // kills tanstack's followOnAppend (it only fires when the last virtual key
+  // changes on append). Instead we reserve its height as `paddingEnd` so the
+  // virtual coordinate space includes it: anchorTo='end' then pins to BELOW the
+  // footer, and isAtEnd lines up with the real DOM bottom. With the footer out
+  // of the count, the last virtual item is the real last message, so
+  // followOnAppend handles appends and anchorTo handles in-place growth (tokens)
+  // natively — no hand-rolled scroll-following.
+  const [footerHeight, setFooterHeight] = useState(0);
+
+  useLayoutEffect(() => {
+    const el = footerRef.current;
+    if (!hasFooter || !el) {
+      setFooterHeight(0);
+      return;
+    }
+    setFooterHeight(el.offsetHeight);
+    const ro = new ResizeObserver(() => {
+      const h = el.offsetHeight;
+      setFooterHeight((prev) => (prev === h ? prev : h));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [hasFooter]);
 
   const virtualizer = useVirtualizer({
-    count: totalCount,
+    count: items.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => ESTIMATED_ROW_SIZE,
     overscan: OVERSCAN,
     anchorTo: "end",
     followOnAppend: true,
     scrollEndThreshold: AT_BOTTOM_THRESHOLD,
+    paddingEnd: footerHeight,
     getItemKey: (index) => {
-      if (hasFooter && index === items.length) return FOOTER_KEY;
       const item = items[index];
       return getItemKey ? getItemKey(item, index) : index;
     },
@@ -127,31 +157,69 @@ function VirtualizedListInner<T>(
   }, []);
 
   useLayoutEffect(() => {
-    if (initializedRef.current || totalCount === 0) return;
-    virtualizer.scrollToEnd();
+    if (initializedRef.current || items.length === 0) return;
+    // settleAtEnd retries across frames so the initial scroll survives rows
+    // measuring taller than the 80px estimate.
+    settleAtEnd();
     requestAnimationFrame(() => {
       initializedRef.current = true;
     });
-  }, [totalCount, virtualizer]);
+  }, [items.length, settleAtEnd]);
 
-  // Safety net: streaming tokens grow an existing row in place; neither
-  // followOnAppend (count-based) nor anchorTo='end' (above-viewport-resize)
-  // covers in-place growth of the last row. Re-pin to end when at-bottom.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run on items mutation, including streaming text updates
-  useEffect(() => {
-    if (!initializedRef.current) return;
+  const totalSize = virtualizer.getTotalSize();
+
+  // Anything that changes the virtual height while we're following has to re-pin
+  // to the new bottom: rows remeasuring past the 80px estimate, late async
+  // content (syntax highlighting, diffs) growing rows, and the footer's own
+  // resize (which feeds paddingEnd). tanstack's anchor logic only watches item
+  // count/keys, so none of these trigger it — totalSize is the one value that
+  // moves for all of them, so key the re-pin off it.
+  //
+  // Gate on isAtBottomRef (true until the user scrolls up), NOT initializedRef.
+  // footerHeight starts at 0, so the initial settle pins to a bottom that
+  // excludes the footer; the footer then measures and grows paddingEnd before
+  // initializedRef flips, stranding us above the real bottom. Running pre-init
+  // closes that gap. This is a layout effect so the re-pin lands synchronously,
+  // before paint — no visible drift, no transient isAtEnd=false flicker.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: totalSize is the trigger, not a body dependency
+  useLayoutEffect(() => {
     if (!isAtBottomRef.current) return;
     virtualizer.scrollToEnd();
-  }, [items, virtualizer]);
+  }, [totalSize, virtualizer]);
 
   const handleScroll = useCallback(() => {
-    const atBottom = virtualizer.isAtEnd(AT_BOTTOM_THRESHOLD);
-    isAtBottomRef.current = atBottom;
+    const el = parentRef.current;
+    const scrollTop = el?.scrollTop ?? 0;
+    // Tolerate sub-pixel jitter; only a real upward move counts as leaving end.
+    const scrolledUp = scrollTop < lastScrollTopRef.current - 1;
+    lastScrollTopRef.current = scrollTop;
+
+    const atEnd = virtualizer.isAtEnd(AT_BOTTOM_THRESHOLD);
+    // Genuine far drift (not a 1-frame measure transient): the DOM bottom sits
+    // well below the viewport.
+    const farFromEnd = el
+      ? el.scrollHeight - el.clientHeight - scrollTop > FAR_DRIFT_THRESHOLD
+      : false;
+    // Hysteresis for the scroll-to-bottom button (pure UI state — tanstack still
+    // drives the actual scrolling). Each append measures taller than the 80px
+    // estimate, so for one frame isAtEnd reads false before followOnAppend /
+    // anchorTo re-pin. Reporting that transient flickers the button. Re-arm
+    // "at bottom" whenever we reach the end; only clear it when the user
+    // actually scrolls up. Growth pins down (scrollTop holds or rises), so it
+    // never trips the scrolledUp branch.
+    // Surface the button on a real upward scroll, or on a genuine far drift so
+    // follow can't get silently stuck mid-thread.
+    if (atEnd) {
+      isAtBottomRef.current = true;
+    } else if (scrolledUp || farFromEnd) {
+      isAtBottomRef.current = false;
+    }
+
     if (!initializedRef.current) return;
     // Suppress intermediate "not at bottom" pings while a programmatic
     // scrollToEnd is still settling after row remeasure.
-    if (settlingRef.current && !atBottom) return;
-    onScrollStateChangeRef.current?.(atBottom);
+    if (settlingRef.current && !isAtBottomRef.current) return;
+    onScrollStateChangeRef.current?.(isAtBottomRef.current);
   }, [virtualizer]);
 
   const virtualItems = virtualizer.getVirtualItems();
@@ -179,19 +247,16 @@ function VirtualizedListInner<T>(
       >
         <div
           style={{
-            height: virtualizer.getTotalSize(),
+            height: totalSize,
             position: "relative",
             width: "100%",
           }}
         >
           {virtualItems.map((virtualItem) => {
-            const isFooter = hasFooter && virtualItem.index === items.length;
-            const item = isFooter ? null : items[virtualItem.index];
-            const itemKey = isFooter
-              ? FOOTER_KEY
-              : getItemKey
-                ? getItemKey(item as T, virtualItem.index)
-                : virtualItem.index;
+            const item = items[virtualItem.index];
+            const itemKey = getItemKey
+              ? getItemKey(item, virtualItem.index)
+              : virtualItem.index;
             return (
               <div
                 key={virtualItem.key}
@@ -210,7 +275,7 @@ function VirtualizedListInner<T>(
                   style={itemStyle}
                   data-conversation-item-id={itemKey}
                 >
-                  {isFooter ? footer : renderItem(item as T, virtualItem.index)}
+                  {renderItem(item, virtualItem.index)}
                 </div>
               </div>
             );
@@ -242,6 +307,23 @@ function VirtualizedListInner<T>(
               </div>
             );
           })}
+          {/* Footer occupies the reserved paddingEnd region at the very bottom
+              of the virtual space, so the DOM bottom == the virtual end. */}
+          {hasFooter && (
+            <div
+              ref={footerRef}
+              style={{
+                position: "absolute",
+                bottom: 0,
+                left: 0,
+                width: "100%",
+              }}
+            >
+              <div className={itemClassName} style={itemStyle}>
+                {footer}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

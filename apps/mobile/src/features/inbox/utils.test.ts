@@ -1,6 +1,40 @@
 import { describe, expect, it } from "vitest";
-import type { SignalReport, SignalReportStatus } from "./types";
-import { buildInboxViewedProperties } from "./utils";
+import type {
+  AvailableSuggestedReviewer,
+  SignalReport,
+  SignalReportStatus,
+  SuggestedReviewer,
+} from "./types";
+import {
+  buildInboxViewedProperties,
+  buildReviewerOptions,
+  reviewerMatchesAvailable,
+  toSuggestedReviewerWriteContent,
+} from "./utils";
+
+function makeReviewer(
+  partial: Partial<SuggestedReviewer> = {},
+): SuggestedReviewer {
+  return {
+    github_login: "octocat",
+    github_name: "The Octocat",
+    relevant_commits: [],
+    user: null,
+    ...partial,
+  };
+}
+
+function makeAvailable(
+  partial: Partial<AvailableSuggestedReviewer> = {},
+): AvailableSuggestedReviewer {
+  return {
+    uuid: "uuid-1",
+    name: "Ada Lovelace",
+    email: "ada@example.com",
+    github_login: "ada",
+    ...partial,
+  };
+}
 
 const DEFAULT_STATUS_FILTER: SignalReportStatus[] = [
   "ready",
@@ -133,5 +167,79 @@ describe("buildInboxViewedProperties", () => {
       defaultStatusFilter: DEFAULT_STATUS_FILTER,
     });
     expect(props.has_active_filters).toBe(false);
+  });
+});
+
+describe("toSuggestedReviewerWriteContent", () => {
+  it.each([
+    {
+      name: "prefers github_login so the server preserves commits/name",
+      reviewer: makeReviewer({
+        github_login: "ada",
+        user: { id: 1, uuid: "u1", email: "", first_name: "", last_name: "" },
+      }),
+      expected: [{ github_login: "ada" }],
+    },
+    {
+      name: "falls back to user_uuid when there is no github_login",
+      reviewer: makeReviewer({
+        github_login: "",
+        user: { id: 1, uuid: "u1", email: "", first_name: "", last_name: "" },
+      }),
+      expected: [{ user_uuid: "u1" }],
+    },
+    {
+      name: "drops entries with neither a login nor a resolved user",
+      reviewer: makeReviewer({ github_login: "", user: null }),
+      expected: [],
+    },
+  ])("$name", ({ reviewer, expected }) => {
+    expect(toSuggestedReviewerWriteContent([reviewer])).toEqual(expected);
+  });
+});
+
+describe("reviewerMatchesAvailable", () => {
+  it.each([
+    {
+      name: "matches on user uuid",
+      reviewer: makeReviewer({
+        github_login: "",
+        user: {
+          id: 1,
+          uuid: "uuid-1",
+          email: "",
+          first_name: "",
+          last_name: "",
+        },
+      }),
+      expected: true,
+    },
+    {
+      name: "matches on case-insensitive github login",
+      reviewer: makeReviewer({ github_login: "ADA", user: null }),
+      expected: true,
+    },
+    {
+      name: "does not match different people",
+      reviewer: makeReviewer({ github_login: "octocat", user: null }),
+      expected: false,
+    },
+  ])("$name", ({ reviewer, expected }) => {
+    expect(reviewerMatchesAvailable(reviewer, makeAvailable())).toBe(expected);
+  });
+});
+
+describe("buildReviewerOptions", () => {
+  it("dedupes by uuid and pins the current user first", () => {
+    const options = buildReviewerOptions(
+      [
+        makeAvailable({ uuid: "b", name: "Bob" }),
+        makeAvailable({ uuid: "a", name: "Ada" }),
+        makeAvailable({ uuid: "a", name: "Ada (dupe)" }),
+      ],
+      "b",
+    );
+    expect(options.map((o) => o.uuid)).toEqual(["b", "a"]);
+    expect(options[0].isMe).toBe(true);
   });
 });
