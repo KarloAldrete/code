@@ -176,29 +176,25 @@ function RootLayout() {
     select: (s) => s.matches.some((m) => m.routeId.startsWith("/settings")),
   });
 
-  // The Inbox and Channels spaces are reached only through the rail, so they
-  // exist only when project-bluebird is on. Inbox renders chrome-less; Channels
-  // gets its own [channel list | outlet] chrome (no code header/sidebar).
-  const onInboxPath = useRouterState({
-    select: (s) => s.location.pathname === "/inbox",
-  });
+  // The Channels space is reached only through the rail, so it exists only when
+  // project-bluebird is on. It gets its own [channel list | outlet] chrome (no
+  // code header/sidebar).
   const onChannelsPath = useRouterState({
     select: (s) =>
       s.location.pathname === "/website" ||
       s.location.pathname.startsWith("/website/"),
   });
-  const isInboxSpace = bluebirdEnabled && onInboxPath;
   const isChannelsSpace = bluebirdEnabled && onChannelsPath;
 
   // With the rail hidden there's no way to leave a rail-only space, so a user
-  // stranded on /inbox or /website (cold-boot restore, stale deep link) with the
-  // flag off goes to /code — but only once flags resolve, so a flagged user
-  // isn't bounced mid-load.
+  // stranded on /website (cold-boot restore, stale deep link) with the flag off
+  // goes to /code — but only once flags resolve, so a flagged user isn't bounced
+  // mid-load.
   const flagsLoaded = useFeatureFlagsLoaded();
   useEffect(() => {
     if (!flagsLoaded || bluebirdEnabled) return;
-    if (onInboxPath || onChannelsPath) navigateToCode();
-  }, [flagsLoaded, bluebirdEnabled, onInboxPath, onChannelsPath]);
+    if (onChannelsPath) navigateToCode();
+  }, [flagsLoaded, bluebirdEnabled, onChannelsPath]);
 
   if (isSettingsRoute) {
     return (
@@ -227,11 +223,7 @@ function RootLayout() {
     <Flex height="100vh" overflow="hidden">
       {bluebirdEnabled && <AppNav />}
       <Flex direction="column" flexGrow="1" overflow="hidden">
-        {isInboxSpace ? (
-          <Box flexGrow="1" overflow="hidden">
-            <Outlet />
-          </Box>
-        ) : isChannelsSpace ? (
+        {isChannelsSpace ? (
           <Flex flexGrow="1" overflow="hidden">
             <Flex
               direction="column"
