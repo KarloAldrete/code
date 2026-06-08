@@ -35,12 +35,21 @@ export function DiscordPresencePreview({
   const [running, setRunning] = useState(true);
   const [elapsed, setElapsed] = useState(197); // 3:17, like a session in progress
 
-  // While enabled, tick the elapsed timer so the card feels live, the way
-  // Discord shows it. When disabled, the integration is dormant: stop the timer
-  // and fall back to the idle state.
-  useEffect(() => {
+  // When the integration goes dormant, fall back to the idle state. Adjust
+  // during render (not in an effect) so the card never flashes the stale
+  // "running" state for a frame before settling.
+  const [prevEnabled, setPrevEnabled] = useState(enabled);
+  if (enabled !== prevEnabled) {
+    setPrevEnabled(enabled);
     if (!enabled) {
       setRunning(false);
+    }
+  }
+
+  // While enabled, tick the elapsed timer so the card feels live, the way
+  // Discord shows it.
+  useEffect(() => {
+    if (!enabled) {
       return;
     }
     const interval = setInterval(() => setElapsed((s) => s + 1), 1000);
