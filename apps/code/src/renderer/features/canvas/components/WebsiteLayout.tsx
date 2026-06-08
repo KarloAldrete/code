@@ -25,7 +25,6 @@ import {
 import { Button } from "@posthog/quill";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import {
-  Link,
   Outlet,
   useNavigate,
   useParams,
@@ -236,9 +235,9 @@ export function WebsiteLayout() {
   );
 }
 
-// A breadcrumb link back to the channel's dashboards grid. Renders as a centered
-// inline-flex so it shares the dashboard-name crumb's vertical alignment. `icon`
-// (e.g. a faded #) renders before the label.
+// A clickable breadcrumb back to the channel's dashboards grid. A quill Button
+// (default variant) so it gets the standard button hover state. `icon` (e.g. a
+// faded #) renders before the label.
 function ChannelGridLink({
   channelId,
   icon,
@@ -248,21 +247,19 @@ function ChannelGridLink({
   icon?: React.ReactNode;
   children: React.ReactNode;
 }) {
+  const navigate = useNavigate();
   return (
-    <Link
-      to="/website/$channelId"
-      params={{ channelId }}
-      className="no-drag inline-flex items-center gap-0.5"
+    <Button
+      variant="default"
+      size="sm"
+      className="no-drag gap-0.5 font-medium text-muted-foreground"
+      onClick={() =>
+        navigate({ to: "/website/$channelId", params: { channelId } })
+      }
     >
       {icon}
-      <Text
-        size="1"
-        weight="medium"
-        className="text-muted-foreground transition-colors hover:text-gray-12"
-      >
-        {children}
-      </Text>
-    </Link>
+      {children}
+    </Button>
   );
 }
 
