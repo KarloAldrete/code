@@ -250,21 +250,24 @@ export function WebsiteLayout() {
           <NewDashboardButton channelId={channelId} />
         ) : null}
       </Flex>
-      {/* Toolbar: a (dead) Filter on the left, refresh on the right. */}
-      <Flex
-        align="center"
-        justify="between"
-        gap="2"
-        className="h-10 shrink-0 border-gray-6 border-b px-3"
-      >
-        <Button variant="outline" size="sm">
-          <FunnelIcon size={14} />
-          Filter
-        </Button>
-        {isDashboardDetail && dashboardId && !editing && (
-          <DashboardRefreshControl dashboardId={dashboardId} />
-        )}
-      </Flex>
+      {/* Toolbar: a (dead) Filter on the left, refresh on the right. Only on the
+          dashboards grid and a single dashboard — not on tasks/settings. */}
+      {(isDashboardsGrid || isDashboardDetail) && (
+        <Flex
+          align="center"
+          justify="between"
+          gap="2"
+          className="h-10 shrink-0 border-gray-6 border-b px-3"
+        >
+          <Button variant="outline" size="sm">
+            <FunnelIcon size={14} />
+            Filter
+          </Button>
+          {isDashboardDetail && dashboardId && !editing && (
+            <DashboardRefreshControl dashboardId={dashboardId} />
+          )}
+        </Flex>
+      )}
       <Box flexGrow="1" overflow="hidden">
         <Outlet />
       </Box>
