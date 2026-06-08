@@ -48,7 +48,7 @@ export function WebsiteDashboardsIndex({ channelId }: { channelId: string }) {
       >
         <Flex direction="column" gap="1">
           <Text size="3" weight="bold" className="text-gray-12">
-            No dashboards yet
+            No canvases yet
           </Text>
           <Text size="2" className="text-gray-10">
             Create one and build it with the agent, then save it.
@@ -56,7 +56,7 @@ export function WebsiteDashboardsIndex({ channelId }: { channelId: string }) {
         </Flex>
         <Button variant="primary" onClick={() => void createAndOpen()}>
           <PlusIcon size={14} />
-          Create dashboard
+          Create canvas
         </Button>
       </Flex>
     );
@@ -114,7 +114,7 @@ function DashboardCard({
                 </ErrorBoundary>
               </Box>
             ) : (
-              <PreviewPlaceholder label={isLoading ? "" : "Empty dashboard"} />
+              <PreviewPlaceholder label={isLoading ? "" : "Empty canvas"} />
             )}
           </Box>
           <Flex direction="column" gap="1" className="p-3">
@@ -140,7 +140,7 @@ function DashboardCardMenu({ id, name }: { id: string; name: string }) {
 
   const onDelete = () => {
     deleteDashboard(id).catch((error) => {
-      toast.error("Couldn't delete dashboard", {
+      toast.error("Couldn't delete canvas", {
         description: error instanceof Error ? error.message : String(error),
       });
     });

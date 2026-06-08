@@ -45,7 +45,7 @@ export function CanvasChat({ threadId }: { threadId: string }) {
         <Flex direction="column" gap="3" p="3">
           {messages.length === 0 && (
             <Text size="1" className="text-gray-10">
-              Describe the dashboard or app you want. The agent queries your
+              Describe the canvas or app you want. The agent queries your
               PostHog project and builds it live on the canvas.
             </Text>
           )}
@@ -98,7 +98,7 @@ export function CanvasChat({ threadId }: { threadId: string }) {
         <Flex gap="2" align="end">
           <TextArea
             className="flex-1"
-            placeholder="Build a dashboard of…"
+            placeholder="Build a canvas of…"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {

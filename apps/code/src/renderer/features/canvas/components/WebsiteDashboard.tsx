@@ -46,11 +46,11 @@ export function WebsiteDashboard({ dashboardId }: { dashboardId: string }) {
           className="px-6 text-center"
         >
           <Text size="3" weight="bold" className="text-gray-12">
-            {isLoading ? "Loading…" : "Empty dashboard"}
+            {isLoading ? "Loading…" : "Empty canvas"}
           </Text>
           {!isLoading && (
             <Text size="2" className="text-gray-10">
-              Hit Edit to build this dashboard with the agent, then Save.
+              Hit Edit to build this canvas with the agent, then Save.
             </Text>
           )}
         </Flex>

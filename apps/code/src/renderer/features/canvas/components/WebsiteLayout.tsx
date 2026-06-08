@@ -50,7 +50,7 @@ function NewDashboardButton({ channelId }: { channelId: string }) {
       onClick={() => void createAndOpen()}
     >
       <PlusIcon size={14} />
-      New dashboard
+      New canvas
     </Button>
   );
 }
@@ -89,7 +89,7 @@ function DashboardEditControls({
   const onFork = async () => {
     if (!hasSpec) return;
     const title =
-      dashboardTitleFromSpec(liveSpec) ?? dashboard?.name ?? "Dashboard";
+      dashboardTitleFromSpec(liveSpec) ?? dashboard?.name ?? "Canvas";
     const name = `${title} (fork)`;
     const record = await createDashboard(channelId, name, liveSpec);
     setEditing(record.id, true);
@@ -194,7 +194,7 @@ export function WebsiteLayout() {
       // dashboard's own name is the h1 below, so it isn't repeated as a crumb.
       crumbs.push(
         <ChannelGridLink key="dashboards" channelId={channelId}>
-          Dashboards
+          Canvases
         </ChannelGridLink>,
       );
     } else if (pathname === `${base}/new`) {
