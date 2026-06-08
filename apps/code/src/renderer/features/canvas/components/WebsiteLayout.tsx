@@ -14,6 +14,7 @@ import {
   useIsDashboardEditing,
 } from "@features/canvas/stores/dashboardEditStore";
 import { useTasks } from "@features/tasks/hooks/useTasks";
+import { useSetHeaderContent } from "@hooks/useSetHeaderContent";
 import { isNonEmptySpec } from "@json-render/core";
 import {
   CaretRightIcon,
@@ -30,7 +31,7 @@ import {
   useParams,
   useRouterState,
 } from "@tanstack/react-router";
-import { Fragment } from "react";
+import { Fragment, useMemo } from "react";
 
 function threadIdFor(dashboardId: string): string {
   return `dashboard:${dashboardId}`;
@@ -155,71 +156,108 @@ export function WebsiteLayout() {
     : null;
 
   const isDashboardDetail = Boolean(channelId && dashboardId);
+  const taskTitle = taskId
+    ? tasks?.find((t) => t.id === taskId)?.title
+    : undefined;
 
-  // Breadcrumb segments: the channel (links to its dashboards grid), then the
-  // active sub-view.
-  const crumbs: React.ReactNode[] = [];
-  if (channelId) {
-    crumbs.push(
-      <Link
-        key="channel"
-        to="/website/$channelId"
-        params={{ channelId }}
-        className="no-drag"
-      >
-        <Text
-          size="1"
-          weight="medium"
-          className="text-gray-10 hover:text-gray-12"
-        >
-          {channelName}
-        </Text>
-      </Link>,
-    );
+  // Breadcrumbs + (on a dashboard) its controls live in the global title bar via
+  // the header store — there's no second bar, so the channel space reclaims the
+  // ~40px the standalone breadcrumb row used to take.
+  const headerContent = useMemo(() => {
+    if (!channelId) return null;
 
+    // The channel (links to its dashboards grid), then the active sub-view.
+    const crumbs: React.ReactNode[] = [
+      <ChannelGridLink key="channel" channelId={channelId}>
+        {channelName}
+      </ChannelGridLink>,
+    ];
     if (isDashboardDetail && dashboardId) {
-      crumbs.push(<DashboardCrumb key="dashboard" dashboardId={dashboardId} />);
+      crumbs.push(
+        <ChannelGridLink key="dashboards" channelId={channelId}>
+          Dashboards
+        </ChannelGridLink>,
+        <DashboardCrumb key="dashboard" dashboardId={dashboardId} />,
+      );
     } else if (pathname === `${base}/new`) {
       crumbs.push(<CrumbText key="new">New task</CrumbText>);
     } else if (pathname.startsWith(`${base}/settings`)) {
       crumbs.push(<CrumbText key="settings">Settings</CrumbText>);
     } else if (taskId) {
-      const title = tasks?.find((t) => t.id === taskId)?.title;
-      crumbs.push(<CrumbText key="task">{title || "Task"}</CrumbText>);
+      crumbs.push(<CrumbText key="task">{taskTitle || "Task"}</CrumbText>);
     } else {
       crumbs.push(<CrumbText key="dashboards">Dashboards</CrumbText>);
     }
-  }
 
-  return (
-    <Flex direction="column" height="100%" overflow="hidden">
-      <Flex
-        align="center"
-        gap="1"
-        px="3"
-        className="drag shrink-0 border-gray-6 border-b pt-2 pb-1"
-      >
-        {crumbs.map((crumb, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: crumb order is stable
-          <Fragment key={i}>
-            {i > 0 && <CaretRightIcon size={12} className="text-gray-8" />}
-            {crumb}
-          </Fragment>
-        ))}
+    return (
+      <Flex align="center" justify="between" gap="2" className="w-full min-w-0">
+        <Flex align="center" gap="1" className="min-w-0">
+          {crumbs.map((crumb, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: crumb order is stable
+            <Fragment key={i}>
+              {i > 0 && <CaretRightIcon size={12} className="text-gray-8" />}
+              {crumb}
+            </Fragment>
+          ))}
+        </Flex>
         {isDashboardDetail && channelId && dashboardId && (
           <DashboardControls channelId={channelId} dashboardId={dashboardId} />
         )}
       </Flex>
-      <Box flexGrow="1" overflow="hidden">
-        <Outlet />
-      </Box>
-    </Flex>
+    );
+  }, [
+    channelId,
+    channelName,
+    dashboardId,
+    isDashboardDetail,
+    pathname,
+    base,
+    taskId,
+    taskTitle,
+  ]);
+
+  useSetHeaderContent(headerContent);
+
+  return (
+    <Box height="100%" overflow="hidden">
+      <Outlet />
+    </Box>
+  );
+}
+
+// A breadcrumb link back to the channel's dashboards grid. Renders as a centered
+// inline-flex so it shares the dashboard-name crumb's vertical alignment.
+function ChannelGridLink({
+  channelId,
+  children,
+}: {
+  channelId: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      to="/website/$channelId"
+      params={{ channelId }}
+      className="no-drag inline-flex items-center"
+    >
+      <Text
+        size="1"
+        weight="medium"
+        className="text-muted-foreground transition-colors hover:text-gray-12"
+      >
+        {children}
+      </Text>
+    </Link>
   );
 }
 
 function CrumbText({ children }: { children: React.ReactNode }) {
   return (
-    <Text size="1" weight="medium" className="text-gray-12">
+    <Text
+      size="1"
+      weight="medium"
+      className="inline-flex items-center text-gray-12"
+    >
       {children}
     </Text>
   );
