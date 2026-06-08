@@ -1,4 +1,5 @@
 import { CANVAS_SYSTEM_PROMPT } from "@features/canvas/genui/catalog";
+import { dashboardTitleFromSpec } from "@features/canvas/genui/dashboardTitle";
 import { isNonEmptySpec } from "@json-render/core";
 import type { Spec } from "@json-render/react";
 import { trpcClient } from "@renderer/trpc/client";
@@ -100,10 +101,19 @@ export const useCanvasChatStore = create<CanvasChatStore>()((set, get) => {
         lastTool: null,
       }));
 
+      // The agent session's system prompt is frozen at session start, so the
+      // dashboard identity rides the prompt every turn — this keeps the agent
+      // anchored to the board currently open, even after a reload or a switch.
+      const title = dashboardTitleFromSpec(current.spec);
+      const context = title
+        ? `[Context] You are editing the existing dashboard titled "${title}". Apply all changes to THIS dashboard only, appending to its current content. Do not start a new dashboard or recreate existing elements.`
+        : "[Context] You are starting a new, untitled dashboard.";
+      const agentPrompt = `${context}\n\n${text}`;
+
       try {
         await trpcClient.canvasGen.generate.mutate({
           threadId,
-          prompt: text,
+          prompt: agentPrompt,
           systemPrompt: CANVAS_SYSTEM_PROMPT,
         });
       } catch (error) {

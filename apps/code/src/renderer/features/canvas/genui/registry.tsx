@@ -1,12 +1,15 @@
 import {
   BadgeBody,
+  BarChartBody,
   BarListBody,
   CardBody,
   DividerBody,
   GridBody,
   HeadingBody,
+  LineChartBody,
   PageBody,
   PLAIN_CTX,
+  SparklineBody,
   StatBody,
   TableBody,
   TextBody,
@@ -42,6 +45,15 @@ export const CanvasRenderer = createRenderer(canvasCatalog, {
   Table: ({ element }) => <TableBody props={element.props} ctx={PLAIN_CTX} />,
   BarList: ({ element }) => (
     <BarListBody props={element.props} ctx={PLAIN_CTX} />
+  ),
+  LineChart: ({ element }) => (
+    <LineChartBody props={element.props} ctx={PLAIN_CTX} />
+  ),
+  BarChart: ({ element }) => (
+    <BarChartBody props={element.props} ctx={PLAIN_CTX} />
+  ),
+  Sparkline: ({ element }) => (
+    <SparklineBody props={element.props} ctx={PLAIN_CTX} />
   ),
   Badge: ({ element }) => <BadgeBody props={element.props} ctx={PLAIN_CTX} />,
   Divider: () => <DividerBody />,

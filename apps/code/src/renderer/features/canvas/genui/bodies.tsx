@@ -1,3 +1,10 @@
+import {
+  BarChart,
+  LineChart,
+  type Series,
+  Sparkline,
+  useChartTheme,
+} from "@posthog/quill-charts";
 import { Badge, Box, Flex, Grid, Heading, Table, Text } from "@radix-ui/themes";
 import type { ReactNode } from "react";
 
@@ -54,6 +61,21 @@ export interface BarListProps {
 export interface BadgeProps {
   text: string;
   color?: "gray" | "green" | "red" | "amber" | "blue";
+}
+export interface ChartSeriesInput {
+  label: string;
+  data: number[];
+}
+export interface LineChartProps {
+  labels: string[];
+  series: ChartSeriesInput[];
+}
+export interface BarChartProps {
+  labels: string[];
+  series: ChartSeriesInput[];
+}
+export interface SparklineProps {
+  data: number[];
 }
 
 export function PageBody({
@@ -227,6 +249,69 @@ export function BadgeBody({ props, ctx }: { props: BadgeProps; ctx: BodyCtx }) {
   );
 }
 
+// Map the LLM-friendly { label, data } catalog shape to quill-charts `Series`.
+// `key` keys React/stacked lookups; fall back to the index when labels collide.
+function toSeries(series: ChartSeriesInput[]): Series[] {
+  return (series ?? []).map((s, i) => ({
+    key: s.label || `series-${i}`,
+    label: s.label,
+    data: s.data ?? [],
+  }));
+}
+
+export function LineChartBody({
+  props,
+}: {
+  props: LineChartProps;
+  ctx: BodyCtx;
+}) {
+  const theme = useChartTheme();
+  // The chart root is `flex:1 1 0`, so it must fill a flex column with a
+  // definite height — a plain block lets it collapse to nothing.
+  return (
+    <Box className="flex h-64 w-full flex-col">
+      <LineChart
+        labels={props.labels ?? []}
+        series={toSeries(props.series)}
+        theme={theme}
+      />
+    </Box>
+  );
+}
+
+export function BarChartBody({
+  props,
+}: {
+  props: BarChartProps;
+  ctx: BodyCtx;
+}) {
+  const theme = useChartTheme();
+  return (
+    <Box className="flex h-64 w-full flex-col">
+      <BarChart
+        labels={props.labels ?? []}
+        series={toSeries(props.series)}
+        theme={theme}
+      />
+    </Box>
+  );
+}
+
+export function SparklineBody({
+  props,
+}: {
+  props: SparklineProps;
+  ctx: BodyCtx;
+}) {
+  const theme = useChartTheme();
+  // Sparkline sizes itself via its `height` prop (no flex container needed).
+  return (
+    <Box className="w-full">
+      <Sparkline data={props.data ?? []} theme={theme} height={48} />
+    </Box>
+  );
+}
+
 export function DividerBody() {
   return <Box className="my-2 h-px bg-gray-6" />;
 }
@@ -269,6 +354,12 @@ export function renderBody(
       return <TableBody props={p} ctx={ctx} />;
     case "BarList":
       return <BarListBody props={p} ctx={ctx} />;
+    case "LineChart":
+      return <LineChartBody props={p} ctx={ctx} />;
+    case "BarChart":
+      return <BarChartBody props={p} ctx={ctx} />;
+    case "Sparkline":
+      return <SparklineBody props={p} ctx={ctx} />;
     case "Badge":
       return <BadgeBody props={p} ctx={ctx} />;
     case "Divider":
