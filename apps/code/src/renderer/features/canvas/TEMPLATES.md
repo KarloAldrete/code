@@ -156,14 +156,14 @@ dynamic" as its own phase (2.5 below), gating real interactivity (Phase 6).
 - Hardening: static-only schema/rules + `asText()` so stray bindings can't crash
   the canvas.
 
-### Phase 2 — Blank palette
+### Phase 2 — Blank palette (partly done)
 
-- Widen the catalog for richer freeform layouts (more layout/content primitives;
-  a **sanitized** markdown/rich-text block via `rehype-sanitize`). No `<script>`.
-- Decide catalog packaging (see open questions): one contract + per-template
-  allow-list (leaning) vs separate catalogs.
-- Add the allow-list mechanism so a template constrains which components the
-  agent may emit.
+- ✅ Widened the catalog: `Hero` (centered hero section), `Markdown` (sanitized
+  rich-text via `rehype-sanitize`, no `<script>`), `Button` (display CTA). Blank
+  template nudges the agent to use them for rich pages.
+- ⬜ Catalog packaging / allow-list (see open questions): one contract +
+  per-template allow-list (leaning) so a template constrains which components the
+  agent may emit. Currently all templates can emit everything.
 
 ### Phase 2.5 — Dynamic renderer (NEW, gates interactivity)
 
