@@ -1,6 +1,6 @@
 # Canvas templates, open-ended building & data sources — design scope
 
-**Status:** Proposal / scoped. Not yet implemented.
+**Status:** Phase 1 shipped; Phases 2–6 scoped below.
 **Owner:** canvas feature.
 **Branch:** `feat/canvases-rename` (builds on `feat/canvas` → `feat/canvas-quill`).
 
@@ -123,20 +123,88 @@ renderer no longer constructs or passes `CANVAS_SYSTEM_PROMPT`.
   read as the Dashboard template.
 - Templates persisted as records (built-ins seeded; user templates addable).
 
+## The static-renderer constraint (learned in Phase 1)
+
+The canvas renderer (`genui/EditRenderer.tsx` + `bodies.tsx`) is a **static
+walk**. It does NOT resolve any json-render dynamic feature: no top-level
+`state` model, no `repeat`, no `visible`, no `on`/actions, and no binding
+objects (`{$state}`, `{$item}`, `{$bindItem}`, `{$index}`) in props. A binding
+object placed in a prop used to crash the whole canvas to "Rendering…"; it now
+degrades to empty via `asText()`, and the schema mirror + template rules tell
+the agent to emit static content only.
+
+This is load-bearing for the roadmap: **"a whole website" or an interactive
+tool needs more than a wider palette — it needs the renderer to resolve
+json-render's dynamic features** (or we adopt `createRenderer` for view mode and
+keep the custom walk only for edit affordances). Treat "make the renderer
+dynamic" as its own phase (2.5 below), gating real interactivity (Phase 6).
+
 ## Phasing
 
-1. **Template plumbing** — `CanvasTemplate` + `templateId` on records; today's
-   behaviour = the Dashboard template; create flow offers Dashboard | Blank
-   (Blank starts with the same catalog + a looser prompt). Move catalog contract
-   to shared and prompt generation to main. _No new render risk._
-2. **Blank palette** — widen the catalog + add the sanitized rich-text block.
-3. **Warehouse manifest** — list sources → inject into context (unlocks Stripe
-   et al. at build time and refresh).
-4. **Data UI** — show/choose connected sources on a canvas; link out to PostHog
-   to connect new ones; warehouse-backed refresh surfaced in the UI.
-5. **User-defined templates** — UI to save the current canvas (prompt + palette +
-   starter) as a reusable template.
-6. _Later_ — interactivity/actions, template sharing.
+### Phase 1 — Template plumbing ✅ done
+
+- `@shared/canvas`: component contract + core-only schema mirror (no React in
+  main). One source for the renderer registry and the main prompt builder.
+- `CanvasTemplatesService` (main): built-in **Dashboard** + **Blank** templates,
+  record-shaped (`builtIn`, `suggestions`, `systemPrompt`) for future
+  user-defined ones. Prompt generated in main; `canvas-gen.generate` takes a
+  `templateId`.
+- `templateId` on canvas records (default `"dashboard"`, back-compat).
+- Renderer: thread carries `templateId`; `NewCanvasMenu` picker at create;
+  per-template chat **suggestions** (chips that fill + focus the composer, shown
+  only while the canvas is empty).
+- Hardening: static-only schema/rules + `asText()` so stray bindings can't crash
+  the canvas.
+
+### Phase 2 — Blank palette
+
+- Widen the catalog for richer freeform layouts (more layout/content primitives;
+  a **sanitized** markdown/rich-text block via `rehype-sanitize`). No `<script>`.
+- Decide catalog packaging (see open questions): one contract + per-template
+  allow-list (leaning) vs separate catalogs.
+- Add the allow-list mechanism so a template constrains which components the
+  agent may emit.
+
+### Phase 2.5 — Dynamic renderer (NEW, gates interactivity)
+
+- Teach the renderer json-render's dynamic features (resolve `{$state}`/`{$item}`
+  bindings, `repeat`, `visible`) — likely by using `createRenderer` for view
+  mode and resolving bindings in the edit walk — then relax the "static only"
+  rules per-template. Required before forms/tools that hold state.
+
+### Phase 3 — Warehouse manifest
+
+- Main method to list warehouse sources/tables (PostHog `external_data` /
+  warehouse API). Inject a compact, size-capped manifest into the agent context
+  so it can write correct HogQL against Stripe et al.
+- Warehouse-backed Stat refresh reuses the existing `dashboard-query` path.
+
+### Phase 4 — Data UI
+
+- Show/choose connected sources on a canvas; **link out to PostHog** to connect
+  new ones; surface warehouse-backed refresh in the UI.
+
+### Phase 5 — User-defined templates
+
+- UI to save the current canvas (system prompt + palette/allow-list + starter
+  spec + suggestions) as a reusable template. `CanvasTemplatesService` is already
+  record-shaped; add a writable store (built-ins stay read-only).
+
+### Phase 6 — Later
+
+- Real interactivity/actions (depends on Phase 2.5), template sharing, more
+  built-in templates.
+
+## Cross-cutting follow-ups (not phase-gated)
+
+- **Reloaded-board append-only seeding**: a reopened saved canvas starts
+  `state.spec = {}` in `canvas-gen` while the UI shows the hydrated spec — the
+  agent's first append can wipe the visible board. Seed `state.spec` from the
+  saved spec at session start.
+- **Chart tooltip vars**: `--color-bg-surface-*` / `--color-text-primary-inverse`
+  aren't in beta.14 quill CSS → tooltip styling falls back.
+- **vitest can't import `quill-charts`** (dayjs subpath) → add a resolve alias if
+  we want body unit tests.
 
 ## Open questions
 
@@ -149,6 +217,8 @@ renderer no longer constructs or passes `CANVAS_SYSTEM_PROMPT`.
   set than Dashboard? (Default: keep the read-only sandbox for all.)
 - **Data manifest size:** cap/scope the injected warehouse schema for large
   projects to avoid blowing the context.
+- **Dynamic vs static renderer:** is Blank allowed to be interactive (Phase 2.5),
+  or do we keep all canvases static for now and defer tools/forms?
 
 ## Related
 
