@@ -61,10 +61,13 @@ export function NewCanvasMenu({
           <DropdownMenuItem
             key={t.id}
             onClick={() => void createAndOpen({ templateId: t.id })}
+            className="h-auto"
           >
             <ItemContent>
               <ItemTitle>{t.name}</ItemTitle>
-              <ItemDescription>{t.description}</ItemDescription>
+              <ItemDescription className="[text-wrap:initial]">
+                {t.description}
+              </ItemDescription>
             </ItemContent>
           </DropdownMenuItem>
         ))}
