@@ -65,6 +65,20 @@ function newId(): string {
   return crypto.randomUUID();
 }
 
+// Child keys referenced by some element but with no element defined — the cause
+// of silently-empty containers. Surfaced to the agent so it can repair them.
+function danglingChildKeys(spec: Spec | null): string[] {
+  const elements = spec?.elements;
+  if (!elements) return [];
+  const missing = new Set<string>();
+  for (const el of Object.values(elements)) {
+    for (const childKey of el.children ?? []) {
+      if (!elements[childKey]) missing.add(childKey);
+    }
+  }
+  return [...missing];
+}
+
 export const useCanvasChatStore = create<CanvasChatStore>()((set, get) => {
   const patch = (
     threadId: string,
@@ -112,13 +126,19 @@ export const useCanvasChatStore = create<CanvasChatStore>()((set, get) => {
       let context: string;
       if (isNonEmptySpec(current.spec)) {
         const title = dashboardTitleFromSpec(current.spec);
+        const dangling = danglingChildKeys(current.spec);
         context = [
           `[Context] You are editing the existing canvas${title ? ` titled "${title}"` : ""}. APPEND to it — never recreate or replace existing elements. Reuse the element keys in the spec below; add new elements under new keys and attach them by appending to the relevant container's children.`,
+          dangling.length > 0
+            ? `BROKEN REFERENCES: these keys are listed as children but have NO element defined: ${dangling.map((k) => `"${k}"`).join(", ")}. Fix each by EITHER defining the missing element (op "add" at /elements/<key>) OR removing the dangling key from its parent's children. Do not leave them dangling.`
+            : "",
           "Current canvas spec (json-render):",
           "```json",
           JSON.stringify(current.spec),
           "```",
-        ].join("\n");
+        ]
+          .filter(Boolean)
+          .join("\n");
       } else {
         context = "[Context] You are starting a new, untitled canvas.";
       }

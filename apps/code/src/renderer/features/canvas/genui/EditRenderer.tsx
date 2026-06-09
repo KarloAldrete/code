@@ -50,7 +50,14 @@ function EditNode({
   interactive: boolean;
 }) {
   const element = spec.elements[elementKey];
-  if (!element) return null;
+  if (!element) {
+    // A parent lists this key in `children` but no element is defined for it
+    // (a dangling reference). View mode renders nothing; edit mode surfaces it
+    // so the gap is obvious instead of a mysterious empty card.
+    return interactive ? (
+      <BrokenRef label={`missing element "${elementKey}"`} />
+    ) : null;
+  }
 
   const childKeys = element.children ?? [];
   const children =
@@ -72,6 +79,13 @@ function EditNode({
     : PLAIN_CTX;
 
   const body = renderBody(element.type, element.props, children, ctx);
+  // renderBody returns null for a component type not in the catalog. Stay silent
+  // in view mode; flag it in edit mode so unknown types aren't invisible.
+  if (body == null) {
+    return interactive ? (
+      <BrokenRef label={`unknown component "${element.type}"`} />
+    ) : null;
+  }
 
   // Root renders bare; children get a hover frame to signal they're editable.
   if (!interactive || parentKey === null) return body;
@@ -98,6 +112,16 @@ function makeEditCtx(
     ),
     data: (node) => <DataHint>{node}</DataHint>,
   };
+}
+
+// Edit-mode-only marker for a structural gap (dangling child / unknown type) so
+// it reads as a clear warning instead of an unexplained empty space.
+function BrokenRef({ label }: { label: string }) {
+  return (
+    <div className="rounded border border-amber-6 border-dashed bg-amber-2 px-3 py-2 text-amber-11 text-xs">
+      ⚠ {label}
+    </div>
+  );
 }
 
 function HoverFrame({ children }: { children: ReactNode }) {
