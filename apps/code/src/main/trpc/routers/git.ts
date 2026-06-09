@@ -58,6 +58,8 @@ import {
   getPrTemplateOutput,
   getPrUrlForBranchInput,
   getPrUrlForBranchOutput,
+  getPrWorkItemsInput,
+  getPrWorkItemsOutput,
   ghAuthTokenOutput,
   ghStatusOutput,
   gitStateSnapshotSchema,
@@ -338,6 +340,11 @@ export const gitRouter = router({
     .query(({ input }) =>
       getService().getPrUrlForBranch(input.directoryPath, input.branchName),
     ),
+
+  getPrWorkItems: publicProcedure
+    .input(getPrWorkItemsInput)
+    .output(getPrWorkItemsOutput)
+    .query(({ input }) => getService().getPrWorkItems(input.directoryPath)),
 
   createPr: publicProcedure
     .input(createPrInput)

@@ -1,3 +1,4 @@
+import { useFolders } from "@features/folders/hooks/useFolders";
 import { DiscoveredTaskDetailDialog } from "@features/setup/components/DiscoveredTaskDetailDialog";
 import { SetupScanFeed } from "@features/setup/components/SetupScanFeed";
 import {
@@ -7,6 +8,16 @@ import {
   useSetupStore,
 } from "@features/setup/stores/setupStore";
 import type { DiscoveredTask } from "@features/setup/types";
+import { buildWorkItemPrompt } from "@features/work-items/buildWorkItemPrompt";
+import {
+  dismissedWorkItemKey,
+  useDismissedWorkItemsStore,
+} from "@features/work-items/dismissedWorkItemsStore";
+import { useWorkItemSuggestions } from "@features/work-items/useWorkItemSuggestions";
+import { WorkItemCard } from "@features/work-items/WorkItemCard";
+import { useDetectedCloudRepository } from "@hooks/useDetectedCloudRepository";
+import { openTaskInput } from "@hooks/useOpenTask";
+import type { PrWorkItem } from "@main/services/git/schemas";
 import {
   CaretLeft,
   CaretRight,
@@ -14,7 +25,9 @@ import {
   MagnifyingGlass,
 } from "@phosphor-icons/react";
 import { Flex, Text } from "@radix-ui/themes";
+import { ANALYTICS_EVENTS } from "@shared/types/analytics";
 import { useActiveRepoStore } from "@stores/activeRepoStore";
+import { track } from "@utils/analytics";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   useCallback,
@@ -25,7 +38,14 @@ import {
 } from "react";
 import { SuggestedTaskCard } from "./SuggestedTaskCard";
 
-const VISIBLE_LIMIT = 3;
+const workItemKey = (item: PrWorkItem) => `${item.prNumber}:${item.kind}`;
+
+type PanelEntry =
+  | { kind: "work"; id: string; item: PrWorkItem }
+  | { kind: "discovered"; id: string; task: DiscoveredTask };
+
+const VISIBLE_LIMIT = 4;
+const GRID_COLUMNS = 2;
 const DEFAULT_LOG_LINES = 4;
 
 const TOP_MARGIN = 12;
@@ -64,6 +84,14 @@ export function SuggestedTasksPanel() {
     (s) => selectRepoDiscovery(s, selectedDirectory).feed,
   );
   const removeDiscoveredTask = useSetupStore((s) => s.removeDiscoveredTask);
+
+  const workItemsRaw = useWorkItemSuggestions(selectedDirectory);
+  const dismissedWorkItemKeys = useDismissedWorkItemsStore(
+    (s) => s.dismissedKeys,
+  );
+  const dismissWorkItem = useDismissedWorkItemsStore((s) => s.dismiss);
+  const { folders } = useFolders();
+  const detectedCloudRepository = useDetectedCloudRepository(selectedDirectory);
 
   const [detailTask, setDetailTask] = useState<DiscoveredTask | null>(null);
   const [pageStart, setPageStart] = useState(0);
@@ -119,13 +147,62 @@ export function SuggestedTasksPanel() {
     setDetailTask(null);
   }, []);
 
-  const hasTasks = discoveredTasks.length > 0;
+  const handleSelectWorkItem = useCallback(
+    (item: PrWorkItem, position: number, total: number) => {
+      track(ANALYTICS_EVENTS.SETUP_WORK_ITEM_SELECTED, {
+        kind: item.kind,
+        pr_number: item.prNumber,
+        position,
+        total,
+      });
+      const folderId = folders.find((f) => f.path === selectedDirectory)?.id;
+      openTaskInput({
+        initialPrompt: buildWorkItemPrompt(item),
+        folderId,
+        initialCloudRepository: detectedCloudRepository ?? undefined,
+      });
+    },
+    [folders, selectedDirectory, detectedCloudRepository],
+  );
+
+  const handleDismissWorkItem = useCallback(
+    (item: PrWorkItem, position: number, total: number) => {
+      track(ANALYTICS_EVENTS.SETUP_WORK_ITEM_DISMISSED, {
+        kind: item.kind,
+        pr_number: item.prNumber,
+        position,
+        total,
+      });
+      dismissWorkItem(dismissedWorkItemKey(selectedDirectory, item));
+    },
+    [dismissWorkItem, selectedDirectory],
+  );
+
+  const dismissed = new Set(dismissedWorkItemKeys);
+  const workItems = workItemsRaw.filter(
+    (item) => !dismissed.has(dismissedWorkItemKey(selectedDirectory, item)),
+  );
+
+  const entries: PanelEntry[] = [
+    ...discoveredTasks.map((task) => ({
+      kind: "discovered" as const,
+      id: task.id,
+      task,
+    })),
+    ...workItems.map((item) => ({
+      kind: "work" as const,
+      id: `work:${workItemKey(item)}`,
+      item,
+    })),
+  ];
+
+  const hasTasks = entries.length > 0;
   const showEnricherFeed = !hasTasks && enricherStatus === "running";
   const showDiscoveryFeed = discoveryStatus === "running";
 
   if (!hasTasks && !showEnricherFeed && !showDiscoveryFeed) return null;
 
-  const totalTasks = discoveredTasks.length;
+  const totalTasks = entries.length;
   const desiredVisible = Math.min(totalTasks, VISIBLE_LIMIT);
   const discoveryFeedHasEntries = discoveryFeed.recentEntries.length > 0;
 
@@ -133,7 +210,8 @@ export function SuggestedTasksPanel() {
     const sections: number[] = [];
     if (hasTasks) sections.push(HEADER_HEIGHT);
     if (cardCount > 0) {
-      sections.push(cardCount * CARD_HEIGHT + Math.max(0, cardCount - 1) * GAP);
+      const rows = Math.ceil(cardCount / GRID_COLUMNS);
+      sections.push(rows * CARD_HEIGHT + Math.max(0, rows - 1) * GAP);
     }
     if (showEnricherFeed) sections.push(SCAN_PILL_HEIGHT);
     if (showDiscoveryFeed) {
@@ -161,13 +239,13 @@ export function SuggestedTasksPanel() {
   const effectivePageStart =
     visibleCount > 0 && pageStart < totalTasks ? pageStart : 0;
 
-  const visibleTasks = discoveredTasks.slice(
+  const visibleEntries = entries.slice(
     effectivePageStart,
     effectivePageStart + visibleCount,
   );
 
   const canGoPrev = effectivePageStart > 0;
-  const canGoNext = effectivePageStart + visibleTasks.length < totalTasks;
+  const canGoNext = effectivePageStart + visibleEntries.length < totalTasks;
   const showPager = visibleCount > 0 && totalTasks > visibleCount;
   const currentPage =
     visibleCount > 0 ? Math.floor(effectivePageStart / visibleCount) + 1 : 1;
@@ -245,17 +323,38 @@ export function SuggestedTasksPanel() {
                   transition: { duration: 0.13, ease: "easeIn" },
                 }),
               }}
-              className="flex flex-col gap-2"
+              className="grid grid-cols-2 gap-2"
             >
               <AnimatePresence mode="sync" initial={false}>
-                {visibleTasks.map((task) => (
-                  <SuggestedTaskCard
-                    key={task.id}
-                    task={task}
-                    onSelect={handleSelectTask}
-                    onDismiss={handleDismiss}
-                  />
-                ))}
+                {visibleEntries.map((entry) =>
+                  entry.kind === "work" ? (
+                    <WorkItemCard
+                      key={entry.id}
+                      item={entry.item}
+                      onSelect={(item) =>
+                        handleSelectWorkItem(
+                          item,
+                          workItems.indexOf(item),
+                          workItems.length,
+                        )
+                      }
+                      onDismiss={(item) =>
+                        handleDismissWorkItem(
+                          item,
+                          workItems.indexOf(item),
+                          workItems.length,
+                        )
+                      }
+                    />
+                  ) : (
+                    <SuggestedTaskCard
+                      key={entry.id}
+                      task={entry.task}
+                      onSelect={handleSelectTask}
+                      onDismiss={handleDismiss}
+                    />
+                  ),
+                )}
               </AnimatePresence>
             </motion.div>
           </AnimatePresence>

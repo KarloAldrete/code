@@ -17,6 +17,7 @@ import { PromptHistoryDialog } from "@features/message-editor/components/PromptH
 import { PromptInput } from "@features/message-editor/components/PromptInput";
 import { useTaskInputHistoryStore } from "@features/message-editor/stores/taskInputHistoryStore";
 import type { EditorHandle } from "@features/message-editor/types";
+import { xmlToContent } from "@features/message-editor/utils/content";
 import { resolveAndAttachDroppedFiles } from "@features/message-editor/utils/persistFile";
 import { DropZoneOverlay } from "@features/sessions/components/DropZoneOverlay";
 import { ReasoningLevelSelector } from "@features/sessions/components/ReasoningLevelSelector";
@@ -133,9 +134,11 @@ export function TaskInput({
 
   useEffect(() => {
     if (!initialPrompt || !prefillRequestKey) return;
-    useDraftStore.getState().actions.setPendingContent(sessionId, {
-      segments: [{ type: "text", text: initialPrompt }],
-    });
+    // Hydrate chip tags (e.g. <github_pr/>) into real pills; plain prompts
+    // round-trip unchanged to a single text segment.
+    useDraftStore
+      .getState()
+      .actions.setPendingContent(sessionId, xmlToContent(initialPrompt));
   }, [initialPrompt, prefillRequestKey, sessionId]);
 
   useEffect(() => {

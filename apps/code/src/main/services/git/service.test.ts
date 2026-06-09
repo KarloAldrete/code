@@ -27,7 +27,7 @@ import type { IWorkspaceRepository } from "../../db/repositories/workspace-repos
 import type { AgentService } from "../agent/service";
 import type { LlmGatewayService } from "../llm-gateway/service";
 import type { WorkspaceService } from "../workspace/service";
-import { GitService, mapPrState } from "./service";
+import { derivePrWorkItems, GitService, mapPrState } from "./service";
 
 const stubWorkspaceRepo = {} as IWorkspaceRepository;
 
@@ -543,5 +543,178 @@ describe("GitService.resolveReviewThread", () => {
     const result = await service.resolveReviewThread("T_1", true);
 
     expect(result).toEqual({ success: false, isResolved: false });
+  });
+});
+
+describe("derivePrWorkItems", () => {
+  // `ghPr` mirrors a `gh pr list --json` row (uses `number`); `expected` is the
+  // derived work-item shape (uses `prNumber`).
+  const ghPr = {
+    number: 12,
+    title: "Add the thing",
+    url: "https://github.com/posthog/code/pull/12",
+    headRefName: "feat/thing",
+    headRefOid: "abc123",
+  };
+  const expected = {
+    prNumber: 12,
+    title: "Add the thing",
+    url: "https://github.com/posthog/code/pull/12",
+    headRefName: "feat/thing",
+    headSha: "abc123",
+  };
+
+  it("surfaces a review item for changes-requested", () => {
+    const items = derivePrWorkItems([
+      { ...ghPr, reviewDecision: "CHANGES_REQUESTED" },
+    ]);
+    expect(items).toEqual([{ ...expected, kind: "review" }]);
+  });
+
+  it("surfaces a ci item when a check fails (conclusion or state)", () => {
+    expect(
+      derivePrWorkItems([
+        { ...ghPr, statusCheckRollup: [{ conclusion: "FAILURE" }] },
+      ]),
+    ).toEqual([{ ...expected, kind: "ci" }]);
+    expect(
+      derivePrWorkItems([{ ...ghPr, statusCheckRollup: [{ state: "ERROR" }] }]),
+    ).toEqual([{ ...expected, kind: "ci" }]);
+  });
+
+  it("surfaces a conflict item when mergeable is CONFLICTING", () => {
+    const items = derivePrWorkItems([{ ...ghPr, mergeable: "CONFLICTING" }]);
+    expect(items).toEqual([{ ...expected, kind: "conflict" }]);
+  });
+
+  it("surfaces multiple items for one PR with multiple problems", () => {
+    const items = derivePrWorkItems([
+      {
+        ...ghPr,
+        reviewDecision: "CHANGES_REQUESTED",
+        mergeable: "CONFLICTING",
+        statusCheckRollup: [{ conclusion: "FAILURE" }],
+      },
+    ]);
+    expect(items.map((i) => i.kind)).toEqual(["review", "ci", "conflict"]);
+  });
+
+  it("yields nothing for a clean PR", () => {
+    expect(
+      derivePrWorkItems([
+        {
+          ...ghPr,
+          reviewDecision: "APPROVED",
+          mergeable: "MERGEABLE",
+          statusCheckRollup: [{ conclusion: "SUCCESS" }, { state: "PENDING" }],
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("for a draft, surfaces only conflicts (skips review/ci)", () => {
+    expect(
+      derivePrWorkItems([
+        {
+          ...ghPr,
+          isDraft: true,
+          reviewDecision: "CHANGES_REQUESTED",
+          mergeable: "CONFLICTING",
+          statusCheckRollup: [{ conclusion: "FAILURE" }],
+        },
+      ]),
+    ).toEqual([{ ...expected, kind: "conflict" }]);
+  });
+
+  it("yields nothing for a draft with no conflict", () => {
+    expect(
+      derivePrWorkItems([
+        {
+          ...ghPr,
+          isDraft: true,
+          reviewDecision: "CHANGES_REQUESTED",
+          mergeable: "MERGEABLE",
+          statusCheckRollup: [{ conclusion: "FAILURE" }],
+        },
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe("GitService.getPrWorkItems", () => {
+  let service: GitService;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    service = new GitService(
+      {} as LlmGatewayService,
+      {} as WorkspaceService,
+      { getSessionEnvForTask: async () => ({}) } as unknown as AgentService,
+      stubWorkspaceRepo,
+    );
+  });
+
+  it("lists the user's open PRs and derives work items", async () => {
+    mockGetRemoteUrl.mockResolvedValue("https://github.com/posthog/code.git");
+    mockExecGh.mockResolvedValue({
+      exitCode: 0,
+      stdout: JSON.stringify([
+        {
+          number: 7,
+          title: "Fix login",
+          url: "https://github.com/posthog/code/pull/7",
+          headRefName: "fix/login",
+          headRefOid: "deadbeef",
+          reviewDecision: "CHANGES_REQUESTED",
+          mergeable: "MERGEABLE",
+          statusCheckRollup: [{ conclusion: "SUCCESS" }],
+        },
+      ]),
+    });
+
+    const result = await service.getPrWorkItems("/repo");
+
+    const args = mockExecGh.mock.calls[0][0] as string[];
+    expect(args.slice(0, 6)).toEqual([
+      "pr",
+      "list",
+      "--author",
+      "@me",
+      "--state",
+      "open",
+    ]);
+    expect(args).toContain("posthog/code");
+    expect(result).toEqual([
+      {
+        kind: "review",
+        prNumber: 7,
+        title: "Fix login",
+        url: "https://github.com/posthog/code/pull/7",
+        headRefName: "fix/login",
+        headSha: "deadbeef",
+      },
+    ]);
+  });
+
+  it("returns [] for a non-GitHub remote without calling gh", async () => {
+    mockGetRemoteUrl.mockResolvedValue("https://gitlab.com/foo/bar.git");
+
+    const result = await service.getPrWorkItems("/repo");
+
+    expect(result).toEqual([]);
+    expect(mockExecGh).not.toHaveBeenCalled();
+  });
+
+  it("returns [] when gh exits non-zero (missing/unauthenticated)", async () => {
+    mockGetRemoteUrl.mockResolvedValue("https://github.com/posthog/code.git");
+    mockExecGh.mockResolvedValue({
+      exitCode: 1,
+      stdout: "",
+      stderr: "auth required",
+    });
+
+    const result = await service.getPrWorkItems("/repo");
+
+    expect(result).toEqual([]);
   });
 });
