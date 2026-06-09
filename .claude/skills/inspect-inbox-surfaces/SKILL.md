@@ -19,14 +19,19 @@ The next sub-skill (`plan-inbox-sync`) consumes this inventory to produce the sy
 
 ## Steps
 
-### 1. Enumerate the desktop Inbox
+### 1. Enumerate the desktop Inbox + Agents view
 
-Always start with a fresh listing — do not assume the file set from a prior run.
+Always start with a fresh listing — do not assume the file set from a prior run. **Two directories matter on desktop**: the inbox feature folder AND the agents view that mounts the inbox's `ConfigureAgentsSection`. Both feed the cloud Inbox; the agents view becomes the cloud's "Configure agents" modal.
 
 ```sh
 ls /Users/twixes/Developer/code/apps/code/src/renderer/features/inbox/
 find /Users/twixes/Developer/code/apps/code/src/renderer/features/inbox -type f \( -name "*.ts" -o -name "*.tsx" \) | sort
+
+ls /Users/twixes/Developer/code/apps/code/src/renderer/features/agents/
+find /Users/twixes/Developer/code/apps/code/src/renderer/features/agents -type f \( -name "*.ts" -o -name "*.tsx" \) | sort
 ```
+
+Read both `features/inbox/components/ConfigureAgentsSection.tsx` (the body) and `features/agents/components/AgentsView.tsx` (the shell). Enumerate every `<Subsection>` inside `ConfigureAgentsSection` in the inventory — Setup task / Connections / Auto-start / Responders / MCP servers — so planning can ask product questions per section.
 
 ### 2. Read the desktop entry-point files in full
 

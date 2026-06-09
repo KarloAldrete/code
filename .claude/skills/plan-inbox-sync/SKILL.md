@@ -38,6 +38,22 @@ For each desktop feature, pick exactly one of:
 
 **"Skip" is not a valid decision.** Neither is "defer to follow-up PR." If a feature feels too large to port in one chunk, split it across multiple sub-agents — but ship all of them in this run. The only items that may legitimately not get ported are things that depend on a desktop-only OS API with no cloud analogue; even then, port the visible part and stub the OS bit.
 
+### 2a. Ask product questions before deciding the Configure-agents surface
+
+The desktop Agents view (`features/agents/components/AgentsView.tsx` → `features/inbox/components/ConfigureAgentsSection.tsx`) is heterogeneous: setup task / Connections (GitHub + Slack) / Auto-start (team default + per-user override) / Responder sources / MCP servers. The cloud landing shape — modal vs sidebar scene vs drawer — is a product call that varies per run.
+
+**Before finalizing the manifest, use `AskUserQuestion` to ask the user**:
+
+1. **Surface**: modal-only / sidebar scene / drawer (one of three).
+2. **Autonomy granularity**: per-user only / team default + per-user override / team-level only.
+3. **Setup task CTA**: port / skip / port behind a feature flag.
+4. **MCP servers**: drop / stub Coming soon™ / link out to existing settings.
+5. (Conditional) **Connections**: inline status widgets / link out to cloud's existing integrations settings page.
+
+The Inbox toolbar button label is fixed at **"Configure agents"** regardless of which surface answer the user picks.
+
+Record each answer in the manifest so the implement step knows exactly what to build. Don't skip the questions even if you think you know the answer — the surface decision moves between runs as desktop's IA evolves.
+
 ### 3. Plan the cloud directory shape
 
 Look at desktop's current organization (subdirectories, component splits, hook/store/util groupings). Plan an analogous shape on cloud:
