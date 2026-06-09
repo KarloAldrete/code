@@ -3,6 +3,7 @@ import {
   useCanvasChatStore,
   useCanvasThread,
 } from "@features/canvas/stores/canvasChatStore";
+import { isNonEmptySpec } from "@json-render/core";
 import { PaperPlaneRightIcon, SpinnerGapIcon } from "@phosphor-icons/react";
 import {
   Button,
@@ -17,12 +18,14 @@ import { useEffect, useRef, useState } from "react";
 // Chat panel hugging the right of the canvas: a thread plus a composer that
 // drives the canvas generation agent.
 export function CanvasChat({ threadId }: { threadId: string }) {
-  const { messages, isStreaming, lastTool, error, templateId } =
+  const { messages, isStreaming, lastTool, error, templateId, spec } =
     useCanvasThread(threadId);
   const send = useCanvasChatStore((s) => s.send);
   const templates = useCanvasTemplates();
-  const suggestions =
-    templates.find((t) => t.id === templateId)?.suggestions ?? [];
+  // Suggestions only while the canvas itself is still empty (nothing built yet).
+  const suggestions = isNonEmptySpec(spec)
+    ? []
+    : (templates.find((t) => t.id === templateId)?.suggestions ?? []);
 
   const [draft, setDraft] = useState("");
   const threadRef = useRef<HTMLDivElement>(null);
