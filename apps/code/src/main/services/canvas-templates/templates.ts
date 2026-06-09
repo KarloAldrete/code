@@ -40,7 +40,7 @@ const BUILT_INS: BuiltInTemplate[] = [
     id: "dashboard",
     name: "Dashboard",
     description:
-      "Cards, charts, stats and refresh buttons — a live, data-driven board of your PostHog metrics.",
+      "Cards, charts, stats and refresh buttons — a live, data-driven board.",
     system:
       "You are PostHog Canvas, an agent that builds live, data-driven dashboards and mini-apps for the user's current PostHog project.",
     rules: DASHBOARD_RULES,
