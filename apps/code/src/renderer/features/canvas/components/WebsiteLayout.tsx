@@ -1,8 +1,8 @@
 import { DashboardRefreshControl } from "@features/canvas/components/DashboardRefreshControl";
+import { NewCanvasMenu } from "@features/canvas/components/NewCanvasMenu";
 import { dashboardTitleFromSpec } from "@features/canvas/genui/dashboardTitle";
 import { useChannels } from "@features/canvas/hooks/useChannels";
 import {
-  useCreateAndOpenDashboard,
   useDashboard,
   useDashboardMutations,
 } from "@features/canvas/hooks/useDashboards";
@@ -22,7 +22,6 @@ import {
   GitForkIcon,
   HashIcon,
   PencilSimpleIcon,
-  PlusIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
@@ -40,20 +39,6 @@ function threadIdFor(dashboardId: string): string {
 }
 
 // "New dashboard" action, shown in the top bar on the dashboards grid.
-function NewDashboardButton({ channelId }: { channelId: string }) {
-  const createAndOpen = useCreateAndOpenDashboard(channelId);
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      className="no-drag"
-      onClick={() => void createAndOpen()}
-    >
-      <PlusIcon size={14} />
-      New canvas
-    </Button>
-  );
-}
 
 // Edit toggle + (in edit mode) Save / Save-as-fork for the active dashboard.
 // Lives in the top bar; refresh is a separate control in the toolbar below.
@@ -247,7 +232,7 @@ export function WebsiteLayout() {
             dashboardId={dashboardId}
           />
         ) : isDashboardsGrid && channelId ? (
-          <NewDashboardButton channelId={channelId} />
+          <NewCanvasMenu channelId={channelId} />
         ) : null}
       </Flex>
       {/* Toolbar: a (dead) Filter on the left, refresh on the right. Only on the

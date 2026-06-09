@@ -91,7 +91,7 @@ export function PageBody({
     <Flex direction="column" gap="4" p="5">
       {props.title && (
         <Heading size="6" className="text-gray-12">
-          {ctx.text("/title", props.title)}
+          {ctx.text("/title", asText(props.title))}
         </Heading>
       )}
       {children}
@@ -127,7 +127,7 @@ export function CardBody({
     <Box className="rounded-lg border border-gray-6 bg-gray-1 p-4">
       {props.title && (
         <Text size="2" weight="bold" className="mb-2 block text-gray-12">
-          {ctx.text("/title", props.title)}
+          {ctx.text("/title", asText(props.title))}
         </Text>
       )}
       {children}
@@ -147,7 +147,7 @@ export function HeadingBody({
       size={props.level === 1 ? "6" : props.level === 3 ? "3" : "4"}
       className="text-gray-12"
     >
-      {ctx.text("/text", props.text)}
+      {ctx.text("/text", asText(props.text))}
     </Heading>
   );
 }
@@ -159,30 +159,43 @@ export function TextBody({ props, ctx }: { props: TextProps; ctx: BodyCtx }) {
       as="p"
       className={props.muted ? "text-gray-10" : "text-gray-12"}
     >
-      {ctx.text("/text", props.text)}
+      {ctx.text("/text", asText(props.text))}
     </Text>
   );
 }
 
 const numberFormat = new Intl.NumberFormat();
 
+// Spec props must be literal strings/numbers — this renderer doesn't resolve
+// json-render bindings ({$state}/{$item}/{$bindItem}). If the agent emits one
+// anyway, render nothing rather than letting React throw "Objects are not valid
+// as a React child" and blanking the whole canvas.
+function asText(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return "";
+}
+
 // Group raw numbers (e.g. 34980058 → 34,980,058); leave pre-formatted strings.
-function formatStatValue(value: string | number): string {
-  return typeof value === "number" ? numberFormat.format(value) : value;
+function formatStatValue(value: unknown): string {
+  return typeof value === "number" ? numberFormat.format(value) : asText(value);
 }
 
 export function StatBody({ props, ctx }: { props: StatProps; ctx: BodyCtx }) {
   return (
     <Flex direction="column" gap="1">
       <Text size="1" className="text-gray-10">
-        {ctx.text("/label", props.label)}
+        {ctx.text("/label", asText(props.label))}
       </Text>
       <Text size="7" weight="bold" className="text-gray-12">
         {ctx.data(formatStatValue(props.value))}
       </Text>
       {props.delta && (
         <Text size="1" className="text-gray-10">
-          {ctx.data(props.delta)}
+          {ctx.data(asText(props.delta))}
         </Text>
       )}
     </Flex>
@@ -195,7 +208,9 @@ export function TableBody({ props }: { props: TableProps; ctx: BodyCtx }) {
       <Table.Header>
         <Table.Row>
           {props.columns.map((col) => (
-            <Table.ColumnHeaderCell key={col}>{col}</Table.ColumnHeaderCell>
+            <Table.ColumnHeaderCell key={asText(col)}>
+              {asText(col)}
+            </Table.ColumnHeaderCell>
           ))}
         </Table.Row>
       </Table.Header>
@@ -205,7 +220,7 @@ export function TableBody({ props }: { props: TableProps; ctx: BodyCtx }) {
           <Table.Row key={ri}>
             {row.map((cell, ci) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: spec cells have no id
-              <Table.Cell key={ci}>{String(cell)}</Table.Cell>
+              <Table.Cell key={ci}>{asText(cell)}</Table.Cell>
             ))}
           </Table.Row>
         ))}
@@ -231,11 +246,11 @@ export function BarListBody({ props }: { props: BarListProps; ctx: BodyCtx }) {
               size="1"
               className="absolute inset-y-0 left-2 flex items-center text-gray-12"
             >
-              {item.label}
+              {asText(item.label)}
             </Text>
           </Box>
           <Text size="1" weight="bold" className="w-12 text-right text-gray-11">
-            {item.value}
+            {asText(item.value)}
           </Text>
         </Flex>
       ))}
@@ -245,7 +260,9 @@ export function BarListBody({ props }: { props: BarListProps; ctx: BodyCtx }) {
 
 export function BadgeBody({ props, ctx }: { props: BadgeProps; ctx: BodyCtx }) {
   return (
-    <Badge color={props.color ?? "gray"}>{ctx.text("/text", props.text)}</Badge>
+    <Badge color={props.color ?? "gray"}>
+      {ctx.text("/text", asText(props.text))}
+    </Badge>
   );
 }
 

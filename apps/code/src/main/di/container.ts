@@ -32,6 +32,7 @@ import { ArchiveService } from "../services/archive/service";
 import { AuthService } from "../services/auth/service";
 import { AuthProxyService } from "../services/auth-proxy/service";
 import { CanvasGenService } from "../services/canvas-gen/service";
+import { CanvasTemplatesService } from "../services/canvas-templates/service";
 import { CloudTaskService } from "../services/cloud-task/service";
 import { ConnectivityService } from "../services/connectivity/service";
 import { ContextMenuService } from "../services/context-menu/service";
@@ -118,6 +119,10 @@ container.bind(MAIN_TOKENS.SuspensionService).to(SuspensionService);
 container.bind(MAIN_TOKENS.AppLifecycleService).to(AppLifecycleService);
 container.bind(MAIN_TOKENS.CloudTaskService).to(CloudTaskService);
 container.bind(MAIN_TOKENS.CanvasGenService).to(CanvasGenService);
+container
+  .bind(MAIN_TOKENS.CanvasTemplatesService)
+  .to(CanvasTemplatesService)
+  .inSingletonScope();
 container.bind(MAIN_TOKENS.DashboardsService).to(DashboardsService);
 container.bind(MAIN_TOKENS.DashboardQueryService).to(DashboardQueryService);
 container.bind(MAIN_TOKENS.ConnectivityService).to(ConnectivityService);

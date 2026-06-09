@@ -1,4 +1,3 @@
-import { CANVAS_SYSTEM_PROMPT } from "@features/canvas/genui/catalog";
 import { dashboardTitleFromSpec } from "@features/canvas/genui/dashboardTitle";
 import { isNonEmptySpec } from "@json-render/core";
 import type { Spec } from "@json-render/react";
@@ -19,6 +18,8 @@ export interface CanvasThreadState {
   messages: CanvasMessage[];
   /** Latest assistant-generated spec rendered on the canvas. */
   spec: Spec | null;
+  /** The canvas template driving the agent (see main/canvas-templates). */
+  templateId: string;
   isStreaming: boolean;
   lastTool: string | null;
   error: string | null;
@@ -28,6 +29,7 @@ export interface CanvasThreadState {
 export const EMPTY_THREAD: CanvasThreadState = {
   messages: [],
   spec: null,
+  templateId: "dashboard",
   isStreaming: false,
   lastTool: null,
   error: null,
@@ -39,6 +41,8 @@ interface CanvasChatStore {
 
   send: (threadId: string, prompt: string) => Promise<void>;
   reset: (threadId: string) => Promise<void>;
+  /** Set the canvas template driving a thread's agent (from the saved record). */
+  setTemplate: (threadId: string, templateId: string) => void;
   /** Seed a thread's spec from a saved dashboard without clobbering live work. */
   ensureSpec: (threadId: string, spec: Spec) => void;
   /** Inline edit: set a prop on an element (propPath is a pointer like "/title"). */
@@ -114,7 +118,7 @@ export const useCanvasChatStore = create<CanvasChatStore>()((set, get) => {
         await trpcClient.canvasGen.generate.mutate({
           threadId,
           prompt: agentPrompt,
-          systemPrompt: CANVAS_SYSTEM_PROMPT,
+          templateId: current.templateId,
         });
       } catch (error) {
         log.error("Canvas generate failed", { error });
@@ -128,6 +132,10 @@ export const useCanvasChatStore = create<CanvasChatStore>()((set, get) => {
     reset: async (threadId) => {
       patch(threadId, () => ({ ...EMPTY_THREAD }));
       await trpcClient.canvasGen.reset.mutate({ threadId }).catch(() => {});
+    },
+
+    setTemplate: (threadId, templateId) => {
+      patch(threadId, (prev) => ({ ...prev, templateId }));
     },
 
     ensureSpec: (threadId, spec) => {

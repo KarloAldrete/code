@@ -5,11 +5,11 @@ export const canvasGenerateInput = z.object({
   threadId: z.string().min(1),
   prompt: z.string().min(1),
   /**
-   * The json-render system prompt describing the component catalog. Computed in
-   * the renderer from the shared catalog and applied once when the ephemeral
-   * agent session for this thread is created.
+   * The canvas template whose system prompt anchors the agent. Resolved to the
+   * template's prompt in main (CanvasTemplatesService) and applied once when the
+   * ephemeral agent session for this thread is created. Defaults to "dashboard".
    */
-  systemPrompt: z.string().min(1),
+  templateId: z.string().default("dashboard"),
   model: z.string().optional(),
 });
 export type CanvasGenerateInput = z.infer<typeof canvasGenerateInput>;

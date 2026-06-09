@@ -1,7 +1,7 @@
 import { ErrorBoundary } from "@components/ErrorBoundary";
+import { NewCanvasMenu } from "@features/canvas/components/NewCanvasMenu";
 import { CanvasRenderer } from "@features/canvas/genui/registry";
 import {
-  useCreateAndOpenDashboard,
   useDashboard,
   useDashboardMutations,
   useDashboards,
@@ -9,7 +9,7 @@ import {
 import { isNonEmptySpec } from "@json-render/core";
 import type { Spec } from "@json-render/react";
 import type { DashboardSummary } from "@main/services/dashboards/schemas";
-import { DotsThreeIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
+import { DotsThreeIcon, TrashIcon } from "@phosphor-icons/react";
 import {
   Button,
   cn,
@@ -32,7 +32,6 @@ const PREVIEW_SCALE = 0.4;
 // live preview. Clicking a card opens the full dashboard.
 export function WebsiteDashboardsIndex({ channelId }: { channelId: string }) {
   const { dashboards, isLoading } = useDashboards(channelId);
-  const createAndOpen = useCreateAndOpenDashboard(channelId);
 
   if (isLoading) return null;
 
@@ -54,10 +53,7 @@ export function WebsiteDashboardsIndex({ channelId }: { channelId: string }) {
             Create one and build it with the agent, then save it.
           </Text>
         </Flex>
-        <Button variant="primary" onClick={() => void createAndOpen()}>
-          <PlusIcon size={14} />
-          Create canvas
-        </Button>
+        <NewCanvasMenu channelId={channelId} variant="primary" />
       </Flex>
     );
   }

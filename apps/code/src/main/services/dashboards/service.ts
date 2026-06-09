@@ -82,10 +82,11 @@ export class DashboardsService {
       )
       .map((e) => toRecord(e))
       .sort((a, b) => b.updatedAt - a.updatedAt)
-      .map(({ id, channelId: cid, name, updatedAt }) => ({
+      .map(({ id, channelId: cid, name, templateId, updatedAt }) => ({
         id,
         channelId: cid,
         name,
+        templateId,
         updatedAt,
       }));
   }
@@ -99,12 +100,14 @@ export class DashboardsService {
     channelId: string;
     name: string;
     spec: Record<string, unknown> | null;
+    templateId?: string;
   }): Promise<DashboardRecord> {
     const channelPath = await this.channelPath(input.channelId);
     const now = Date.now();
     const meta: DashboardFileMeta = {
       spec: input.spec,
       channelId: input.channelId,
+      templateId: input.templateId ?? "dashboard",
       createdAt: now,
       updatedAt: now,
     };
@@ -244,6 +247,7 @@ function toRecord(entry: FsEntry): DashboardRecord {
     channelId: meta.channelId ?? "",
     name: lastSegment(entry.path),
     spec: meta.spec ?? null,
+    templateId: meta.templateId ?? "dashboard",
     createdAt,
     updatedAt: meta.updatedAt ?? createdAt,
   };

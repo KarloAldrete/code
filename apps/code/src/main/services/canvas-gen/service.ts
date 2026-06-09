@@ -16,6 +16,7 @@ import {
 } from "../agent/schemas";
 import type { AgentService } from "../agent/service";
 import type { AuthService } from "../auth/service";
+import type { CanvasTemplatesService } from "../canvas-templates/service";
 import {
   CanvasGenEvent,
   type CanvasGenEvents,
@@ -67,13 +68,16 @@ export class CanvasGenService extends TypedEventEmitter<CanvasGenEvents> {
     private readonly agentService: AgentService,
     @inject(MAIN_TOKENS.AuthService)
     private readonly authService: AuthService,
+    @inject(MAIN_TOKENS.CanvasTemplatesService)
+    private readonly templatesService: CanvasTemplatesService,
   ) {
     super();
   }
 
   async generate(input: CanvasGenerateInput): Promise<void> {
-    const { threadId, prompt, systemPrompt, model } = input;
+    const { threadId, prompt, templateId, model } = input;
     const taskRunId = `${TASK_RUN_PREFIX}${threadId}`;
+    const systemPrompt = this.templatesService.systemPromptFor(templateId);
 
     this.ensureForwarding();
 

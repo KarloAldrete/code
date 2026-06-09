@@ -15,9 +15,11 @@ export function WebsiteDashboard({ dashboardId }: { dashboardId: string }) {
   const editing = useIsDashboardEditing(dashboardId);
   const { dashboard, isLoading } = useDashboard(dashboardId);
   const ensureSpec = useCanvasChatStore((s) => s.ensureSpec);
+  const setTemplate = useCanvasChatStore((s) => s.setTemplate);
 
   const threadId = `dashboard:${dashboardId}`;
   const spec = dashboard?.spec as Spec | null | undefined;
+  const templateId = dashboard?.templateId;
 
   // Entering edit on an existing dashboard: seed the canvas thread with the
   // saved spec so the agent refines the current board instead of a blank
@@ -25,6 +27,12 @@ export function WebsiteDashboard({ dashboardId }: { dashboardId: string }) {
   useEffect(() => {
     if (editing && isNonEmptySpec(spec)) ensureSpec(threadId, spec);
   }, [editing, threadId, spec, ensureSpec]);
+
+  // Anchor the thread's agent to this canvas's template (so it builds with the
+  // right context — Dashboard vs Blank — from the first message).
+  useEffect(() => {
+    if (templateId) setTemplate(threadId, templateId);
+  }, [threadId, templateId, setTemplate]);
 
   if (editing) {
     return <WebsiteCanvas threadId={threadId} />;

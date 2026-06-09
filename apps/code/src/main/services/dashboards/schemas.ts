@@ -11,6 +11,9 @@ export const dashboardRecordSchema = z.object({
   channelId: z.string().default(""),
   name: z.string(),
   spec: dashboardSpecSchema,
+  // The canvas template this board was built with. Defaults to "dashboard" so
+  // boards saved before templating still parse and behave as before.
+  templateId: z.string().default("dashboard"),
   createdAt: z.number(),
   updatedAt: z.number(),
 });
@@ -26,6 +29,8 @@ export const dashboardFileMetaSchema = z.object({
   // The channel folder's stable file-system id. Stored here rather than derived
   // from the path so renaming/moving the channel folder can't reparent the board.
   channelId: z.string().optional(),
+  // The canvas template id this board was built with (absent = "dashboard").
+  templateId: z.string().optional(),
   // Epoch ms. createdAt mirrors the row's created_at; updatedAt is ours because
   // the FileSystem row has no updated_at column to sort the dashboards list by.
   createdAt: z.number().optional(),
@@ -37,6 +42,7 @@ export const dashboardSummarySchema = z.object({
   id: z.string(),
   channelId: z.string(),
   name: z.string(),
+  templateId: z.string().default("dashboard"),
   updatedAt: z.number(),
 });
 export type DashboardSummary = z.infer<typeof dashboardSummarySchema>;
@@ -47,6 +53,7 @@ export const createDashboardInput = z.object({
   channelId: z.string().min(1),
   name: z.string().min(1),
   spec: dashboardSpecSchema,
+  templateId: z.string().default("dashboard"),
 });
 
 export const updateDashboardInput = z.object({
