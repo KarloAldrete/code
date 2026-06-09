@@ -1,6 +1,15 @@
 import { EnvelopeSimpleIcon } from "@phosphor-icons/react";
 import { isInboxDetailPath } from "@posthog/core/inbox/reportMembership";
 import { InboxPageHeader } from "@posthog/ui/features/inbox/components/InboxPageHeader";
+import {
+  InboxOnboardingHeader,
+  InboxOnboardingPane,
+} from "@posthog/ui/features/inbox/components/onboarding/InboxOnboardingPane";
+import { InboxOnboardingWelcome } from "@posthog/ui/features/inbox/components/onboarding/InboxOnboardingWelcome";
+import {
+  useInboxOnboardingSessionStore,
+  useInboxOnboardingState,
+} from "@posthog/ui/features/inbox/components/onboarding/useInboxOnboardingState";
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Flex, Text } from "@radix-ui/themes";
@@ -33,12 +42,31 @@ export function InboxView() {
   const { counts } = useInboxAllReports();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isDetailView = isInboxDetailPath(pathname);
+  const onboarding = useInboxOnboardingState();
+  const welcomeAcknowledged = useInboxOnboardingSessionStore(
+    (s) => s.welcomeAcknowledged,
+  );
+  const showOnboarding =
+    !isDetailView && !onboarding.isLoading && !onboarding.isComplete;
+  const showWelcome = showOnboarding && !welcomeAcknowledged;
 
   return (
     <Flex direction="column" className="h-full min-h-0">
-      {!isDetailView && <InboxPageHeader counts={counts} />}
+      {showOnboarding ? (
+        <InboxOnboardingHeader />
+      ) : (
+        !isDetailView && <InboxPageHeader counts={counts} />
+      )}
       <div className="min-h-0 flex-1 overflow-auto">
-        <Outlet />
+        {showOnboarding ? (
+          showWelcome ? (
+            <InboxOnboardingWelcome />
+          ) : (
+            <InboxOnboardingPane />
+          )
+        ) : (
+          <Outlet />
+        )}
       </div>
     </Flex>
   );
