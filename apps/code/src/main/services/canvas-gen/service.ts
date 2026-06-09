@@ -97,6 +97,18 @@ export class CanvasGenService extends TypedEventEmitter<CanvasGenEvents> {
       return;
     }
 
+    // Re-seed the working spec from what the renderer currently shows, EVERY
+    // turn. Main keeps its own accumulator separate from the renderer; after a
+    // renderer reload (main process survives) or for a session started before
+    // the board hydrated, that accumulator is empty/stale. Without this, an edit
+    // patch like `add /elements/table` lands in a spec with no `root`, and the
+    // emit gate (root must exist) silently drops every update — the agent's
+    // changes never reach the canvas. The renderer's spec is the source of truth.
+    if (currentSpec) {
+      const thread = this.threads.get(threadId);
+      if (thread) thread.spec = { ...currentSpec };
+    }
+
     this.emitEvent(threadId, { type: "started" });
 
     const promptBlocks: ContentBlock[] = [{ type: "text", text: prompt }];
