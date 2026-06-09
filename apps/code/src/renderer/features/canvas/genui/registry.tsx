@@ -2,11 +2,14 @@ import {
   BadgeBody,
   BarChartBody,
   BarListBody,
+  ButtonBody,
   CardBody,
   DividerBody,
   GridBody,
   HeadingBody,
+  HeroBody,
   LineChartBody,
+  MarkdownBody,
   PageBody,
   PLAIN_CTX,
   SparklineBody,
@@ -56,5 +59,10 @@ export const CanvasRenderer = createRenderer(canvasCatalog, {
     <SparklineBody props={element.props} ctx={PLAIN_CTX} />
   ),
   Badge: ({ element }) => <BadgeBody props={element.props} ctx={PLAIN_CTX} />,
+  Hero: ({ element }) => <HeroBody props={element.props} ctx={PLAIN_CTX} />,
+  Markdown: ({ element }) => (
+    <MarkdownBody props={element.props} ctx={PLAIN_CTX} />
+  ),
+  Button: ({ element }) => <ButtonBody props={element.props} ctx={PLAIN_CTX} />,
   Divider: () => <DividerBody />,
 });

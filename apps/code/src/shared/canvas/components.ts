@@ -85,6 +85,30 @@ export const CANVAS_COMPONENTS = {
     }),
     description: "A small status pill.",
   },
+  Hero: {
+    props: z.object({
+      title: z.string(),
+      eyebrow: z.string().optional(),
+      subtitle: z.string().optional(),
+      ctaText: z.string().optional(),
+    }),
+    description:
+      "A centered hero section for the top of a page: a big title with an optional eyebrow, subtitle, and call-to-action label.",
+  },
+  Markdown: {
+    props: z.object({ content: z.string() }),
+    description:
+      "A rich-text block rendered from Markdown — headings, lists, links, bold/italic, tables. Use for prose-heavy content (landing-page copy, write-ups). Markdown only; no raw HTML.",
+  },
+  Button: {
+    props: z.object({
+      text: z.string(),
+      variant: z
+        .enum(["primary", "default", "outline", "destructive"])
+        .optional(),
+    }),
+    description: "A call-to-action button (display only; not interactive).",
+  },
   Divider: {
     props: z.object({}),
     description: "A horizontal divider.",

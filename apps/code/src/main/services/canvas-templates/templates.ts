@@ -24,6 +24,7 @@ const DASHBOARD_RULES = [
 const BLANK_RULES = [
   "Build ANYTHING the user describes. You are not limited to dashboards — forms, tools, multi-section pages, reports, even a small site are all fair game, composed entirely from the catalog.",
   "Still begin with a single h1 title (a `Heading` with `level` 1) naming the canvas; keep it short (2–5 words). It's used to name the saved file.",
+  "For rich pages (landing pages, marketing, write-ups): open with a `Hero` section, use `Markdown` for prose-heavy copy (headings, lists, links), `Button` for call-to-action labels, `Grid` of `Card`s for feature sections, and `Divider` between sections. Write real, specific copy — never lorem ipsum.",
   "Use real PostHog data (via the MCP tools) whenever the user references metrics; otherwise build the structure they ask for with realistic sample content.",
 ];
 

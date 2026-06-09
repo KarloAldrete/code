@@ -1,3 +1,5 @@
+import { MarkdownRenderer } from "@features/editor/components/MarkdownRenderer";
+import { Button } from "@posthog/quill";
 import {
   BarChart,
   LineChart,
@@ -7,6 +9,7 @@ import {
 } from "@posthog/quill-charts";
 import { Badge, Box, Flex, Grid, Heading, Table, Text } from "@radix-ui/themes";
 import type { ReactNode } from "react";
+import rehypeSanitize from "rehype-sanitize";
 
 // Presentational bodies for every catalog component, shared by both the view
 // renderer (registry.tsx → createRenderer) and the edit renderer
@@ -61,6 +64,19 @@ export interface BarListProps {
 export interface BadgeProps {
   text: string;
   color?: "gray" | "green" | "red" | "amber" | "blue";
+}
+export interface HeroProps {
+  title: string;
+  eyebrow?: string;
+  subtitle?: string;
+  ctaText?: string;
+}
+export interface MarkdownProps {
+  content: string;
+}
+export interface ButtonProps {
+  text: string;
+  variant?: "primary" | "default" | "outline" | "destructive";
 }
 export interface ChartSeriesInput {
   label: string;
@@ -329,6 +345,68 @@ export function SparklineBody({
   );
 }
 
+export function HeroBody({ props, ctx }: { props: HeroProps; ctx: BodyCtx }) {
+  return (
+    <Flex
+      direction="column"
+      align="center"
+      gap="3"
+      py="8"
+      className="text-center"
+    >
+      {props.eyebrow && (
+        <Text size="2" weight="bold" className="text-accent-11 uppercase">
+          {ctx.text("/eyebrow", asText(props.eyebrow))}
+        </Text>
+      )}
+      <Heading size="9" className="max-w-3xl text-balance text-gray-12">
+        {ctx.text("/title", asText(props.title))}
+      </Heading>
+      {props.subtitle && (
+        <Text size="4" className="max-w-2xl text-pretty text-gray-10">
+          {ctx.text("/subtitle", asText(props.subtitle))}
+        </Text>
+      )}
+      {props.ctaText && (
+        <Button variant="primary" size="lg" className="mt-2">
+          {ctx.text("/ctaText", asText(props.ctaText))}
+        </Button>
+      )}
+    </Flex>
+  );
+}
+
+export function MarkdownBody({
+  props,
+}: {
+  props: MarkdownProps;
+  ctx: BodyCtx;
+}) {
+  return (
+    <Box className="text-gray-12">
+      {/* Sanitized: Markdown only, raw HTML is stripped (untrusted agent text). */}
+      <MarkdownRenderer
+        content={asText(props.content)}
+        rehypePlugins={[rehypeSanitize]}
+      />
+    </Box>
+  );
+}
+
+export function ButtonBody({
+  props,
+  ctx,
+}: {
+  props: ButtonProps;
+  ctx: BodyCtx;
+}) {
+  return (
+    <Button variant={props.variant ?? "primary"}>
+      {ctx.text("/text", asText(props.text))}
+    </Button>
+  );
+}
+
 export function DividerBody() {
   return <Box className="my-2 h-px bg-gray-6" />;
 }
@@ -379,6 +457,12 @@ export function renderBody(
       return <SparklineBody props={p} ctx={ctx} />;
     case "Badge":
       return <BadgeBody props={p} ctx={ctx} />;
+    case "Hero":
+      return <HeroBody props={p} ctx={ctx} />;
+    case "Markdown":
+      return <MarkdownBody props={p} ctx={ctx} />;
+    case "Button":
+      return <ButtonBody props={p} ctx={ctx} />;
     case "Divider":
       return <DividerBody />;
     default:
