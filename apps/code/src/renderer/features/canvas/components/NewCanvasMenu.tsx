@@ -5,10 +5,12 @@ import {
   Button,
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
   ItemContent,
   ItemDescription,
+  ItemMenuItem,
   ItemTitle,
 } from "@posthog/quill";
 import { useState } from "react";
@@ -27,13 +29,6 @@ export function NewCanvasMenu({
   const templates = useCanvasTemplates();
   const createAndOpen = useCreateAndOpenDashboard(channelId);
 
-  const trigger = (
-    <Button variant={variant} size="sm" className="no-drag">
-      <PlusIcon size={14} />
-      New canvas
-    </Button>
-  );
-
   if (templates.length === 0) {
     return (
       <Button
@@ -50,27 +45,33 @@ export function NewCanvasMenu({
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger render={trigger} />
-      <DropdownMenuContent
-        align="end"
-        side="bottom"
-        sideOffset={4}
-        className="w-72"
+      <DropdownMenuTrigger
+        render={(props) => (
+          <Button variant={variant} size="sm" className="no-drag" {...props} />
+        )}
       >
-        {templates.map((t) => (
-          <DropdownMenuItem
-            key={t.id}
-            onClick={() => void createAndOpen({ templateId: t.id })}
-            className="h-auto"
-          >
-            <ItemContent>
-              <ItemTitle>{t.name}</ItemTitle>
-              <ItemDescription className="[text-wrap:initial]">
-                {t.description}
-              </ItemDescription>
-            </ItemContent>
-          </DropdownMenuItem>
-        ))}
+        <PlusIcon size={14} />
+        New canvas
+      </DropdownMenuTrigger>
+      <DropdownMenuContent className="w-auto" align="end" sideOffset={4}>
+        <DropdownMenuGroup>
+          {templates.map((t) => (
+            <DropdownMenuItem
+              key={t.id}
+              onClick={() => void createAndOpen({ templateId: t.id })}
+              render={
+                <ItemMenuItem size="xs" className="w-full">
+                  <ItemContent variant="menuItem">
+                    <ItemTitle>{t.name}</ItemTitle>
+                    <ItemDescription className="leading-none">
+                      {t.description}
+                    </ItemDescription>
+                  </ItemContent>
+                </ItemMenuItem>
+              }
+            />
+          ))}
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
