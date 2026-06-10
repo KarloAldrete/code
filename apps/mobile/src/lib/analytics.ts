@@ -3,7 +3,7 @@ import { usePostHog } from "posthog-react-native";
 import { useEffect, useMemo } from "react";
 
 /**
- * Event names mirror apps/code/src/shared/types/analytics.ts so PostHog reports
+ * Event names mirror packages/shared/src/analytics-events.ts so PostHog reports
  * funnel the same events from desktop and mobile into a single bucket.
  */
 export const ANALYTICS_EVENTS = {

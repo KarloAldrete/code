@@ -223,7 +223,7 @@ interface InboxViewedFilterState {
 /**
  * Build the property payload for the `Inbox viewed` analytics event.
  *
- * Mirrors apps/code/src/renderer/features/inbox/components/InboxSignalsTab.tsx so
+ * Mirrors packages/ui/src/features/inbox/components/InboxSignalsTab.tsx so
  * desktop and mobile send the same shape into PostHog.
  */
 export function buildInboxViewedProperties(

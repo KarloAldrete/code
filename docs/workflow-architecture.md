@@ -86,14 +86,12 @@ polling, no client-side classification:
 
 | Concern | File |
 |---|---|
-| Snapshot wire schema (Zod, source of truth for the renderer types) | `apps/code/src/shared/types/home-snapshot.ts` |
-| Workflow config wire schema | `apps/code/src/shared/types/workflow.ts` |
-| Snapshot client + poll loop | `apps/code/src/main/services/home/service.ts` (`HomeService`) |
-| Workflow config client | `apps/code/src/main/services/workflow/service.ts` (`WorkflowService`) |
-| tRPC routers | `apps/code/src/main/trpc/routers/{home,workflow}.ts` |
-| Renderer query hooks | `features/home/hooks/{useHomeSnapshot,useWorkflow}.ts` |
-| Subscription registrar (keeps the query caches fresh) | `features/home/subscriptions.ts` |
-| Board column projection (pure, renderer-only) | `features/home/utils/boardColumns.ts` |
+| Snapshot wire schema (Zod, source of truth for the UI types) | `packages/core/src/home/schemas.ts` |
+| Workflow config wire schema | `packages/core/src/workflow/schemas.ts` |
+| HTTP client methods (`code_home/`, `code_workflow/*`) | `packages/api-client/src/posthog-client.ts` |
+| Snapshot polling query | `packages/ui/src/features/home/hooks/useHomeSnapshot.ts` |
+| Workflow query + save/reset mutations (cache write-back) | `packages/ui/src/features/home/hooks/useWorkflow.ts` |
+| Board column projection (pure, UI-only) | `packages/ui/src/features/home/utils/boardColumns.ts` |
 
 Delivery for v1 is **REST + client poll**: `HomeService` polls
 `GET /code_home/` and emits `home.onSnapshotUpdated`; `WorkflowService` calls the

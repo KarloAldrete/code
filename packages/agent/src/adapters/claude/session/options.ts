@@ -127,7 +127,7 @@ function buildEnvironment(): Record<string, string> {
   // gateway authenticates with a shared key, so without this the spend lands on
   // the key owner's team. The gateway lifts `x-posthog-property-*` headers onto
   // the event; both entrypoints export POSTHOG_PROJECT_ID before this runs
-  // (apps/code auth-adapter.ts, server/agent-server.ts). Mirrors django's
+  // (workspace-server auth-adapter.ts, server/agent-server.ts). Mirrors django's
   // get_llm_client(team_id=...).
   const projectId = process.env.POSTHOG_PROJECT_ID;
   if (projectId) {

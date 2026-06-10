@@ -8,6 +8,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./acp-extensions": {
+      "types": "./dist/acp-extensions.d.ts",
+      "import": "./dist/acp-extensions.js"
+    },
     "./agent": {
       "types": "./dist/agent.d.ts",
       "import": "./dist/agent.js"
@@ -19,6 +23,10 @@
     "./posthog-api": {
       "types": "./dist/posthog-api.d.ts",
       "import": "./dist/posthog-api.js"
+    },
+    "./posthog-products": {
+      "types": "./dist/posthog-products.d.ts",
+      "import": "./dist/posthog-products.js"
     },
     "./pr-url-detector": {
       "types": "./dist/pr-url-detector.d.ts",
