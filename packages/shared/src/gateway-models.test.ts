@@ -32,26 +32,24 @@ describe("formatGatewayModelName", () => {
 });
 
 describe("isBlockedModelId", () => {
-  it("blocks deprecated gateway models case-insensitively", () => {
-    expect(isBlockedModelId("claude-haiku-4-5")).toBe(true);
-    expect(isBlockedModelId("ANTHROPIC/CLAUDE-HAIKU-4-5")).toBe(true);
-    expect(isBlockedModelId("gpt-5.3-codex")).toBe(true);
-  });
-
-  it("keeps current models", () => {
-    expect(isBlockedModelId("claude-opus-4-8")).toBe(false);
-    expect(isBlockedModelId("claude-sonnet-4-6")).toBe(false);
+  it.each([
+    { modelId: "claude-haiku-4-5", expected: true },
+    { modelId: "ANTHROPIC/CLAUDE-HAIKU-4-5", expected: true },
+    { modelId: "gpt-5.3-codex", expected: true },
+    { modelId: "claude-opus-4-8", expected: false },
+    { modelId: "claude-sonnet-4-6", expected: false },
+  ])("$modelId -> blocked=$expected", ({ modelId, expected }) => {
+    expect(isBlockedModelId(modelId)).toBe(expected);
   });
 });
 
 describe("supportsReasoningEffort", () => {
-  it("is true for models with an effort control", () => {
-    expect(supportsReasoningEffort("claude-opus-4-8")).toBe(true);
-    expect(supportsReasoningEffort("claude-sonnet-4-6")).toBe(true);
-    expect(supportsReasoningEffort("claude-fable-5")).toBe(true);
-  });
-
-  it("is false for unknown models", () => {
-    expect(supportsReasoningEffort("some-future-model")).toBe(false);
+  it.each([
+    { modelId: "claude-opus-4-8", expected: true },
+    { modelId: "claude-sonnet-4-6", expected: true },
+    { modelId: "claude-fable-5", expected: true },
+    { modelId: "some-future-model", expected: false },
+  ])("$modelId -> effort=$expected", ({ modelId, expected }) => {
+    expect(supportsReasoningEffort(modelId)).toBe(expected);
   });
 });

@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
+import type { CloudRegion } from "@/features/auth";
 import { useAuthStore } from "@/features/auth";
 import { getAvailableModels } from "../api";
 import type { ModelOption } from "../composer/options";
@@ -7,7 +8,11 @@ import { useModelStore } from "../stores/modelStore";
 
 export const modelKeys = {
   all: ["models"] as const,
-  list: () => [...modelKeys.all, "list"] as const,
+  // The gateway URL is region-derived, so the cache must be keyed by region —
+  // otherwise switching regions would serve the previous region's models for
+  // the full staleTime window.
+  list: (region: CloudRegion | null) =>
+    [...modelKeys.all, "list", region] as const,
 };
 
 function modelsEqual(a: ModelOption[], b: ModelOption[]): boolean {
@@ -39,7 +44,7 @@ export function useModels() {
   const setModels = useModelStore((s) => s.setModels);
 
   const query = useQuery({
-    queryKey: modelKeys.list(),
+    queryKey: modelKeys.list(cloudRegion),
     queryFn: getAvailableModels,
     enabled: !!oauthAccessToken && !!cloudRegion,
     staleTime: 10 * 60 * 1000,
