@@ -29,4 +29,19 @@ export interface AgentServerConfig {
   runtimeAdapter?: "claude" | "codex";
   model?: string;
   reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
+  otelLogs?: AgentServerOtelLogsConfig;
+}
+
+/**
+ * OTEL logs export config for the cloud agent server. When present, the server
+ * ships its logs to PostHog Logs via OTLP HTTP. Injected by the sandbox
+ * environment; absent in local/dev runs, where export stays disabled.
+ */
+export interface AgentServerOtelLogsConfig {
+  /** PostHog logs ingest host, e.g. "https://us.i.posthog.com" */
+  host: string;
+  /** Ingest-capable API key for the logs endpoint */
+  apiKey: string;
+  /** Override the logs endpoint path (default: /i/v1/logs) */
+  logsPath?: string;
 }

@@ -41,6 +41,11 @@ const envSchema = z.object({
     )
     .transform((value) => parseInt(value, 10))
     .optional(),
+  // Optional OTEL logs export. When both host and key are present the agent
+  // ships its logs to PostHog Logs; otherwise export is disabled (no-op).
+  POSTHOG_OTEL_LOGS_HOST: z.url().optional(),
+  POSTHOG_OTEL_LOGS_API_KEY: z.string().min(1).optional(),
+  POSTHOG_OTEL_LOGS_PATH: z.string().min(1).optional(),
 });
 
 const program = new Command();
@@ -154,6 +159,17 @@ program
       );
     }
 
+    const otelLogs =
+      env.POSTHOG_OTEL_LOGS_HOST && env.POSTHOG_OTEL_LOGS_API_KEY
+        ? {
+            host: env.POSTHOG_OTEL_LOGS_HOST,
+            apiKey: env.POSTHOG_OTEL_LOGS_API_KEY,
+            ...(env.POSTHOG_OTEL_LOGS_PATH
+              ? { logsPath: env.POSTHOG_OTEL_LOGS_PATH }
+              : {}),
+          }
+        : undefined;
+
     const server = new AgentServer({
       port: parseInt(options.port, 10),
       jwtPublicKey: env.JWT_PUBLIC_KEY,
@@ -175,6 +191,7 @@ program
       runtimeAdapter: env.POSTHOG_CODE_RUNTIME_ADAPTER,
       model: env.POSTHOG_CODE_MODEL,
       reasoningEffort: env.POSTHOG_CODE_REASONING_EFFORT,
+      otelLogs,
     });
 
     process.on("SIGINT", async () => {

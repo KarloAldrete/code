@@ -5,8 +5,11 @@ import {
   BatchLogRecordProcessor,
   LoggerProvider,
 } from "@opentelemetry/sdk-logs";
-import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
-import type { StoredNotification } from "./types";
+import {
+  ATTR_SERVICE_NAME,
+  ATTR_SERVICE_VERSION,
+} from "@opentelemetry/semantic-conventions";
+import type { LogLevel, StoredNotification } from "./types";
 import type { Logger } from "./utils/logger";
 
 export interface OtelLogConfig {
@@ -16,7 +19,7 @@ export interface OtelLogConfig {
   apiKey: string;
   /** Batch flush interval in ms (default: 500) */
   flushIntervalMs?: number;
-  /** Override the logs endpoint path (default: /i/v1/agent-logs) */
+  /** Override the logs endpoint path (default: /i/v1/logs) */
   logsPath?: string;
 }
 
@@ -31,6 +34,27 @@ export interface SessionContext {
   runId: string;
   /** Deployment environment - "local" for desktop, "cloud" for cloud sandbox */
   deviceType?: "local" | "cloud";
+  /** Agent version, surfaced as the OTEL service.version resource attribute */
+  serviceVersion?: string;
+}
+
+/** Maps the agent's log levels onto OTEL severities. */
+const LOG_LEVEL_TO_SEVERITY: Record<
+  LogLevel,
+  { number: SeverityNumber; text: string }
+> = {
+  debug: { number: SeverityNumber.DEBUG, text: "DEBUG" },
+  info: { number: SeverityNumber.INFO, text: "INFO" },
+  warn: { number: SeverityNumber.WARN, text: "WARN" },
+  error: { number: SeverityNumber.ERROR, text: "ERROR" },
+};
+
+function safeStringify(data: unknown): string {
+  try {
+    return JSON.stringify(data);
+  } catch {
+    return String(data);
+  }
 }
 
 export class OtelLogWriter {
@@ -42,7 +66,7 @@ export class OtelLogWriter {
     sessionContext: SessionContext,
     _debugLogger?: Logger,
   ) {
-    const logsPath = config.logsPath ?? "/i/v1/agent-logs";
+    const logsPath = config.logsPath ?? "/i/v1/logs";
     const exporter = new OTLPLogExporter({
       url: `${config.posthogHost}${logsPath}`,
       headers: { Authorization: `Bearer ${config.apiKey}` },
@@ -57,6 +81,9 @@ export class OtelLogWriter {
     this.loggerProvider = new LoggerProvider({
       resource: resourceFromAttributes({
         [ATTR_SERVICE_NAME]: "posthog-code-agent",
+        ...(sessionContext.serviceVersion
+          ? { [ATTR_SERVICE_VERSION]: sessionContext.serviceVersion }
+          : {}),
         run_id: sessionContext.runId,
         task_id: sessionContext.taskId,
         device_type: sessionContext.deviceType ?? "local",
@@ -65,6 +92,31 @@ export class OtelLogWriter {
     });
 
     this.logger = this.loggerProvider.getLogger("agent-session");
+  }
+
+  /**
+   * Emit a structured agent log line to PostHog Logs.
+   *
+   * Maps the agent's log level onto an OTEL severity and stores the scope as a
+   * `log.scope` attribute (mirroring the desktop electron-log OTEL transport),
+   * so cloud-run logs are queryable by run_id / task_id / severity.
+   */
+  emitLog(
+    level: LogLevel,
+    scope: string,
+    message: string,
+    data?: unknown,
+  ): void {
+    const severity = LOG_LEVEL_TO_SEVERITY[level] ?? LOG_LEVEL_TO_SEVERITY.info;
+    const body =
+      data !== undefined ? `${message} ${safeStringify(data)}` : message;
+
+    this.logger.emit({
+      severityNumber: severity.number,
+      severityText: severity.text,
+      body,
+      attributes: { "log.scope": scope },
+    });
   }
 
   /**

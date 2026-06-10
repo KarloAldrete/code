@@ -206,10 +206,10 @@ Logs serve two purposes: real-time observability and session resume. Every ACP m
 
 `SessionLogWriter` (`src/session-log-writer.ts`) is a per-session multiplexer that buffers raw ndJson lines. On flush (auto-scheduled 500ms after writes, or explicit), it dispatches to whichever backend is configured:
 
-- **OTEL** (`src/otel-log-writer.ts`) — preferred path. Creates an OpenTelemetry `LoggerProvider` per session with resource attributes (`task_id`, `run_id`, `device_type`) set once and indexed via `resource_fingerprint`. Each ndJson line is emitted as an OTEL log record with an `event_type` attribute (the ACP method name) and exported via OTLP HTTP to PostHog's `/i/v1/agent-logs` endpoint. Batch flush interval defaults to 500ms.
-- **Legacy S3** — falls back to `PostHogAPIClient.appendTaskRunLog()`, which POSTs batched `StoredNotification` entries to the Django API. The API stores them as the task run's `log_url`.
+- **S3** — `PostHogAPIClient.appendTaskRunLog()` POSTs batched `StoredNotification` entries to the Django API, which stores them as the task run's `log_url` (used for full log download and session resume).
+- **Local cache** — when `localCachePath` is set, raw ndJson is also appended to `<cache>/sessions/<runId>/logs.ndjson` for instant local loading.
 
-Both backends can be active simultaneously — OTEL for fast indexed queries, S3 for full log download.
+Separately from `SessionLogWriter`, the cloud `AgentServer` ships its own operational logs to PostHog Logs via `OtelLogWriter` (`src/otel-log-writer.ts`). It creates an OpenTelemetry `LoggerProvider` with resource attributes (`service.name=posthog-code-agent`, `service.version`, `task_id`, `run_id`, `device_type`) set once and indexed via `resource_fingerprint`, then emits each server log line as an OTEL log record (severity mapped from the log level, scope in the `log.scope` attribute) via OTLP HTTP to PostHog's `/i/v1/logs` endpoint. This export is enabled only when the sandbox injects `POSTHOG_OTEL_LOGS_HOST` and `POSTHOG_OTEL_LOGS_API_KEY`; otherwise it is a no-op.
 
 ### Resuming from logs
 

@@ -1,3 +1,4 @@
+import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OtelLogWriter } from "./otel-log-writer";
 import type { StoredNotification } from "./types";
@@ -19,6 +20,7 @@ describe("OtelLogWriter", () => {
 
   beforeEach(() => {
     mockExport.mockClear();
+    vi.mocked(OTLPLogExporter).mockClear();
     // Session context (taskId, runId) is now passed in constructor as resource attributes
     writer = new OtelLogWriter(
       {
@@ -35,6 +37,38 @@ describe("OtelLogWriter", () => {
 
   afterEach(async () => {
     await writer.shutdown();
+  });
+
+  it("defaults to the /i/v1/logs endpoint", () => {
+    expect(OTLPLogExporter).toHaveBeenCalledWith({
+      url: "https://us.i.posthog.com/i/v1/logs",
+      headers: { Authorization: "Bearer phc_test_key" },
+    });
+  });
+
+  it("emits structured log lines with mapped severity and scope", async () => {
+    writer.emitLog("warn", "suspension", "checkpoint failed", {
+      taskId: "t1",
+    });
+
+    await writer.flush();
+
+    const log = mockExport.mock.calls[0][0][0];
+    expect(log.severityText).toBe("WARN");
+    expect(log.attributes["log.scope"]).toBe("suspension");
+    expect(log.body).toBe(
+      `checkpoint failed ${JSON.stringify({ taskId: "t1" })}`,
+    );
+  });
+
+  it("omits the data suffix when no data is provided", async () => {
+    writer.emitLog("error", "fs", "boom");
+
+    await writer.flush();
+
+    const log = mockExport.mock.calls[0][0][0];
+    expect(log.severityText).toBe("ERROR");
+    expect(log.body).toBe("boom");
   });
 
   it("should emit a log entry with event_type as regular attribute", async () => {

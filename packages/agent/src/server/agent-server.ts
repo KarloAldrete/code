@@ -32,6 +32,7 @@ import {
 import type { PermissionMode } from "../execution-mode";
 import { DEFAULT_CODEX_MODEL } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
+import { OtelLogWriter } from "../otel-log-writer";
 import { PostHogAPIClient } from "../posthog-api";
 import { extractCreatedPrUrl } from "../pr-url-detector";
 import {
@@ -238,6 +239,7 @@ export class AgentServer {
   private session: ActiveSession | null = null;
   private app: Hono;
   private posthogAPI: PostHogAPIClient;
+  private otelLogWriter: OtelLogWriter | null = null;
   private eventStreamSender: TaskRunEventStreamSender | null = null;
   private questionRelayedToSlack = false;
   private detectedPrUrl: string | null = null;
@@ -295,9 +297,27 @@ export class AgentServer {
     );
   };
 
+  // Single choke point for the server logger: ship every line to PostHog Logs
+  // (no-op until OTEL is configured), then mirror it to the SSE console stream
+  // for any connected desktop client.
+  private handleLog = (
+    level: LogLevel,
+    scope: string,
+    message: string,
+    data?: unknown,
+  ): void => {
+    this.otelLogWriter?.emitLog(level, scope, message, data);
+    this.emitConsoleLog(level, scope, message, data);
+  };
+
   constructor(config: AgentServerConfig) {
     this.config = config;
-    this.logger = new Logger({ debug: true, prefix: "[AgentServer]" });
+    this.logger = new Logger({
+      debug: true,
+      prefix: "[AgentServer]",
+      onLog: this.handleLog,
+    });
+    this.otelLogWriter = this.createOtelLogWriter();
     this.posthogAPI = new PostHogAPIClient({
       apiUrl: config.apiUrl,
       projectId: config.projectId,
@@ -316,6 +336,35 @@ export class AgentServer {
       });
     }
     this.app = this.createApp();
+  }
+
+  private createOtelLogWriter(): OtelLogWriter | null {
+    const otelLogs = this.config.otelLogs;
+    // Disabled unless the sandbox injects an OTEL logs host + ingest key,
+    // mirroring how the desktop electron-log OTEL transport silently no-ops
+    // when its env vars are absent.
+    if (!otelLogs?.host || !otelLogs?.apiKey) {
+      return null;
+    }
+
+    try {
+      return new OtelLogWriter(
+        {
+          posthogHost: otelLogs.host,
+          apiKey: otelLogs.apiKey,
+          ...(otelLogs.logsPath ? { logsPath: otelLogs.logsPath } : {}),
+        },
+        {
+          taskId: this.config.taskId,
+          runId: this.config.runId,
+          deviceType: "cloud",
+          serviceVersion: this.config.version ?? packageJson.version,
+        },
+      );
+    } catch (error) {
+      this.logger.error("Failed to initialize OTEL log writer", error);
+      return null;
+    }
   }
 
   private getRuntimeAdapter(): "claude" | "codex" {
@@ -589,6 +638,15 @@ export class AgentServer {
     }
 
     this.logger.debug("Agent server stopped");
+
+    if (this.otelLogWriter) {
+      try {
+        await this.otelLogWriter.shutdown();
+      } catch (error) {
+        this.logger.debug("Failed to shut down OTEL log writer", error);
+      }
+      this.otelLogWriter = null;
+    }
   }
 
   /**
@@ -625,6 +683,17 @@ export class AgentServer {
       this.logger.error(
         "Failed to flush event stream after fatal error",
         stopError,
+      );
+    }
+
+    // Flush buffered logs (including the fatal error logged above) to PostHog
+    // Logs before the process exits. bin.ts races this against a 5s deadline.
+    try {
+      await this.otelLogWriter?.flush();
+    } catch (flushError) {
+      this.logger.error(
+        "Failed to flush OTEL logs after fatal error",
+        flushError,
       );
     }
   }
@@ -1089,9 +1158,7 @@ export class AgentServer {
     this.logger = new Logger({
       debug: true,
       prefix: "[AgentServer]",
-      onLog: (level, scope, message, data) => {
-        this.emitConsoleLog(level, scope, message, data);
-      },
+      onLog: this.handleLog,
     });
 
     this.logger.debug("Session initialized successfully");
