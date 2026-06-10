@@ -177,7 +177,10 @@ function RootLayout() {
   // The canvas "Channels" space (gated by project-bluebird). It owns its own
   // layout (channel sidebar + content via WebsiteLayout), so it drops the Code
   // chrome (header / main sidebar / space-switcher) and shows only the app rail.
-  const bluebirdEnabled = useFeatureFlag(PROJECT_BLUEBIRD_FLAG);
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
   const onWebsitePath = useRouterState({
     select: (s) =>
       s.location.pathname === "/website" ||
