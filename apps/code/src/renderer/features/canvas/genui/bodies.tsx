@@ -1,6 +1,6 @@
 import { MarkdownRenderer } from "@features/editor/components/MarkdownRenderer";
-import type { ActionBinding } from "@json-render/core";
-import { useActions, useBoundProp } from "@json-render/react";
+import { type ActionBinding, getByPath } from "@json-render/core";
+import { useActions, useStateStore } from "@json-render/react";
 import { Button } from "@posthog/quill";
 import {
   BarChart,
@@ -495,19 +495,24 @@ export function ButtonBody({
   );
 }
 
-// Two-way text field: when `value` is `{ $bindState: "/path" }` it reads from /
-// writes to the state store; otherwise it's an uncontrolled-looking literal.
+// Two-way text field. When `value` is `{ $bindState: "/path" }` it reads from /
+// writes to the state store (controlled). Without a binding it falls back to an
+// uncontrolled field so the user can still type (value just isn't persisted).
+// NB: unlike createRenderer, our manual walk does NOT pre-resolve the bound
+// value, so we read it from the store here — `useBoundProp` only echoes the prop
+// it's handed and would leave the field frozen.
 export function TextInputBody({
   props,
 }: {
   props: TextInputProps;
   ctx: BodyCtx;
 }) {
+  const { state, set } = useStateStore();
   const path = bindingPath((props as { value?: unknown }).value);
-  const [value, setValue] = useBoundProp<string>(
-    typeof props.value === "string" ? props.value : undefined,
-    path,
-  );
+  const bound = path !== undefined;
+  const value = bound
+    ? ((getByPath(state, path) as string | undefined) ?? "")
+    : undefined;
   return (
     <Flex direction="column" gap="1">
       {props.label && (
@@ -516,9 +521,10 @@ export function TextInputBody({
         </Text>
       )}
       <TextField.Root
-        value={value ?? ""}
+        value={value}
+        defaultValue={bound ? undefined : asText(props.value)}
         placeholder={props.placeholder}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={bound ? (e) => set(path, e.target.value) : undefined}
       />
     </Flex>
   );
@@ -530,16 +536,17 @@ export function CheckboxBody({
   props: CheckboxProps;
   ctx: BodyCtx;
 }) {
+  const { state, set } = useStateStore();
   const path = bindingPath((props as { checked?: unknown }).checked);
-  const [checked, setChecked] = useBoundProp<boolean>(
-    typeof props.checked === "boolean" ? props.checked : undefined,
-    path,
-  );
+  const bound = path !== undefined;
+  const checked = bound
+    ? getByPath(state, path) === true
+    : props.checked === true;
   return (
     <Text as="label" size="2" className="flex items-center gap-2 text-gray-12">
       <Checkbox
-        checked={checked ?? false}
-        onCheckedChange={(c) => setChecked(c === true)}
+        checked={checked}
+        onCheckedChange={bound ? (c) => set(path, c === true) : undefined}
       />
       {asText(props.label)}
     </Text>

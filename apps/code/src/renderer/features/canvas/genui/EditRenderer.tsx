@@ -4,12 +4,19 @@ import {
   PLAIN_CTX,
   renderBody,
 } from "@features/canvas/genui/bodies";
-import { CanvasProviders } from "@features/canvas/genui/CanvasProviders";
+import {
+  CanvasProviders,
+  useResolvedProps,
+} from "@features/canvas/genui/CanvasProviders";
 import { isEditableTextProp } from "@features/canvas/genui/editable";
 import { useCanvasChatStore } from "@features/canvas/stores/canvasChatStore";
 import type { Spec } from "@json-render/react";
 import { Tooltip } from "@radix-ui/themes";
 import { type ReactNode, useRef } from "react";
+
+// Stable empty-props ref so the resolve hook can run unconditionally (even for a
+// missing element) without re-resolving on every render.
+const EMPTY_PROPS: Record<string, unknown> = {};
 
 // Edit-mode renderer: a thin recursive walk over the json-render Spec (the map
 // key IS the element id, which createRenderer doesn't expose). Each element is
@@ -54,6 +61,11 @@ function EditNode({
   interactive: boolean;
 }) {
   const element = spec.elements[elementKey];
+  // Resolve {$state} reads for display (live echo while building). Hooks must run
+  // unconditionally, so call before the missing-element guard. Editability still
+  // keys off the RAW props (makeEditCtx below), so a {$state} value stays
+  // non-editable — only literal text is inline-editable.
+  const resolvedProps = useResolvedProps(element?.props ?? EMPTY_PROPS);
   if (!element) {
     // A parent lists this key in `children` but no element is defined for it
     // (a dangling reference). View mode renders nothing; edit mode surfaces it
@@ -84,7 +96,7 @@ function EditNode({
 
   const body = renderBody(
     element.type,
-    element.props,
+    resolvedProps,
     children,
     ctx,
     element.on as ElementOn | undefined,
