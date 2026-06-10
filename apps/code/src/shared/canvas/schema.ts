@@ -14,12 +14,16 @@ export const canvasSchema = defineSchema(
     // What the AI-generated SPEC looks like.
     spec: s.object({
       root: s.string(),
+      // Optional initial state model the UI reads/writes (form fields, toggles).
+      state: s.any(),
       elements: s.record(
         s.object({
           type: s.ref("catalog.components"),
           props: s.propsOf("catalog.components"),
           children: s.array(s.string()),
           visible: s.any(),
+          // Event → action bindings (e.g. { "click": { "action": "setState", … } }).
+          on: s.any(),
         }),
       ),
     }),
@@ -60,13 +64,15 @@ export const canvasSchema = defineSchema(
           "Validate all registered form fields and write the result to state. Params: { statePath?: string }. Defaults to /formValidation. Result: { valid: boolean, errors: Record<string, string[]> }.",
       },
     ],
-    // NOTE: the upstream schema's default rules push json-render's dynamic
-    // features (a top-level `state` model, `repeat`, `{$state}`/`{$item}`
-    // bindings, `visible`, `on`/actions). This canvas renderer is STATIC — it
-    // does not resolve any of those, and a binding object placed in a prop
-    // crashes the render. So we drop those rules and keep only the static,
-    // always-applicable guidance. The "no dynamic bindings" instruction lives in
-    // the per-template rules (services/canvas-templates).
+    // NOTE: the canvas renderer now resolves json-render's DECLARATIVE dynamic
+    // features — a top-level `state` model, `{$state}` reads, `{$bindState}`
+    // two-way form bindings, `visible` conditions, and `on`/actions (the four
+    // built-ins: setState/pushState/removeState/validateForm). It does NOT yet
+    // resolve `repeat`/`{$item}`/`{$index}`; those still degrade to empty. We
+    // drop the upstream default rules (which assume the full feature set) and
+    // keep only the always-applicable guidance; the per-template rules
+    // (services/canvas-templates) spell out exactly which dynamic features are
+    // allowed.
     defaultRules: [
       "CRITICAL INTEGRITY CHECK: Before outputting ANY element that references children, you MUST have already output (or will output) each child as its own element. If an element has children: ['a', 'b'], then elements 'a' and 'b' MUST exist. A missing child element causes that entire branch of the UI to be invisible.",
       "SELF-CHECK: After generating all elements, mentally walk the tree from root. Every key in every children array must resolve to a defined element. If you find a gap, output the missing element immediately.",

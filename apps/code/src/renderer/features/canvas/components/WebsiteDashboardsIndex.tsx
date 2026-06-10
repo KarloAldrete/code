@@ -106,7 +106,7 @@ function DashboardCard({
                   resetKey={spec}
                   fallback={<PreviewPlaceholder label="Preview unavailable" />}
                 >
-                  <CanvasRenderer spec={spec} />
+                  <CanvasRenderer spec={spec} state={spec.state} />
                 </ErrorBoundary>
               </Box>
             ) : (

@@ -1,4 +1,6 @@
 import { MarkdownRenderer } from "@features/editor/components/MarkdownRenderer";
+import type { ActionBinding } from "@json-render/core";
+import { useActions, useBoundProp } from "@json-render/react";
 import { Button } from "@posthog/quill";
 import {
   BarChart,
@@ -7,9 +9,40 @@ import {
   Sparkline,
   useChartTheme,
 } from "@posthog/quill-charts";
-import { Badge, Box, Flex, Grid, Heading, Table, Text } from "@radix-ui/themes";
+import {
+  Badge,
+  Box,
+  Checkbox,
+  Flex,
+  Grid,
+  Heading,
+  Table,
+  Text,
+  TextField,
+} from "@radix-ui/themes";
 import type { ReactNode } from "react";
 import rehypeSanitize from "rehype-sanitize";
+
+// An element's event→action bindings (json-render `on` field). A single event
+// (e.g. "click") maps to one action or a list run in order.
+export type ElementOn = Record<string, ActionBinding | ActionBinding[]>;
+
+function bindingPath(value: unknown): string | undefined {
+  if (value && typeof value === "object" && "$bindState" in value) {
+    const path = (value as { $bindState: unknown }).$bindState;
+    return typeof path === "string" ? path : undefined;
+  }
+  return undefined;
+}
+
+function bindingsFor(
+  on: ElementOn | undefined,
+  event: string,
+): ActionBinding[] {
+  const b = on?.[event];
+  if (!b) return [];
+  return Array.isArray(b) ? b : [b];
+}
 
 // Presentational bodies for every catalog component, shared by both the view
 // renderer (registry.tsx → createRenderer) and the edit renderer
@@ -96,6 +129,15 @@ export interface MarkdownProps {
 export interface ButtonProps {
   text: string;
   variant?: "primary" | "default" | "outline" | "destructive";
+}
+export interface TextInputProps {
+  label?: string;
+  placeholder?: string;
+  value?: string;
+}
+export interface CheckboxProps {
+  label: string;
+  checked?: boolean;
 }
 export interface ChartSeriesInput {
   label: string;
@@ -431,15 +473,76 @@ export function MarkdownBody({
 
 export function ButtonBody({
   props,
+  on,
   ctx,
 }: {
   props: ButtonProps;
+  on?: ElementOn;
   ctx: BodyCtx;
 }) {
+  const actions = useActions();
+  const clickBindings = bindingsFor(on, "click");
+  const onClick =
+    clickBindings.length > 0
+      ? () => {
+          for (const binding of clickBindings) void actions.execute(binding);
+        }
+      : undefined;
   return (
-    <Button variant={props.variant ?? "primary"}>
+    <Button variant={props.variant ?? "primary"} onClick={onClick}>
       {ctx.text("/text", asText(props.text))}
     </Button>
+  );
+}
+
+// Two-way text field: when `value` is `{ $bindState: "/path" }` it reads from /
+// writes to the state store; otherwise it's an uncontrolled-looking literal.
+export function TextInputBody({
+  props,
+}: {
+  props: TextInputProps;
+  ctx: BodyCtx;
+}) {
+  const path = bindingPath((props as { value?: unknown }).value);
+  const [value, setValue] = useBoundProp<string>(
+    typeof props.value === "string" ? props.value : undefined,
+    path,
+  );
+  return (
+    <Flex direction="column" gap="1">
+      {props.label && (
+        <Text size="1" className="text-gray-11">
+          {asText(props.label)}
+        </Text>
+      )}
+      <TextField.Root
+        value={value ?? ""}
+        placeholder={props.placeholder}
+        onChange={(e) => setValue(e.target.value)}
+      />
+    </Flex>
+  );
+}
+
+export function CheckboxBody({
+  props,
+}: {
+  props: CheckboxProps;
+  ctx: BodyCtx;
+}) {
+  const path = bindingPath((props as { checked?: unknown }).checked);
+  const [checked, setChecked] = useBoundProp<boolean>(
+    typeof props.checked === "boolean" ? props.checked : undefined,
+    path,
+  );
+  return (
+    <Text as="label" size="2" className="flex items-center gap-2 text-gray-12">
+      <Checkbox
+        checked={checked ?? false}
+        onCheckedChange={(c) => setChecked(c === true)}
+      />
+      {asText(props.label)}
+    </Text>
   );
 }
 
@@ -454,6 +557,7 @@ export function renderBody(
   props: Record<string, unknown>,
   children: ReactNode,
   ctx: BodyCtx,
+  on?: ElementOn,
 ): ReactNode {
   const p = props as never;
   switch (type) {
@@ -504,7 +608,11 @@ export function renderBody(
     case "Markdown":
       return <MarkdownBody props={p} ctx={ctx} />;
     case "Button":
-      return <ButtonBody props={p} ctx={ctx} />;
+      return <ButtonBody props={p} on={on} ctx={ctx} />;
+    case "TextInput":
+      return <TextInputBody props={p} ctx={ctx} />;
+    case "Checkbox":
+      return <CheckboxBody props={p} ctx={ctx} />;
     case "Divider":
       return <DividerBody />;
     default:

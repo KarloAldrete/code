@@ -1,8 +1,10 @@
 import {
   type BodyCtx,
+  type ElementOn,
   PLAIN_CTX,
   renderBody,
 } from "@features/canvas/genui/bodies";
+import { CanvasProviders } from "@features/canvas/genui/CanvasProviders";
 import { isEditableTextProp } from "@features/canvas/genui/editable";
 import { useCanvasChatStore } from "@features/canvas/stores/canvasChatStore";
 import type { Spec } from "@json-render/react";
@@ -26,13 +28,15 @@ export function EditRenderer({
   interactive: boolean;
 }) {
   return (
-    <EditNode
-      spec={spec}
-      threadId={threadId}
-      elementKey={spec.root}
-      parentKey={null}
-      interactive={interactive}
-    />
+    <CanvasProviders spec={spec}>
+      <EditNode
+        spec={spec}
+        threadId={threadId}
+        elementKey={spec.root}
+        parentKey={null}
+        interactive={interactive}
+      />
+    </CanvasProviders>
   );
 }
 
@@ -78,7 +82,13 @@ function EditNode({
     ? makeEditCtx(threadId, elementKey, element.type, element.props)
     : PLAIN_CTX;
 
-  const body = renderBody(element.type, element.props, children, ctx);
+  const body = renderBody(
+    element.type,
+    element.props,
+    children,
+    ctx,
+    element.on as ElementOn | undefined,
+  );
   // renderBody returns null for a component type not in the catalog. Stay silent
   // in view mode; flag it in edit mode so unknown types aren't invisible.
   if (body == null) {

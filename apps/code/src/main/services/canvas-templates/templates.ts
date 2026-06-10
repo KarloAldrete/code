@@ -1,11 +1,38 @@
-import { canvasCatalog } from "@shared/canvas/components";
+import {
+  ALL_CANVAS_COMPONENTS,
+  type CanvasComponentName,
+  canvasCatalogFor,
+} from "@shared/canvas/components";
+
+// Per-template allow-lists (open question resolved: one shared contract,
+// per-template allow-list). Dashboard sticks to data/layout primitives; Blank
+// gets the full palette (rich-page blocks: Hero, Section, Markdown, Button).
+const DASHBOARD_COMPONENTS: CanvasComponentName[] = [
+  "Page",
+  "Grid",
+  "Card",
+  "Heading",
+  "Text",
+  "Stat",
+  "Table",
+  "BarList",
+  "LineChart",
+  "BarChart",
+  "Sparkline",
+  "Badge",
+  "Button",
+  "TextInput",
+  "Checkbox",
+  "Divider",
+];
 
 // Rules that apply to EVERY canvas template, regardless of its purpose.
 const BASE_RULES = [
   "Always use the PostHog MCP tools (named mcp__posthog__*) to fetch REAL data for the current project before rendering any numbers. Never fabricate metrics.",
   "Build the UI exclusively from the component catalog (PostHog's Quill components and charts), emitting json-render JSONL patches. Never invent components or fall back to raw HTML/markdown for layout — use ONLY the catalog, unless the user explicitly tells you otherwise.",
   "APPEND-ONLY by default: never replace, remove, recreate, or restructure existing elements or the existing canvas. Only ADD new elements (append children, add new sections). Emit additive patches only — do NOT re-emit or overwrite the whole spec. The ONLY exception is when the user explicitly asks you to change, replace, or remove something specific; then touch only what they named.",
-  'STATIC CONTENT ONLY: every prop value MUST be a literal string or number written directly into the element. This renderer does NOT support json-render dynamic features — NEVER use a state model, `repeat`, `visible`, `on`/actions, or any binding object such as {"$state":…}, {"$item":…}, {"$bindItem":…}, or {"$index":…} in props. Inline repeated content (cards, list items, rows) as individual elements. (The Dashboard refresh mechanism that writes HogQL under the top-level `state.queries` is the sole exception and is unrelated to prop bindings.)',
+  'INTERACTIVITY (declarative only): for forms, toggles, and buttons that DO things, you MAY use json-render\'s declarative features: (1) a top-level `state` object on the spec seeding initial values; (2) `{"$bindState":"/path"}` on a TextInput `value` or Checkbox `checked` for a two-way form field; (3) `{"$state":"/path"}` in any text prop to DISPLAY a state value; (4) a `visible` condition on an element to show/hide it by state; (5) an `on` event map wiring an event to a built-in action, e.g. `"on": { "click": { "action": "setState", "params": { "statePath": "/submitted", "value": true } } }`. The ONLY actions are the built-ins: setState, pushState, removeState, validateForm.',
+  'STILL UNSUPPORTED — never emit these (they render as empty): `repeat`, `{"$item":…}`, `{"$bindItem":…}`, `{"$index":…}`, any custom/non-built-in action name, raw HTML, or `<script>`. Inline repeated content (cards, list items, rows) as individual elements rather than using `repeat`. Every non-bound prop value is still a literal string or number. (The Dashboard refresh mechanism that writes HogQL under the top-level `state.queries` is separate and unrelated to these bindings.)',
   "Do NOT write files, edit code, or run shell commands. Respond with brief prose plus json-render JSONL patches only.",
   'End EVERY message with the word "Meep" on its very last line, by itself, as the final thing in your response — no exceptions.',
 ];
@@ -35,6 +62,8 @@ interface BuiltInTemplate {
   description: string;
   system: string;
   rules: string[];
+  /** Component names this template's agent may emit (allow-list). */
+  allow: CanvasComponentName[];
   /** Starter prompts shown as clickable chips in an empty chat. */
   suggestions: string[];
 }
@@ -48,6 +77,7 @@ const BUILT_INS: BuiltInTemplate[] = [
     system:
       "You are PostHog Canvas, an agent that builds live, data-driven dashboards and mini-apps for the user's current PostHog project.",
     rules: DASHBOARD_RULES,
+    allow: DASHBOARD_COMPONENTS,
     suggestions: [
       "Web analytics",
       "Signups over the last 7 days",
@@ -62,6 +92,7 @@ const BUILT_INS: BuiltInTemplate[] = [
     system:
       "You are PostHog Canvas, an agent that builds whatever the user asks — a dashboard, a tool, a form, a report, or a whole mini-site — for the user's current PostHog project.",
     rules: BLANK_RULES,
+    allow: ALL_CANVAS_COMPONENTS,
     suggestions: ["Build me an automation tool for…"],
   },
 ];
@@ -84,7 +115,7 @@ function buildTemplate(t: BuiltInTemplate): CanvasTemplate {
     description: t.description,
     builtIn: true,
     suggestions: t.suggestions,
-    systemPrompt: canvasCatalog.prompt({
+    systemPrompt: canvasCatalogFor(t.allow).prompt({
       mode: "inline",
       system: t.system,
       customRules: [...BASE_RULES, ...t.rules],

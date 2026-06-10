@@ -4,7 +4,9 @@ import {
   BarListBody,
   ButtonBody,
   CardBody,
+  CheckboxBody,
   DividerBody,
+  type ElementOn,
   GridBody,
   HeadingBody,
   HeroBody,
@@ -17,6 +19,7 @@ import {
   StatBody,
   TableBody,
   TextBody,
+  TextInputBody,
 } from "@features/canvas/genui/bodies";
 import { canvasCatalog } from "@features/canvas/genui/catalog";
 import { createRenderer } from "@json-render/react";
@@ -69,6 +72,18 @@ export const CanvasRenderer = createRenderer(canvasCatalog, {
   Markdown: ({ element }) => (
     <MarkdownBody props={element.props} ctx={PLAIN_CTX} />
   ),
-  Button: ({ element }) => <ButtonBody props={element.props} ctx={PLAIN_CTX} />,
+  Button: ({ element }) => (
+    <ButtonBody
+      props={element.props}
+      on={element.on as ElementOn | undefined}
+      ctx={PLAIN_CTX}
+    />
+  ),
+  TextInput: ({ element }) => (
+    <TextInputBody props={element.props} ctx={PLAIN_CTX} />
+  ),
+  Checkbox: ({ element }) => (
+    <CheckboxBody props={element.props} ctx={PLAIN_CTX} />
+  ),
   Divider: () => <DividerBody />,
 });

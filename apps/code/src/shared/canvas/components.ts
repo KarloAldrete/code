@@ -116,7 +116,25 @@ export const CANVAS_COMPONENTS = {
         .enum(["primary", "default", "outline", "destructive"])
         .optional(),
     }),
-    description: "A call-to-action button (display only; not interactive).",
+    description:
+      'A button. For interactivity, add an `on.click` event binding to a built-in action, e.g. `"on": { "click": { "action": "setState", "params": { "statePath": "/submitted", "value": true } } }`.',
+  },
+  TextInput: {
+    props: z.object({
+      label: z.string().optional(),
+      placeholder: z.string().optional(),
+      value: z.string().optional(),
+    }),
+    description:
+      'A single-line text field for forms. Make it a controlled form field by binding `value` to state two-way: `"value": { "$bindState": "/form/email" }`. Seed the initial value under the spec\'s top-level `state`.',
+  },
+  Checkbox: {
+    props: z.object({
+      label: z.string(),
+      checked: z.boolean().optional(),
+    }),
+    description:
+      'A labelled checkbox. Bind `checked` to state two-way for forms: `"checked": { "$bindState": "/form/agree" }`.',
   },
   Divider: {
     props: z.object({}),
@@ -129,3 +147,21 @@ export const canvasCatalog = defineCatalog(canvasSchema, {
   components: CANVAS_COMPONENTS,
   actions: {},
 });
+
+export type CanvasComponentName = keyof typeof CANVAS_COMPONENTS;
+
+export const ALL_CANVAS_COMPONENTS = Object.keys(
+  CANVAS_COMPONENTS,
+) as CanvasComponentName[];
+
+// Build a catalog limited to an allow-list of component names. A template uses
+// this so the agent's system prompt only documents the components that template
+// is allowed to emit. The renderer registry stays single-source (it maps ALL
+// component names), so any saved canvas still renders — the allow-list only
+// constrains what each template's agent is told it may produce.
+export function canvasCatalogFor(names: readonly CanvasComponentName[]) {
+  const components = Object.fromEntries(
+    names.map((name) => [name, CANVAS_COMPONENTS[name]]),
+  );
+  return defineCatalog(canvasSchema, { components, actions: {} });
+}

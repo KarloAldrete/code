@@ -155,21 +155,25 @@ renderer no longer constructs or passes `CANVAS_SYSTEM_PROMPT`.
   read as the Dashboard template.
 - Templates persisted as records (built-ins seeded; user templates addable).
 
-## The static-renderer constraint (learned in Phase 1)
+## The renderer's dynamic-feature support (Phase 1 → 2.5)
 
-The canvas renderer (`genui/EditRenderer.tsx` + `bodies.tsx`) is a **static
-walk**. It does NOT resolve any json-render dynamic feature: no top-level
-`state` model, no `repeat`, no `visible`, no `on`/actions, and no binding
-objects (`{$state}`, `{$item}`, `{$bindItem}`, `{$index}`) in props. A binding
-object placed in a prop used to crash the whole canvas to "Rendering…"; it now
-degrades to empty via `asText()`, and the schema mirror + template rules tell
-the agent to emit static content only.
+Originally the canvas renderer (`genui/EditRenderer.tsx` + `bodies.tsx`) was a
+**fully static walk** — no `state`, `repeat`, `visible`, `on`/actions, or binding
+objects; a binding in a prop crashed the canvas (it now degrades to empty via
+`asText()`). Phase 2.5 added the **declarative runtime**: the walks are wrapped in
+`genui/CanvasProviders.tsx` so they resolve a top-level `state` model, `{$state}`
+reads, `{$bindState}` two-way bindings, `visible` conditions, and `on`/actions
+(the four built-ins). The walks stay hand-rolled (not `createRenderer`) because
+they need element **keys** for refresh + inline edit; the providers + json-render
+hooks (`useBoundProp`, `useActions`, `useIsVisible`, `useResolvedProps`) supply the
+dynamics.
 
-This is load-bearing: it keeps us firmly in **Declarative-static** today. The
-path to interactivity is NOT open-ended HTML — it's making the renderer resolve
-json-render's _declarative_ dynamic features (`on`/actions + bindings), so a
-button in the schema can fire an event back to the agent (the A2UI model). Treat
-that as Phase 2.5 below; it stays declarative and on-brand.
+Still NOT resolved: `repeat`/`{$item}`/`{$bindItem}`/`{$index}` (degrade to empty
+via `asText()`); the schema mirror + template rules tell the agent to inline
+repeated content instead. This keeps us firmly **Declarative** — never
+open-ended HTML. The remaining interactivity step is the A2UI agent round-trip
+(a button posting a structured event back to the agent), tracked under Phase 2.5
+/ Phase 6.
 
 ## Phasing
 
@@ -188,24 +192,45 @@ that as Phase 2.5 below; it stays declarative and on-brand.
 - Hardening: static-only schema/rules + `asText()` so stray bindings can't crash
   the canvas.
 
-### Phase 2 — Blank palette (partly done)
+### Phase 2 — Blank palette ✅ done
 
 - ✅ Widened the catalog: `Hero` (centered hero section), `Markdown` (sanitized
   rich-text via `rehype-sanitize`, no `<script>`), `Button` (display CTA). Blank
   template nudges the agent to use them for rich pages.
-- ⬜ Catalog packaging / allow-list (see open questions): one contract +
-  per-template allow-list (leaning) so a template constrains which components the
-  agent may emit. Currently all templates can emit everything.
+- ✅ Catalog packaging / allow-list: one shared contract (`CANVAS_COMPONENTS`) +
+  per-template allow-list. `canvasCatalogFor(names)` builds a catalog limited to
+  a template's allowed components; each template's `systemPrompt` only documents
+  those. Dashboard allows data/layout primitives (no Hero/Section/Markdown/Button);
+  Blank allows all (`ALL_CANVAS_COMPONENTS`). The renderer registry stays
+  single-source (maps every name), so any saved canvas still renders — the
+  allow-list only constrains what each template's agent is told it may emit.
 
-### Phase 2.5 — Declarative interactivity (gates forms/tools)
+### Phase 2.5 — Declarative interactivity (gates forms/tools) — ✅ v1 done
 
-- Teach the renderer json-render's _declarative_ dynamic features: resolve
-  `{$state}`/`{$item}` bindings, `repeat`, `visible`, and wire `on`/actions so a
-  schema button fires an event back to the agent (the A2UI model). Likely use
-  `createRenderer` for view mode and resolve bindings in the edit walk; relax the
-  "static only" rules per-template once supported.
-- This stays Declarative — NOT open-ended HTML. Required before forms/tools that
-  hold state or react to clicks.
+Local interactivity shipped; the agent round-trip (A2UI) is the remaining
+follow-up.
+
+- ✅ **Renderer resolves the declarative runtime.** Both key-aware walks
+  (`ViewRenderer`, `EditRenderer`) and the thumbnail `createRenderer` are wrapped
+  in `genui/CanvasProviders.tsx` — json-render's `StateProvider` (store seeded
+  from the spec's top-level `state`) + `ActionProvider` + `ValidationProvider` +
+  `VisibilityProvider`. The walks were kept (not replaced by `createRenderer`)
+  because they need element **keys** for per-card refresh + inline edit, which
+  `createRenderer` hides; the providers + json-render hooks supply the dynamics.
+- ✅ **Supported features:** a top-level `state` model; `{$state}` reads in any
+  text prop (resolved in the walk via `useResolvedProps`); `{$bindState}`
+  two-way form binding (`useBoundProp`); `visible` conditions (`useIsVisible`,
+  honoured in view); `on`/actions with the four built-ins
+  (setState/pushState/removeState/validateForm) dispatched via `useActions`.
+- ✅ **Minimal form inputs:** `TextInput` + `Checkbox` catalog components, bound
+  two-way to state. Unlocked for **both** templates (allow-lists updated).
+- ✅ Per-template static rules relaxed to document exactly these features (and to
+  keep forbidding the still-unsupported ones).
+- ⬜ **Still unsupported (deferred):** `repeat`/`{$item}`/`{$index}` (the walks
+  don't expand repeat scopes yet — they degrade to empty), and the **A2UI agent
+  round-trip** (a custom action that posts a structured event back to the agent
+  as a new turn — needs a new dispatch channel + `canvasGenerateInput` field).
+- This stays Declarative — NOT open-ended HTML.
 
 ### Phase 3 — Source @mentions (data sources)
 
@@ -264,9 +289,6 @@ their in-chat OAuth and permission modes.
 
 - **Template store:** reuse the canvases desktop-fs store (a `type: template`
   row) or a dedicated store? (Leaning: same desktop-fs backend, distinct type.)
-- **Catalog packaging:** one shared catalog with per-template _allow-lists_, or
-  fully separate catalogs per template? (Leaning: one contract, per-template
-  allow-list, so the renderer registry stays single-source.)
 - **Per-template tool gating:** should Blank get a different `disallowedTools`
   set than Dashboard? (Default: keep the read-only sandbox for all.)
 - **Data manifest size:** cap/scope the injected warehouse schema for large
@@ -280,6 +302,9 @@ their in-chat OAuth and permission modes.
   future disposable mode only (Phase 6).
 - **Interactivity (resolved):** pursued declaratively via schema `on`/actions
   (Phase 2.5), not raw HTML.
+- **Catalog packaging (resolved):** one shared contract (`CANVAS_COMPONENTS`)
+  with per-template allow-lists via `canvasCatalogFor(names)`, not separate
+  catalogs — the renderer registry stays single-source.
 
 ## Related
 
