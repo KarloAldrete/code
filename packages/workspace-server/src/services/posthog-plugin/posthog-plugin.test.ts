@@ -484,9 +484,13 @@ describe("PosthogPluginService", () => {
 
     it("prunes skills removed from the plugin but keeps foreign skills", async () => {
       // First sync: plugin ships two skills.
-      vol.mkdirSync(`${BUNDLED_PLUGIN_DIR}/skills/skill-a`, { recursive: true });
+      vol.mkdirSync(`${BUNDLED_PLUGIN_DIR}/skills/skill-a`, {
+        recursive: true,
+      });
       vol.writeFileSync(`${BUNDLED_PLUGIN_DIR}/skills/skill-a/SKILL.md`, "# A");
-      vol.mkdirSync(`${BUNDLED_PLUGIN_DIR}/skills/skill-b`, { recursive: true });
+      vol.mkdirSync(`${BUNDLED_PLUGIN_DIR}/skills/skill-b`, {
+        recursive: true,
+      });
       vol.writeFileSync(`${BUNDLED_PLUGIN_DIR}/skills/skill-b/SKILL.md`, "# B");
 
       // A skill placed in the Codex dir by another tool — must be preserved.
@@ -547,7 +551,9 @@ describe("PosthogPluginService", () => {
       expect(
         vol.existsSync(`${RUNTIME_PLUGIN_DIR}/skills/skill-a/SKILL.md`),
       ).toBe(true);
-      expect(vol.existsSync(`${RUNTIME_PLUGIN_DIR}/skills/skill-b`)).toBe(false);
+      expect(vol.existsSync(`${RUNTIME_PLUGIN_DIR}/skills/skill-b`)).toBe(
+        false,
+      );
     });
   });
 
