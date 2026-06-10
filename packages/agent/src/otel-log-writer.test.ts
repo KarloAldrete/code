@@ -46,29 +46,34 @@ describe("OtelLogWriter", () => {
     });
   });
 
-  it("emits structured log lines with mapped severity and scope", async () => {
-    writer.emitLog("warn", "suspension", "checkpoint failed", {
-      taskId: "t1",
-    });
+  it.each([
+    ["debug", "DEBUG"],
+    ["info", "INFO"],
+    ["warn", "WARN"],
+    ["error", "ERROR"],
+  ] as const)(
+    "maps the %s level to OTEL severity %s and stores the scope",
+    async (level, severityText) => {
+      writer.emitLog(level, "suspension", "checkpoint failed");
+
+      await writer.flush();
+
+      const log = mockExport.mock.calls[0][0][0];
+      expect(log.severityText).toBe(severityText);
+      expect(log.attributes["log.scope"]).toBe("suspension");
+    },
+  );
+
+  it.each([
+    ["with data", { taskId: "t1" }, `boom ${JSON.stringify({ taskId: "t1" })}`],
+    ["without data", undefined, "boom"],
+  ] as const)("formats the body %s", async (_label, data, expectedBody) => {
+    writer.emitLog("info", "fs", "boom", data);
 
     await writer.flush();
 
     const log = mockExport.mock.calls[0][0][0];
-    expect(log.severityText).toBe("WARN");
-    expect(log.attributes["log.scope"]).toBe("suspension");
-    expect(log.body).toBe(
-      `checkpoint failed ${JSON.stringify({ taskId: "t1" })}`,
-    );
-  });
-
-  it("omits the data suffix when no data is provided", async () => {
-    writer.emitLog("error", "fs", "boom");
-
-    await writer.flush();
-
-    const log = mockExport.mock.calls[0][0][0];
-    expect(log.severityText).toBe("ERROR");
-    expect(log.body).toBe("boom");
+    expect(log.body).toBe(expectedBody);
   });
 
   it("should emit a log entry with event_type as regular attribute", async () => {

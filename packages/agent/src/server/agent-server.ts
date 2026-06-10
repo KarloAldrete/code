@@ -297,16 +297,26 @@ export class AgentServer {
     );
   };
 
-  // Single choke point for the server logger: ship every line to PostHog Logs
-  // (no-op until OTEL is configured), then mirror it to the SSE console stream
-  // for any connected desktop client.
-  private handleLog = (
+  // Ship a log line to PostHog Logs (no-op until OTEL is configured). Safe to
+  // call before a session exists — it never touches session state.
+  private emitOtelLog = (
     level: LogLevel,
     scope: string,
     message: string,
     data?: unknown,
   ): void => {
     this.otelLogWriter?.emitLog(level, scope, message, data);
+  };
+
+  // Post-session choke point: ship to PostHog Logs, then mirror to the SSE
+  // console stream for any connected desktop client.
+  private handleLog = (
+    level: LogLevel,
+    scope: string,
+    message: string,
+    data?: unknown,
+  ): void => {
+    this.emitOtelLog(level, scope, message, data);
     this.emitConsoleLog(level, scope, message, data);
   };
 
@@ -315,7 +325,9 @@ export class AgentServer {
     this.logger = new Logger({
       debug: true,
       prefix: "[AgentServer]",
-      onLog: this.handleLog,
+      // Pre-session logs go to OTEL only; the SSE console stream needs an
+      // active session, which the post-init logger wires in via handleLog.
+      onLog: this.emitOtelLog,
     });
     this.otelLogWriter = this.createOtelLogWriter();
     this.posthogAPI = new PostHogAPIClient({
