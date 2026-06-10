@@ -2,9 +2,11 @@ import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import {
   BILLING_FLAG,
   HOME_TAB_FLAG,
+  PROJECT_BLUEBIRD_FLAG,
   SYNC_CLOUD_TASKS_FLAG,
 } from "@posthog/shared";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
+import { AppNav } from "@posthog/ui/features/canvas/components/AppNav";
 import { CommandMenu } from "@posthog/ui/features/command/CommandMenu";
 import { KeyboardShortcutsSheet } from "@posthog/ui/features/command/KeyboardShortcutsSheet";
 import { useNewTaskDeepLink } from "@posthog/ui/features/deep-links/useNewTaskDeepLink";
@@ -172,6 +174,43 @@ function RootLayout() {
     select: (s) => s.matches.some((m) => m.routeId.startsWith("/settings")),
   });
 
+  // The canvas "Channels" space (gated by project-bluebird). It owns its own
+  // layout (channel sidebar + content via WebsiteLayout), so it drops the Code
+  // chrome (header / main sidebar / space-switcher) and shows only the app rail.
+  const bluebirdEnabled = useFeatureFlag(PROJECT_BLUEBIRD_FLAG);
+  const onWebsitePath = useRouterState({
+    select: (s) =>
+      s.location.pathname === "/website" ||
+      s.location.pathname.startsWith("/website/"),
+  });
+  const isChannelsSpace = bluebirdEnabled && onWebsitePath;
+
+  if (isChannelsSpace) {
+    return (
+      <Flex height="100vh">
+        <AppNav />
+        <Box flexGrow="1" overflow="hidden">
+          <Outlet />
+        </Box>
+        <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
+        <KeyboardShortcutsSheet
+          open={shortcutsSheetOpen}
+          onOpenChange={(open) => (open ? null : closeShortcutsSheet())}
+        />
+        <GlobalEventHandlers
+          onToggleCommandMenu={toggleCommandMenu}
+          onToggleShortcutsSheet={toggleShortcutsSheet}
+        />
+        {billingEnabled && <UsageLimitModal />}
+        {import.meta.env.DEV && (
+          <Suspense fallback={null}>
+            <TanStackDevtools />
+          </Suspense>
+        )}
+      </Flex>
+    );
+  }
+
   if (isSettingsRoute) {
     return (
       <Flex direction="column" height="100vh">
@@ -196,40 +235,45 @@ function RootLayout() {
   }
 
   return (
-    <Flex direction="column" height="100vh">
-      <HeaderRow />
-      <Flex flexGrow="1" overflow="hidden">
-        <MainSidebar />
-        <Box flexGrow="1" overflow="hidden">
-          <Outlet />
-        </Box>
-      </Flex>
+    <Flex height="100vh">
+      {bluebirdEnabled && <AppNav />}
+      <Flex direction="column" flexGrow="1" overflow="hidden">
+        <HeaderRow />
+        <Flex flexGrow="1" overflow="hidden">
+          <MainSidebar />
+          <Box flexGrow="1" overflow="hidden">
+            <Outlet />
+          </Box>
+        </Flex>
 
-      <SpaceSwitcher
-        tasks={visualTaskOrder}
-        activeTaskId={activeTaskId}
-        allTasks={tasks ?? []}
-        isOnNewTask={view.type === "task-input" || view.type === "task-pending"}
-        onNavigateToTask={openTask}
-        onNewTask={openTaskInput}
-      />
-      <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
-      <KeyboardShortcutsSheet
-        open={shortcutsSheetOpen}
-        onOpenChange={(open) => (open ? null : closeShortcutsSheet())}
-      />
-      <GlobalEventHandlers
-        onToggleCommandMenu={toggleCommandMenu}
-        onToggleShortcutsSheet={toggleShortcutsSheet}
-      />
-      <TourOverlay />
-      {billingEnabled && <UsageLimitModal />}
-      <HedgehogMode />
-      {import.meta.env.DEV && (
-        <Suspense fallback={null}>
-          <TanStackDevtools />
-        </Suspense>
-      )}
+        <SpaceSwitcher
+          tasks={visualTaskOrder}
+          activeTaskId={activeTaskId}
+          allTasks={tasks ?? []}
+          isOnNewTask={
+            view.type === "task-input" || view.type === "task-pending"
+          }
+          onNavigateToTask={openTask}
+          onNewTask={openTaskInput}
+        />
+        <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
+        <KeyboardShortcutsSheet
+          open={shortcutsSheetOpen}
+          onOpenChange={(open) => (open ? null : closeShortcutsSheet())}
+        />
+        <GlobalEventHandlers
+          onToggleCommandMenu={toggleCommandMenu}
+          onToggleShortcutsSheet={toggleShortcutsSheet}
+        />
+        <TourOverlay />
+        {billingEnabled && <UsageLimitModal />}
+        <HedgehogMode />
+        {import.meta.env.DEV && (
+          <Suspense fallback={null}>
+            <TanStackDevtools />
+          </Suspense>
+        )}
+      </Flex>
     </Flex>
   );
 }
