@@ -45,8 +45,8 @@ canvas generation harness. The root `AGENTS.md` architecture rules still apply.
 - Dashboards are **backed by the PostHog desktop file system**, not local files.
   A dashboard is a `dashboard`-typed row nested under its channel folder; its
   name is the last path segment (the H1) and the json-render spec rides in
-  `meta.spec`. See `@main/services/dashboards/service.ts`; the `meta` payload is
-  typed + documented as `DashboardFileMeta` in that service's `schemas.ts`. This
+  `meta.spec`. See `@posthog/core/canvas/dashboardsService.ts`; the `meta` payload
+  is typed + documented as `DashboardFileMeta` in `dashboardSchemas.ts`. This
   keeps dashboard and channel names in sync with the backend — the same surface
   that owns channels (top-level `folder` rows, see `hooks/useChannels.ts`).
 - `meta.spec` is **last-write-wins, unversioned**. A polling refresh and a
