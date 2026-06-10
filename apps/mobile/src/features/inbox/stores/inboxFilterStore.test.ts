@@ -1,14 +1,43 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { useInboxFilterStore } from "./inboxFilterStore";
+vi.mock("@react-native-async-storage/async-storage", () => ({
+  default: {
+    getItem: vi.fn(),
+    setItem: vi.fn(),
+    removeItem: vi.fn(),
+  },
+}));
+
+import { type SourceProduct, useInboxFilterStore } from "./inboxFilterStore";
+
+describe("inboxFilterStore", () => {
+  beforeEach(() => {
+    useInboxFilterStore.getState().resetFilters();
+  });
+
+  it.each<SourceProduct>(["signals_scout", "error_tracking", "github"])(
+    "toggles %s in and out of the source filter",
+    (source) => {
+      const { toggleSourceProduct } = useInboxFilterStore.getState();
+
+      toggleSourceProduct(source);
+      expect(useInboxFilterStore.getState().sourceProductFilter).toEqual([
+        source,
+      ]);
+
+      toggleSourceProduct(source);
+      expect(useInboxFilterStore.getState().sourceProductFilter).toEqual([]);
+    },
+  );
+});
 
 const INITIAL_STATE = useInboxFilterStore.getState();
 
-beforeEach(() => {
-  useInboxFilterStore.setState(INITIAL_STATE, true);
-});
-
 describe("inboxFilterStore priority filter", () => {
+  beforeEach(() => {
+    useInboxFilterStore.setState(INITIAL_STATE, true);
+  });
+
   it("starts empty (no priority filter)", () => {
     expect(useInboxFilterStore.getState().priorityFilter).toEqual([]);
   });
