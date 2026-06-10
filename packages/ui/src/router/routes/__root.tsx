@@ -189,6 +189,16 @@ function RootLayout() {
   });
   const isChannelsSpace = bluebirdEnabled && onWebsitePath;
 
+  // The /website (Channels) routes stay registered regardless of the flag, so a
+  // stale URL or restored session could strand a flag-off user there (rendering
+  // the channel layout inside the Code chrome). Once flags resolve, redirect
+  // them back to Code so the off state is indistinguishable from before canvas.
+  useEffect(() => {
+    if (flagsLoaded && !bluebirdEnabled && onWebsitePath) {
+      openTaskInput();
+    }
+  }, [flagsLoaded, bluebirdEnabled, onWebsitePath]);
+
   if (isChannelsSpace) {
     return (
       <Flex height="100vh">
