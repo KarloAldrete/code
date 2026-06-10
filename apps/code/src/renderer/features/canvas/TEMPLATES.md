@@ -1,6 +1,6 @@
 # Canvas templates, open-ended building & data sources — design scope
 
-**Status:** Phase 1 shipped; Phases 2–6 scoped below.
+**Status:** Phases 1, 2, 2.5 (local interactivity) shipped; Phases 3–6 scoped below.
 **Owner:** canvas feature.
 **Branch:** `feat/canvases-rename` (builds on `feat/canvas` → `feat/canvas-quill`).
 
@@ -165,8 +165,10 @@ objects; a binding in a prop crashed the canvas (it now degrades to empty via
 reads, `{$bindState}` two-way bindings, `visible` conditions, and `on`/actions
 (the four built-ins). The walks stay hand-rolled (not `createRenderer`) because
 they need element **keys** for refresh + inline edit; the providers + json-render
-hooks (`useBoundProp`, `useActions`, `useIsVisible`, `useResolvedProps`) supply the
-dynamics.
+hooks (`useStateStore`, `useActions`, `useIsVisible`) plus `useResolvedProps`
+supply the dynamics. (Inputs read/write the store directly via `useStateStore` +
+`getByPath`, not `useBoundProp` — that hook only echoes the prop it's handed,
+which `createRenderer` pre-resolves but our manual walk does not.)
 
 Still NOT resolved: `repeat`/`{$item}`/`{$bindItem}`/`{$index}` (degrade to empty
 via `asText()`); the schema mirror + template rules tell the agent to inline
@@ -219,7 +221,8 @@ follow-up.
   `createRenderer` hides; the providers + json-render hooks supply the dynamics.
 - ✅ **Supported features:** a top-level `state` model; `{$state}` reads in any
   text prop (resolved in the walk via `useResolvedProps`); `{$bindState}`
-  two-way form binding (`useBoundProp`); `visible` conditions (`useIsVisible`,
+  two-way form binding on `TextInput`/`Checkbox` (read/write the store via
+  `useStateStore`); `visible` conditions (`useIsVisible`,
   honoured in view); `on`/actions with the four built-ins
   (setState/pushState/removeState/validateForm) dispatched via `useActions`.
 - ✅ **Minimal form inputs:** `TextInput` + `Checkbox` catalog components, bound
