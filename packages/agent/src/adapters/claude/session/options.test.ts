@@ -185,4 +185,42 @@ describe("buildSessionOptions", () => {
       expect(headers).toBe(expected);
     });
   });
+
+  describe("effort", () => {
+    it("forwards an explicit effort level unchanged", () => {
+      const options = buildSessionOptions({
+        ...makeParams(),
+        effort: "high",
+        modelId: "claude-fable-5",
+      });
+
+      expect(options.effort).toBe("high");
+    });
+
+    it("defaults effort for models that require adaptive thinking", () => {
+      const options = buildSessionOptions({
+        ...makeParams(),
+        modelId: "claude-fable-5",
+      });
+
+      // Without an effort level the SDK would send `thinking: { type: "disabled" }`,
+      // which claude-fable-5 rejects. A default effort forces adaptive thinking.
+      expect(options.effort).toBe("medium");
+    });
+
+    it("leaves effort unset for models that accept disabled thinking", () => {
+      const options = buildSessionOptions({
+        ...makeParams(),
+        modelId: "claude-opus-4-8",
+      });
+
+      expect(options.effort).toBeUndefined();
+    });
+
+    it("leaves effort unset when no model id is provided", () => {
+      const options = buildSessionOptions(makeParams());
+
+      expect(options.effort).toBeUndefined();
+    });
+  });
 });

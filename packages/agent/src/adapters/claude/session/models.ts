@@ -1,4 +1,11 @@
+import type { EffortLevel } from "../types";
+
 export const DEFAULT_MODEL = "opus";
+
+// Effort level applied when a model needs an explicit effort but the user has
+// not chosen one — e.g. models requiring adaptive thinking. Mirrors the
+// "medium" fallback used for the effort config option in claude-agent.ts.
+export const DEFAULT_EFFORT: EffortLevel = "medium";
 
 const GATEWAY_TO_SDK_MODEL: Record<string, string> = {
   "claude-opus-4-7": "opus",
@@ -46,6 +53,19 @@ const MODELS_TO_EXCLUDE_MCP_TOOLS = new Set(["claude-haiku-4-5"]);
 
 export function supportsMcpInjection(modelId: string): boolean {
   return !MODELS_TO_EXCLUDE_MCP_TOOLS.has(modelId);
+}
+
+// Models that only support adaptive thinking and reject the SDK's default
+// `thinking: { type: "disabled" }` request shape. When effort is set the SDK
+// emits `thinking: { type: "adaptive" }` + `output_config: { effort }`; when it
+// is absent the SDK falls back to `thinking: { type: "disabled" }`, which these
+// models reject with `invalid_request_error: "thinking.type.disabled" is not
+// supported for this model`. For them we must always send an effort level so
+// adaptive thinking is requested even when the user has not picked one.
+const MODELS_REQUIRING_ADAPTIVE_THINKING = new Set(["claude-fable-5"]);
+
+export function requiresAdaptiveThinking(modelId: string): boolean {
+  return MODELS_REQUIRING_ADAPTIVE_THINKING.has(modelId);
 }
 
 interface EffortOption {

@@ -1587,6 +1587,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       onProcessSpawned: this.options?.onProcessSpawned,
       onProcessExited: this.options?.onProcessExited,
       effort,
+      modelId: earlyModelId,
       enrichmentDeps: this.enrichment?.deps,
       enrichedReadCache: this.enrichedReadCache,
       cloudMode: cloudRun,

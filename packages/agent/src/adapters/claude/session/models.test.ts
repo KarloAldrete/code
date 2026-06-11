@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getEffortOptions,
+  requiresAdaptiveThinking,
   resolveModelPreference,
   supports1MContext,
   supportsEffort,
@@ -61,6 +62,14 @@ describe("model capability flags", () => {
 
   it("keeps deprecated Haiku sessions excluded from MCP injection", () => {
     expect(supportsMcpInjection("claude-haiku-4-5")).toBe(false);
+  });
+
+  it("flags only models that reject disabled thinking as requiring adaptive thinking", () => {
+    expect(requiresAdaptiveThinking("claude-fable-5")).toBe(true);
+    expect(requiresAdaptiveThinking("claude-opus-4-8")).toBe(false);
+    expect(requiresAdaptiveThinking("claude-opus-4-7")).toBe(false);
+    expect(requiresAdaptiveThinking("claude-sonnet-4-6")).toBe(false);
+    expect(requiresAdaptiveThinking("claude-haiku-4-5")).toBe(false);
   });
 });
 

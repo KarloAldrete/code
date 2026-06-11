@@ -28,7 +28,11 @@ import type { CodeExecutionMode } from "../tools";
 import type { EffortLevel } from "../types";
 import { APPENDED_INSTRUCTIONS } from "./instructions";
 import { loadUserClaudeJsonMcpServers } from "./mcp-config";
-import { DEFAULT_MODEL } from "./models";
+import {
+  DEFAULT_EFFORT,
+  DEFAULT_MODEL,
+  requiresAdaptiveThinking,
+} from "./models";
 import type { SettingsManager } from "./settings";
 
 export interface ProcessSpawnedInfo {
@@ -56,6 +60,9 @@ export interface BuildOptionsParams {
   onProcessSpawned?: (info: ProcessSpawnedInfo) => void;
   onProcessExited?: (pid: number) => void;
   effort?: EffortLevel;
+  /** Resolved gateway model id, used to gate model-specific request shaping
+   * (e.g. forcing adaptive thinking for models that reject disabled thinking). */
+  modelId?: string;
   enrichmentDeps?: FileEnrichmentDeps;
   enrichedReadCache?: EnrichedReadCache;
   /** Records PostHog product usage from MCP exec calls (deduped, session-wide). */
@@ -453,6 +460,11 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
 
   if (params.effort) {
     options.effort = params.effort;
+  } else if (params.modelId && requiresAdaptiveThinking(params.modelId)) {
+    // Without an effort level the SDK emits `thinking: { type: "disabled" }`,
+    // which these models reject outright. Default to adaptive thinking by
+    // sending an effort level so the SDK requests `thinking: { type: "adaptive" }`.
+    options.effort = DEFAULT_EFFORT;
   }
 
   clearStatsigCache();
