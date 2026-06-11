@@ -32,6 +32,9 @@ export interface TaskCreationInput {
   cloudRunSource?: CloudRunSource;
   signalReportId?: string;
   additionalDirectories?: string[];
+  // Label of the Home-tab quick action that started this run (e.g. "Fix CI"), so the
+  // workstream can show which quick actions have been run against it.
+  homeQuickActionLabel?: string;
 }
 
 export interface TaskCreationOutput {

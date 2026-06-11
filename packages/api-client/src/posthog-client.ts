@@ -230,6 +230,7 @@ interface CloudRunOptions {
   runSource?: CloudRunSource;
   signalReportId?: string;
   initialPermissionMode?: PermissionMode;
+  homeQuickAction?: string;
 }
 
 interface CreateTaskRunOptions extends CloudRunOptions {
@@ -307,6 +308,9 @@ function buildCloudRunRequestBody(
   }
   if (options?.initialPermissionMode) {
     body.initial_permission_mode = options.initialPermissionMode;
+  }
+  if (options?.homeQuickAction) {
+    body.home_quick_action = options.homeQuickAction;
   }
 
   return body;
