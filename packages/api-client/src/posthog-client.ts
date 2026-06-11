@@ -45,6 +45,7 @@ import type {
   Task,
   TaskRun,
   TaskRunArtefact,
+  UserBasic,
 } from "@posthog/shared/domain-types";
 import { buildApiFetcher } from "./fetcher";
 import { createApiClient, type Schemas } from "./generated";
@@ -487,7 +488,7 @@ function normalizePriorityJudgmentArtefact(
   return {
     id,
     type: "priority_judgment",
-    created_at: optionalString(value.created_at) ?? new Date(0).toISOString(),
+    ...artefactBase(value),
     content: {
       explanation: optionalString(contentValue.explanation) ?? "",
       priority: priority as PriorityJudgmentArtefact["content"]["priority"],
@@ -519,7 +520,7 @@ function normalizeActionabilityJudgmentArtefact(
   return {
     id,
     type: "actionability_judgment",
-    created_at: optionalString(value.created_at) ?? new Date(0).toISOString(),
+    ...artefactBase(value),
     content: {
       explanation: optionalString(contentValue.explanation) ?? "",
       actionability:
@@ -547,7 +548,7 @@ function normalizeSignalFindingArtefact(
   return {
     id,
     type: "signal_finding",
-    created_at: optionalString(value.created_at) ?? new Date(0).toISOString(),
+    ...artefactBase(value),
     content: {
       signal_id: signalId,
       relevant_code_paths: Array.isArray(contentValue.relevant_code_paths)
@@ -585,7 +586,7 @@ function normalizeRepoSelectionArtefact(
   return {
     id,
     type: "repo_selection",
-    created_at: optionalString(value.created_at) ?? new Date(0).toISOString(),
+    ...artefactBase(value),
     content: {
       repository: optionalString(contentValue.repository),
       reason: optionalString(contentValue.reason) ?? "",
@@ -615,7 +616,7 @@ function normalizeDismissalArtefact(
   return {
     id,
     type: "dismissal",
-    created_at: optionalString(value.created_at) ?? new Date(0).toISOString(),
+    ...artefactBase(value),
     content: {
       reason,
       note: optionalString(contentValue.note) ?? "",
@@ -631,13 +632,34 @@ function normalizeDismissalArtefact(
 // session_id shape the generic fallback expects), so each type needs an explicit
 // normalizer — otherwise it falls through and gets dropped.
 
-function logArtefactBase(value: Record<string, unknown>): {
+/** User the artefact is attributed to, when the row carries a valid `created_by`. */
+function normalizeArtefactUser(value: unknown): UserBasic | null {
+  if (!isObjectRecord(value)) return null;
+  const id = value.id;
+  const uuid = optionalString(value.uuid);
+  const email = optionalString(value.email);
+  if (typeof id !== "number" || !uuid || !email) return null;
+  return {
+    id,
+    uuid,
+    email,
+    first_name: optionalString(value.first_name) ?? undefined,
+    last_name: optionalString(value.last_name) ?? undefined,
+  };
+}
+
+/** Row-level fields shared by every artefact: timestamps plus user/task attribution. */
+function artefactBase(value: Record<string, unknown>): {
   created_at: string;
   updated_at: string | null;
+  created_by: UserBasic | null;
+  task_id: string | null;
 } {
   return {
     created_at: optionalString(value.created_at) ?? new Date(0).toISOString(),
     updated_at: optionalString(value.updated_at),
+    created_by: normalizeArtefactUser(value.created_by),
+    task_id: optionalString(value.task_id),
   };
 }
 
@@ -654,7 +676,7 @@ function normalizeCodeReferenceArtefact(
   return {
     id,
     type: "code_reference",
-    ...logArtefactBase(value),
+    ...artefactBase(value),
     content: {
       file_path,
       start_line: typeof c.start_line === "number" ? c.start_line : 0,
@@ -678,7 +700,7 @@ function normalizeCodeDiffArtefact(
   return {
     id,
     type: "code_diff",
-    ...logArtefactBase(value),
+    ...artefactBase(value),
     content: {
       file_path,
       diff: optionalString(c.diff) ?? "",
@@ -700,7 +722,7 @@ function normalizeLineReferenceArtefact(
   return {
     id,
     type: "line_reference",
-    ...logArtefactBase(value),
+    ...artefactBase(value),
     content: {
       file_path,
       line: typeof c.line === "number" ? c.line : 0,
@@ -725,8 +747,7 @@ function normalizeCommitArtefact(
   return {
     id,
     type: "commit",
-    ...logArtefactBase(value),
-    task_id: optionalString(value.task_id),
+    ...artefactBase(value),
     content: {
       repository,
       branch,
@@ -753,7 +774,7 @@ function normalizeTaskRunArtefact(
   return {
     id,
     type: "task_run",
-    ...logArtefactBase(value),
+    ...artefactBase(value),
     content: {
       task_id,
       run_id: optionalString(c.run_id),
@@ -776,7 +797,7 @@ function normalizeNoteArtefact(
   return {
     id,
     type: "note",
-    ...logArtefactBase(value),
+    ...artefactBase(value),
     content: {
       note,
       author: optionalString(c.author),
@@ -830,15 +851,13 @@ function normalizeSignalReportArtefact(value: unknown): AnyArtefact | null {
   }
 
   const type = dispatchType ?? "unknown";
-  const created_at =
-    optionalString(value.created_at) ?? new Date(0).toISOString();
 
   // suggested_reviewers: content is an array of reviewer objects
   if (type === "suggested_reviewers" && Array.isArray(value.content)) {
     return {
       id,
       type: "suggested_reviewers" as const,
-      created_at,
+      ...artefactBase(value),
       content: value.content as SuggestedReviewersArtefact["content"],
     };
   }
@@ -860,7 +879,7 @@ function normalizeSignalReportArtefact(value: unknown): AnyArtefact | null {
   return {
     id,
     type,
-    created_at,
+    ...artefactBase(value),
     content: {
       session_id: sessionId ?? "",
       start_time: optionalString(contentValue.start_time) ?? "",
