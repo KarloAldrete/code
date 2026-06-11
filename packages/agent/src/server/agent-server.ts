@@ -1700,6 +1700,11 @@ export class AgentServer {
    * Guidance for the shared, semantically-searchable PostHog memory store exposed through the
    * `memory` MCP tool. Appended to every cloud-run system prompt so cloud agents recall durable
    * context across runs and persist new learnings — the same memory store Max/PostHog AI uses.
+   *
+   * Applies to both cloud runtimes: `_doInitializeSession` passes the PostHog MCP server (which
+   * carries the `memory` tool) via `newSession({ mcpServers })` for Claude and Codex alike, and
+   * the Codex adapter forwards those servers to the Codex CLI, so the tool is callable on both.
+   * `buildCodexInstructions` reusing this text for Codex runs is therefore intentional.
    */
   private buildMemoryInstructions(): string {
     return `
