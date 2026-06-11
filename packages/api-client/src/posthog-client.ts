@@ -25,6 +25,7 @@ import type {
   NoteArtefact,
   PriorityJudgmentArtefact,
   RepoSelectionArtefact,
+  SafetyJudgmentArtefact,
   SandboxEnvironment,
   SandboxEnvironmentInput,
   Signal,
@@ -456,6 +457,7 @@ type AnyArtefact =
   | SignalReportArtefact
   | PriorityJudgmentArtefact
   | ActionabilityJudgmentArtefact
+  | SafetyJudgmentArtefact
   | SignalFindingArtefact
   | RepoSelectionArtefact
   | SuggestedReviewersArtefact
@@ -529,6 +531,26 @@ function normalizeActionabilityJudgmentArtefact(
         typeof contentValue.already_addressed === "boolean"
           ? contentValue.already_addressed
           : false,
+    },
+  };
+}
+
+function normalizeSafetyJudgmentArtefact(
+  value: Record<string, unknown>,
+): SafetyJudgmentArtefact | null {
+  const id = optionalString(value.id);
+  if (!id) return null;
+
+  const contentValue = isObjectRecord(value.content) ? value.content : null;
+  if (!contentValue || typeof contentValue.choice !== "boolean") return null;
+
+  return {
+    id,
+    type: "safety_judgment",
+    ...artefactBase(value),
+    content: {
+      choice: contentValue.choice,
+      explanation: optionalString(contentValue.explanation),
     },
   };
 }
@@ -816,6 +838,9 @@ function normalizeSignalReportArtefact(value: unknown): AnyArtefact | null {
   }
   if (dispatchType === "actionability_judgment") {
     return normalizeActionabilityJudgmentArtefact(value);
+  }
+  if (dispatchType === "safety_judgment") {
+    return normalizeSafetyJudgmentArtefact(value);
   }
   if (dispatchType === "priority_judgment") {
     return normalizePriorityJudgmentArtefact(value);

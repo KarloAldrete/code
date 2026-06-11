@@ -349,6 +349,19 @@ export interface ActionabilityJudgmentContent {
   already_addressed: boolean;
 }
 
+/** Artefact with `type: "safety_judgment"` — the prompt-injection safety verdict for the report. */
+export interface SafetyJudgmentArtefact extends SignalReportArtefactBase {
+  type: "safety_judgment";
+  content: SafetyJudgmentContent;
+}
+
+export interface SafetyJudgmentContent {
+  /** True when the report's signals are judged safe to act on. */
+  choice: boolean;
+  /** Why the report was judged unsafe; null when safe. */
+  explanation: string | null;
+}
+
 /** Artefact with `type: "signal_finding"` — per-signal research finding from the agentic report. */
 export interface SignalFindingArtefact extends SignalReportArtefactBase {
   type: "signal_finding";
@@ -574,6 +587,7 @@ export type AnySignalReportArtefact =
   | SignalReportArtefact
   | PriorityJudgmentArtefact
   | ActionabilityJudgmentArtefact
+  | SafetyJudgmentArtefact
   | SignalFindingArtefact
   | RepoSelectionArtefact
   | SuggestedReviewersArtefact
