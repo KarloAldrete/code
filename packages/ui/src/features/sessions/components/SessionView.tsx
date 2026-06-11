@@ -458,7 +458,10 @@ export function SessionView({
               </>
             ) : isInitializing ? (
               isCloud ? (
-                <CloudInitializingView cloudStatus={cloudStatus} />
+                <CloudInitializingView
+                  cloudStatus={cloudStatus}
+                  onCancel={onCancelPrompt}
+                />
               ) : pendingTaskPrompt?.promptText ? (
                 <PendingChatView
                   promptText={pendingTaskPrompt.promptText}

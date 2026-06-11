@@ -1,11 +1,13 @@
 import { Spinner } from "@phosphor-icons/react";
 import type { TaskRunStatus } from "@posthog/shared/domain-types";
-import { Flex, Text } from "@radix-ui/themes";
+import { Button, Flex, Text } from "@radix-ui/themes";
 import { useEffect, useState } from "react";
 import zenHedgehog from "../../../assets/images/zen.png";
 
 interface CloudInitializingViewProps {
   cloudStatus: TaskRunStatus | null;
+  /** Cancels the provisioning cloud run. When omitted, no cancel control is shown. */
+  onCancel?: () => void;
 }
 
 const REVEAL_DELAY_MS = 2000;
@@ -35,14 +37,22 @@ function copyFor(cloudStatus: TaskRunStatus | null): {
 
 export function CloudInitializingView({
   cloudStatus,
+  onCancel,
 }: CloudInitializingViewProps) {
   const { heading, subtitle } = copyFor(cloudStatus);
 
   const [revealed, setRevealed] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => setRevealed(true), REVEAL_DELAY_MS);
     return () => clearTimeout(timer);
   }, []);
+
+  const handleCancel = () => {
+    if (cancelling) return;
+    setCancelling(true);
+    onCancel?.();
+  };
 
   if (!revealed) {
     return (
@@ -76,6 +86,17 @@ export function CloudInitializingView({
           {subtitle}
         </Text>
       </Flex>
+      {onCancel && (
+        <Button
+          variant="soft"
+          color="gray"
+          size="2"
+          onClick={handleCancel}
+          disabled={cancelling}
+        >
+          {cancelling ? "Cancelling…" : "Cancel"}
+        </Button>
+      )}
     </Flex>
   );
 }
