@@ -1,5 +1,6 @@
 import {
   ArrowSquareOutIcon,
+  CopyIcon,
   GitPullRequestIcon,
   MagnifyingGlassIcon,
 } from "@phosphor-icons/react";
@@ -14,6 +15,7 @@ import { ReportDetailActions } from "@posthog/ui/features/inbox/components/Repor
 import { ReportTasksSection } from "@posthog/ui/features/inbox/components/ReportTasksSection";
 import { SuggestedReviewersSection } from "@posthog/ui/features/inbox/components/SuggestedReviewersSection";
 import { Text } from "@radix-ui/themes";
+import { toast } from "sonner";
 
 interface PullRequestDetailProps {
   reportId: string;
@@ -41,6 +43,14 @@ function PullRequestDetailContent({ report }: { report: SignalReport }) {
   const prRef = report.implementation_pr_url
     ? parsePrUrl(report.implementation_pr_url)
     : null;
+
+  const handleCopyLink = () => {
+    const url = `${window.location.origin}/code/inbox/pulls/${report.id}`;
+    navigator.clipboard
+      .writeText(url)
+      .then(() => toast.success("Link copied"))
+      .catch(() => toast.error("Couldn't copy link"));
+  };
 
   return (
     <InboxDetailFrame
@@ -72,6 +82,15 @@ function PullRequestDetailContent({ report }: { report: SignalReport }) {
       primaryAction={
         <>
           <ReportDetailActions report={report} />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleCopyLink}
+            title="Copy a deep link to this pull request"
+          >
+            <CopyIcon size={12} />
+          </Button>
           {prRef && report.implementation_pr_url ? (
             <Button
               type="button"
