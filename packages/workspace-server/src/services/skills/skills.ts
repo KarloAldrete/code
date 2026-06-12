@@ -5,6 +5,11 @@ import { inject, injectable } from "inversify";
 import { WATCHER_SERVICE } from "../../di/tokens";
 import type { FoldersService } from "../folders/folders";
 import { FOLDERS_SERVICE } from "../folders/identifiers";
+import {
+  addMirroredName,
+  getCodexSkillsDir,
+  readCodexMirrorState,
+} from "../posthog-plugin/codex-mirror";
 import { POSTHOG_PLUGIN_SERVICE } from "../posthog-plugin/identifiers";
 import type { PosthogPluginService } from "../posthog-plugin/posthog-plugin";
 import type { WatcherService } from "../watcher/service";
@@ -55,6 +60,11 @@ export class SkillsService {
     private readonly watcher: WatcherService,
   ) {}
 
+  /** Fire-and-forget Codex mirror after local mutations. */
+  private queueCodexMirror(): void {
+    void this.plugin.mirrorUserSkills().catch(() => {});
+  }
+
   async listSkills(): Promise<SkillInfo[]> {
     const roots = await this.getSkillRoots();
     const results = await Promise.all(
@@ -62,7 +72,9 @@ export class SkillsService {
         readSkillMetadataFromDir(root.dir, root.source, root.repoName),
       ),
     );
-    return results.flat();
+    const skills = results.flat();
+    const mirrorState = await readCodexMirrorState(getCodexSkillsDir());
+    return dedupeCodexSkills(skills, new Set(mirrorState.mirrored));
   }
 
   async getSkillContents(skillPath: string): Promise<SkillContents> {
@@ -111,6 +123,7 @@ export class SkillsService {
       serializeSkillMarkdown({ name, description: "" }, SKILL_MD_TEMPLATE_BODY),
       "utf-8",
     );
+    this.queueCodexMirror();
     return { path: skillPath };
   }
 
@@ -132,6 +145,7 @@ export class SkillsService {
       content,
       "utf-8",
     );
+    this.queueCodexMirror();
   }
 
   async saveSkillFile(
@@ -143,6 +157,7 @@ export class SkillsService {
     const target = resolveSkillFilePath(skillDir, filePath);
     await fs.promises.mkdir(path.dirname(target), { recursive: true });
     await fs.promises.writeFile(target, content, "utf-8");
+    this.queueCodexMirror();
   }
 
   async renameSkillFile(
@@ -161,6 +176,7 @@ export class SkillsService {
     }
     await fs.promises.mkdir(path.dirname(to), { recursive: true });
     await fs.promises.rename(from, to);
+    this.queueCodexMirror();
   }
 
   async deleteSkillFile(skillPath: string, filePath: string): Promise<void> {
@@ -170,11 +186,52 @@ export class SkillsService {
       throw new Error("SKILL.md cannot be deleted");
     }
     await fs.promises.rm(target, { force: true });
+    this.queueCodexMirror();
   }
 
   async deleteSkill(skillPath: string): Promise<void> {
     const skillDir = await this.resolveWritableSkillDir(skillPath);
     await fs.promises.rm(skillDir, { recursive: true, force: true });
+    this.queueCodexMirror();
+  }
+
+  /**
+   * Imports a Codex-authored skill into ~/.claude/skills, after which it is
+   * an ordinary editable user skill. The mirror takes ownership of the Codex
+   * copy so future syncs carry edits back without clobbering or duplicating.
+   */
+  async importCodexSkill(
+    skillPath: string,
+    overwrite = false,
+  ): Promise<{ path: string }> {
+    const resolved = path.resolve(skillPath);
+    const codexRoot = path.resolve(getCodexSkillsDir());
+    if (
+      path.dirname(resolved) !== codexRoot ||
+      !fs.existsSync(path.join(resolved, "SKILL.md"))
+    ) {
+      throw new Error("Access denied: not a Codex skill directory");
+    }
+    const name = path.basename(resolved);
+    validateSkillDirName(name);
+
+    const target = path.join(os.homedir(), ".claude", "skills", name);
+    if (fs.existsSync(target) && !overwrite) {
+      throw new Error(
+        `A skill named "${name}" already exists. Importing will replace your local version.`,
+      );
+    }
+    if (fs.existsSync(target)) {
+      await fs.promises.rm(target, { recursive: true, force: true });
+    }
+    await fs.promises.mkdir(path.dirname(target), { recursive: true });
+    await fs.promises.cp(resolved, target, {
+      recursive: true,
+      dereference: true,
+    });
+    await addMirroredName(codexRoot, name);
+    this.queueCodexMirror();
+    return { path: target };
   }
 
   /**
@@ -271,6 +328,7 @@ export class SkillsService {
       await fs.promises.rm(staging, { recursive: true, force: true });
       throw error;
     }
+    this.queueCodexMirror();
     return { path: target };
   }
 
@@ -364,6 +422,7 @@ export class SkillsService {
         dir: path.join(p, "skills"),
         source: "marketplace" as const,
       })),
+      { dir: getCodexSkillsDir(), source: "codex" as const },
     ];
   }
 
@@ -461,6 +520,29 @@ async function waitForDir(dir: string, signal?: AbortSignal): Promise<boolean> {
     await delay(MISSING_DIR_POLL_MS, signal);
   }
   return false;
+}
+
+/**
+ * Hides Codex copies we are responsible for: bundled skills synced by the
+ * official pipeline and user skills mirrored out. What remains is genuinely
+ * the user's Codex-only skills.
+ */
+function dedupeCodexSkills(
+  skills: SkillInfo[],
+  mirroredNames: Set<string>,
+): SkillInfo[] {
+  const bundledNames = new Set(
+    skills.filter((s) => s.source === "bundled").map((s) => s.name),
+  );
+  return skills.filter((skill) => {
+    if (skill.source !== "codex") return true;
+    const dirName = path.basename(skill.path);
+    return (
+      !bundledNames.has(skill.name) &&
+      !mirroredNames.has(dirName) &&
+      !mirroredNames.has(skill.name)
+    );
+  });
 }
 
 function stripFrontmatterBlock(content: string): string {
