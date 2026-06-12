@@ -22,12 +22,16 @@ import {
   useSkillsSelectionActions,
 } from "./skillsSelectionStore";
 import { useSkillsSidebarStore } from "./skillsSidebarStore";
+import { TeamSkillsTab } from "./TeamSkillsTab";
 import { useSkills } from "./useSkills";
 import { useSkillsWatcher } from "./useSkillsWatcher";
+import { useTeamSkills } from "./useTeamSkills";
 
 const SOURCE_ORDER: SkillSource[] = ["user", "marketplace", "repo", "bundled"];
 
-type SkillsTab = "installed" | "marketplace";
+// Installed = on disk, usable by agents right now. Team and Marketplace are
+// remote catalogs; installing materializes a skill into Installed.
+type SkillsTab = "installed" | "team" | "marketplace";
 
 export function SkillsView() {
   const { data: skills = [], isLoading } = useSkills();
@@ -38,6 +42,12 @@ export function SkillsView() {
   const [scrollToPath, setScrollToPath] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [newSkillOpen, setNewSkillOpen] = useState(false);
+
+  const { data: teamListing } = useTeamSkills(skills);
+  const teamAvailable = teamListing?.available ?? false;
+  // Team access revoked mid-session: fall back to Installed.
+  const activeTab: SkillsTab =
+    tab === "team" && !teamAvailable ? "installed" : tab;
 
   const {
     width: sidebarWidth,
@@ -120,13 +130,18 @@ export function SkillsView() {
     <Flex direction="column" height="100%" className="overflow-hidden">
       <Box px="4" className="shrink-0 border-b border-b-(--gray-5)">
         <Tabs
-          value={tab}
+          value={activeTab}
           onValueChange={(value: string) => setTab(value as SkillsTab)}
         >
           <TabsList variant="line" className="h-auto gap-0.5">
             <TabsTrigger value="installed" className="gap-1.5 px-2.5 py-2">
               <span className="font-medium text-[13px]">Installed</span>
             </TabsTrigger>
+            {teamAvailable && (
+              <TabsTrigger value="team" className="gap-1.5 px-2.5 py-2">
+                <span className="font-medium text-[13px]">Team</span>
+              </TabsTrigger>
+            )}
             <TabsTrigger value="marketplace" className="gap-1.5 px-2.5 py-2">
               <span className="font-medium text-[13px]">Marketplace</span>
             </TabsTrigger>
@@ -134,8 +149,10 @@ export function SkillsView() {
         </Tabs>
       </Box>
 
-      {tab === "marketplace" ? (
+      {activeTab === "marketplace" ? (
         <MarketplaceBrowse />
+      ) : activeTab === "team" ? (
+        <TeamSkillsTab skills={teamListing?.skills ?? []} />
       ) : (
         <Flex className="min-h-0 flex-1">
           <Box flexGrow="1" className="min-w-0">
