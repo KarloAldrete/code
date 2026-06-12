@@ -58,6 +58,9 @@ import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
 import { SuggestedTasksPanel } from "./SuggestedTasksPanel";
 import { type WorkspaceMode, WorkspaceModeSelect } from "./WorkspaceModeSelect";
 
+/** How many recently-used repos to pin above the full cloud repo list. */
+const RECENT_CLOUD_REPOSITORIES_DISPLAY_COUNT = 3;
+
 interface TaskInputProps {
   sessionId?: string;
   onTaskCreated?: (task: Task) => void;
@@ -110,6 +113,8 @@ export function TaskInput({
     setLastUsedAdapter,
     lastUsedCloudRepository,
     setLastUsedCloudRepository,
+    recentCloudRepositories,
+    addRecentCloudRepository,
     allowBypassPermissions,
     setLastUsedEnvironment,
     getLastUsedEnvironment,
@@ -206,6 +211,16 @@ export function TaskInput({
     refreshRepositories,
     hasGithubIntegration,
   } = useUserRepositoryIntegration();
+
+  // Surface the few most recently-used repos at the top of the picker, keeping
+  // only those still connected so we never pin a repo the user has lost access to.
+  const pinnedRecentRepositories = useMemo(() => {
+    if (repositories.length === 0) return [];
+    const connected = new Set(repositories);
+    return recentCloudRepositories
+      .filter((repo) => connected.has(repo))
+      .slice(0, RECENT_CLOUD_REPOSITORIES_DISPLAY_COUNT);
+  }, [recentCloudRepositories, repositories]);
 
   const [workspaceMode, setWorkspaceModeState] = useState<WorkspaceMode>(() => {
     if (initialCloudRepository) return "cloud";
@@ -320,8 +335,9 @@ export function TaskInput({
       const normalizedRepo = repo.toLowerCase();
       setSelectedRepository(normalizedRepo);
       setLastUsedCloudRepository(normalizedRepo);
+      addRecentCloudRepository(normalizedRepo);
     },
-    [setLastUsedCloudRepository],
+    [setLastUsedCloudRepository, addRecentCloudRepository],
   );
 
   useEffect(() => {
@@ -697,6 +713,7 @@ export function TaskInput({
                       ? visibleCloudRepositories
                       : repositories
                   }
+                  recentRepositories={pinnedRecentRepositories}
                   isLoading={
                     isLoadingRepos ||
                     (isCloudRepoPickerOpen && cloudRepositoriesLoading)

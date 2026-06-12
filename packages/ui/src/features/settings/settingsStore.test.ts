@@ -1,6 +1,9 @@
 import { registerRendererStateStorage } from "@posthog/ui/shell/rendererStorage";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useSettingsStore } from "./settingsStore";
+import {
+  RECENT_CLOUD_REPOSITORIES_LIMIT,
+  useSettingsStore,
+} from "./settingsStore";
 
 const getItem = vi.fn();
 const setItem = vi.fn();
@@ -20,6 +23,7 @@ describe("feature settingsStore cloud selections", () => {
     useSettingsStore.setState({
       allowBypassPermissions: false,
       lastUsedCloudRepository: null,
+      recentCloudRepositories: [],
     });
   });
 
@@ -54,6 +58,45 @@ describe("feature settingsStore cloud selections", () => {
 
     expect(useSettingsStore.getState().lastUsedCloudRepository).toBe(
       "posthog/posthog",
+    );
+  });
+
+  it("tracks recently used cloud repositories most-recent first", () => {
+    const { addRecentCloudRepository } = useSettingsStore.getState();
+
+    addRecentCloudRepository("posthog/posthog");
+    addRecentCloudRepository("posthog/posthog-js");
+    addRecentCloudRepository("PostHog/Code");
+
+    expect(useSettingsStore.getState().recentCloudRepositories).toEqual([
+      "posthog/code",
+      "posthog/posthog-js",
+      "posthog/posthog",
+    ]);
+  });
+
+  it("dedupes and promotes a re-selected repository to the front", () => {
+    const { addRecentCloudRepository } = useSettingsStore.getState();
+
+    addRecentCloudRepository("posthog/posthog");
+    addRecentCloudRepository("posthog/posthog-js");
+    addRecentCloudRepository("posthog/posthog");
+
+    expect(useSettingsStore.getState().recentCloudRepositories).toEqual([
+      "posthog/posthog",
+      "posthog/posthog-js",
+    ]);
+  });
+
+  it("caps the recent repositories list", () => {
+    const { addRecentCloudRepository } = useSettingsStore.getState();
+
+    for (let i = 0; i < RECENT_CLOUD_REPOSITORIES_LIMIT + 3; i++) {
+      addRecentCloudRepository(`posthog/repo-${i}`);
+    }
+
+    expect(useSettingsStore.getState().recentCloudRepositories).toHaveLength(
+      RECENT_CLOUD_REPOSITORIES_LIMIT,
     );
   });
 

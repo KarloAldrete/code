@@ -48,6 +48,9 @@ export interface HintState {
   learned: boolean;
 }
 
+/** How many recently-used cloud repositories we remember for the picker. */
+export const RECENT_CLOUD_REPOSITORIES_LIMIT = 5;
+
 // ---------- Store shape ----------
 
 interface SettingsStore {
@@ -60,6 +63,7 @@ interface SettingsStore {
   lastUsedModel: string | null;
   lastUsedReasoningEffort: string | null;
   lastUsedCloudRepository: string | null;
+  recentCloudRepositories: string[];
   lastUsedEnvironments: Record<string, string>;
   defaultInitialTaskMode: DefaultInitialTaskMode;
   lastUsedInitialTaskMode: ExecutionMode;
@@ -72,6 +76,7 @@ interface SettingsStore {
   setLastUsedModel: (model: string) => void;
   setLastUsedReasoningEffort: (effort: string) => void;
   setLastUsedCloudRepository: (repo: string | null) => void;
+  addRecentCloudRepository: (repo: string) => void;
   setLastUsedEnvironment: (
     repoPath: string,
     environmentId: string | null,
@@ -149,6 +154,7 @@ export const useSettingsStore = create<SettingsStore>()(
       lastUsedModel: null,
       lastUsedReasoningEffort: null,
       lastUsedCloudRepository: null,
+      recentCloudRepositories: [],
       lastUsedEnvironments: {},
       defaultInitialTaskMode: "plan",
       lastUsedInitialTaskMode: "plan",
@@ -164,6 +170,15 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ lastUsedReasoningEffort: effort }),
       setLastUsedCloudRepository: (repo) =>
         set({ lastUsedCloudRepository: repo }),
+      addRecentCloudRepository: (repo) =>
+        set((state) => {
+          const normalized = repo.toLowerCase();
+          const next = [
+            normalized,
+            ...state.recentCloudRepositories.filter((r) => r !== normalized),
+          ].slice(0, RECENT_CLOUD_REPOSITORIES_LIMIT);
+          return { recentCloudRepositories: next };
+        }),
       setLastUsedEnvironment: (repoPath, environmentId) =>
         set((state) => {
           const next = { ...state.lastUsedEnvironments };
@@ -279,6 +294,7 @@ export const useSettingsStore = create<SettingsStore>()(
         lastUsedModel: state.lastUsedModel,
         lastUsedReasoningEffort: state.lastUsedReasoningEffort,
         lastUsedCloudRepository: state.lastUsedCloudRepository,
+        recentCloudRepositories: state.recentCloudRepositories,
         lastUsedEnvironments: state.lastUsedEnvironments,
         defaultInitialTaskMode: state.defaultInitialTaskMode,
         lastUsedInitialTaskMode: state.lastUsedInitialTaskMode,

@@ -1,4 +1,8 @@
-import { ArrowClockwise, GithubLogo } from "@phosphor-icons/react";
+import {
+  ArrowClockwise,
+  ClockCounterClockwise,
+  GithubLogo,
+} from "@phosphor-icons/react";
 import {
   Button,
   Combobox,
@@ -12,7 +16,14 @@ import {
 } from "@posthog/quill";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { defaultFilter } from "cmdk";
-import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  type RefObject,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 const COMBOBOX_INITIAL_LIMIT = 50;
 
@@ -20,6 +31,11 @@ interface GitHubRepoPickerProps {
   value: string | null;
   onChange: (repo: string | null) => void;
   repositories: string[];
+  /**
+   * Recently-used repositories to pin above the full list, most-recent first.
+   * Only shown while there is no active search query.
+   */
+  recentRepositories?: string[];
   isLoading: boolean;
   placeholder?: string;
   size?: "1" | "2";
@@ -41,6 +57,7 @@ export function GitHubRepoPicker({
   value,
   onChange,
   repositories,
+  recentRepositories,
   isLoading,
   placeholder = "Select repository...",
   disabled = false,
@@ -70,6 +87,35 @@ export function GitHubRepoPicker({
   const onlyRepo =
     !remoteMode && repositories.length === 1 ? repositories[0] : null;
   const trimmedSearchQuery = searchQuery.trim();
+  // Pin recently-used repos to the top, but only while idle: once the user
+  // starts searching they want matches, not their history.
+  const pinnedRecentRepositories = useMemo(() => {
+    if (trimmedSearchQuery || !recentRepositories?.length) {
+      return [] as string[];
+    }
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const repo of recentRepositories) {
+      if (!seen.has(repo)) {
+        seen.add(repo);
+        result.push(repo);
+      }
+    }
+    return result;
+  }, [recentRepositories, trimmedSearchQuery]);
+  const pinnedRecentSet = useMemo(
+    () => new Set(pinnedRecentRepositories),
+    [pinnedRecentRepositories],
+  );
+  const displayRepositories = useMemo(() => {
+    if (pinnedRecentRepositories.length === 0) {
+      return repositories;
+    }
+    return [
+      ...pinnedRecentRepositories,
+      ...repositories.filter((repo) => !pinnedRecentSet.has(repo)),
+    ];
+  }, [pinnedRecentRepositories, pinnedRecentSet, repositories]);
   const filteredRepositoryCount = useMemo(() => {
     if (!trimmedSearchQuery) {
       return repositories.length;
@@ -136,7 +182,7 @@ export function GitHubRepoPicker({
 
   return (
     <Combobox
-      items={repositories}
+      items={displayRepositories}
       limit={visibleLimit}
       value={value}
       onValueChange={(v) => {
@@ -215,11 +261,37 @@ export function GitHubRepoPicker({
             : "No repositories found."}
         </ComboboxEmpty>
         <ComboboxList>
-          {(repo: string) => (
-            <ComboboxItem key={repo} value={repo}>
-              {repo}
-            </ComboboxItem>
-          )}
+          {(repo: string) => {
+            const isPinned = pinnedRecentSet.has(repo);
+            const isFirstPinned =
+              isPinned && repo === pinnedRecentRepositories[0];
+            const isLastPinned =
+              isPinned &&
+              repo ===
+                pinnedRecentRepositories[pinnedRecentRepositories.length - 1];
+            return (
+              <Fragment key={repo}>
+                {isFirstPinned ? (
+                  <div className="px-2 pt-1 pb-0.5 font-medium text-muted-foreground text-xs">
+                    Recent
+                  </div>
+                ) : null}
+                <ComboboxItem value={repo}>
+                  {isPinned ? (
+                    <ClockCounterClockwise
+                      size={14}
+                      weight="regular"
+                      className="shrink-0 text-muted-foreground"
+                    />
+                  ) : null}
+                  <span className="min-w-0 truncate">{repo}</span>
+                </ComboboxItem>
+                {isLastPinned ? (
+                  <div className="my-1 border-border border-t" />
+                ) : null}
+              </Fragment>
+            );
+          }}
         </ComboboxList>
 
         {(hasMore ||
