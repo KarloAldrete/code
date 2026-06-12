@@ -169,6 +169,7 @@ export function SkillsView() {
         >
           {selectedSkill && (
             <SkillDetailPanel
+              key={selectedSkill.path}
               skill={selectedSkill}
               onClose={handleCloseSidebar}
             />
