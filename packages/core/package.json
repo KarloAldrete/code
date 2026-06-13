@@ -18,7 +18,7 @@
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^1.1.2",
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "@pierre/diffs": "^1.1.21",
+    "@pierre/diffs": "^1.2.10",
     "@posthog/api-client": "workspace:*",
     "@posthog/di": "workspace:*",
     "@posthog/platform": "workspace:*",
