@@ -62,7 +62,7 @@ export function setPosthogApiClientAppVersion(version: string): void {
   clientAppVersion = version;
 }
 
-export class SeatSubscriptionRequiredError extends Error {
+class SeatSubscriptionRequiredError extends Error {
   redirectUrl: string;
   constructor(redirectUrl: string) {
     super("Billing subscription required");
@@ -71,20 +71,20 @@ export class SeatSubscriptionRequiredError extends Error {
   }
 }
 
-export class SeatPaymentFailedError extends Error {
+class SeatPaymentFailedError extends Error {
   constructor(message?: string) {
     super(message ?? "Payment failed");
     this.name = "SeatPaymentFailedError";
   }
 }
 
-export type UsageLimitType = "burst" | "sustained" | null;
+type UsageLimitType = "burst" | "sustained" | null;
 
 // Stable message so callers recognize this after a saga reduces the error to a string.
 export const CLOUD_USAGE_LIMIT_ERROR_MESSAGE = "Cloud usage limit reached";
 
 /** Thrown when the backend rejects a cloud run with a 429 usage-limit error. */
-export class CloudUsageLimitError extends Error {
+class CloudUsageLimitError extends Error {
   limitType: UsageLimitType;
   resetAt: string | null;
   isPro: boolean;
@@ -150,7 +150,7 @@ export interface LlmSkillCreatedBy {
   last_name?: string | null;
 }
 
-export interface LlmSkillFileManifest {
+interface LlmSkillFileManifest {
   path: string;
   content_type: string;
 }
@@ -355,7 +355,7 @@ export interface TaskArtifactUploadRequest {
   source?: string;
 }
 
-export interface DirectUploadPresignedPost {
+interface DirectUploadPresignedPost {
   url: string;
   fields: Record<string, string>;
 }
