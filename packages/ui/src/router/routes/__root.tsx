@@ -23,6 +23,7 @@ import { ProjectSwitcher } from "@posthog/ui/features/sidebar/components/Project
 import { SidebarNavSection } from "@posthog/ui/features/sidebar/components/SidebarNavSection";
 import { useSidebarData } from "@posthog/ui/features/sidebar/useSidebarData";
 import { useVisualTaskOrder } from "@posthog/ui/features/sidebar/useVisualTaskOrder";
+import { ExistingWorktreeDialog } from "@posthog/ui/features/task-detail/components/ExistingWorktreeDialog";
 import { RemoteBranchCheckoutDialog } from "@posthog/ui/features/task-detail/components/RemoteBranchCheckoutDialog";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { TourOverlay } from "@posthog/ui/features/tour/components/TourOverlay";
@@ -252,6 +253,7 @@ function RootLayout() {
         />
         {billingEnabled && <UsageLimitModal />}
         <RemoteBranchCheckoutDialog />
+        <ExistingWorktreeDialog />
         {import.meta.env.DEV && (
           <Suspense fallback={null}>
             <TanStackDevtools />
@@ -276,6 +278,7 @@ function RootLayout() {
         />
         {billingEnabled && <UsageLimitModal />}
         <RemoteBranchCheckoutDialog />
+        <ExistingWorktreeDialog />
         {import.meta.env.DEV && (
           <Suspense fallback={null}>
             <TanStackDevtools />
@@ -319,6 +322,7 @@ function RootLayout() {
         <TourOverlay />
         {billingEnabled && <UsageLimitModal />}
         <RemoteBranchCheckoutDialog />
+        <ExistingWorktreeDialog />
         <HedgehogMode />
         {import.meta.env.DEV && (
           <Suspense fallback={null}>
