@@ -12,9 +12,12 @@ import type { Adapter, ExecutionMode } from "@posthog/shared";
  * can exceed the 30s `SESSION_VALIDATION_TIMEOUT_MS` budget), or the app is
  * reloaded/quit/crashes during the retry window, the prompt is lost.
  *
- * To make that impossible we persist this record BEFORE any agent/session
- * setup is attempted, and only clear it once the prompt has actually been
- * delivered to the agent. A persisted record therefore means "this prompt is
+ * To make that loss very unlikely we persist this record BEFORE any
+ * agent/session setup is attempted, and only clear it once the prompt has
+ * actually been delivered to the agent. (Persistence is async and
+ * best-effort, so it is not an absolute guarantee — a crash in the first
+ * moments of a cold start can still race the write.) A persisted record
+ * therefore means "this prompt is
  * owed delivery and has not been delivered yet" — the basis for recovering it
  * on the next connect, and (in a later change) for a server-side reconciler to
  * re-drive orphaned runs.

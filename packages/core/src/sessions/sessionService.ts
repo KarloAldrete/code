@@ -57,7 +57,7 @@ import {
   OFFLINE_SESSION_MESSAGE,
   routeLocalConnect,
 } from "./connectRouting";
-import type { PendingPromptStore } from "./pendingPrompt";
+import type { PendingPromptRecord, PendingPromptStore } from "./pendingPrompt";
 import {
   type PermissionSelectionPlan,
   planPermissionResponse,
@@ -1082,13 +1082,25 @@ export class SessionService {
     const effectiveModel = model ?? recovered?.model;
     const effectiveReasoningLevel = reasoningLevel ?? recovered?.reasoningLevel;
 
-    // Write-ahead the prompt BEFORE any session/agent work. This is the one
-    // step that makes losing it impossible: everything below (run creation,
-    // the 30s-bounded agent.start, prompt delivery) can throw or be killed by
-    // an app restart, and the prompt still survives on disk to be recovered on
-    // the next connect. Cleared only once it has actually been delivered.
+    if (recovered) {
+      // Surface when the safety net actually catches something, so we can tell
+      // it's working (and gauge how long prompts sit undelivered).
+      this.d.log.info("Recovered a written-ahead prompt for a task", {
+        taskId,
+        ageMs: Date.now() - recovered.createdAt,
+      });
+    }
+
+    // Write-ahead the prompt BEFORE any session/agent work. This is the step
+    // that makes losing it very unlikely: everything below (run creation, the
+    // 30s-bounded agent.start, prompt delivery) can throw or be killed by an
+    // app restart, and the prompt still survives to be recovered on the next
+    // connect. Cleared only once it has actually been delivered. (Persistence
+    // is async and best-effort, so a crash in the first moments of a cold
+    // start can still race it — hence "very unlikely", not "guaranteed".)
+    let pending: PendingPromptRecord | undefined;
     if (effectivePrompt?.length) {
-      this.d.pendingPrompts.save({
+      pending = {
         taskId,
         taskTitle,
         repoPath,
@@ -1098,7 +1110,8 @@ export class SessionService {
         model: effectiveModel,
         reasoningLevel: effectiveReasoningLevel,
         createdAt: recovered?.createdAt ?? Date.now(),
-      });
+      };
+      this.d.pendingPrompts.save(pending);
     }
 
     const { client } = auth;
@@ -1111,22 +1124,12 @@ export class SessionService {
       throw new Error("Failed to create task run. Please try again.");
     }
 
-    // Record the run id on the write-ahead entry so it points at the run the
-    // prompt is being delivered to (a server-side reconciler can use this to
-    // re-drive an orphaned run).
-    if (effectivePrompt?.length) {
-      this.d.pendingPrompts.save({
-        taskId,
-        taskTitle,
-        repoPath,
-        initialPrompt: effectivePrompt,
-        taskRunId: taskRun.id,
-        executionMode: effectiveExecutionMode,
-        adapter: effectiveAdapter,
-        model: effectiveModel,
-        reasoningLevel: effectiveReasoningLevel,
-        createdAt: recovered?.createdAt ?? Date.now(),
-      });
+    // Stamp the same write-ahead entry with the run id it's now being
+    // delivered to (a server-side reconciler can use this to re-drive an
+    // orphaned run).
+    if (pending) {
+      pending = { ...pending, taskRunId: taskRun.id };
+      this.d.pendingPrompts.save(pending);
     }
 
     const { customInstructions: startCustomInstructions } = this.d.settings;
