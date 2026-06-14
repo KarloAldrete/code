@@ -191,7 +191,6 @@ const mockPendingPromptStore = vi.hoisted(() => ({
     save: vi.fn(),
     get: vi.fn(() => undefined),
     remove: vi.fn(),
-    list: vi.fn(() => []),
   },
 }));
 

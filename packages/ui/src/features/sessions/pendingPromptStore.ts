@@ -15,7 +15,6 @@ interface PendingPromptActions {
   savePrompt: (record: PendingPromptRecord) => void;
   getPrompt: (taskId: string) => PendingPromptRecord | undefined;
   removePrompt: (taskId: string) => void;
-  listPrompts: () => PendingPromptRecord[];
 }
 
 type PendingPromptStoreState = PendingPromptState & PendingPromptActions;
@@ -41,8 +40,6 @@ export const usePendingPromptStore = create<PendingPromptStoreState>()(
           const { [taskId]: _removed, ...rest } = state.promptsByTaskId;
           return { promptsByTaskId: rest };
         }),
-
-      listPrompts: () => Object.values(get().promptsByTaskId),
     }),
     {
       name: "pending-prompt-storage",
@@ -60,5 +57,4 @@ export const pendingPromptStore: PendingPromptStore = {
   save: (record) => usePendingPromptStore.getState().savePrompt(record),
   get: (taskId) => usePendingPromptStore.getState().getPrompt(taskId),
   remove: (taskId) => usePendingPromptStore.getState().removePrompt(taskId),
-  list: () => usePendingPromptStore.getState().listPrompts(),
 };

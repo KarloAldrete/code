@@ -17,18 +17,15 @@ import type { Adapter, ExecutionMode } from "@posthog/shared";
  * actually been delivered to the agent. (Persistence is async and
  * best-effort, so it is not an absolute guarantee — a crash in the first
  * moments of a cold start can still race the write.) A persisted record
- * therefore means "this prompt is
- * owed delivery and has not been delivered yet" — the basis for recovering it
- * on the next connect, and (in a later change) for a server-side reconciler to
- * re-drive orphaned runs.
+ * therefore means "this prompt is owed delivery and has not been delivered
+ * yet" — the basis for recovering it on the next connect, whether that connect
+ * starts a fresh run or resumes the stranded one.
  */
 export interface PendingPromptRecord {
   taskId: string;
   taskTitle: string;
   repoPath: string;
   initialPrompt: ContentBlock[];
-  /** Latest run id this prompt was attached to, if a run has been created. */
-  taskRunId?: string;
   executionMode?: ExecutionMode;
   adapter?: Adapter;
   model?: string;
@@ -49,6 +46,4 @@ export interface PendingPromptStore {
   get(taskId: string): PendingPromptRecord | undefined;
   /** Clear the pending prompt for a task once delivered or abandoned. */
   remove(taskId: string): void;
-  /** All outstanding pending prompts, e.g. for a recovery sweep on startup. */
-  list(): PendingPromptRecord[];
 }

@@ -57,7 +57,7 @@ import {
   OFFLINE_SESSION_MESSAGE,
   routeLocalConnect,
 } from "./connectRouting";
-import type { PendingPromptRecord, PendingPromptStore } from "./pendingPrompt";
+import type { PendingPromptStore } from "./pendingPrompt";
 import {
   type PermissionSelectionPlan,
   planPermissionResponse,
@@ -828,6 +828,21 @@ export class SessionService {
             ),
           );
         }
+
+        // A run stranded before its prompt was ever delivered (e.g. the
+        // original session-init timed out) routes here on the next connect
+        // rather than to createNewLocalSession, since it already has a run id
+        // and log. Its prompt is still owed: if the resumed log carries no
+        // prompt yet but we have a write-ahead record, deliver it now.
+        const owed = this.d.pendingPrompts.get(taskId);
+        if (owed?.initialPrompt.length && !hasSessionPromptEvent(events)) {
+          this.localRepoPaths.set(taskId, repoPath);
+          this.d.log.info("Recovered a written-ahead prompt on resume", {
+            taskId,
+            ageMs: Date.now() - owed.createdAt,
+          });
+          await this.deliverWrittenAheadPrompt(taskId, owed.initialPrompt);
+        }
         return true;
       } else {
         this.d.log.warn("Reconnect returned null", { taskId, taskRunId });
@@ -1098,9 +1113,8 @@ export class SessionService {
     // connect. Cleared only once it has actually been delivered. (Persistence
     // is async and best-effort, so a crash in the first moments of a cold
     // start can still race it — hence "very unlikely", not "guaranteed".)
-    let pending: PendingPromptRecord | undefined;
     if (effectivePrompt?.length) {
-      pending = {
+      this.d.pendingPrompts.save({
         taskId,
         taskTitle,
         repoPath,
@@ -1110,8 +1124,7 @@ export class SessionService {
         model: effectiveModel,
         reasoningLevel: effectiveReasoningLevel,
         createdAt: recovered?.createdAt ?? Date.now(),
-      };
-      this.d.pendingPrompts.save(pending);
+      });
     }
 
     const { client } = auth;
@@ -1122,14 +1135,6 @@ export class SessionService {
     const taskRun = await client.createTaskRun(taskId);
     if (!taskRun?.id) {
       throw new Error("Failed to create task run. Please try again.");
-    }
-
-    // Stamp the same write-ahead entry with the run id it's now being
-    // delivered to (a server-side reconciler can use this to re-drive an
-    // orphaned run).
-    if (pending) {
-      pending = { ...pending, taskRunId: taskRun.id };
-      this.d.pendingPrompts.save(pending);
     }
 
     const { customInstructions: startCustomInstructions } = this.d.settings;
@@ -1186,16 +1191,25 @@ export class SessionService {
     });
 
     if (effectivePrompt?.length) {
-      const { stopReason } = await this.sendPrompt(taskId, effectivePrompt);
-      // Clear only once the prompt was actually handed to the agent. sendPrompt
-      // can resolve WITHOUT delivering — "queued" (session busy) or
-      // "rate_limited" (usage limit swallowed by sendLocalPrompt) — and in
-      // those cases the write-ahead copy must survive so the prompt isn't lost.
-      // On real delivery it now lives in the run's session log, so clearing the
-      // only-other-copy here is safe.
-      if (stopReason !== "queued" && stopReason !== "rate_limited") {
-        this.d.pendingPrompts.remove(taskId);
-      }
+      await this.deliverWrittenAheadPrompt(taskId, effectivePrompt);
+    }
+  }
+
+  /**
+   * Deliver a written-ahead prompt and clear its durable record only on
+   * confirmed delivery. `sendPrompt` can resolve WITHOUT delivering — "queued"
+   * (session busy) or "rate_limited" (usage limit swallowed by
+   * `sendLocalPrompt`) — and in those cases the write-ahead copy must survive
+   * so the prompt isn't lost. On real delivery the prompt now lives in the
+   * run's session log, so clearing the only-other-copy is safe.
+   */
+  private async deliverWrittenAheadPrompt(
+    taskId: string,
+    prompt: ContentBlock[],
+  ): Promise<void> {
+    const { stopReason } = await this.sendPrompt(taskId, prompt);
+    if (stopReason !== "queued" && stopReason !== "rate_limited") {
+      this.d.pendingPrompts.remove(taskId);
     }
   }
 

@@ -138,9 +138,10 @@ vi.mock(
 const mockPendingPromptStore = vi.hoisted(() => ({
   pendingPromptStore: {
     save: vi.fn(),
-    get: vi.fn(() => undefined),
+    get: vi.fn(
+      (_taskId?: string): PendingPromptRecord | undefined => undefined,
+    ),
     remove: vi.fn(),
-    list: vi.fn(() => []),
   },
 }));
 
@@ -293,6 +294,8 @@ vi.mock("@posthog/core/sessions/sessionEvents", async () => {
 
 // NOTE: deliberately NOT mocking "@posthog/ui/features/sessions/sessionStore" —
 // the real Zustand store is the whole point of this test.
+import type { PendingPromptRecord } from "@posthog/core/sessions/pendingPrompt";
+import type { Task } from "@posthog/shared/domain-types";
 import type { AgentSession } from "@posthog/ui/features/sessions/sessionStore";
 import {
   sessionStoreSetters,
@@ -960,5 +963,156 @@ describe("SessionService cloud queue recovery (real store, e2e)", () => {
     expect(
       useSessionStore.getState().sessions[RUN_ID]?.messageQueue,
     ).toHaveLength(1);
+  });
+});
+
+describe("SessionService written-ahead prompt recovery (real store, e2e)", () => {
+  const OWED_PROMPT = [{ type: "text" as const, text: "do the thing" }];
+
+  function owedRecord() {
+    return {
+      taskId: TASK_ID,
+      taskTitle: "Recovered task",
+      repoPath: "/repo",
+      initialPrompt: OWED_PROMPT,
+      createdAt: 1,
+    };
+  }
+
+  function localTask(overrides: Partial<Task> = {}): Task {
+    return {
+      id: TASK_ID,
+      task_number: 1,
+      slug: "recovered-task",
+      title: "Recovered task",
+      description: "",
+      origin_product: "twig",
+      created_at: "2024-01-01T00:00:00Z",
+      updated_at: "2024-01-01T00:00:00Z",
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetSessionService();
+    useSessionStore.setState({ sessions: {}, taskIdIndex: {} });
+    mockConvertStoredEntriesToEvents.mockImplementation(() => []);
+    mockTrpcAgent.onSessionEvent.subscribe.mockReturnValue({
+      unsubscribe: vi.fn(),
+    });
+    mockPendingPromptStore.pendingPromptStore.get.mockReturnValue(undefined);
+    mockTrpcAgent.prompt.mutate.mockResolvedValue({ stopReason: "end_turn" });
+  });
+
+  it("delivers an owed prompt on a fresh connect (create-new route) and clears it", async () => {
+    const service = getSessionService();
+    mockPendingPromptStore.pendingPromptStore.get.mockReturnValue(owedRecord());
+    mockAuthenticatedClient.createTaskRun.mockResolvedValue({ id: RUN_ID });
+    mockTrpcAgent.start.mutate.mockResolvedValue({
+      channel: `agent-event:${RUN_ID}`,
+      configOptions: [],
+    });
+
+    // No initialPrompt on the connect — the prompt must come from the store.
+    await service.connectToTask({ task: localTask(), repoPath: "/repo" });
+
+    expect(mockTrpcAgent.start.mutate).toHaveBeenCalled();
+    expect(mockTrpcAgent.prompt.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: RUN_ID, prompt: OWED_PROMPT }),
+    );
+    expect(
+      mockPendingPromptStore.pendingPromptStore.remove,
+    ).toHaveBeenCalledWith(TASK_ID);
+  });
+
+  it("delivers an owed prompt when resuming a run stranded before delivery (resume-existing route)", async () => {
+    const service = getSessionService();
+    mockPendingPromptStore.pendingPromptStore.get.mockReturnValue(owedRecord());
+    mockTrpcWorkspace.verify.query.mockResolvedValue({ exists: true });
+    mockTrpcAgent.reconnect.mutate.mockResolvedValue({
+      channel: `agent-event:${RUN_ID}`,
+      configOptions: [],
+    });
+
+    await service.connectToTask({
+      task: localTask({
+        latest_run: {
+          id: RUN_ID,
+          task: TASK_ID,
+          team: 123,
+          environment: "local",
+          status: "queued",
+          log_url: "https://logs.example.com/run",
+          error_message: null,
+          output: null,
+          state: {},
+          branch: null,
+          created_at: "2024-01-01T00:00:00Z",
+          updated_at: "2024-01-01T00:00:00Z",
+          completed_at: null,
+        },
+      }),
+      repoPath: "/repo",
+    });
+
+    expect(mockTrpcAgent.reconnect.mutate).toHaveBeenCalled();
+    // The resumed log carries no prompt event (convert mock → []), so the owed
+    // prompt is delivered onto the resumed run.
+    expect(mockTrpcAgent.prompt.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: RUN_ID, prompt: OWED_PROMPT }),
+    );
+    expect(
+      mockPendingPromptStore.pendingPromptStore.remove,
+    ).toHaveBeenCalledWith(TASK_ID);
+  });
+
+  it("does not deliver when the resumed run already has a prompt event", async () => {
+    const service = getSessionService();
+    mockPendingPromptStore.pendingPromptStore.get.mockReturnValue(owedRecord());
+    mockTrpcWorkspace.verify.query.mockResolvedValue({ exists: true });
+    mockTrpcAgent.reconnect.mutate.mockResolvedValue({
+      channel: `agent-event:${RUN_ID}`,
+      configOptions: [],
+    });
+    // Resumed log already contains a session/prompt request → nothing owed.
+    mockConvertStoredEntriesToEvents.mockReturnValue([
+      {
+        type: "acp_message" as const,
+        ts: Date.now(),
+        message: {
+          jsonrpc: "2.0" as const,
+          id: 1,
+          method: "session/prompt",
+          params: {},
+        },
+      },
+    ]);
+
+    await service.connectToTask({
+      task: localTask({
+        latest_run: {
+          id: RUN_ID,
+          task: TASK_ID,
+          team: 123,
+          environment: "local",
+          status: "in_progress",
+          log_url: "https://logs.example.com/run",
+          error_message: null,
+          output: null,
+          state: {},
+          branch: null,
+          created_at: "2024-01-01T00:00:00Z",
+          updated_at: "2024-01-01T00:00:00Z",
+          completed_at: null,
+        },
+      }),
+      repoPath: "/repo",
+    });
+
+    expect(mockTrpcAgent.prompt.mutate).not.toHaveBeenCalled();
+    expect(
+      mockPendingPromptStore.pendingPromptStore.remove,
+    ).not.toHaveBeenCalled();
   });
 });

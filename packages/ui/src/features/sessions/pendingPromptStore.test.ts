@@ -22,6 +22,10 @@ function record(
   };
 }
 
+function storedTaskIds(): string[] {
+  return Object.keys(usePendingPromptStore.getState().promptsByTaskId).sort();
+}
+
 describe("pendingPromptStore", () => {
   beforeEach(() => {
     usePendingPromptStore.setState({ promptsByTaskId: {} });
@@ -41,10 +45,12 @@ describe("pendingPromptStore", () => {
 
   it("overwrites the record for a task on a re-save (retry reuses the key)", () => {
     pendingPromptStore.save(record("t1", "first"));
-    pendingPromptStore.save(record("t1", "first", { taskRunId: "run-2" }));
+    pendingPromptStore.save(record("t1", "second"));
 
-    expect(pendingPromptStore.list()).toHaveLength(1);
-    expect(pendingPromptStore.get("t1")?.taskRunId).toBe("run-2");
+    expect(storedTaskIds()).toEqual(["t1"]);
+    expect(pendingPromptStore.get("t1")?.initialPrompt).toEqual([
+      { type: "text", text: "second" },
+    ]);
   });
 
   it("removes a delivered prompt and leaves others intact", () => {
@@ -55,24 +61,12 @@ describe("pendingPromptStore", () => {
 
     expect(pendingPromptStore.get("t1")).toBeUndefined();
     expect(pendingPromptStore.get("t2")).toBeDefined();
-    expect(pendingPromptStore.list().map((r) => r.taskId)).toEqual(["t2"]);
+    expect(storedTaskIds()).toEqual(["t2"]);
   });
 
   it("remove is a no-op for an unknown task", () => {
     pendingPromptStore.save(record("t1", "one"));
     pendingPromptStore.remove("nope");
-    expect(pendingPromptStore.list()).toHaveLength(1);
-  });
-
-  it("lists all outstanding prompts for a recovery sweep", () => {
-    pendingPromptStore.save(record("t1", "one"));
-    pendingPromptStore.save(record("t2", "two"));
-
-    expect(
-      pendingPromptStore
-        .list()
-        .map((r) => r.taskId)
-        .sort(),
-    ).toEqual(["t1", "t2"]);
+    expect(storedTaskIds()).toEqual(["t1"]);
   });
 });
