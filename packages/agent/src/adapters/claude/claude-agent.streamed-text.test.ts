@@ -150,6 +150,37 @@ function resultSuccess(sessionId: string) {
   };
 }
 
+function thinkingDelta(sessionId: string, thinking: string) {
+  return {
+    type: "stream_event",
+    parent_tool_use_id: null,
+    session_id: sessionId,
+    uuid: `think-${thinking}`,
+    event: {
+      type: "content_block_delta",
+      index: 0,
+      delta: { type: "thinking_delta", thinking },
+    },
+  };
+}
+
+function exitPlanModeAssistant(sessionId: string, apiId: string) {
+  return {
+    type: "assistant",
+    parent_tool_use_id: null,
+    session_id: sessionId,
+    uuid: `assistant-${apiId}`,
+    message: {
+      id: apiId,
+      role: "assistant",
+      content: [
+        { type: "redacted_thinking", data: "encrypted" },
+        { type: "tool_use", id: "tool-1", name: "ExitPlanMode", input: {} },
+      ],
+    },
+  };
+}
+
 function messageChunkTexts(
   calls: ClientMocks["sessionUpdate"]["mock"]["calls"],
 ): string[] {
@@ -214,6 +245,60 @@ describe("ClaudeAcpAgent.prompt — streamed assistant text wiring", () => {
     expect(result.stopReason).toBe("end_turn");
     expect(messageChunkTexts(client.sessionUpdate.mock.calls)).toEqual([
       "gateway answer",
+    ]);
+  });
+
+  it("surfaces a fallback message when a turn ends with no prose", async () => {
+    const { agent, client } = makeAgent();
+    const sessionId = "s-empty";
+    const { query, input } = installFakeSession(agent, sessionId);
+
+    const promptPromise = agent.prompt({
+      sessionId,
+      prompt: [{ type: "text", text: "make a plan" }],
+    });
+    await tick();
+
+    // Plan-mode turn: encrypted thinking + ExitPlanMode, no text block.
+    await echoUserMessage(query, input);
+    await send(query, messageStart(sessionId, "msg_plan"));
+    await send(query, exitPlanModeAssistant(sessionId, "msg_plan"));
+    await send(query, resultSuccess(sessionId));
+
+    const result = await promptPromise;
+    expect(result.stopReason).toBe("end_turn");
+    expect((result._meta as { emptyOutput?: boolean }).emptyOutput).toBe(true);
+    const chunks = messageChunkTexts(client.sessionUpdate.mock.calls);
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]).toContain("without a written response");
+  });
+
+  it("does not surface a fallback when thinking-only turn also emits text", async () => {
+    const { agent, client } = makeAgent();
+    const sessionId = "s-thinking-text";
+    const { query, input } = installFakeSession(agent, sessionId);
+
+    const promptPromise = agent.prompt({
+      sessionId,
+      prompt: [{ type: "text", text: "hi" }],
+    });
+    await tick();
+
+    await echoUserMessage(query, input);
+    await send(query, messageStart(sessionId, "msg_t"));
+    await send(query, thinkingDelta(sessionId, "pondering"));
+    await send(query, textDelta(sessionId, "here is my answer"));
+    await send(
+      query,
+      assistantMessage(sessionId, "msg_t", "here is my answer"),
+    );
+    await send(query, resultSuccess(sessionId));
+
+    const result = await promptPromise;
+    expect(result.stopReason).toBe("end_turn");
+    expect((result._meta as { emptyOutput?: boolean }).emptyOutput).toBe(false);
+    expect(messageChunkTexts(client.sessionUpdate.mock.calls)).toEqual([
+      "here is my answer",
     ]);
   });
 });

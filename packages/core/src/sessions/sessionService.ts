@@ -29,7 +29,10 @@ import {
   type StoredLogEntry,
   type TaskRunStatus,
 } from "@posthog/shared";
-import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import {
+  ANALYTICS_EVENTS,
+  type StopReason,
+} from "@posthog/shared/analytics-events";
 import {
   type CloudTaskPermissionRequestUpdate,
   type CloudTaskUpdatePayload,
@@ -92,6 +95,33 @@ const LOCAL_SESSION_RECOVERY_FAILED_MESSAGE =
 const GITHUB_AUTHORIZATION_REQUIRED_CODE = "github_authorization_required";
 const AUTO_RETRY_MAX_ATTEMPTS = 2;
 const AUTO_RETRY_DELAY_MS = 10_000;
+
+const KNOWN_STOP_REASONS = new Set<StopReason>([
+  "end_turn",
+  "max_tokens",
+  "max_turn_requests",
+  "refusal",
+  "cancelled",
+  "error",
+  "timeout",
+]);
+
+// Maps the agent's raw turn stop reason onto the analytics `StopReason` union,
+// falling back to "other" so a new/unknown reason is still counted.
+function normalizeStopReason(raw: string | undefined): StopReason {
+  return raw && KNOWN_STOP_REASONS.has(raw as StopReason)
+    ? (raw as StopReason)
+    : "other";
+}
+
+// Counts the prompts a session has sent — used as `prompts_sent` on run-level
+// analytics. A `session/prompt` request is the canonical "a turn started"
+// marker in the event log.
+function countPromptsSent(session: AgentSession): number {
+  return session.events.filter(
+    (e) => "method" in e.message && e.message.method === "session/prompt",
+  ).length;
+}
 
 class GitHubAuthorizationRequiredForCloudHandoffError extends Error {
   constructor(
@@ -1431,6 +1461,21 @@ export class SessionService {
       const stopReason = (msg.result as { stopReason?: string }).stopReason;
       const hasQueuedMessages = this.drainQueuedMessages(taskRunId, session);
 
+      // Record the completed turn so empty/odd outcomes are observable. The
+      // `_meta.emptyOutput` flag is set by the agent when a turn finished
+      // without delivering any user-visible prose (see `surfaceEmptyTurnFallback`).
+      const emptyOutput =
+        (msg.result as { _meta?: { emptyOutput?: unknown } })._meta
+          ?.emptyOutput === true;
+      this.d.track(ANALYTICS_EVENTS.TASK_RUN_COMPLETED, {
+        task_id: session.taskId,
+        execution_type: "local",
+        duration_seconds: Math.round((Date.now() - session.startedAt) / 1000),
+        prompts_sent: countPromptsSent(session),
+        stop_reason: normalizeStopReason(stopReason),
+        empty_output: emptyOutput,
+      });
+
       // Only notify when queue is empty - queued messages will start a new turn
       if (stopReason && !hasQueuedMessages) {
         this.d.notifyPromptComplete(
@@ -1920,17 +1965,11 @@ export class SessionService {
         sessionId: session.taskRunId,
       });
 
-      const durationSeconds = Math.round(
-        (Date.now() - session.startedAt) / 1000,
-      );
-      const promptCount = session.events.filter(
-        (e) => "method" in e.message && e.message.method === "session/prompt",
-      ).length;
       this.d.track(ANALYTICS_EVENTS.TASK_RUN_CANCELLED, {
         task_id: taskId,
         execution_type: "local",
-        duration_seconds: durationSeconds,
-        prompts_sent: promptCount,
+        duration_seconds: Math.round((Date.now() - session.startedAt) / 1000),
+        prompts_sent: countPromptsSent(session),
       });
 
       return result;
@@ -2360,17 +2399,11 @@ export class SessionService {
         method: "cancel",
       });
 
-      const durationSeconds = Math.round(
-        (Date.now() - session.startedAt) / 1000,
-      );
-      const promptCount = session.events.filter(
-        (e) => "method" in e.message && e.message.method === "session/prompt",
-      ).length;
       this.d.track(ANALYTICS_EVENTS.TASK_RUN_CANCELLED, {
         task_id: session.taskId,
         execution_type: "cloud",
-        duration_seconds: durationSeconds,
-        prompts_sent: promptCount,
+        duration_seconds: Math.round((Date.now() - session.startedAt) / 1000),
+        prompts_sent: countPromptsSent(session),
       });
 
       if (!result.success) {

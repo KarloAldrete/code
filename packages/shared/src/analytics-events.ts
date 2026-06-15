@@ -30,7 +30,18 @@ type GitActionType =
 export type FeedbackType = "good" | "bad" | "general";
 type FileOpenSource = "sidebar" | "agent-suggestion" | "search" | "diff";
 export type FileChangeType = "added" | "modified" | "deleted";
-type StopReason = "user_cancelled" | "completed" | "error" | "timeout";
+// Mirrors the agent/ACP turn stop reasons so `TASK_RUN_COMPLETED` carries the
+// raw reason a turn ended. `other` is the catch-all for any future/unmapped
+// value so dashboards never silently drop a completion.
+export type StopReason =
+  | "end_turn"
+  | "max_tokens"
+  | "max_turn_requests"
+  | "refusal"
+  | "cancelled"
+  | "error"
+  | "timeout"
+  | "other";
 export type SkillButtonId =
   | "add-analytics"
   | "create-feature-flags"
@@ -110,6 +121,11 @@ export interface TaskRunCompletedProperties {
   duration_seconds: number;
   prompts_sent: number;
   stop_reason: StopReason;
+  // True when the turn finished without delivering any user-visible prose
+  // (`agent_message_chunk`). Surfaces the "empty agent response" failure mode
+  // — most often a plan-mode turn that only produced (encrypted) thinking
+  // before calling `ExitPlanMode` — for triage.
+  empty_output: boolean;
 }
 
 export interface TaskRunCancelledProperties {

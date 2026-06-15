@@ -143,6 +143,13 @@ const DEFAULT_FORCE_CANCEL_GRACE_MS = 30_000;
 const MAX_TITLE_LENGTH = 256;
 const LOCAL_ONLY_COMMANDS = new Set(["/context", "/heapdump", "/extra-usage"]);
 
+// Shown when a turn completes (`end_turn`) without delivering any user-visible
+// prose. Without it the UI renders a silent blank turn — most commonly a
+// plan-mode turn where the model only produced (encrypted) thinking before
+// calling `ExitPlanMode`, which carries no `agent_message_chunk` of its own.
+const EMPTY_TURN_FALLBACK_TEXT =
+  "_The agent finished this turn without a written response. This can happen in plan mode when it reasons through a plan but doesn't post a message. You can ask it to continue or send your request again._";
+
 // Best-effort: silent on ENOENT, logs other errors so permission failures
 // aren't masked.
 function readClaudeMdQuietly(cwd: string, logger: Logger): string | undefined {
@@ -501,10 +508,37 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           | undefined
       )?.terminal_output === true;
 
+    // Track whether any user-visible prose (`agent_message_chunk`) reached the
+    // client during this turn. A turn that ends in `end_turn` having emitted
+    // none is a silent blank turn (e.g. plan-mode thinking + `ExitPlanMode`);
+    // the `end_turn` completion points below surface a fallback message in that
+    // case. Wrapping the client keeps the signal accurate across every emit
+    // path — streamed text, consolidated messages, and the direct emits below.
+    let emittedAgentMessageChunk = false;
+    const trackingClient = new Proxy(this.client, {
+      get: (target, prop, receiver) => {
+        if (prop === "sessionUpdate") {
+          return (
+            notification: Parameters<AgentSideConnection["sessionUpdate"]>[0],
+          ) => {
+            if (
+              (notification as { update?: { sessionUpdate?: string } }).update
+                ?.sessionUpdate === "agent_message_chunk"
+            ) {
+              emittedAgentMessageChunk = true;
+            }
+            return target.sessionUpdate(notification);
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+
     const context = {
       session: this.session,
       sessionId: params.sessionId,
-      client: this.client,
+      client: trackingClient,
       toolUseCache: this.toolUseCache,
       toolUseStreamCache: this.toolUseStreamCache,
       fileContentCache: this.fileContentCache,
@@ -615,7 +649,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 compactionInProgress
               ) {
                 compactionInProgress = false;
-                await this.client.sessionUpdate({
+                await trackingClient.sessionUpdate({
                   sessionId: params.sessionId,
                   update: {
                     sessionUpdate: "agent_message_chunk",
@@ -634,7 +668,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 const reason = message.compact_error
                   ? `: ${message.compact_error}`
                   : ".";
-                await this.client.sessionUpdate({
+                await trackingClient.sessionUpdate({
                   sessionId: params.sessionId,
                   update: {
                     sessionUpdate: "agent_message_chunk",
@@ -672,7 +706,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                     "Slash command produced no output; treating as unsupported",
                     { sessionId: params.sessionId, command: cmd },
                   );
-                  await this.client.sessionUpdate({
+                  await trackingClient.sessionUpdate({
                     sessionId: params.sessionId,
                     update: {
                       sessionUpdate: "agent_message_chunk",
@@ -708,8 +742,20 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 },
               });
 
+              const idleStopReason = this.session.cancelled
+                ? "cancelled"
+                : "end_turn";
+              let idleEmptyOutput = false;
+              if (idleStopReason === "end_turn") {
+                idleEmptyOutput = await this.surfaceEmptyTurnFallback(
+                  params.sessionId,
+                  emittedAgentMessageChunk,
+                );
+              }
+
               return {
-                stopReason: this.session.cancelled ? "cancelled" : "end_turn",
+                stopReason: idleStopReason,
+                _meta: { emptyOutput: idleEmptyOutput },
               };
             }
             await handleSystemMessage(message, context);
@@ -814,7 +860,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               (message as { stop_reason?: string }).stop_reason === "refusal"
             ) {
               if (lastRefusalExplanation) {
-                await this.client.sessionUpdate({
+                await trackingClient.sessionUpdate({
                   sessionId: params.sessionId,
                   update: {
                     sessionUpdate: "agent_message_chunk",
@@ -845,7 +891,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               message.subtype === "success" &&
               message.result
             ) {
-              await this.client.sessionUpdate({
+              await trackingClient.sessionUpdate({
                 sessionId: params.sessionId,
                 update: {
                   sessionUpdate: "agent_message_chunk",
@@ -854,7 +900,28 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
               });
             }
 
-            return { stopReason: result.stopReason ?? "end_turn", usage };
+            const effectiveStopReason = result.stopReason ?? "end_turn";
+            // Guarantee the UI never renders a silent blank turn. A successful
+            // `end_turn` that delivered no prose (e.g. plan-mode thinking +
+            // `ExitPlanMode`) gets a fallback message. Skipped when the SDK's
+            // native structured output carried the response instead of a chunk.
+            let emptyOutput = false;
+            if (
+              effectiveStopReason === "end_turn" &&
+              (message as { structured_output?: unknown }).structured_output ==
+                null
+            ) {
+              emptyOutput = await this.surfaceEmptyTurnFallback(
+                params.sessionId,
+                emittedAgentMessageChunk,
+              );
+            }
+
+            return {
+              stopReason: effectiveStopReason,
+              usage,
+              _meta: { emptyOutput },
+            };
           }
 
           case "stream_event": {
@@ -1131,6 +1198,35 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         }
       }
     }
+  }
+
+  /**
+   * Surfaces a fallback message when a turn finished without delivering any
+   * user-visible prose. Returns `true` when the fallback was shown (the turn
+   * produced empty output), `false` when real content already reached the
+   * client. Guarantees the UI never renders a silent blank turn.
+   */
+  private async surfaceEmptyTurnFallback(
+    sessionId: string,
+    emittedAgentMessageChunk: boolean,
+  ): Promise<boolean> {
+    if (emittedAgentMessageChunk) {
+      return false;
+    }
+    this.logger.warn(
+      "Turn ended with no agent_message_chunk; surfacing fallback",
+      {
+        sessionId,
+      },
+    );
+    await this.client.sessionUpdate({
+      sessionId,
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: EMPTY_TURN_FALLBACK_TEXT },
+      },
+    });
+    return true;
   }
 
   // Called by BaseAcpAgent#cancel() to interrupt the session
