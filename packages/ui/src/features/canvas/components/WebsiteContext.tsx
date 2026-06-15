@@ -1,12 +1,32 @@
-import { FileTextIcon, HashIcon } from "@phosphor-icons/react";
+import {
+  FileTextIcon,
+  HashIcon,
+  SparkleIcon,
+  SpinnerGapIcon,
+} from "@phosphor-icons/react";
 import { FolderInstructionsConflictError } from "@posthog/api-client/posthog-client";
+import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import {
+  useFolderGenerationTask,
+  useFolderGenerationTaskMutation,
+} from "@posthog/ui/features/canvas/hooks/useFolderGenerationTask";
 import {
   useFolderInstructions,
   useFolderInstructionsMutations,
   useFolderInstructionsVersions,
 } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
+import {
+  type GenerateContextTarget,
+  useGenerateContext,
+} from "@posthog/ui/features/canvas/hooks/useGenerateContext";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
+import { FolderPicker } from "@posthog/ui/features/folder-picker/FolderPicker";
+import { GitHubRepoPicker } from "@posthog/ui/features/folder-picker/GitHubRepoPicker";
+import { useUserRepositoryIntegration } from "@posthog/ui/features/integrations/useIntegrations";
+import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
+import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import {
   Box,
@@ -20,6 +40,8 @@ import {
   Text,
   TextArea,
 } from "@radix-ui/themes";
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 
 type Mode = "rendered" | "edit";
@@ -46,6 +68,7 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
     isLoading: isLoadingLatest,
     isFetching: isFetchingLatest,
     error: latestError,
+    refetch: refetchLatest,
   } = useFolderInstructions(channelId);
 
   const { data: versions = [], isLoading: isLoadingVersions } =
@@ -57,6 +80,68 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
   const [mode, setMode] = useState<Mode>("rendered");
   const [draft, setDraft] = useState("");
   const [hasDraft, setHasDraft] = useState(false);
+
+  const hasInstructions = (latest?.content ?? "").trim().length > 0;
+
+  // CONTEXT.md generation runs as a normal task (local or cloud) in the
+  // channel's repo. The "which task" association is stored server-side (shared
+  // across the project) so any user sees an in-progress generation. We poll it
+  // and the file while there's no published content yet.
+  const pollGen = !hasInstructions;
+  const { data: genTaskId } = useFolderGenerationTask(channelId, {
+    refetchInterval: pollGen ? 5000 : false,
+  });
+  const { set: setGenerationTask } = useFolderGenerationTaskMutation(channelId);
+
+  const genTaskQuery = useQuery({
+    ...taskDetailQuery(genTaskId ?? ""),
+    enabled: !!genTaskId && pollGen,
+    refetchInterval: genTaskId && pollGen ? 5000 : false,
+  });
+  const genTask = genTaskQuery.data;
+  const genSession = useSessionForTask(genTaskId ?? undefined);
+
+  // Running is environment-aware: cloud runs report status via cloudStatus /
+  // latest_run.status (a cloud session stays "connected" while polling), while
+  // local runs are tied to the live ACP session. While the task record is still
+  // loading we assume running to avoid a flash of "stopped".
+  const running = (() => {
+    if (!genTaskId) return false;
+    if (genTaskQuery.isLoading) return true;
+    if (genTask?.latest_run?.environment === "cloud") {
+      const cloudStatus =
+        genSession?.cloudStatus ?? genTask?.latest_run?.status ?? null;
+      return !isTerminalStatus(cloudStatus);
+    }
+    return (
+      genSession?.status === "connecting" || genSession?.status === "connected"
+    );
+  })();
+  const isGenerating = !!genTaskId && pollGen && running;
+  const isStopped = !!genTaskId && pollGen && !running;
+
+  // While the agent runs, poll the published file so it shows up without a
+  // manual refresh once the agent publishes via the MCP.
+  useEffect(() => {
+    if (!isGenerating) return;
+    const id = setInterval(() => void refetchLatest(), 5000);
+    return () => clearInterval(id);
+  }, [isGenerating, refetchLatest]);
+
+  // The agent publishes mid-run, just before its run ends — so when the run
+  // stops, refetch once to catch a just-published file before concluding it
+  // stopped without producing one.
+  useEffect(() => {
+    if (isStopped) void refetchLatest();
+  }, [isStopped, refetchLatest]);
+
+  // Once the file exists, the generation task has served its purpose — clear the
+  // server association so everyone stops tracking it. (The backend should also
+  // auto-clear on publish; this covers clients that observe content first.)
+  useEffect(() => {
+    if (genTaskId && hasInstructions)
+      void setGenerationTask(null).catch(() => {});
+  }, [genTaskId, hasInstructions, setGenerationTask]);
 
   // Seed the editor draft from the latest content the first time we land on
   // edit mode (or whenever latest changes while we're not actively editing).
@@ -145,7 +230,6 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
   // empty state — otherwise MarkdownRenderer paints an invisible empty block
   // and the page looks blank.
   const renderedContent = latest?.content ?? "";
-  const hasInstructions = renderedContent.trim().length > 0;
 
   return (
     <Flex direction="column" height="100%" className="overflow-hidden">
@@ -261,7 +345,9 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
         className="scroll-area-constrain-width min-h-0 flex-1"
       >
         <Box p="4">
-          {selectedVersion ? (
+          {isGenerating && genTaskId ? (
+            <GeneratingState channelId={channelId} taskId={genTaskId} />
+          ) : selectedVersion ? (
             <Callout.Root color="gray" size="1">
               <Callout.Text>
                 Viewing v{selectedVersion.version} metadata. Past content is not
@@ -276,7 +362,9 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
               </Box>
             ) : (
               <EmptyState
+                channelId={channelId}
                 channelName={channelName}
+                stoppedTaskId={isStopped ? (genTaskId ?? null) : null}
                 onCreate={() => {
                   setDraft(EMPTY_TEMPLATE);
                   setHasDraft(true);
@@ -306,10 +394,15 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
 }
 
 function EmptyState({
+  channelId,
   channelName,
+  stoppedTaskId,
   onCreate,
 }: {
+  channelId: string;
   channelName: string;
+  /** A prior generation task that stopped without producing a file, if any. */
+  stoppedTaskId: string | null;
   onCreate: () => void;
 }) {
   return (
@@ -332,11 +425,205 @@ function EmptyState({
           files, and anything else that isn't obvious from the code.
         </Text>
       </Flex>
-      <Button size="2" variant="solid" onClick={onCreate}>
-        Create CONTEXT.md
+
+      {stoppedTaskId ? (
+        <Callout.Root color="amber" size="1" className="w-full text-left">
+          <Callout.Text>
+            The previous generation in task{" "}
+            <Link
+              to="/website/$channelId/tasks/$taskId"
+              params={{ channelId, taskId: stoppedTaskId }}
+              className="font-medium text-amber-11 underline"
+            >
+              {shortTaskId(stoppedTaskId)}
+            </Link>{" "}
+            stopped before writing a CONTEXT.md. You can generate again.
+          </Callout.Text>
+        </Callout.Root>
+      ) : null}
+
+      <Flex align="center" gap="3">
+        <Button size="2" variant="solid" onClick={onCreate}>
+          Create CONTEXT.md
+        </Button>
+        <GenerateWithAgent
+          channelId={channelId}
+          channelName={channelName}
+          regenerate={!!stoppedTaskId}
+        />
+      </Flex>
+    </Flex>
+  );
+}
+
+type GenMode = "local" | "cloud";
+
+// Lets the user pick a local repo or a connected GitHub repo (cloud), then kicks
+// off a normal task that explores the code + PostHog data and publishes
+// CONTEXT.md via the MCP. Reuses the same pickers as the task input bar.
+function GenerateWithAgent({
+  channelId,
+  channelName,
+  regenerate,
+}: {
+  channelId: string;
+  channelName: string;
+  regenerate: boolean;
+}) {
+  const { generate, isStarting } = useGenerateContext(channelId, channelName);
+  const lastUsedRunMode = useSettingsStore((s) => s.lastUsedRunMode);
+
+  const [picking, setPicking] = useState(false);
+  const [genMode, setGenMode] = useState<GenMode>(
+    lastUsedRunMode === "cloud" ? "cloud" : "local",
+  );
+
+  if (!picking) {
+    return (
+      <Button size="2" variant="soft" onClick={() => setPicking(true)}>
+        <SparkleIcon size={14} />
+        {regenerate ? "Generate again" : "Generate with agent"}
+      </Button>
+    );
+  }
+
+  return (
+    <Flex direction="column" align="center" gap="2">
+      <SegmentedControl.Root
+        size="1"
+        value={genMode}
+        onValueChange={(v) => setGenMode(v as GenMode)}
+      >
+        <SegmentedControl.Item value="local">Local</SegmentedControl.Item>
+        <SegmentedControl.Item value="cloud">Cloud</SegmentedControl.Item>
+      </SegmentedControl.Root>
+      {genMode === "local" ? (
+        <GenerateLocal generate={generate} isStarting={isStarting} />
+      ) : (
+        <GenerateCloud generate={generate} isStarting={isStarting} />
+      )}
+    </Flex>
+  );
+}
+
+interface GenerateSubProps {
+  generate: (target: GenerateContextTarget) => Promise<string | null>;
+  isStarting: boolean;
+}
+
+function GenerateLocal({ generate, isStarting }: GenerateSubProps) {
+  const [repoPath, setRepoPath] = useState("");
+  return (
+    <Flex align="center" gap="2">
+      <FolderPicker value={repoPath} onChange={setRepoPath} />
+      <Button
+        size="2"
+        variant="solid"
+        disabled={!repoPath || isStarting}
+        onClick={() => {
+          if (repoPath) void generate({ mode: "local", repoPath });
+        }}
+      >
+        {isStarting ? <Spinner size="1" /> : <SparkleIcon size={14} />}
+        Generate
       </Button>
     </Flex>
   );
+}
+
+function GenerateCloud({ generate, isStarting }: GenerateSubProps) {
+  const {
+    repositories,
+    getUserIntegrationIdForRepo,
+    isLoadingRepos,
+    hasGithubIntegration,
+  } = useUserRepositoryIntegration();
+  const lastUsedCloudRepository = useSettingsStore(
+    (s) => s.lastUsedCloudRepository,
+  );
+  const [repo, setRepo] = useState<string | null>(
+    lastUsedCloudRepository ?? null,
+  );
+  const integrationId = repo ? getUserIntegrationIdForRepo(repo) : undefined;
+
+  if (!hasGithubIntegration && !isLoadingRepos) {
+    return (
+      <Text className="text-[12px] text-gray-10">
+        Connect GitHub to generate in the cloud.
+      </Text>
+    );
+  }
+
+  return (
+    <Flex align="center" gap="2">
+      <GitHubRepoPicker
+        value={repo}
+        onChange={setRepo}
+        repositories={repositories}
+        isLoading={isLoadingRepos}
+        size="2"
+      />
+      <Button
+        size="2"
+        variant="solid"
+        disabled={!repo || !integrationId || isStarting}
+        onClick={() => {
+          if (repo && integrationId) {
+            void generate({
+              mode: "cloud",
+              repository: repo,
+              githubUserIntegrationId: integrationId,
+            });
+          }
+        }}
+      >
+        {isStarting ? <Spinner size="1" /> : <SparkleIcon size={14} />}
+        Generate
+      </Button>
+    </Flex>
+  );
+}
+
+// Shown while the generation task is running: a centered status with a spinner
+// and a button to jump to the task that's doing the work.
+function GeneratingState({
+  channelId,
+  taskId,
+}: {
+  channelId: string;
+  taskId: string;
+}) {
+  return (
+    <Flex
+      direction="column"
+      align="center"
+      gap="4"
+      className="mx-auto max-w-[440px] py-16 text-center"
+    >
+      <Box className="rounded-lg border border-gray-6 border-dashed p-3">
+        <SpinnerGapIcon size={18} className="animate-spin text-accent-9" />
+      </Box>
+      <Flex direction="column" gap="1" align="center">
+        <Text className="font-medium text-[14px] text-gray-12">Generating</Text>
+        <Text className="text-[13px] text-gray-10">
+          An agent is writing this CONTEXT.md.
+        </Text>
+      </Flex>
+      <Button size="2" variant="soft" asChild>
+        <Link
+          to="/website/$channelId/tasks/$taskId"
+          params={{ channelId, taskId }}
+        >
+          View task
+        </Link>
+      </Button>
+    </Flex>
+  );
+}
+
+// A compact, readable handle for a task uuid in inline text.
+function shortTaskId(taskId: string): string {
+  return taskId.slice(0, 8);
 }
 
 // `created_at` is an ISO timestamp; we render it as a short local string for

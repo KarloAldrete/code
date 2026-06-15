@@ -1,5 +1,7 @@
 import type { Task } from "@posthog/shared/domain-types";
+import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
+import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
 import { TaskInput } from "@posthog/ui/features/task-detail/components/TaskInput";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { toast } from "@posthog/ui/primitives/toast";
@@ -15,6 +17,11 @@ export function WebsiteNewTask({ channelId }: { channelId: string }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { fileTask } = useChannelTaskMutations();
+  const { channels } = useChannels();
+  const channelName = channels.find((c) => c.id === channelId)?.name;
+  // The channel's CONTEXT.md, passed to the agent as optional background so
+  // tasks created here start with the shared context. Absent/empty is fine.
+  const { data: instructions } = useFolderInstructions(channelId);
 
   const onTaskCreated = useCallback(
     (task: Task) => {
@@ -34,5 +41,11 @@ export function WebsiteNewTask({ channelId }: { channelId: string }) {
     [channelId, fileTask, navigate, queryClient],
   );
 
-  return <TaskInput onTaskCreated={onTaskCreated} />;
+  return (
+    <TaskInput
+      onTaskCreated={onTaskCreated}
+      channelContext={instructions?.content}
+      channelName={channelName}
+    />
+  );
 }
