@@ -1,3 +1,4 @@
+import { parseFastCommand } from "@posthog/core/message-editor/commands";
 import {
   combineQueuedCloudPrompts,
   promptToQueuedEditorContent,
@@ -12,6 +13,7 @@ import { tryExecuteCodeCommand } from "@posthog/ui/features/message-editor/comma
 import { useDraftStore } from "@posthog/ui/features/message-editor/draftStore";
 import {
   type AgentSession,
+  getConfigOptionByCategory,
   sessionStoreSetters,
 } from "@posthog/ui/features/sessions/sessionStore";
 import { useTaskViewed } from "@posthog/ui/features/sidebar/useTaskViewed";
@@ -25,6 +27,17 @@ import { logger } from "@posthog/ui/shell/logger";
 import { useCallback, useRef } from "react";
 
 const log = logger.scope("session-callbacks");
+
+function serviceTierLabel(value: string): string {
+  switch (value) {
+    case "fast":
+      return "Fast mode enabled";
+    case "flex":
+      return "Flex mode enabled";
+    default:
+      return "Fast mode disabled";
+  }
+}
 
 interface UseSessionCallbacksOptions {
   taskId: string;
@@ -51,7 +64,40 @@ export function useSessionCallbacks({
     async (text: string) => {
       const currentSession = sessionRef.current;
       const currentEvents = currentSession?.events ?? [];
-      const handled = await tryExecuteCodeCommand(text, {
+      let promptText = text;
+      const fastCommand = parseFastCommand(text);
+
+      if (fastCommand) {
+        const serviceTierOption = getConfigOptionByCategory(
+          currentSession?.configOptions,
+          "service_tier",
+        );
+
+        if (!currentSession || currentSession.adapter !== "codex") {
+          toast.error("Fast mode is only available in Codex sessions");
+          return;
+        }
+
+        if (!serviceTierOption) {
+          toast.error("This Codex session does not support fast mode");
+          return;
+        }
+
+        await sessionService.setSessionConfigOptionByCategory(
+          taskId,
+          "service_tier",
+          fastCommand.serviceTier,
+        );
+        toast.success(serviceTierLabel(fastCommand.serviceTier));
+
+        if (fastCommand.commandOnly) {
+          return;
+        }
+
+        promptText = fastCommand.content.trim();
+      }
+
+      const handled = await tryExecuteCodeCommand(promptText, {
         taskId,
         repoPath,
         session: currentSession
@@ -68,7 +114,7 @@ export function useSessionCallbacks({
       try {
         markAsViewed(taskId);
         markActivity(taskId);
-        await sessionService.sendPrompt(taskId, text);
+        await sessionService.sendPrompt(taskId, promptText);
 
         const view = getAppViewSnapshot();
         const isViewingTask =

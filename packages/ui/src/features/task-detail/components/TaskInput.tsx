@@ -1,4 +1,5 @@
 import { FileText, X } from "@phosphor-icons/react";
+import type { FastCommandServiceTier } from "@posthog/core/message-editor/commands";
 import { isValidConfigValue } from "@posthog/core/task-detail/configOptions";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { ButtonGroup } from "@posthog/quill";
@@ -45,7 +46,6 @@ import { useAutoFocusOnTyping } from "../../message-editor/useAutoFocusOnTyping"
 import { resolveAndAttachDroppedFiles } from "../../message-editor/utils/persistFile";
 import { DropZoneOverlay } from "../../sessions/components/DropZoneOverlay";
 import { ReasoningLevelSelector } from "../../sessions/components/ReasoningLevelSelector";
-import { ServiceTierSelector } from "../../sessions/components/ServiceTierSelector";
 import { UnifiedModelSelector } from "../../sessions/components/UnifiedModelSelector";
 import { getCurrentModeFromConfigOptions } from "../../sessions/sessionStore";
 import {
@@ -58,6 +58,17 @@ import { useTaskCreation } from "../hooks/useTaskCreation";
 import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
 import { SuggestedTasksPanel } from "./SuggestedTasksPanel";
 import { type WorkspaceMode, WorkspaceModeSelect } from "./WorkspaceModeSelect";
+
+function serviceTierLabel(value: FastCommandServiceTier): string {
+  switch (value) {
+    case "fast":
+      return "Fast mode enabled";
+    case "flex":
+      return "Flex mode enabled";
+    default:
+      return "Fast mode disabled";
+  }
+}
 
 interface TaskInputProps {
   sessionId?: string;
@@ -523,6 +534,24 @@ export function TaskInput({
       ? selectedBranch
       : null;
 
+  const handleServiceTierCommand = useCallback(
+    (value: FastCommandServiceTier): boolean => {
+      if (
+        adapter !== "codex" ||
+        !serviceTierOption ||
+        !isValidConfigValue(serviceTierOption, value)
+      ) {
+        toast.error("Fast mode is only available for Codex tasks");
+        return false;
+      }
+
+      setConfigOption(serviceTierOption.id, value);
+      toast.success(serviceTierLabel(value));
+      return true;
+    },
+    [adapter, serviceTierOption, setConfigOption],
+  );
+
   const {
     isCreatingTask,
     canSubmit,
@@ -542,6 +571,7 @@ export function TaskInput({
     model: currentModel,
     reasoningLevel: currentReasoningLevel,
     serviceTier: currentServiceTier,
+    onServiceTierCommand: handleServiceTierCommand,
     onTaskCreated,
     environmentId: selectedEnvironment,
     sandboxEnvironmentId:
@@ -580,15 +610,6 @@ export function TaskInput({
       }
     },
     [thoughtOption, setConfigOption, setLastUsedReasoningEffort],
-  );
-
-  const handleServiceTierChange = useCallback(
-    (value: string) => {
-      if (serviceTierOption) {
-        setConfigOption(serviceTierOption.id, value);
-      }
-    },
-    [serviceTierOption, setConfigOption],
   );
 
   const { isOnline } = useConnectivity();
@@ -858,15 +879,6 @@ export function TaskInput({
                     disabled={isCreatingTask}
                   />
                 )
-              }
-              speedSelector={
-                adapter === "codex" && !isPreviewLoading ? (
-                  <ServiceTierSelector
-                    serviceTierOption={serviceTierOption}
-                    onChange={handleServiceTierChange}
-                    disabled={isCreatingTask}
-                  />
-                ) : null
               }
               getPromptHistory={getPromptHistory}
               onEmptyChange={handleEditorEmptyChange}

@@ -74,7 +74,7 @@ interface Scenario {
 const SCENARIOS: Scenario[] = [
   {
     name: "built-ins are always present",
-    expectContains: ["good", "bad", "feedback"],
+    expectContains: ["fast", "good", "bad", "feedback"],
   },
   {
     name: "agent-supplied skills surface from session events",
@@ -113,7 +113,7 @@ const SCENARIOS: Scenario[] = [
       { name: "fallback-only", description: "Should not appear" },
     ],
     sessionCommands: [],
-    expectContains: ["good", "bad", "feedback"],
+    expectContains: ["fast", "good", "bad", "feedback"],
     expectNotContains: ["fallback-only"],
   },
 ];

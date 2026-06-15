@@ -1,4 +1,8 @@
 import {
+  type FastCommandServiceTier,
+  parseFastCommand,
+} from "@posthog/core/message-editor/commands";
+import {
   getErrorTitle,
   prepareTaskInput,
 } from "@posthog/core/task-detail/taskInput";
@@ -58,6 +62,9 @@ interface UseTaskCreationOptions {
   model?: string;
   reasoningLevel?: string;
   serviceTier?: string;
+  onServiceTierCommand?: (
+    serviceTier: FastCommandServiceTier,
+  ) => boolean | undefined;
   environmentId?: string | null;
   sandboxEnvironmentId?: string;
   signalReportId?: string;
@@ -138,6 +145,7 @@ export function useTaskCreation({
   model,
   reasoningLevel,
   serviceTier,
+  onServiceTierCommand,
   environmentId,
   sandboxEnvironmentId,
   signalReportId,
@@ -180,6 +188,42 @@ export function useTaskCreation({
       const allowSubmit = contentOverride ? canSubmitBase : canSubmit;
       if (!allowSubmit) return false;
 
+      const content = contentOverride ?? editor.getContent();
+      const serializedContent = contentToXml(content).trim();
+      const filePaths = extractFilePaths(content);
+      const fastCommand = parseFastCommand(serializedContent);
+
+      if (fastCommand && adapter !== "codex") {
+        toast.error("Fast mode is only available for Codex tasks");
+        return false;
+      }
+
+      const effectiveSerializedContent = fastCommand
+        ? fastCommand.content.trim()
+        : serializedContent;
+      const plainPromptTextRaw = contentToPlainText(content).trim();
+      const plainFastCommand = parseFastCommand(plainPromptTextRaw);
+      const plainPromptText = fastCommand
+        ? (plainFastCommand?.content ?? fastCommand.content).trim()
+        : plainPromptTextRaw;
+
+      if (fastCommand?.commandOnly && filePaths.length === 0) {
+        if (!onServiceTierCommand) {
+          toast.error("Fast mode is not available here");
+          return false;
+        }
+        const handled = onServiceTierCommand(fastCommand.serviceTier);
+        if (handled === false) return false;
+        if (!contentOverride) {
+          editor.clear();
+        }
+        return true;
+      }
+
+      if (!effectiveSerializedContent && filePaths.length === 0) {
+        return false;
+      }
+
       // Block over-limit cloud creation before the pending view so it doesn't flash.
       if (workspaceMode === "cloud" && !(await assertCloudUsageAvailable())) {
         return false;
@@ -187,8 +231,6 @@ export function useTaskCreation({
 
       setIsCreatingTask(true);
 
-      const content = contentOverride ?? editor.getContent();
-      const plainPromptText = contentToPlainText(content).trim();
       const shouldShowPendingView = !onTaskCreated && !!plainPromptText;
       const pendingTaskKey = shouldShowPendingView
         ? (globalThis.crypto?.randomUUID?.() ?? `pending-${Date.now()}`)
@@ -210,15 +252,12 @@ export function useTaskCreation({
 
       try {
         if (!contentOverride) {
-          const plainText = editor.getText()?.trim() ?? plainPromptText;
-          if (plainText) {
-            useTaskInputHistoryStore.getState().addPrompt(plainText);
+          if (plainPromptText) {
+            useTaskInputHistoryStore.getState().addPrompt(plainPromptText);
           }
         }
 
-        const serializedContent = contentToXml(content).trim();
-        const filePaths = extractFilePaths(content);
-        const input = prepareTaskInput(serializedContent, filePaths, {
+        const input = prepareTaskInput(effectiveSerializedContent, filePaths, {
           selectedDirectory,
           selectedRepository,
           githubIntegrationId,
@@ -229,7 +268,7 @@ export function useTaskCreation({
           adapter,
           model,
           reasoningLevel,
-          serviceTier,
+          serviceTier: fastCommand?.serviceTier ?? serviceTier,
           environmentId,
           sandboxEnvironmentId,
           signalReportId,
@@ -319,6 +358,7 @@ export function useTaskCreation({
       model,
       reasoningLevel,
       serviceTier,
+      onServiceTierCommand,
       environmentId,
       sandboxEnvironmentId,
       signalReportId,

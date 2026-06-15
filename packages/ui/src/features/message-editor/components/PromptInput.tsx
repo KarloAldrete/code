@@ -41,7 +41,6 @@ export interface PromptInputProps {
   enableCommands?: boolean;
   // toolbar slots
   modelSelector?: React.ReactElement | null | false;
-  speedSelector?: React.ReactElement | null | false;
   reasoningSelector?: React.ReactElement | null | false;
   historyButton?: React.ReactNode;
   // prompt history provider
@@ -82,7 +81,6 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       enableBashMode = false,
       enableCommands = true,
       modelSelector,
-      speedSelector,
       reasoningSelector,
       historyButton,
       getPromptHistory,
@@ -345,7 +343,6 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
               />
             )}
             {modelSelector && <span>{modelSelector}</span>}
-            {speedSelector && <span>{speedSelector}</span>}
             {reasoningSelector && <span>{reasoningSelector}</span>}
             {isBashMode && (
               <Text className="font-mono text-(--blue-9) text-[13px]">

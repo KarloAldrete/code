@@ -102,8 +102,15 @@ const addDirCommand: CodeCommand = {
   },
 };
 
+const fastCommand: CodeCommand = {
+  name: "fast",
+  description: "Use Codex Fast Mode for this prompt or session",
+  input: { hint: "optional prompt or off" },
+};
+
 const commands: CodeCommand[] = [
   addDirCommand,
+  fastCommand,
   makeFeedbackCommand("good", "good", "Positive"),
   makeFeedbackCommand("bad", "bad", "Negative"),
   makeFeedbackCommand("feedback", "general", "General"),
