@@ -21,6 +21,8 @@ import type {
   AgentApprovalsListParams,
   AgentFleetLiveSessionsResponse,
   AgentRevision,
+  AgentSessionLogEntry,
+  AgentSessionLogsParams,
   AgentSessionsListParams,
   DecideApprovalRequest,
 } from "@posthog/shared/agent-platform-types";
@@ -4117,6 +4119,37 @@ export class PostHogAPIClient {
       }
       throw error;
     }
+  }
+
+  /** Structured runtime logs for one session (ClickHouse log_entries). */
+  async getAgentApplicationSessionLogs(
+    idOrSlug: string,
+    sessionId: string,
+    params?: AgentSessionLogsParams,
+  ): Promise<AgentSessionLogEntry[]> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/sessions/${encodeURIComponent(sessionId)}/logs/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    if (params?.limit != null) {
+      url.searchParams.set("limit", String(params.limit));
+    }
+    if (params?.level?.length) {
+      url.searchParams.set("level", params.level.join(","));
+    }
+    if (params?.search) {
+      url.searchParams.set("search", params.search);
+    }
+    if (params?.after) {
+      url.searchParams.set("after", params.after);
+    }
+    if (params?.before) {
+      url.searchParams.set("before", params.before);
+    }
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    const data = (await response.json()) as {
+      results?: AgentSessionLogEntry[];
+    };
+    return data.results ?? [];
   }
 
   /** Lists tool-approval requests for an application (team-admin only). */

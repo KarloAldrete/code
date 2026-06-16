@@ -6,11 +6,24 @@ import { Link } from "@tanstack/react-router";
 import { type ReactNode, useMemo } from "react";
 import { useAgentApplication } from "../hooks/useAgentApplication";
 
-export type AgentDetailTab = "overview" | "approvals";
+export type AgentDetailTab = "overview" | "sessions" | "approvals";
 
-const TABS: { id: AgentDetailTab; label: string }[] = [
-  { id: "overview", label: "Overview" },
-  { id: "approvals", label: "Approvals" },
+const TABS: { id: AgentDetailTab; label: string; to: string }[] = [
+  {
+    id: "overview",
+    label: "Overview",
+    to: "/code/agents/applications/$idOrSlug",
+  },
+  {
+    id: "sessions",
+    label: "Sessions",
+    to: "/code/agents/applications/$idOrSlug/sessions",
+  },
+  {
+    id: "approvals",
+    label: "Approvals",
+    to: "/code/agents/applications/$idOrSlug/approvals",
+  },
 ];
 
 /**
@@ -86,11 +99,7 @@ export function AgentDetailLayout({
           {TABS.map((tab) => (
             <Link
               key={tab.id}
-              to={
-                tab.id === "overview"
-                  ? "/code/agents/applications/$idOrSlug"
-                  : "/code/agents/applications/$idOrSlug/approvals"
-              }
+              to={tab.to}
               params={{ idOrSlug }}
               className={`border-b-2 px-3 pb-2.5 text-[12.5px] no-underline ${
                 tab.id === activeTab

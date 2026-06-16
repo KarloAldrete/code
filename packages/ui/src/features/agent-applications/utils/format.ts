@@ -67,6 +67,36 @@ export function approvalStateLabel(state: AgentApprovalRequestState): string {
   }
 }
 
+/** Dot/text colour CSS var for a log level. */
+export function logLevelColor(level: string): string {
+  switch (level.toUpperCase()) {
+    case "ERROR":
+    case "FATAL":
+      return "var(--red-9)";
+    case "WARN":
+    case "WARNING":
+      return "var(--amber-9)";
+    case "INFO":
+      return "var(--blue-9)";
+    case "DEBUG":
+      return "var(--gray-7)";
+    default:
+      return "var(--gray-9)";
+  }
+}
+
+/** Compact elapsed time between two ISO timestamps (e.g. "1.2s", "3m 4s"). */
+export function formatDuration(startIso: string, endIso: string): string {
+  const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return "—";
+  const s = ms / 1000;
+  if (s < 1) return `${Math.round(ms)}ms`;
+  if (s < 60) return `${s.toFixed(1)}s`;
+  const m = Math.floor(s / 60);
+  const rem = Math.round(s % 60);
+  return `${m}m ${rem}s`;
+}
+
 /** Radix Badge colour for a revision lifecycle state. */
 export function revisionStateColor(
   state: AgentRevisionState,

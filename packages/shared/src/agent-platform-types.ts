@@ -255,6 +255,31 @@ export interface AgentApplicationSessionDetail {
   conversation_total_turns?: number;
 }
 
+// --- Session logs ----------------------------------------------------------
+// `…/sessions/{id}/logs/` returns rows from the shared ClickHouse `log_entries`
+// table via `fetch_log_entries` — the same flat shape hog_function logs use.
+
+export type AgentLogLevel = "DEBUG" | "LOG" | "INFO" | "WARN" | "ERROR";
+
+export interface AgentSessionLogEntry {
+  log_source_id: string;
+  instance_id: string;
+  /** ISO timestamp. */
+  timestamp: string;
+  /** One of AgentLogLevel, but server may emit other casings — keep it open. */
+  level: string;
+  message: string;
+}
+
+export interface AgentSessionLogsParams {
+  limit?: number;
+  /** Comma-separated levels server-side; pass an array, joined by the client. */
+  level?: AgentLogLevel[];
+  search?: string;
+  after?: string;
+  before?: string;
+}
+
 // --- Fleet -----------------------------------------------------------------
 
 export interface AgentFleetLiveSessionSummary {
@@ -397,7 +422,13 @@ export type AgentToolCallEvent = AgentSessionEventBase & {
 /** Tool result — `ok` plus `output` on success, `error` on failure. */
 export type AgentToolResultEvent = AgentSessionEventBase & {
   kind: "tool_result";
-  data: { id: string; tool?: string; ok?: boolean; output?: unknown; error?: string };
+  data: {
+    id: string;
+    tool?: string;
+    ok?: boolean;
+    output?: unknown;
+    error?: string;
+  };
 };
 
 /** Turn finished; session stays open for more input. */

@@ -51,6 +51,7 @@ import { Route as CodeAgentsApplicationsIdOrSlugRouteImport } from './routes/cod
 import { Route as CodeAgentsScoutsSkillNameIndexRouteImport } from './routes/code/agents/scouts.$skillName.index'
 import { Route as CodeAgentsApplicationsIdOrSlugIndexRouteImport } from './routes/code/agents/applications/$idOrSlug/index'
 import { Route as CodeAgentsApplicationsIdOrSlugApprovalsRouteImport } from './routes/code/agents/applications/$idOrSlug/approvals'
+import { Route as CodeAgentsApplicationsIdOrSlugSessionsIndexRouteImport } from './routes/code/agents/applications/$idOrSlug/sessions.index'
 import { Route as CodeAgentsApplicationsIdOrSlugSessionsSessionIdRouteImport } from './routes/code/agents/applications/$idOrSlug/sessions.$sessionId'
 
 const WebsiteRoute = WebsiteRouteImport.update({
@@ -272,6 +273,12 @@ const CodeAgentsApplicationsIdOrSlugApprovalsRoute =
     path: '/approvals',
     getParentRoute: () => CodeAgentsApplicationsIdOrSlugRoute,
   } as any)
+const CodeAgentsApplicationsIdOrSlugSessionsIndexRoute =
+  CodeAgentsApplicationsIdOrSlugSessionsIndexRouteImport.update({
+    id: '/sessions/',
+    path: '/sessions/',
+    getParentRoute: () => CodeAgentsApplicationsIdOrSlugRoute,
+  } as any)
 const CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute =
   CodeAgentsApplicationsIdOrSlugSessionsSessionIdRouteImport.update({
     id: '/sessions/$sessionId',
@@ -323,6 +330,7 @@ export interface FileRoutesByFullPath {
   '/code/agents/applications/$idOrSlug/': typeof CodeAgentsApplicationsIdOrSlugIndexRoute
   '/code/agents/scouts/$skillName/': typeof CodeAgentsScoutsSkillNameIndexRoute
   '/code/agents/applications/$idOrSlug/sessions/$sessionId': typeof CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute
+  '/code/agents/applications/$idOrSlug/sessions/': typeof CodeAgentsApplicationsIdOrSlugSessionsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -358,6 +366,7 @@ export interface FileRoutesByTo {
   '/code/agents/applications/$idOrSlug': typeof CodeAgentsApplicationsIdOrSlugIndexRoute
   '/code/agents/scouts/$skillName': typeof CodeAgentsScoutsSkillNameIndexRoute
   '/code/agents/applications/$idOrSlug/sessions/$sessionId': typeof CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute
+  '/code/agents/applications/$idOrSlug/sessions': typeof CodeAgentsApplicationsIdOrSlugSessionsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -404,6 +413,7 @@ export interface FileRoutesById {
   '/code/agents/applications/$idOrSlug/': typeof CodeAgentsApplicationsIdOrSlugIndexRoute
   '/code/agents/scouts/$skillName/': typeof CodeAgentsScoutsSkillNameIndexRoute
   '/code/agents/applications/$idOrSlug/sessions/$sessionId': typeof CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute
+  '/code/agents/applications/$idOrSlug/sessions/': typeof CodeAgentsApplicationsIdOrSlugSessionsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -451,6 +461,7 @@ export interface FileRouteTypes {
     | '/code/agents/applications/$idOrSlug/'
     | '/code/agents/scouts/$skillName/'
     | '/code/agents/applications/$idOrSlug/sessions/$sessionId'
+    | '/code/agents/applications/$idOrSlug/sessions/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -486,6 +497,7 @@ export interface FileRouteTypes {
     | '/code/agents/applications/$idOrSlug'
     | '/code/agents/scouts/$skillName'
     | '/code/agents/applications/$idOrSlug/sessions/$sessionId'
+    | '/code/agents/applications/$idOrSlug/sessions'
   id:
     | '__root__'
     | '/'
@@ -531,6 +543,7 @@ export interface FileRouteTypes {
     | '/code/agents/applications/$idOrSlug/'
     | '/code/agents/scouts/$skillName/'
     | '/code/agents/applications/$idOrSlug/sessions/$sessionId'
+    | '/code/agents/applications/$idOrSlug/sessions/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -847,6 +860,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeAgentsApplicationsIdOrSlugApprovalsRouteImport
       parentRoute: typeof CodeAgentsApplicationsIdOrSlugRoute
     }
+    '/code/agents/applications/$idOrSlug/sessions/': {
+      id: '/code/agents/applications/$idOrSlug/sessions/'
+      path: '/sessions'
+      fullPath: '/code/agents/applications/$idOrSlug/sessions/'
+      preLoaderRoute: typeof CodeAgentsApplicationsIdOrSlugSessionsIndexRouteImport
+      parentRoute: typeof CodeAgentsApplicationsIdOrSlugRoute
+    }
     '/code/agents/applications/$idOrSlug/sessions/$sessionId': {
       id: '/code/agents/applications/$idOrSlug/sessions/$sessionId'
       path: '/sessions/$sessionId'
@@ -883,6 +903,7 @@ interface CodeAgentsApplicationsIdOrSlugRouteChildren {
   CodeAgentsApplicationsIdOrSlugApprovalsRoute: typeof CodeAgentsApplicationsIdOrSlugApprovalsRoute
   CodeAgentsApplicationsIdOrSlugIndexRoute: typeof CodeAgentsApplicationsIdOrSlugIndexRoute
   CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute: typeof CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute
+  CodeAgentsApplicationsIdOrSlugSessionsIndexRoute: typeof CodeAgentsApplicationsIdOrSlugSessionsIndexRoute
 }
 
 const CodeAgentsApplicationsIdOrSlugRouteChildren: CodeAgentsApplicationsIdOrSlugRouteChildren =
@@ -893,6 +914,8 @@ const CodeAgentsApplicationsIdOrSlugRouteChildren: CodeAgentsApplicationsIdOrSlu
       CodeAgentsApplicationsIdOrSlugIndexRoute,
     CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute:
       CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute,
+    CodeAgentsApplicationsIdOrSlugSessionsIndexRoute:
+      CodeAgentsApplicationsIdOrSlugSessionsIndexRoute,
   }
 
 const CodeAgentsApplicationsIdOrSlugRouteWithChildren =
