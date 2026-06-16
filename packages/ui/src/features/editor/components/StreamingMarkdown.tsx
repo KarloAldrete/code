@@ -1,25 +1,15 @@
 import { memo, useMemo } from "react";
 import type { Components } from "react-markdown";
 import { MarkdownRenderer } from "./MarkdownRenderer";
-import { hasOpenCodeFence, splitMarkdownBlocks } from "./splitMarkdownBlocks";
+import {
+  hasOpenCodeFence,
+  parseOpenFence,
+  splitMarkdownBlocks,
+} from "./splitMarkdownBlocks";
 
 interface StreamingMarkdownProps {
   content: string;
   componentsOverride?: Partial<Components>;
-}
-
-/**
- * Split a block whose code fence is still open into the prose that precedes the
- * fence and the code accumulated so far (the opening ```lang line removed).
- */
-function parseOpenFence(block: string): { before: string; code: string } {
-  const m = /(^|\n) {0,3}(`{3,}|~{3,})/.exec(block);
-  if (!m) return { before: "", code: block };
-  const fenceLineStart = m.index + (block[m.index] === "\n" ? 1 : 0);
-  const before = block.slice(0, fenceLineStart);
-  const afterMarker = block.indexOf("\n", fenceLineStart);
-  const code = afterMarker === -1 ? "" : block.slice(afterMarker + 1);
-  return { before, code };
 }
 
 /**

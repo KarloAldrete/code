@@ -1,3 +1,25 @@
+interface FenceState {
+  inFence: boolean;
+  fenceChar: string;
+}
+
+const NO_FENCE: FenceState = { inFence: false, fenceChar: "" };
+
+/**
+ * Advance the fenced-code-block state machine by one line. `inFence` flips on a
+ * ``` / ~~~ delimiter line, closing only when the marker char matches the one
+ * that opened the fence. Shared by every fence-aware function here so the rule
+ * lives in exactly one place.
+ */
+function stepFence(state: FenceState, line: string): FenceState {
+  const trimmed = line.replace(/^ {0,3}/, "");
+  const marker = /^(`{3,}|~{3,})/.exec(trimmed);
+  if (!marker) return state;
+  if (!state.inFence) return { inFence: true, fenceChar: marker[1][0] };
+  if (trimmed[0] === state.fenceChar) return NO_FENCE;
+  return state;
+}
+
 /**
  * Split append-only markdown into top-level blocks at blank-line boundaries,
  * keeping fenced code blocks intact. Concatenating the result reproduces the
@@ -15,25 +37,15 @@ export function splitMarkdownBlocks(src: string): string[] {
   const n = src.length;
   let blockStart = 0;
   let i = 0;
-  let inFence = false;
-  let fenceChar = "";
+  let fence = NO_FENCE;
 
   while (i < n) {
     let nl = src.indexOf("\n", i);
     if (nl === -1) nl = n;
     const line = src.slice(i, nl);
-    const trimmed = line.replace(/^ {0,3}/, "");
-    const fence = /^(`{3,}|~{3,})/.exec(trimmed);
-    if (fence) {
-      if (!inFence) {
-        inFence = true;
-        fenceChar = fence[1][0];
-      } else if (trimmed[0] === fenceChar) {
-        inFence = false;
-      }
-    }
+    fence = stepFence(fence, line);
     const lineEnd = nl < n ? nl + 1 : n;
-    if (line.trim() === "" && !inFence) {
+    if (line.trim() === "" && !fence.inFence) {
       // Fold any following blank lines into this same boundary so we don't emit
       // empty blocks.
       let j = lineEnd;
@@ -57,18 +69,39 @@ export function splitMarkdownBlocks(src: string): string[] {
 
 /** True when `src` ends inside an unterminated fenced code block. */
 export function hasOpenCodeFence(src: string): boolean {
-  let inFence = false;
-  let fenceChar = "";
-  for (const line of src.split("\n")) {
-    const trimmed = line.replace(/^ {0,3}/, "");
-    const fence = /^(`{3,}|~{3,})/.exec(trimmed);
-    if (!fence) continue;
-    if (!inFence) {
-      inFence = true;
-      fenceChar = fence[1][0];
-    } else if (trimmed[0] === fenceChar) {
-      inFence = false;
-    }
+  let fence = NO_FENCE;
+  for (const line of src.split("\n")) fence = stepFence(fence, line);
+  return fence.inFence;
+}
+
+/**
+ * For a block that ends inside an unterminated code fence, split it into the
+ * prose/markdown preceding the OPEN fence and the code accumulated so far (the
+ * opening ```lang line removed). Targets the LAST unterminated fence, so an
+ * earlier completed fence in the same block stays in `before` and renders
+ * normally instead of being swallowed as plain text.
+ */
+export function parseOpenFence(block: string): {
+  before: string;
+  code: string;
+} {
+  let fence = NO_FENCE;
+  let openLineStart = -1;
+  let i = 0;
+  const n = block.length;
+
+  while (i < n) {
+    let nl = block.indexOf("\n", i);
+    if (nl === -1) nl = n;
+    const wasInFence = fence.inFence;
+    fence = stepFence(fence, block.slice(i, nl));
+    if (!wasInFence && fence.inFence) openLineStart = i;
+    i = nl < n ? nl + 1 : n;
   }
-  return inFence;
+
+  if (openLineStart === -1) return { before: "", code: block };
+  const before = block.slice(0, openLineStart);
+  const afterMarker = block.indexOf("\n", openLineStart);
+  const code = afterMarker === -1 ? "" : block.slice(afterMarker + 1);
+  return { before, code };
 }
