@@ -42,7 +42,7 @@ const FONT_SIZE_OPTIONS: ReadonlyArray<{
 
 const SOUND_OPTIONS: ReadonlyArray<{ value: CompletionSound; label: string }> =
   [
-    { value: "meep", label: "Meep" },
+    { value: "meep", label: "Meep (lorg)" },
     { value: "meep-smol", label: "Meep (smol)" },
     { value: "knock", label: "Knock" },
     { value: "ring", label: "Ring" },
