@@ -127,6 +127,19 @@ export interface BundleFile {
   language: BundleFileLanguage;
 }
 
+// --- Slack setup -----------------------------------------------------------
+// `…/revisions/{id}/slack_manifest/` derives the Slack app manifest from the
+// revision's slack trigger + tools (scopes + event subscriptions computed).
+
+export interface AgentSlackManifest {
+  revision_id: string;
+  /** Opaque Slack app manifest JSON to paste into "create from manifest". */
+  manifest: Record<string, unknown>;
+  notes: string[];
+  events_url: string | null;
+  interactivity_url: string | null;
+}
+
 // --- Sessions --------------------------------------------------------------
 
 export interface AgentSessionUsageTotal {
@@ -500,3 +513,72 @@ export type AgentSessionEvent =
 
 /** Discriminator values for {@link AgentSessionEvent}. */
 export type AgentSessionEventKind = AgentSessionEvent["kind"];
+
+// --- Observability / analytics --------------------------------------------
+// The runner captures `$ai_*` AI-observability events into the team's OWN
+// PostHog project (tagged `$ai_origin = 'agent_platform_runner'` and
+// `$agent_application_id`). The observability surface rolls those up via HogQL
+// (`/query/`) into the shapes below. These are the *derived* analytics shapes
+// the client produces from raw HogQL grids — not a backend wire serializer —
+// but they live here so the UI hooks can import them alongside the other
+// agent-platform types.
+
+export interface AgentAnalyticsKpis {
+  spendUsd: number;
+  sessions: number;
+  /** 0..1 — share of generations that errored. */
+  failureRate: number;
+  /** p95 model latency, seconds. */
+  p95LatencyS: number;
+}
+
+export interface AgentAnalyticsDaily {
+  /** Short date labels, oldest → newest (14 days). */
+  labels: string[];
+  spend: number[];
+  sessions: number[];
+  /** 0..1 per day. */
+  failureRate: number[];
+}
+
+export interface AgentAnalyticsDeltas {
+  /** Percent change vs the prior 7 days (e.g. 12 = +12%). `null` when undefined. */
+  spend: number | null;
+  sessions: number | null;
+  /** Change in failure rate, in percentage points. `null` when undefined. */
+  failureRatePoints: number | null;
+}
+
+export interface AgentAnalyticsAgentRow {
+  id: string;
+  name: string;
+  sessions: number;
+  spendUsd: number;
+  failureRate: number;
+  p95LatencyS: number;
+  tokens: number;
+}
+
+export interface AgentAnalyticsModelRow {
+  model: string;
+  spendUsd: number;
+  calls: number;
+}
+
+export interface AgentAnalyticsToolRow {
+  tool: string;
+  calls: number;
+  errors: number;
+  errorRate: number;
+}
+
+export interface AgentAnalyticsData {
+  kpis: AgentAnalyticsKpis;
+  daily: AgentAnalyticsDaily;
+  deltas: AgentAnalyticsDeltas;
+  byAgent: AgentAnalyticsAgentRow[];
+  byModel: AgentAnalyticsModelRow[];
+  toolErrors: AgentAnalyticsToolRow[];
+  /** True when there is no agent AI activity in the window — drives the empty state. */
+  empty: boolean;
+}

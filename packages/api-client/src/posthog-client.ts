@@ -14,6 +14,7 @@ import {
 } from "@posthog/shared";
 import type {
   AgentAggregateStats,
+  AgentAnalyticsData,
   AgentApplication,
   AgentApplicationSessionDetail,
   AgentApplicationSessionsListResponse,
@@ -24,6 +25,7 @@ import type {
   AgentSessionLogEntry,
   AgentSessionLogsParams,
   AgentSessionsListParams,
+  AgentSlackManifest,
   BundleFile,
   DecideApprovalRequest,
 } from "@posthog/shared/agent-platform-types";
@@ -57,6 +59,11 @@ import type {
   Task,
   TaskRun,
 } from "@posthog/shared/domain-types";
+import {
+  buildAgentAnalyticsQueries,
+  type HogQLGrid,
+  shapeAgentAnalytics,
+} from "./agent-analytics";
 import { buildApiFetcher } from "./fetcher";
 import { createApiClient, type Schemas } from "./generated";
 import type { SpendAnalysisResponse } from "./spend-analysis";
@@ -4291,6 +4298,45 @@ export class PostHogAPIClient {
     return out;
   }
 
+  /**
+   * The Slack app manifest derived from a revision's slack trigger + tools,
+   * plus the live Event/Interactivity request URLs and setup notes.
+   */
+  async getAgentSlackManifest(
+    idOrSlug: string,
+    revisionId: string,
+  ): Promise<AgentSlackManifest> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/slack_manifest/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    return (await response.json()) as AgentSlackManifest;
+  }
+
+  /** Fire a cron trigger out-of-band; returns the created session id. */
+  async fireAgentCron(
+    idOrSlug: string,
+    revisionId: string,
+    cronName: string,
+    requestId?: string,
+  ): Promise<{ session_id: string }> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/cron/fire/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path,
+      overrides: {
+        body: JSON.stringify({
+          cron_name: cronName,
+          ...(requestId ? { request_id: requestId } : {}),
+        }),
+      },
+    });
+    return (await response.json()) as { session_id: string };
+  }
+
   /** The names of env keys currently set on an agent (values never returned). */
   async listAgentEnvKeys(idOrSlug: string): Promise<string[]> {
     const teamId = await this.getTeamId();
@@ -4357,5 +4403,68 @@ export class PostHogAPIClient {
       results?: AgentApprovalRequest[];
     };
     return data.results ?? [];
+  }
+
+  /**
+   * Runs a read-only HogQL query against the team's project and returns the raw
+   * result grid. Backs the agent observability rollups (`$ai_*` events the
+   * runner captures into this team's own project). The endpoint can answer 200
+   * with an `error` field; that's surfaced as a throw.
+   */
+  async runHogQLQuery(query: string): Promise<HogQLGrid> {
+    const teamId = await this.getTeamId();
+    const path = `/api/projects/${teamId}/query/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path,
+      overrides: {
+        body: JSON.stringify({ query: { kind: "HogQLQuery", query } }),
+      },
+    });
+    const data = (await response.json()) as {
+      results?: unknown[][];
+      columns?: string[];
+      error?: string | null;
+    };
+    if (data.error) {
+      throw new Error(data.error);
+    }
+    return { results: data.results ?? [], columns: data.columns ?? [] };
+  }
+
+  /**
+   * Agent observability rollup over the agents' `$ai_*` events — KPIs (spend,
+   * sessions, failure rate, p95), a 14-day daily trend + WoW deltas, and
+   * spend-by-agent / cost-by-model / tool-reliability breakdowns. Pass an
+   * `applicationId` (the agent's UUID) to scope it to a single agent; omit it
+   * for the fleet-wide board.
+   *
+   * The five panels are independent HogQL round-trips fired in parallel. The
+   * KPI query is the gate — a systemic failure (auth, bad query) rejects the
+   * whole call so the UI shows an error rather than a silently-empty board; the
+   * secondary panels degrade to empty individually. The fleet board also reads
+   * the agent list to label per-agent rows by name.
+   */
+  async getAgentAnalytics(applicationId?: string): Promise<AgentAnalyticsData> {
+    const queries = buildAgentAnalyticsQueries(applicationId);
+    const empty: HogQLGrid = { results: [], columns: [] };
+    const [agents, kpi, daily, perAgent, byModel, toolErrors] =
+      await Promise.all([
+        applicationId
+          ? Promise.resolve<AgentApplication[]>([])
+          : this.listAgentApplications().catch(() => [] as AgentApplication[]),
+        this.runHogQLQuery(queries.kpi),
+        this.runHogQLQuery(queries.daily).catch(() => empty),
+        this.runHogQLQuery(queries.perAgent).catch(() => empty),
+        this.runHogQLQuery(queries.byModel).catch(() => empty),
+        this.runHogQLQuery(queries.toolErrors).catch(() => empty),
+      ]);
+    const nameById = new Map(agents.map((a) => [a.id, a.name]));
+    return shapeAgentAnalytics(
+      { kpi, daily, perAgent, byModel, toolErrors },
+      nameById,
+    );
   }
 }

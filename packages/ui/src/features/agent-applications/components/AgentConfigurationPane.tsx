@@ -15,6 +15,7 @@ import {
   ScrollIcon,
   SparkleIcon,
   UserIcon,
+  WarningIcon,
   WebhooksLogoIcon,
   WrenchIcon,
 } from "@phosphor-icons/react";
@@ -24,6 +25,7 @@ import type {
 } from "@posthog/shared/agent-platform-types";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { Badge } from "@posthog/ui/primitives/Badge";
+import { Button } from "@posthog/ui/primitives/Button";
 import { CodeBlock } from "@posthog/ui/primitives/CodeBlock";
 import { Flex, Text } from "@radix-ui/themes";
 import { type ReactNode, useMemo, useState } from "react";
@@ -31,8 +33,12 @@ import { useAgentApplication } from "../hooks/useAgentApplication";
 import { useAgentEnvKeys } from "../hooks/useAgentEnvKeys";
 import { useAgentRevision } from "../hooks/useAgentRevision";
 import { useAgentRevisionBundle } from "../hooks/useAgentRevisionBundle";
+import { triggerRequiredSecretsFor } from "../utils/triggerSecrets";
 import { AgentDetailEmptyState, AgentDetailLayout } from "./AgentDetailLayout";
+import { CopyButton } from "./CopyButton";
+import { CronFireButton } from "./CronFireButton";
 import { FileExplorer, type FileTreeNode } from "./FileExplorer";
+import { SlackSetupCard } from "./SlackSetupCard";
 
 // --- value readers (spec items are loosely typed on the wire) ---------------
 function rec(v: unknown): Record<string, unknown> {
@@ -46,6 +52,17 @@ function arr(v: unknown): unknown[] {
 }
 
 const ICON = { size: 14, className: "shrink-0 text-gray-10" } as const;
+const USAGE_HOST = "https://<ingress-host>";
+
+/** Context threaded to every detail body. */
+interface Ctx {
+  idOrSlug: string;
+  revisionId: string;
+  ingressBaseUrl?: string;
+  setKeys: string[];
+  onSelect: (node: string) => void;
+  onOpenSession?: (sessionId: string) => void;
+}
 
 function triggerType(t: unknown): string {
   return str(rec(t).type) ?? "trigger";
@@ -66,6 +83,15 @@ function triggerIcon(type: string): ReactNode {
       return <GlobeIcon {...ICON} />;
   }
 }
+function authModes(t: unknown): string[] {
+  const modes = rec(rec(t).auth).modes;
+  return (Array.isArray(modes) ? modes : []).map(
+    (m) => str(rec(m).type) ?? "?",
+  );
+}
+function isPublic(t: unknown): boolean {
+  return authModes(t).includes("public");
+}
 function toolId(t: unknown): string {
   return str(rec(t).id) ?? "tool";
 }
@@ -74,36 +100,56 @@ function toolIcon(kind: string | undefined): ReactNode {
   if (kind === "custom") return <CodeIcon {...ICON} />;
   return <SparkleIcon {...ICON} />;
 }
-/** Strip a leading namespace from a tool id for display (`@a/b` → `b`). */
 function shortName(id: string): string {
   const slash = id.lastIndexOf("/");
   return slash >= 0 ? id.slice(slash + 1) : id;
 }
+function missingSecretsFor(t: unknown, setKeys: string[]): string[] {
+  return triggerRequiredSecretsFor(t)
+    .map((s) => s.key)
+    .filter((k) => !setKeys.includes(k));
+}
+function mcpMissingSecrets(m: unknown, setKeys: string[]): string[] {
+  return arr(rec(m).secrets)
+    .filter((s): s is string => typeof s === "string")
+    .filter((k) => !setKeys.includes(k));
+}
 
-/** All secret keys the agent reads: spec.secrets[] plus any already-set keys. */
 function allSecretKeys(spec: AgentSpec, setKeys: string[]): string[] {
   const set = new Set<string>(
     arr(spec.secrets).filter((s): s is string => typeof s === "string"),
   );
+  for (const t of arr(spec.triggers))
+    for (const s of triggerRequiredSecretsFor(t)) set.add(s.key);
   for (const k of setKeys) set.add(k);
   return [...set].sort();
+}
+
+function WarnBadge({ title }: { title: string }) {
+  return (
+    <span title={title}>
+      <WarningIcon size={13} className="text-amber-10" />
+    </span>
+  );
 }
 
 // --- tree -------------------------------------------------------------------
 
 function buildTree(spec: AgentSpec, setKeys: string[]): FileTreeNode {
+  // Order chosen for how operators read an agent: what it is, what starts it,
+  // what it needs, what it knows, what it can do.
   const children: FileTreeNode[] = [
-    {
-      type: "file",
-      name: "model",
-      path: "cfg:model",
-      icon: <SparkleIcon {...ICON} />,
-    },
     {
       type: "file",
       name: "instructions",
       path: "cfg:instructions",
       icon: <ScrollIcon {...ICON} />,
+    },
+    {
+      type: "file",
+      name: "model",
+      path: "cfg:model",
+      icon: <SparkleIcon {...ICON} />,
     },
   ];
 
@@ -116,11 +162,58 @@ function buildTree(spec: AgentSpec, setKeys: string[]): FileTreeNode {
       icon: <LightningIcon {...ICON} />,
       children: triggers.map((t, i) => {
         const type = triggerType(t);
+        const missing = missingSecretsFor(t, setKeys);
         return {
           type: "file" as const,
           name: type,
           path: `cfg:trigger/${i}`,
           icon: triggerIcon(type),
+          trailing:
+            missing.length > 0 ? (
+              <WarnBadge title={`Needs secret(s): ${missing.join(", ")}`} />
+            ) : isPublic(t) ? (
+              <Badge color="amber">public</Badge>
+            ) : undefined,
+        };
+      }),
+    });
+  }
+
+  const secretKeys = allSecretKeys(spec, setKeys);
+  if (secretKeys.length > 0) {
+    children.push({
+      type: "folder",
+      name: "secrets",
+      path: "cfg:secrets",
+      icon: <KeyIcon {...ICON} />,
+      children: secretKeys.map((key) => ({
+        type: "file" as const,
+        name: key,
+        path: `cfg:secret/${key}`,
+        icon: <KeyIcon {...ICON} />,
+        trailing: setKeys.includes(key) ? undefined : (
+          <Badge color="amber">not set</Badge>
+        ),
+      })),
+    });
+  }
+
+  const skills = arr(spec.skills);
+  if (skills.length > 0) {
+    children.push({
+      type: "folder",
+      name: "skills",
+      path: "cfg:skills",
+      icon: <PuzzlePieceIcon {...ICON} />,
+      children: skills.map((s) => {
+        const r = rec(s);
+        const id = str(r.id) ?? str(r.path) ?? "skill";
+        return {
+          type: "file" as const,
+          name: id,
+          path: `cfg:skill/${id}`,
+          description: str(r.description),
+          icon: <PuzzlePieceIcon {...ICON} />,
         };
       }),
     });
@@ -150,27 +243,6 @@ function buildTree(spec: AgentSpec, setKeys: string[]): FileTreeNode {
     });
   }
 
-  const skills = arr(spec.skills);
-  if (skills.length > 0) {
-    children.push({
-      type: "folder",
-      name: "skills",
-      path: "cfg:skills",
-      icon: <PuzzlePieceIcon {...ICON} />,
-      children: skills.map((s) => {
-        const r = rec(s);
-        const id = str(r.id) ?? str(r.path) ?? "skill";
-        return {
-          type: "file" as const,
-          name: id,
-          path: `cfg:skill/${id}`,
-          description: str(r.description),
-          icon: <PuzzlePieceIcon {...ICON} />,
-        };
-      }),
-    });
-  }
-
   const mcps = arr(spec.mcps);
   if (mcps.length > 0) {
     children.push({
@@ -180,11 +252,16 @@ function buildTree(spec: AgentSpec, setKeys: string[]): FileTreeNode {
       icon: <HardDrivesIcon {...ICON} />,
       children: mcps.map((m) => {
         const id = str(rec(m).id) ?? "mcp";
+        const missing = mcpMissingSecrets(m, setKeys);
         return {
           type: "file" as const,
           name: id,
           path: `cfg:mcp/${id}`,
           icon: <HardDrivesIcon {...ICON} />,
+          trailing:
+            missing.length > 0 ? (
+              <WarnBadge title={`Needs secret(s): ${missing.join(", ")}`} />
+            ) : undefined,
         };
       }),
     });
@@ -208,25 +285,6 @@ function buildTree(spec: AgentSpec, setKeys: string[]): FileTreeNode {
     });
   }
 
-  const secretKeys = allSecretKeys(spec, setKeys);
-  if (secretKeys.length > 0) {
-    children.push({
-      type: "folder",
-      name: "secrets",
-      path: "cfg:secrets",
-      icon: <KeyIcon {...ICON} />,
-      children: secretKeys.map((key) => ({
-        type: "file" as const,
-        name: key,
-        path: `cfg:secret/${key}`,
-        icon: <KeyIcon {...ICON} />,
-        trailing: setKeys.includes(key) ? undefined : (
-          <Badge color="amber">not set</Badge>
-        ),
-      })),
-    });
-  }
-
   children.push({
     type: "file",
     name: "limits",
@@ -243,10 +301,12 @@ export function AgentConfigurationPane({
   idOrSlug,
   selectedNode,
   onSelectNode,
+  onOpenSession,
 }: {
   idOrSlug: string;
   selectedNode: string | null;
   onSelectNode: (node: string) => void;
+  onOpenSession?: (sessionId: string) => void;
 }) {
   const { data: application } = useAgentApplication(idOrSlug);
   const liveRevisionId = application?.live_revision ?? null;
@@ -264,7 +324,18 @@ export function AgentConfigurationPane({
     () => (spec ? buildTree(spec, setKeys) : null),
     [spec, setKeys],
   );
-  const node = selectedNode ?? "cfg:model";
+  const node = selectedNode ?? "cfg:instructions";
+
+  const ctx: Ctx | null = liveRevisionId
+    ? {
+        idOrSlug,
+        revisionId: liveRevisionId,
+        ingressBaseUrl: application?.ingress_base_url ?? undefined,
+        setKeys,
+        onSelect: onSelectNode,
+        onOpenSession,
+      }
+    : null;
 
   return (
     <AgentDetailLayout idOrSlug={idOrSlug} activeTab="configuration" fill>
@@ -275,7 +346,7 @@ export function AgentConfigurationPane({
             description="This agent has no promoted revision yet, so there's no live configuration to show."
           />
         </div>
-      ) : !spec ? (
+      ) : !spec || !ctx ? (
         <div className="p-6">
           {isLoading ? (
             <div className="h-40 animate-pulse rounded-(--radius-2) border border-border bg-(--gray-2)" />
@@ -294,13 +365,7 @@ export function AgentConfigurationPane({
             onSelectPath={onSelectNode}
             storageKey="agent-config-explorer"
           >
-            <DetailPane
-              node={node}
-              spec={spec}
-              files={files}
-              setKeys={setKeys}
-              onSelect={onSelectNode}
-            />
+            <DetailPane node={node} spec={spec} files={files} ctx={ctx} />
           </FileExplorer>
         </div>
       )}
@@ -330,14 +395,12 @@ function DetailPane({
   node,
   spec,
   files,
-  setKeys,
-  onSelect,
+  ctx,
 }: {
   node: string;
   spec: AgentSpec;
   files: BundleFile[];
-  setKeys: string[];
-  onSelect: (node: string) => void;
+  ctx: Ctx;
 }) {
   const [section, ...idParts] = node.replace(/^cfg:/, "").split("/");
   const id = idParts.join("/");
@@ -357,8 +420,7 @@ function DetailPane({
           id={id}
           spec={spec}
           files={files}
-          setKeys={setKeys}
-          onSelect={onSelect}
+          ctx={ctx}
         />
       </div>
     </div>
@@ -378,8 +440,7 @@ function nodeHeader(
     case "triggers":
       return { icon: <LightningIcon {...ICON} />, title: "Triggers" };
     case "trigger": {
-      const t = arr(spec.triggers)[Number(id)];
-      const type = triggerType(t);
+      const type = triggerType(arr(spec.triggers)[Number(id)]);
       return { icon: triggerIcon(type), title: `${type} trigger` };
     }
     case "tools":
@@ -454,15 +515,13 @@ function DetailBody({
   id,
   spec,
   files,
-  setKeys,
-  onSelect,
+  ctx,
 }: {
   section: string;
   id: string;
   spec: AgentSpec;
   files: BundleFile[];
-  setKeys: string[];
-  onSelect: (node: string) => void;
+  ctx: Ctx;
 }) {
   switch (section) {
     case "model":
@@ -475,17 +534,17 @@ function DetailBody({
         />
       );
     case "triggers":
-      return <TriggersOverview spec={spec} onSelect={onSelect} />;
+      return <TriggersOverview spec={spec} ctx={ctx} />;
     case "trigger":
-      return <TriggerBody trigger={arr(spec.triggers)[Number(id)]} />;
+      return <TriggerBody trigger={arr(spec.triggers)[Number(id)]} ctx={ctx} />;
     case "tools":
-      return <ToolsOverview spec={spec} onSelect={onSelect} />;
+      return <ToolsOverview spec={spec} ctx={ctx} />;
     case "tool":
       return (
         <ToolBody tool={findById(arr(spec.tools), id)} files={files} id={id} />
       );
     case "skills":
-      return <SkillsOverview spec={spec} onSelect={onSelect} />;
+      return <SkillsOverview spec={spec} ctx={ctx} />;
     case "skill":
       return (
         <SkillBody
@@ -494,19 +553,17 @@ function DetailBody({
         />
       );
     case "mcps":
-      return <McpsOverview spec={spec} onSelect={onSelect} />;
+      return <McpsOverview spec={spec} ctx={ctx} />;
     case "mcp":
-      return <McpBody mcp={findById(arr(spec.mcps), id)} />;
+      return <McpBody mcp={findById(arr(spec.mcps), id)} ctx={ctx} />;
     case "integrations":
-      return <IntegrationsOverview spec={spec} onSelect={onSelect} />;
+      return <IntegrationsOverview spec={spec} ctx={ctx} />;
     case "integration":
       return <IntegrationBody name={id} />;
     case "secrets":
-      return (
-        <SecretsOverview spec={spec} setKeys={setKeys} onSelect={onSelect} />
-      );
+      return <SecretsOverview spec={spec} ctx={ctx} />;
     case "secret":
-      return <SecretBody keyName={id} setKeys={setKeys} />;
+      return <SecretBody keyName={id} setKeys={ctx.setKeys} />;
     case "limits":
       return <LimitsBody spec={spec} />;
     default:
@@ -536,8 +593,9 @@ function ModelBody({ spec }: { spec: AgentSpec }) {
 }
 
 function LimitsBody({ spec }: { spec: AgentSpec }) {
-  const limits = spec.limits ?? {};
-  const entries = Object.entries(limits).filter(([, v]) => v != null);
+  const entries = Object.entries(spec.limits ?? {}).filter(
+    ([, v]) => v != null,
+  );
   if (entries.length === 0) return <Muted>No limits configured.</Muted>;
   return (
     <Flex direction="column" gap="2">
@@ -549,24 +607,70 @@ function LimitsBody({ spec }: { spec: AgentSpec }) {
 }
 
 const TRIGGER_EXPLAINER: Record<string, string> = {
-  cron: "Fires on a schedule from the scheduler — no inbound endpoint.",
-  slack: "Responds to Slack events in workspaces you trust.",
-  webhook: "An inbound POST whose body becomes the agent's first message.",
-  chat: "An interactive chat session over HTTP + SSE.",
-  mcp: "Exposes the agent as an MCP server other clients can call.",
+  cron: "Fires on a schedule from the platform scheduler — no inbound endpoint, no inbound auth.",
+  slack:
+    "Responds to Slack mentions + thread replies for trusted workspaces. Auth is intrinsic — every request is verified by Slack request signature.",
+  webhook:
+    "A POST to the webhook endpoint starts a session — the raw JSON body becomes the first message. Callers satisfy one of the auth modes below.",
+  chat: "Interactive sessions over /run + /send. Every caller is authenticated per the auth modes below.",
+  mcp: "Exposes the agent as an MCP server over streamable-HTTP; clients authenticate per the auth modes below.",
 };
 
-function TriggersOverview({
-  spec,
-  onSelect,
-}: {
-  spec: AgentSpec;
-  onSelect: (node: string) => void;
-}) {
+const AUTH_MODE_BLURB: Record<string, string> = {
+  public:
+    "Anonymous — anyone can call. Explicitly acknowledged as public exposure.",
+  posthog:
+    "A PostHog credential (personal API key / OAuth) — end-user identity.",
+  jwt: "Signed JWT verified with a per-agent secret.",
+  shared_secret: "A shared secret sent in a named header (webhook-style).",
+  posthog_internal: "PostHog server-to-server internal token.",
+};
+
+const DECLARATIVE_TRIGGERS = new Set(["webhook", "chat", "mcp"]);
+
+const TRIGGER_ENDPOINTS: Record<
+  string,
+  { method: string; path: string; blurb: string }[]
+> = {
+  chat: [
+    { method: "POST", path: "/run", blurb: "start a session" },
+    { method: "POST", path: "/send", blurb: "send a follow-up" },
+    { method: "GET", path: "/listen", blurb: "stream events (SSE)" },
+  ],
+  webhook: [
+    {
+      method: "POST",
+      path: "/webhook",
+      blurb: "JSON body becomes the first message",
+    },
+  ],
+  mcp: [{ method: "POST", path: "/mcp", blurb: "HTTP MCP server" }],
+  slack: [
+    { method: "POST", path: "/slack/events", blurb: "Event Subscriptions URL" },
+    {
+      method: "POST",
+      path: "/slack/interactivity",
+      blurb: "Interactivity URL",
+    },
+  ],
+};
+
+function ingressBase(ctx: Ctx): string {
+  return (ctx.ingressBaseUrl ?? `${USAGE_HOST}/agents/${ctx.idOrSlug}`).replace(
+    /\/$/,
+    "",
+  );
+}
+
+function TriggersOverview({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
   const triggers = arr(spec.triggers);
   if (triggers.length === 0) return <Muted>No triggers configured.</Muted>;
+  const base = ingressBase(ctx);
+  const withEndpoints = triggers.filter(
+    (t) => TRIGGER_ENDPOINTS[triggerType(t)],
+  );
   return (
-    <Flex direction="column" gap="3">
+    <Flex direction="column" gap="4">
       <Muted>What can start a session — {triggers.length} configured.</Muted>
       <Flex direction="column" gap="2">
         {triggers.map((t, i) => {
@@ -574,57 +678,227 @@ function TriggersOverview({
           const cfg = rec(rec(t).config);
           const disc =
             str(cfg.name) ?? str(cfg.path) ?? str(cfg.channel_id) ?? String(i);
+          const missing = missingSecretsFor(t, ctx.setKeys);
           return (
             <JumpRow
               key={`${type}:${disc}`}
               icon={triggerIcon(type)}
               title={type}
               subtitle={TRIGGER_EXPLAINER[type]}
-              onClick={() => onSelect(`cfg:trigger/${i}`)}
+              trailing={
+                missing.length > 0 ? (
+                  <WarnBadge title={`Needs: ${missing.join(", ")}`} />
+                ) : isPublic(t) ? (
+                  <Badge color="amber">public</Badge>
+                ) : (
+                  <Badge color="gray">private</Badge>
+                )
+              }
+              onClick={() => ctx.onSelect(`cfg:trigger/${i}`)}
             />
           );
         })}
       </Flex>
+      {withEndpoints.length > 0 ? (
+        <div>
+          <Subhead>Endpoints</Subhead>
+          {!ctx.ingressBaseUrl ? (
+            <Muted>
+              No public ingress URL is configured — placeholder host shown.
+            </Muted>
+          ) : null}
+          <Flex direction="column" gap="1" className="mt-1.5">
+            {withEndpoints.flatMap((t) =>
+              (TRIGGER_ENDPOINTS[triggerType(t)] ?? []).map((ep) => {
+                const url = `${base}${ep.path}`;
+                return (
+                  <Flex
+                    key={`${triggerType(t)}${ep.path}`}
+                    align="center"
+                    gap="2"
+                    className="text-[11px]"
+                  >
+                    <span className="w-8 shrink-0 text-gray-10 [font-family:var(--font-mono)]">
+                      {ep.method}
+                    </span>
+                    <code className="min-w-0 flex-1 truncate text-gray-12 [font-family:var(--font-mono)]">
+                      {url}
+                    </code>
+                    <CopyButton text={url} />
+                  </Flex>
+                );
+              }),
+            )}
+          </Flex>
+        </div>
+      ) : null}
     </Flex>
   );
 }
 
-function TriggerBody({ trigger }: { trigger: unknown }) {
+function TriggerBody({ trigger, ctx }: { trigger: unknown; ctx: Ctx }) {
   const r = rec(trigger);
   const type = triggerType(trigger);
   const config = rec(r.config);
-  const authModes = arr(rec(r.auth).modes);
+  const modes = authModes(trigger);
+  const missing = missingSecretsFor(trigger, ctx.setKeys);
+  const cronName = type === "cron" ? str(config.name) : undefined;
+
   return (
-    <Flex direction="column" gap="2">
+    <Flex direction="column" gap="3">
       {TRIGGER_EXPLAINER[type] ? (
         <Muted>{TRIGGER_EXPLAINER[type]}</Muted>
       ) : null}
-      <Row label="type" value={type} mono />
-      {Object.entries(config).map(([k, v]) => (
-        <Row
-          key={k}
-          label={k.replace(/_/g, " ")}
-          value={typeof v === "string" ? v : JSON.stringify(v)}
-        />
-      ))}
-      {authModes.length > 0 ? (
-        <Row
-          label="auth"
-          value={authModes.map((m) => str(rec(m).type) ?? "?").join(", ")}
-          mono
-        />
+
+      <Flex direction="column" gap="2">
+        <Row label="type" value={type} mono />
+        {Object.entries(config).map(([k, v]) => (
+          <Row
+            key={k}
+            label={k.replace(/_/g, " ")}
+            value={typeof v === "string" ? v : JSON.stringify(v)}
+          />
+        ))}
+      </Flex>
+
+      {missing.length > 0 ? (
+        <Attention>
+          <Text className="text-[12px] text-gray-12">
+            Missing required secret{missing.length > 1 ? "s" : ""}:
+          </Text>
+          <Flex gap="1.5" wrap="wrap" className="mt-1.5">
+            {missing.map((key) => (
+              <Button
+                key={key}
+                size="1"
+                variant="soft"
+                color="amber"
+                onClick={() => ctx.onSelect(`cfg:secret/${key}`)}
+              >
+                Set {key}
+              </Button>
+            ))}
+          </Flex>
+        </Attention>
+      ) : null}
+
+      <div>
+        <Subhead>Auth</Subhead>
+        {DECLARATIVE_TRIGGERS.has(type) ? (
+          modes.length > 0 ? (
+            <Flex direction="column" gap="1.5" className="mt-1">
+              {modes.map((m) => (
+                <Flex key={m} align="baseline" gap="2">
+                  <Badge color={m === "public" ? "amber" : "gray"}>{m}</Badge>
+                  <Text className="text-[11.5px] text-gray-10">
+                    {AUTH_MODE_BLURB[m] ?? ""}
+                  </Text>
+                </Flex>
+              ))}
+            </Flex>
+          ) : (
+            <Muted>No auth modes configured.</Muted>
+          )
+        ) : (
+          <Muted>
+            Intrinsic — verified by the trigger's own protocol, not
+            configurable.
+          </Muted>
+        )}
+        {isPublic(trigger) ? (
+          <Attention tone="warn">
+            This trigger is public — it accepts anonymous, unauthenticated
+            callers.
+          </Attention>
+        ) : null}
+      </div>
+
+      {cronName ? (
+        <div>
+          <Subhead>Test</Subhead>
+          <CronFireButton
+            idOrSlug={ctx.idOrSlug}
+            revisionId={ctx.revisionId}
+            cronName={cronName}
+            onFired={(sessionId) => ctx.onOpenSession?.(sessionId)}
+          />
+        </div>
+      ) : null}
+
+      <TriggerUsage trigger={trigger} ctx={ctx} />
+
+      {type === "slack" ? (
+        <SlackSetupCard idOrSlug={ctx.idOrSlug} revisionId={ctx.revisionId} />
       ) : null}
     </Flex>
   );
 }
 
-function ToolsOverview({
-  spec,
-  onSelect,
-}: {
-  spec: AgentSpec;
-  onSelect: (node: string) => void;
-}) {
+function authHeaderExample(modes: string[], trigger: unknown): string {
+  if (modes.includes("public") && modes.length === 1) return "";
+  if (modes.includes("shared_secret")) {
+    const m = (arr(rec(rec(trigger).auth).modes) as unknown[]).find(
+      (x) => str(rec(x).type) === "shared_secret",
+    );
+    const header = str(rec(m).header) ?? "X-Webhook-Secret";
+    return `  -H '${header}: <your-secret>' \\\n`;
+  }
+  if (modes.includes("posthog"))
+    return "  -H 'Authorization: Bearer <POSTHOG_API_KEY>' \\\n";
+  if (modes.includes("jwt"))
+    return "  -H 'Authorization: Bearer <SIGNED_JWT>' \\\n";
+  if (modes.includes("posthog_internal"))
+    return "  -H 'x-posthog-internal: <INTERNAL_SECRET>' \\\n";
+  return "";
+}
+
+function TriggerUsage({ trigger, ctx }: { trigger: unknown; ctx: Ctx }) {
+  const type = triggerType(trigger);
+  const base = ingressBase(ctx);
+  const modes = authModes(trigger);
+  const authHeader = authHeaderExample(modes, trigger);
+  let examples: { title: string; code: string }[] = [];
+  if (type === "webhook") {
+    examples = [
+      {
+        title: "Send a webhook",
+        code: `curl -X POST '${base}/webhook' \\\n${authHeader}  -H 'Content-Type: application/json' \\\n  -d '{"message":"hello"}'`,
+      },
+    ];
+  } else if (type === "chat") {
+    examples = [
+      {
+        title: "Start a session",
+        code: `curl -X POST '${base}/run' \\\n${authHeader}  -H 'Content-Type: application/json' \\\n  -d '{"message":"hello"}'`,
+      },
+    ];
+  } else if (type === "mcp") {
+    examples = [
+      {
+        title: "Add to an MCP client",
+        code: `claude mcp add --transport http ${ctx.idOrSlug} '${base}/mcp'`,
+      },
+    ];
+  }
+  if (examples.length === 0) return null;
+  return (
+    <div>
+      <Subhead>Usage</Subhead>
+      <Flex direction="column" gap="2" className="mt-1">
+        {examples.map((ex) => (
+          <div key={ex.title}>
+            <Text className="mb-1 block text-[11px] text-gray-10">
+              {ex.title}
+            </Text>
+            <CodeBlock>{ex.code}</CodeBlock>
+          </div>
+        ))}
+      </Flex>
+    </div>
+  );
+}
+
+function ToolsOverview({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
   const tools = arr(spec.tools);
   if (tools.length === 0) return <Muted>No tools.</Muted>;
   const counts = tools.reduce<Record<string, number>>((acc, t) => {
@@ -654,7 +928,7 @@ function ToolsOverview({
                   <Badge color="amber">approval</Badge>
                 ) : undefined
               }
-              onClick={() => onSelect(`cfg:tool/${id}`)}
+              onClick={() => ctx.onSelect(`cfg:tool/${id}`)}
             />
           );
         })}
@@ -702,13 +976,7 @@ function ToolBody({
   );
 }
 
-function SkillsOverview({
-  spec,
-  onSelect,
-}: {
-  spec: AgentSpec;
-  onSelect: (node: string) => void;
-}) {
+function SkillsOverview({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
   const skills = arr(spec.skills);
   if (skills.length === 0) return <Muted>No skills.</Muted>;
   return (
@@ -727,7 +995,7 @@ function SkillsOverview({
               icon={<PuzzlePieceIcon {...ICON} />}
               title={id}
               subtitle={str(r.description)}
-              onClick={() => onSelect(`cfg:skill/${id}`)}
+              onClick={() => ctx.onSelect(`cfg:skill/${id}`)}
             />
           );
         })}
@@ -761,13 +1029,7 @@ function SkillBody({
   );
 }
 
-function McpsOverview({
-  spec,
-  onSelect,
-}: {
-  spec: AgentSpec;
-  onSelect: (node: string) => void;
-}) {
+function McpsOverview({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
   const mcps = arr(spec.mcps);
   if (mcps.length === 0) return <Muted>No MCP servers declared.</Muted>;
   return (
@@ -775,13 +1037,19 @@ function McpsOverview({
       {mcps.map((m) => {
         const r = rec(m);
         const id = str(r.id) ?? "mcp";
+        const missing = mcpMissingSecrets(m, ctx.setKeys);
         return (
           <JumpRow
             key={id}
             icon={<HardDrivesIcon {...ICON} />}
             title={id}
             subtitle={str(r.url)}
-            onClick={() => onSelect(`cfg:mcp/${id}`)}
+            trailing={
+              missing.length > 0 ? (
+                <WarnBadge title={`Needs: ${missing.join(", ")}`} />
+              ) : undefined
+            }
+            onClick={() => ctx.onSelect(`cfg:mcp/${id}`)}
           />
         );
       })}
@@ -789,26 +1057,70 @@ function McpsOverview({
   );
 }
 
-function McpBody({ mcp }: { mcp: unknown }) {
+function McpBody({ mcp, ctx }: { mcp: unknown; ctx: Ctx }) {
   const r = rec(mcp);
   const tools = arr(r.tools);
+  const missing = mcpMissingSecrets(mcp, ctx.setKeys);
   return (
-    <Flex direction="column" gap="2">
+    <Flex direction="column" gap="3">
       {str(r.url) ? (
         <Row label="url" value={str(r.url) as string} mono />
       ) : null}
-      <Row label="tools" value={String(tools.length)} />
+      {missing.length > 0 ? (
+        <Attention>
+          <Text className="text-[12px] text-gray-12">
+            Missing secret{missing.length > 1 ? "s" : ""}:
+          </Text>
+          <Flex gap="1.5" wrap="wrap" className="mt-1.5">
+            {missing.map((key) => (
+              <Button
+                key={key}
+                size="1"
+                variant="soft"
+                color="amber"
+                onClick={() => ctx.onSelect(`cfg:secret/${key}`)}
+              >
+                Set {key}
+              </Button>
+            ))}
+          </Flex>
+        </Attention>
+      ) : null}
+      <div>
+        <Subhead>Tools · {tools.length}</Subhead>
+        {tools.length === 0 ? (
+          <Muted>No tools selected from this server.</Muted>
+        ) : (
+          <div className="mt-1 grid grid-cols-1 gap-1.5 md:grid-cols-2">
+            {tools.map((t) => {
+              const name =
+                typeof t === "string" ? t : (str(rec(t).name) ?? "tool");
+              const approval =
+                typeof t === "object" && rec(t).requires_approval === true;
+              return (
+                <Flex
+                  key={name}
+                  align="center"
+                  gap="2"
+                  className="rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-3 py-2"
+                >
+                  <Text className="min-w-0 flex-1 truncate text-[12px] text-gray-12 [font-family:var(--font-mono)]">
+                    {name}
+                  </Text>
+                  {approval ? (
+                    <LockKeyIcon size={12} className="text-amber-10" />
+                  ) : null}
+                </Flex>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </Flex>
   );
 }
 
-function IntegrationsOverview({
-  spec,
-  onSelect,
-}: {
-  spec: AgentSpec;
-  onSelect: (node: string) => void;
-}) {
+function IntegrationsOverview({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
   const integrations = arr(spec.integrations).filter(
     (s): s is string => typeof s === "string",
   );
@@ -821,7 +1133,7 @@ function IntegrationsOverview({
           key={name}
           icon={<LinkIcon {...ICON} />}
           title={name}
-          onClick={() => onSelect(`cfg:integration/${name}`)}
+          onClick={() => ctx.onSelect(`cfg:integration/${name}`)}
         />
       ))}
     </Flex>
@@ -840,16 +1152,8 @@ function IntegrationBody({ name }: { name: string }) {
   );
 }
 
-function SecretsOverview({
-  spec,
-  setKeys,
-  onSelect,
-}: {
-  spec: AgentSpec;
-  setKeys: string[];
-  onSelect: (node: string) => void;
-}) {
-  const keys = allSecretKeys(spec, setKeys);
+function SecretsOverview({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
+  const keys = allSecretKeys(spec, ctx.setKeys);
   if (keys.length === 0) return <Muted>No secrets declared.</Muted>;
   return (
     <Flex direction="column" gap="3">
@@ -862,13 +1166,13 @@ function SecretsOverview({
             title={key}
             mono
             trailing={
-              setKeys.includes(key) ? (
+              ctx.setKeys.includes(key) ? (
                 <Badge color="green">set</Badge>
               ) : (
                 <Badge color="amber">not set</Badge>
               )
             }
-            onClick={() => onSelect(`cfg:secret/${key}`)}
+            onClick={() => ctx.onSelect(`cfg:secret/${key}`)}
           />
         ))}
       </Flex>
@@ -988,9 +1292,29 @@ function JumpRow({
   );
 }
 
+function Attention({
+  children,
+  tone = "default",
+}: {
+  children: ReactNode;
+  tone?: "default" | "warn";
+}) {
+  return (
+    <div
+      className={`rounded-(--radius-2) border px-3 py-2 ${
+        tone === "warn"
+          ? "border-(--amber-6) bg-(--amber-3)"
+          : "border-(--amber-6) bg-(--amber-2)"
+      }`}
+    >
+      {children}
+    </div>
+  );
+}
+
 function Subhead({ children }: { children: ReactNode }) {
   return (
-    <Text className="mb-1.5 block text-[11px] text-gray-10 uppercase tracking-wide [font-family:var(--font-mono)]">
+    <Text className="block text-[11px] text-gray-10 uppercase tracking-wide [font-family:var(--font-mono)]">
       {children}
     </Text>
   );

@@ -22,6 +22,12 @@ function AgentConfigurationRoute() {
       onSelectNode={(next) =>
         navigate({ search: (prev) => ({ ...prev, node: next }) })
       }
+      onOpenSession={(sessionId) =>
+        navigate({
+          to: "/code/agents/applications/$idOrSlug/sessions/$sessionId",
+          params: { idOrSlug, sessionId },
+        })
+      }
     />
   );
 }

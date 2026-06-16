@@ -43,8 +43,28 @@ export const agentApplicationsKeys = {
     ["agent-applications", "bundle", projectId, idOrSlug, revisionId] as const,
   envKeys: (projectId: number | null, idOrSlug: string) =>
     ["agent-applications", "env-keys", projectId, idOrSlug] as const,
+  slackManifest: (
+    projectId: number | null,
+    idOrSlug: string,
+    revisionId: string,
+  ) =>
+    [
+      "agent-applications",
+      "slack-manifest",
+      projectId,
+      idOrSlug,
+      revisionId,
+    ] as const,
   fleetStats: (projectId: number | null) =>
     ["agent-applications", "fleet", "stats", projectId] as const,
   fleetLiveSessions: (projectId: number | null) =>
     ["agent-applications", "fleet", "live-sessions", projectId] as const,
+  /** `applicationId` is undefined for the fleet-wide board. */
+  analytics: (projectId: number | null, applicationId?: string) =>
+    [
+      "agent-applications",
+      "analytics",
+      projectId,
+      applicationId ?? "fleet",
+    ] as const,
 };
