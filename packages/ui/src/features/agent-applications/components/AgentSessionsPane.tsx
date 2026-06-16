@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useAgentApplicationSessions } from "../hooks/useAgentApplicationSessions";
 import { AgentDetailEmptyState, AgentDetailLayout } from "./AgentDetailLayout";
 import { AgentSessionRow } from "./AgentSessionRow";
+import { RefreshIndicator } from "./RefreshIndicator";
 
 type Filter = AgentSessionState | "all";
 
@@ -24,10 +25,11 @@ export function AgentSessionsPane({ idOrSlug }: { idOrSlug: string }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [limit, setLimit] = useState(PAGE);
 
-  const { data, isLoading, isError, isFetching } = useAgentApplicationSessions(
-    idOrSlug,
-    { limit, state: filter === "all" ? undefined : [filter] },
-  );
+  const { data, isLoading, isError, isFetching, dataUpdatedAt, refetch } =
+    useAgentApplicationSessions(idOrSlug, {
+      limit,
+      state: filter === "all" ? undefined : [filter],
+    });
 
   const sessions = data?.results ?? [];
   const total = data?.count ?? sessions.length;
@@ -41,21 +43,28 @@ export function AgentSessionsPane({ idOrSlug }: { idOrSlug: string }) {
   return (
     <AgentDetailLayout idOrSlug={idOrSlug} activeTab="sessions">
       <Flex direction="column" gap="4">
-        <Flex gap="1.5" wrap="wrap">
-          {FILTERS.map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              onClick={() => changeFilter(f.id)}
-              className={`rounded-full border px-3 py-1 text-[12px] ${
-                filter === f.id
-                  ? "border-(--accent-7) bg-(--accent-3) text-gray-12"
-                  : "border-border text-gray-11 hover:border-(--gray-7)"
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
+        <Flex align="center" justify="between" gap="3">
+          <Flex gap="1.5" wrap="wrap">
+            {FILTERS.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => changeFilter(f.id)}
+                className={`rounded-full border px-3 py-1 text-[12px] ${
+                  filter === f.id
+                    ? "border-(--accent-7) bg-(--accent-3) text-gray-12"
+                    : "border-border text-gray-11 hover:border-(--gray-7)"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </Flex>
+          <RefreshIndicator
+            updatedAt={dataUpdatedAt}
+            isFetching={isFetching}
+            onRefresh={() => void refetch()}
+          />
         </Flex>
 
         {isLoading ? (

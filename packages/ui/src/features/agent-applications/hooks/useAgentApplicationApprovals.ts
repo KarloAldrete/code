@@ -18,6 +18,11 @@ export function useAgentApplicationApprovals(
   return useAuthenticatedQuery<AgentApprovalRequest[]>(
     agentApplicationsKeys.approvals(projectId, idOrSlug, params?.state),
     (client) => client.listAgentApplicationApprovals(idOrSlug, params),
-    { enabled: !!projectId && !!idOrSlug, staleTime: 10_000 },
+    {
+      enabled: !!projectId && !!idOrSlug,
+      staleTime: 10_000,
+      // Queued approvals change as agents run; poll while the tab is focused.
+      refetchInterval: 10_000,
+    },
   );
 }

@@ -38,10 +38,18 @@ export function AgentDetailLayout({
   idOrSlug,
   activeTab,
   children,
+  /**
+   * Fill mode: the content area becomes a full-height, full-width,
+   * non-scrolling flex child and the pane manages its own layout/scroll (for
+   * master-detail panes like Approvals). Default is a centered, padded,
+   * scrolling document column.
+   */
+  fill = false,
 }: {
   idOrSlug: string;
   activeTab: AgentDetailTab;
   children: ReactNode;
+  fill?: boolean;
 }) {
   const {
     data: application,
@@ -113,20 +121,25 @@ export function AgentDetailLayout({
         </Flex>
       </Flex>
 
-      <div className="min-h-0 flex-1 overflow-auto">
-        <div className="mx-auto max-w-4xl px-6 py-6">
-          {isLoading ? (
-            <div className="h-24 animate-pulse rounded-(--radius-2) border border-border bg-(--gray-2)" />
-          ) : isError || !application ? (
-            <AgentDetailEmptyState
-              title="Couldn't load this agent"
-              description="It may have been archived, or the agent platform API returned an error."
-            />
-          ) : (
-            children
-          )}
-        </div>
-      </div>
+      {(() => {
+        const gated = isLoading ? (
+          <div className="h-24 animate-pulse rounded-(--radius-2) border border-border bg-(--gray-2)" />
+        ) : isError || !application ? (
+          <AgentDetailEmptyState
+            title="Couldn't load this agent"
+            description="It may have been archived, or the agent platform API returned an error."
+          />
+        ) : (
+          children
+        );
+        return fill ? (
+          <div className="flex min-h-0 flex-1 flex-col">{gated}</div>
+        ) : (
+          <div className="min-h-0 flex-1 overflow-auto">
+            <div className="mx-auto max-w-4xl px-6 py-6">{gated}</div>
+          </div>
+        );
+      })()}
     </Flex>
   );
 }

@@ -3,6 +3,8 @@ import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 import { useAuthStateValue } from "../../auth/store";
 import { agentApplicationsKeys } from "./agentApplicationsKeys";
 
+const TERMINAL_STATES = new Set(["completed", "closed", "cancelled", "failed"]);
+
 /** Fetches one session's detail, including its stored conversation transcript. */
 export function useAgentApplicationSession(
   idOrSlug: string,
@@ -19,6 +21,14 @@ export function useAgentApplicationSession(
       projectId
         ? client.getAgentApplicationSession(idOrSlug, sessionId, lastN)
         : Promise.resolve(null),
-    { enabled: !!projectId && !!idOrSlug && !!sessionId, staleTime: 15_000 },
+    {
+      enabled: !!projectId && !!idOrSlug && !!sessionId,
+      staleTime: 15_000,
+      // Poll only while the session is still active; terminal sessions are immutable.
+      refetchInterval: (query) =>
+        query.state.data && !TERMINAL_STATES.has(query.state.data.state)
+          ? 10_000
+          : false,
+    },
   );
 }

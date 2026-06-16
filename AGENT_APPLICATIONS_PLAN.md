@@ -205,6 +205,16 @@ live chat come after.
 - [ ] **M-Concierge** (feature 30) — the concierge ("edit with AI") that drives
   config edits, plus the inline seed buttons. Builds on M-Live + the authoring
   mutations (M9–M12). Optional standalone deployed-agent chat package.
+  - [ ] **Message-format deep dive.** The stored transcript renders through
+    code's native `ConversationView` (via the SSE→ACP mapper), but it currently
+    reads *a little weird* in places — our agent_platform conversation/part
+    shape (pi-ai `text`/`thinking`/`toolCall` + `toolResult` messages) doesn't
+    map 1:1 onto what `ConversationView` / `buildConversationItems` expects (ACP
+    `agent_message_chunk` / `tool_call` / `tool_call_update`, turn bracketing,
+    content-block shapes). Audit the two formats side by side and tighten the
+    mapper (`chat/conversationToAcp.ts` + `acpEnvelope.ts`) so deployed-agent
+    chat renders pixel-faithfully to a local session. Fits naturally with the
+    concierge work, which exercises the same rendering path live.
 
 ## What's demoable today (M1–M3 + tabs)
 
