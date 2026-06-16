@@ -38,6 +38,7 @@ import { Route as CodeAgentsApplicationsRouteImport } from './routes/code/agents
 import { Route as CodeInboxRunsIndexRouteImport } from './routes/code/inbox/runs.index'
 import { Route as CodeInboxReportsIndexRouteImport } from './routes/code/inbox/reports.index'
 import { Route as CodeInboxPullsIndexRouteImport } from './routes/code/inbox/pulls.index'
+import { Route as CodeAgentsScoutsIndexRouteImport } from './routes/code/agents/scouts.index'
 import { Route as CodeAgentsApplicationsIndexRouteImport } from './routes/code/agents/applications/index'
 import { Route as WebsiteChannelIdTasksTaskIdRouteImport } from './routes/website/$channelId/tasks/$taskId'
 import { Route as WebsiteChannelIdDashboardsDashboardIdRouteImport } from './routes/website/$channelId/dashboards/$dashboardId'
@@ -196,6 +197,11 @@ const CodeInboxPullsIndexRoute = CodeInboxPullsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => CodeInboxPullsRoute,
 } as any)
+const CodeAgentsScoutsIndexRoute = CodeAgentsScoutsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => CodeAgentsScoutsRoute,
+} as any)
 const CodeAgentsApplicationsIndexRoute =
   CodeAgentsApplicationsIndexRouteImport.update({
     id: '/',
@@ -302,6 +308,7 @@ export interface FileRoutesByFullPath {
   '/website/$channelId/dashboards/$dashboardId': typeof WebsiteChannelIdDashboardsDashboardIdRoute
   '/website/$channelId/tasks/$taskId': typeof WebsiteChannelIdTasksTaskIdRoute
   '/code/agents/applications/': typeof CodeAgentsApplicationsIndexRoute
+  '/code/agents/scouts/': typeof CodeAgentsScoutsIndexRoute
   '/code/inbox/pulls/': typeof CodeInboxPullsIndexRoute
   '/code/inbox/reports/': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs/': typeof CodeInboxRunsIndexRoute
@@ -321,7 +328,6 @@ export interface FileRoutesByTo {
   '/code': typeof CodeIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/website': typeof WebsiteIndexRoute
-  '/code/agents/scouts': typeof CodeAgentsScoutsRouteWithChildren
   '/code/inbox/agents': typeof CodeInboxAgentsRoute
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
   '/website/$channelId/context': typeof WebsiteChannelIdContextRoute
@@ -336,6 +342,7 @@ export interface FileRoutesByTo {
   '/website/$channelId/dashboards/$dashboardId': typeof WebsiteChannelIdDashboardsDashboardIdRoute
   '/website/$channelId/tasks/$taskId': typeof WebsiteChannelIdTasksTaskIdRoute
   '/code/agents/applications': typeof CodeAgentsApplicationsIndexRoute
+  '/code/agents/scouts': typeof CodeAgentsScoutsIndexRoute
   '/code/inbox/pulls': typeof CodeInboxPullsIndexRoute
   '/code/inbox/reports': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs': typeof CodeInboxRunsIndexRoute
@@ -380,6 +387,7 @@ export interface FileRoutesById {
   '/website/$channelId/dashboards/$dashboardId': typeof WebsiteChannelIdDashboardsDashboardIdRoute
   '/website/$channelId/tasks/$taskId': typeof WebsiteChannelIdTasksTaskIdRoute
   '/code/agents/applications/': typeof CodeAgentsApplicationsIndexRoute
+  '/code/agents/scouts/': typeof CodeAgentsScoutsIndexRoute
   '/code/inbox/pulls/': typeof CodeInboxPullsIndexRoute
   '/code/inbox/reports/': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs/': typeof CodeInboxRunsIndexRoute
@@ -425,6 +433,7 @@ export interface FileRouteTypes {
     | '/website/$channelId/dashboards/$dashboardId'
     | '/website/$channelId/tasks/$taskId'
     | '/code/agents/applications/'
+    | '/code/agents/scouts/'
     | '/code/inbox/pulls/'
     | '/code/inbox/reports/'
     | '/code/inbox/runs/'
@@ -444,7 +453,6 @@ export interface FileRouteTypes {
     | '/code'
     | '/settings'
     | '/website'
-    | '/code/agents/scouts'
     | '/code/inbox/agents'
     | '/code/tasks/$taskId'
     | '/website/$channelId/context'
@@ -459,6 +467,7 @@ export interface FileRouteTypes {
     | '/website/$channelId/dashboards/$dashboardId'
     | '/website/$channelId/tasks/$taskId'
     | '/code/agents/applications'
+    | '/code/agents/scouts'
     | '/code/inbox/pulls'
     | '/code/inbox/reports'
     | '/code/inbox/runs'
@@ -502,6 +511,7 @@ export interface FileRouteTypes {
     | '/website/$channelId/dashboards/$dashboardId'
     | '/website/$channelId/tasks/$taskId'
     | '/code/agents/applications/'
+    | '/code/agents/scouts/'
     | '/code/inbox/pulls/'
     | '/code/inbox/reports/'
     | '/code/inbox/runs/'
@@ -733,6 +743,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeInboxPullsIndexRouteImport
       parentRoute: typeof CodeInboxPullsRoute
     }
+    '/code/agents/scouts/': {
+      id: '/code/agents/scouts/'
+      path: '/'
+      fullPath: '/code/agents/scouts/'
+      preLoaderRoute: typeof CodeAgentsScoutsIndexRouteImport
+      parentRoute: typeof CodeAgentsScoutsRoute
+    }
     '/code/agents/applications/': {
       id: '/code/agents/applications/'
       path: '/'
@@ -893,10 +910,12 @@ const CodeAgentsScoutsSkillNameRouteWithChildren =
 
 interface CodeAgentsScoutsRouteChildren {
   CodeAgentsScoutsSkillNameRoute: typeof CodeAgentsScoutsSkillNameRouteWithChildren
+  CodeAgentsScoutsIndexRoute: typeof CodeAgentsScoutsIndexRoute
 }
 
 const CodeAgentsScoutsRouteChildren: CodeAgentsScoutsRouteChildren = {
   CodeAgentsScoutsSkillNameRoute: CodeAgentsScoutsSkillNameRouteWithChildren,
+  CodeAgentsScoutsIndexRoute: CodeAgentsScoutsIndexRoute,
 }
 
 const CodeAgentsScoutsRouteWithChildren =

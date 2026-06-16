@@ -1,36 +1,19 @@
 import { CaretRightIcon, RobotIcon } from "@phosphor-icons/react";
 import type { AgentApplication } from "@posthog/shared/agent-platform-types";
-import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
+import { AgentsTabLayout } from "@posthog/ui/features/agents/components/AgentsTabLayout";
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { Flex, Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
-import { type ReactNode, useMemo } from "react";
+import type { ReactNode } from "react";
 import { useAgentApplications } from "../hooks/useAgentApplications";
 import { useAgentFleetStats } from "../hooks/useAgentFleetStats";
 import { formatSpendUsd } from "../utils/format";
 
 /**
- * Landing for the agent-platform console: a fleet stat strip plus the list of
- * deployed agent applications. Each row links to the per-agent detail view.
+ * The Applications tab: a fleet stat strip plus the list of deployed agent
+ * applications. Each row links to the per-agent detail view.
  */
 export function AgentApplicationsListView() {
-  const headerContent = useMemo(
-    () => (
-      <Flex align="center" gap="2" className="w-full min-w-0">
-        <RobotIcon size={12} className="shrink-0 text-gray-10" />
-        <Text
-          className="truncate whitespace-nowrap font-medium text-[13px]"
-          title="Applications"
-        >
-          Applications
-        </Text>
-      </Flex>
-    ),
-    [],
-  );
-
-  useSetHeaderContent(headerContent);
-
   const {
     data: applications,
     isLoading,
@@ -40,59 +23,41 @@ export function AgentApplicationsListView() {
   const { data: fleetStats } = useAgentFleetStats();
 
   return (
-    <Flex direction="column" className="h-full min-h-0">
-      <Flex
-        direction="column"
-        gap="0.5"
-        className="cursor-default select-none border-(--gray-5) border-b px-6 pt-5 pb-5"
-      >
-        <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
-          Applications
-        </Text>
-        <Text className="max-w-3xl text-[12.5px] text-gray-11 leading-snug">
-          Deployed agents on the agent platform – their configuration, sessions,
-          memory, and approvals.
-        </Text>
-      </Flex>
+    <AgentsTabLayout activeTab="applications">
+      <Flex direction="column" gap="5">
+        <FleetStatStrip
+          liveCount={fleetStats?.liveCount ?? 0}
+          sessionsInWindowCount={fleetStats?.sessionsInWindowCount ?? 0}
+          spendInWindowUsd={fleetStats?.spendInWindowUsd ?? 0}
+          failedInWindowCount={fleetStats?.failedInWindowCount ?? 0}
+          pendingApprovalsCount={fleetStats?.pendingApprovalsCount ?? 0}
+        />
 
-      <div className="min-h-0 flex-1 overflow-auto">
-        <div className="mx-auto max-w-4xl px-6 py-6">
-          <Flex direction="column" gap="5">
-            <FleetStatStrip
-              liveCount={fleetStats?.liveCount ?? 0}
-              sessionsInWindowCount={fleetStats?.sessionsInWindowCount ?? 0}
-              spendInWindowUsd={fleetStats?.spendInWindowUsd ?? 0}
-              failedInWindowCount={fleetStats?.failedInWindowCount ?? 0}
-              pendingApprovalsCount={fleetStats?.pendingApprovalsCount ?? 0}
-            />
-
-            {isLoading ? (
-              <ApplicationsSkeleton />
-            ) : isError ? (
-              <EmptyState
-                title="Couldn't load applications"
-                description={
-                  error instanceof Error
-                    ? error.message
-                    : "The agent platform API returned an error."
-                }
-              />
-            ) : !applications || applications.length === 0 ? (
-              <EmptyState
-                title="No agents yet"
-                description="Deployed agents on the agent platform will show up here."
-              />
-            ) : (
-              <Flex direction="column" gap="2">
-                {applications.map((app) => (
-                  <ApplicationRow key={app.id} application={app} />
-                ))}
-              </Flex>
-            )}
+        {isLoading ? (
+          <ApplicationsSkeleton />
+        ) : isError ? (
+          <EmptyState
+            title="Couldn't load applications"
+            description={
+              error instanceof Error
+                ? error.message
+                : "The agent platform API returned an error."
+            }
+          />
+        ) : !applications || applications.length === 0 ? (
+          <EmptyState
+            title="No agents yet"
+            description="Deployed agents on the agent platform will show up here."
+          />
+        ) : (
+          <Flex direction="column" gap="2">
+            {applications.map((app) => (
+              <ApplicationRow key={app.id} application={app} />
+            ))}
           </Flex>
-        </div>
-      </div>
-    </Flex>
+        )}
+      </Flex>
+    </AgentsTabLayout>
   );
 }
 

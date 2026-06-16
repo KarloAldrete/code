@@ -1,9 +1,4 @@
-import {
-  ArrowSquareOutIcon,
-  CaretRightIcon,
-  PlugsConnectedIcon,
-  RobotIcon,
-} from "@phosphor-icons/react";
+import { ArrowSquareOutIcon, PlugsConnectedIcon } from "@phosphor-icons/react";
 import {
   REPORT_MODEL_RESOLVER,
   type ReportModelResolver,
@@ -133,30 +128,6 @@ export function ConfigureAgentsSection() {
         }
       >
         <ScoutsFleetSection />
-      </Subsection>
-
-      <Subsection
-        title="Applications"
-        description="Agents you design and deploy on the agent platform. Configure them, watch their sessions, and chat with each deployment."
-      >
-        <Link
-          to="/code/agents/applications"
-          className="flex items-center justify-between gap-3 rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-4 py-3.5 no-underline transition-colors duration-150 hover:border-(--gray-6) hover:bg-(--gray-2)"
-        >
-          <Flex align="center" gap="3" className="min-w-0">
-            <RobotIcon size={20} className="shrink-0 text-gray-11" />
-            <Flex direction="column" gap="0" className="min-w-0">
-              <Text className="font-medium text-[13px] text-gray-12">
-                Manage applications
-              </Text>
-              <Text className="text-[12px] text-gray-11 leading-snug">
-                Browse deployed agents, edit their configuration, and open a
-                live chat with any deployment.
-              </Text>
-            </Flex>
-          </Flex>
-          <CaretRightIcon size={14} className="shrink-0 text-gray-10" />
-        </Link>
       </Subsection>
 
       <Subsection
