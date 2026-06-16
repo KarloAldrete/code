@@ -33,8 +33,10 @@ import { useAgentApplication } from "../hooks/useAgentApplication";
 import { useAgentEnvKeys } from "../hooks/useAgentEnvKeys";
 import { useAgentRevision } from "../hooks/useAgentRevision";
 import { useAgentRevisionBundle } from "../hooks/useAgentRevisionBundle";
+import { useAgentRevisions } from "../hooks/useAgentRevisions";
 import { triggerRequiredSecretsFor } from "../utils/triggerSecrets";
 import { AgentDetailEmptyState, AgentDetailLayout } from "./AgentDetailLayout";
+import { AgentRevisionBar } from "./AgentRevisionBar";
 import { CopyButton } from "./CopyButton";
 import { CronFireButton } from "./CronFireButton";
 import { FileExplorer, type FileTreeNode } from "./FileExplorer";
@@ -302,20 +304,30 @@ export function AgentConfigurationPane({
   idOrSlug,
   selectedNode,
   onSelectNode,
+  selectedRevisionId,
+  onSelectRevision,
   onOpenSession,
 }: {
   idOrSlug: string;
   selectedNode: string | null;
   onSelectNode: (node: string) => void;
+  /** Revision viewed in the explorer (URL `?revision=`); defaults to live. */
+  selectedRevisionId: string | null;
+  onSelectRevision: (revisionId: string) => void;
   onOpenSession?: (sessionId: string) => void;
 }) {
   const { data: application } = useAgentApplication(idOrSlug);
-  const liveRevisionId = application?.live_revision ?? null;
-  const { data: revision, isLoading } = useAgentRevision(
-    idOrSlug,
-    liveRevisionId,
-  );
-  const { data: bundle } = useAgentRevisionBundle(idOrSlug, liveRevisionId);
+  const { data: revisions } = useAgentRevisions(idOrSlug);
+
+  // The explorer shows the selected revision, falling back to live then newest.
+  const revisionId =
+    selectedRevisionId ??
+    application?.live_revision ??
+    revisions?.[0]?.id ??
+    null;
+
+  const { data: revision, isLoading } = useAgentRevision(idOrSlug, revisionId);
+  const { data: bundle } = useAgentRevisionBundle(idOrSlug, revisionId);
   const { data: envKeys } = useAgentEnvKeys(idOrSlug);
 
   const spec = revision?.spec ?? null;
@@ -327,10 +339,10 @@ export function AgentConfigurationPane({
   );
   const node = selectedNode ?? "cfg:instructions";
 
-  const ctx: Ctx | null = liveRevisionId
+  const ctx: Ctx | null = revisionId
     ? {
         idOrSlug,
-        revisionId: liveRevisionId,
+        revisionId,
         ingressBaseUrl: application?.ingress_base_url ?? undefined,
         setKeys,
         onSelect: onSelectNode,
@@ -338,37 +350,54 @@ export function AgentConfigurationPane({
       }
     : null;
 
+  const bar =
+    application && revisions && revisions.length > 0 ? (
+      <AgentRevisionBar
+        idOrSlug={idOrSlug}
+        agent={application}
+        revisions={revisions}
+        selectedRevisionId={revisionId}
+        onSelectRevision={onSelectRevision}
+      />
+    ) : null;
+
   return (
     <AgentDetailLayout idOrSlug={idOrSlug} activeTab="configuration" fill>
-      {!liveRevisionId ? (
+      {!revisionId ? (
         <div className="p-6">
           <AgentDetailEmptyState
-            title="No live revision"
-            description="This agent has no promoted revision yet, so there's no live configuration to show."
+            title="No revisions yet"
+            description="This agent has no revisions, so there's no configuration to show."
           />
         </div>
       ) : !spec || !ctx ? (
-        <div className="p-6">
-          {isLoading ? (
-            <div className="h-40 animate-pulse rounded-(--radius-2) border border-border bg-(--gray-2)" />
-          ) : (
-            <AgentDetailEmptyState
-              title="Couldn't load configuration"
-              description="The live revision's spec could not be loaded."
-            />
-          )}
-        </div>
+        <Flex direction="column" className="h-full min-h-0">
+          {bar}
+          <div className="p-6">
+            {isLoading ? (
+              <div className="h-40 animate-pulse rounded-(--radius-2) border border-border bg-(--gray-2)" />
+            ) : (
+              <AgentDetailEmptyState
+                title="Couldn't load configuration"
+                description="This revision's spec could not be loaded."
+              />
+            )}
+          </div>
+        </Flex>
       ) : (
-        <div className="min-h-0 flex-1">
-          <FileExplorer
-            tree={tree}
-            selectedPath={node}
-            onSelectPath={onSelectNode}
-            storageKey="agent-config-explorer"
-          >
-            <DetailPane node={node} spec={spec} files={files} ctx={ctx} />
-          </FileExplorer>
-        </div>
+        <Flex direction="column" className="h-full min-h-0">
+          {bar}
+          <div className="min-h-0 flex-1">
+            <FileExplorer
+              tree={tree}
+              selectedPath={node}
+              onSelectPath={onSelectNode}
+              storageKey="agent-config-explorer"
+            >
+              <DetailPane node={node} spec={spec} files={files} ctx={ctx} />
+            </FileExplorer>
+          </div>
+        </Flex>
       )}
     </AgentDetailLayout>
   );

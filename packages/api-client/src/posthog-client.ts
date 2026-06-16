@@ -4236,6 +4236,24 @@ export class PostHogAPIClient {
     }
   }
 
+  /** Run a revision lifecycle transition: freeze (draft→ready), promote
+   * (ready→live, demoting the old live), or archive. Returns the updated revision. */
+  async transitionAgentRevision(
+    idOrSlug: string,
+    revisionId: string,
+    action: "freeze" | "promote" | "archive",
+  ): Promise<AgentRevision> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/${action}/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path,
+    });
+    return (await response.json()) as AgentRevision;
+  }
+
   /**
    * A revision's bundle, flattened to per-file rows. The server returns a typed
    * `{ bundle: { agent_md, skills[], tools[] } }`; we expand it to the canonical
