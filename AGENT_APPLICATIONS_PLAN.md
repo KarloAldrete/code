@@ -212,9 +212,6 @@ Reframed around the **render-first / concierge-authoring** principle above:
 config/revisions/secrets/memory are read surfaces with only operational
 controls. Ordered by core value.
 
-- [ ] **M13 — Connections** (feature 24) — integrations view (Slack setup,
-  feature 23, already shipped under the slack trigger). The integration detail is
-  a stub today; flesh out the team integration link.
 - [ ] **Enable / disable agent** — archive/unarchive the application (an
   operational control deferred from M9; needs the destroy/restore endpoint).
 - [ ] ~~**M12 — Spec & bundle authoring**~~ — **retired.** Spec/bundle/trigger
@@ -223,6 +220,10 @@ controls. Ordered by core value.
 
 ### Deferred
 
+- [ ] **M13 — Connections** (feature 24) — **deferred** (legacy idea). A separate
+  integrations view isn't needed right now: Slack setup (feature 23) already
+  ships under the slack trigger, and `spec.integrations` renders in the config
+  explorer.
 - [ ] **Global approvals queue** (feature 10) — fleet-wide approval inbox at the
   Applications level (the per-agent queue shipped in M5). Client method
   `listAgentFleetApprovals` already exists; needs UI. Pairs with M6 (it also
