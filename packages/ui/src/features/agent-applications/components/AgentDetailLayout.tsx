@@ -1,0 +1,145 @@
+import { ArrowLeftIcon, RobotIcon } from "@phosphor-icons/react";
+import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
+import { Badge } from "@posthog/ui/primitives/Badge";
+import { Flex, Text } from "@radix-ui/themes";
+import { Link } from "@tanstack/react-router";
+import { type ReactNode, useMemo } from "react";
+import { useAgentApplication } from "../hooks/useAgentApplication";
+
+export type AgentDetailTab = "overview" | "approvals";
+
+const TABS: { id: AgentDetailTab; label: string }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "approvals", label: "Approvals" },
+];
+
+/**
+ * Shared chrome for a single agent's detail panes: back link, title + state
+ * badge + description, and the sub-tab bar. Each pane (Overview, Approvals, …)
+ * renders its body as `children`; the layout owns the agent fetch and gates the
+ * body on it so every pane shows consistent loading/error states. The session
+ * transcript view deliberately does NOT use this layout — it keeps its own
+ * focused full-screen chrome.
+ */
+export function AgentDetailLayout({
+  idOrSlug,
+  activeTab,
+  children,
+}: {
+  idOrSlug: string;
+  activeTab: AgentDetailTab;
+  children: ReactNode;
+}) {
+  const {
+    data: application,
+    isLoading,
+    isError,
+  } = useAgentApplication(idOrSlug);
+
+  const title = application?.name ?? idOrSlug;
+  const headerContent = useMemo(
+    () => (
+      <Flex align="center" gap="2" className="w-full min-w-0">
+        <RobotIcon size={12} className="shrink-0 text-gray-10" />
+        <Text
+          className="truncate whitespace-nowrap font-medium text-[13px]"
+          title={title}
+        >
+          {title}
+        </Text>
+      </Flex>
+    ),
+    [title],
+  );
+  useSetHeaderContent(headerContent);
+
+  return (
+    <Flex direction="column" className="h-full min-h-0">
+      <Flex
+        direction="column"
+        gap="3"
+        className="cursor-default select-none border-(--gray-5) border-b px-6 pt-5"
+      >
+        <Link
+          to="/code/agents/applications"
+          className="flex w-fit items-center gap-1.5 text-[12px] text-gray-11 no-underline hover:text-gray-12"
+        >
+          <ArrowLeftIcon size={13} />
+          Applications
+        </Link>
+        <Flex align="center" gap="2" wrap="wrap">
+          <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
+            {title}
+          </Text>
+          {application ? (
+            <Badge color={application.live_revision ? "green" : "gray"}>
+              {application.live_revision ? "Live" : "Draft"}
+            </Badge>
+          ) : null}
+        </Flex>
+        {application?.description?.trim() ? (
+          <Text className="max-w-3xl text-[12.5px] text-gray-11 leading-snug">
+            {application.description}
+          </Text>
+        ) : null}
+        <Flex gap="1" className="-mb-px">
+          {TABS.map((tab) => (
+            <Link
+              key={tab.id}
+              to={
+                tab.id === "overview"
+                  ? "/code/agents/applications/$idOrSlug"
+                  : "/code/agents/applications/$idOrSlug/approvals"
+              }
+              params={{ idOrSlug }}
+              className={`border-b-2 px-3 pb-2.5 text-[12.5px] no-underline ${
+                tab.id === activeTab
+                  ? "border-(--accent-9) font-medium text-gray-12"
+                  : "border-transparent text-gray-11 hover:text-gray-12"
+              }`}
+            >
+              {tab.label}
+            </Link>
+          ))}
+        </Flex>
+      </Flex>
+
+      <div className="min-h-0 flex-1 overflow-auto">
+        <div className="mx-auto max-w-4xl px-6 py-6">
+          {isLoading ? (
+            <div className="h-24 animate-pulse rounded-(--radius-2) border border-border bg-(--gray-2)" />
+          ) : isError || !application ? (
+            <AgentDetailEmptyState
+              title="Couldn't load this agent"
+              description="It may have been archived, or the agent platform API returned an error."
+            />
+          ) : (
+            children
+          )}
+        </div>
+      </div>
+    </Flex>
+  );
+}
+
+export function AgentDetailEmptyState({
+  title,
+  description,
+}: {
+  title: string;
+  description: ReactNode;
+}) {
+  return (
+    <Flex
+      direction="column"
+      align="center"
+      gap="1"
+      className="rounded-(--radius-2) border border-(--gray-5) border-dashed px-6 py-10 text-center"
+    >
+      <Text className="font-medium text-[13px] text-gray-12">{title}</Text>
+      <Text className="max-w-md text-[12px] text-gray-11 leading-snug">
+        {description}
+      </Text>
+    </Flex>
+  );
+}

@@ -1,4 +1,5 @@
 import type {
+  AgentApprovalRequestState,
   AgentRevisionState,
   AgentSessionState,
 } from "@posthog/shared/agent-platform-types";
@@ -32,6 +33,37 @@ export function sessionStateColor(
       return "gray";
     default:
       return "gray";
+  }
+}
+
+/** Radix Badge colour for a tool-approval request state. */
+export function approvalStateColor(
+  state: AgentApprovalRequestState,
+): "green" | "blue" | "gray" | "red" | "amber" {
+  switch (state) {
+    case "queued":
+      return "amber";
+    case "approving":
+      return "blue";
+    case "dispatched":
+      return "green";
+    case "dispatched_failed":
+    case "rejected":
+      return "red";
+    default:
+      return "gray";
+  }
+}
+
+/** Human label for a tool-approval request state. */
+export function approvalStateLabel(state: AgentApprovalRequestState): string {
+  switch (state) {
+    case "dispatched":
+      return "approved";
+    case "dispatched_failed":
+      return "dispatch failed";
+    default:
+      return state;
   }
 }
 

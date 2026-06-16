@@ -9,8 +9,14 @@ export const agentApplicationsKeys = {
     ["agent-applications", "sessions", projectId, idOrSlug] as const,
   session: (projectId: number | null, idOrSlug: string, sessionId: string) =>
     ["agent-applications", "session", projectId, idOrSlug, sessionId] as const,
-  approvals: (projectId: number | null, idOrSlug: string) =>
-    ["agent-applications", "approvals", projectId, idOrSlug] as const,
+  approvals: (projectId: number | null, idOrSlug: string, state?: string) =>
+    [
+      "agent-applications",
+      "approvals",
+      projectId,
+      idOrSlug,
+      state ?? "all",
+    ] as const,
   revisions: (projectId: number | null, idOrSlug: string) =>
     ["agent-applications", "revisions", projectId, idOrSlug] as const,
   fleetStats: (projectId: number | null) =>
