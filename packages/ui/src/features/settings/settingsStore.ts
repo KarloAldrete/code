@@ -39,7 +39,8 @@ export type CompletionSound =
   | "shoot"
   | "slide"
   | "switch"
-  | "wilhelm";
+  | "wilhelm"
+  | "icq";
 
 export type TerminalFont =
   | "berkeley-mono"
