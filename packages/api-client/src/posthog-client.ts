@@ -21,6 +21,11 @@ import type {
   AgentApprovalRequest,
   AgentApprovalsListParams,
   AgentFleetLiveSessionsResponse,
+  AgentMemoryFile,
+  AgentMemorySearchResult,
+  AgentMemoryTableHeader,
+  AgentMemoryTableRows,
+  AgentMemoryTreeNode,
   AgentRevision,
   AgentSessionLogEntry,
   AgentSessionLogsParams,
@@ -4391,6 +4396,79 @@ export class PostHogAPIClient {
     const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/env_keys/${encodeURIComponent(key)}/`;
     const url = new URL(`${this.api.baseUrl}${path}`);
     await this.api.fetcher.fetch({ method: "delete", url, path });
+  }
+
+  private agentMemoryPath(teamId: number, idOrSlug: string): string {
+    return `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/memory`;
+  }
+
+  /** Pre-aggregated folder tree of the agent's memory store. */
+  async getAgentMemoryTree(idOrSlug: string): Promise<AgentMemoryTreeNode> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentMemoryPath(teamId, idOrSlug)}/tree/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    const data = (await response.json()) as { root?: AgentMemoryTreeNode };
+    return data.root ?? { name: "root", type: "folder", children: [] };
+  }
+
+  /** Read one memory file (header + content). */
+  async readAgentMemoryFile(
+    idOrSlug: string,
+    filePath: string,
+  ): Promise<AgentMemoryFile> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentMemoryPath(teamId, idOrSlug)}/files/by_path/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    url.searchParams.set("path", filePath);
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    return (await response.json()) as AgentMemoryFile;
+  }
+
+  /** BM25 full-text search across the agent's memory. */
+  async searchAgentMemory(
+    idOrSlug: string,
+    query: string,
+    limit?: number,
+  ): Promise<AgentMemorySearchResult[]> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentMemoryPath(teamId, idOrSlug)}/search/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    url.searchParams.set("q", query);
+    if (limit != null) url.searchParams.set("limit", String(limit));
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    const data = (await response.json()) as {
+      results?: AgentMemorySearchResult[];
+    };
+    return data.results ?? [];
+  }
+
+  /** List the agent's JSONL reference tables. */
+  async listAgentMemoryTables(
+    idOrSlug: string,
+  ): Promise<AgentMemoryTableHeader[]> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentMemoryPath(teamId, idOrSlug)}/tables/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    const data = (await response.json()) as {
+      tables?: AgentMemoryTableHeader[];
+    };
+    return data.tables ?? [];
+  }
+
+  /** Read rows from one memory table. */
+  async readAgentMemoryTable(
+    idOrSlug: string,
+    name: string,
+    limit?: number,
+  ): Promise<AgentMemoryTableRows> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentMemoryPath(teamId, idOrSlug)}/tables/${encodeURIComponent(name)}/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    if (limit != null) url.searchParams.set("limit", String(limit));
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    return (await response.json()) as AgentMemoryTableRows;
   }
 
   /** Team-wide fleet roll-up stats. `since` is an ISO timestamp window start. */

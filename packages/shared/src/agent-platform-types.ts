@@ -140,6 +140,53 @@ export interface AgentSlackManifest {
   interactivity_url: string | null;
 }
 
+// --- Memory ----------------------------------------------------------------
+// The agent's S3-backed memory store: markdown files (`…/memory/…`) plus the
+// JSONL reference tables the @posthog/table-* tools write.
+
+export interface AgentMemoryHeader {
+  path: string;
+  description: string;
+  tags: string[];
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface AgentMemoryFile extends AgentMemoryHeader {
+  content: string;
+}
+
+/** Pre-aggregated folder tree from `…/memory/tree/`. */
+export interface AgentMemoryTreeNode {
+  name: string;
+  type: "folder" | "file";
+  path?: string;
+  description?: string;
+  tags?: string[];
+  children?: AgentMemoryTreeNode[];
+}
+
+export interface AgentMemorySearchResult {
+  path: string;
+  description: string;
+  tags: string[];
+  score: number;
+  snippet?: string | null;
+}
+
+export interface AgentMemoryTableHeader {
+  name: string;
+  size: number;
+}
+
+export interface AgentMemoryTableRows {
+  name: string;
+  total: number;
+  returned: number;
+  limit: number;
+  rows: Record<string, unknown>[];
+}
+
 // --- Sessions --------------------------------------------------------------
 
 export interface AgentSessionUsageTotal {

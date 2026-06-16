@@ -10,6 +10,7 @@ export type AgentDetailTab =
   | "overview"
   | "sessions"
   | "configuration"
+  | "memory"
   | "approvals"
   | "observability";
 
@@ -28,6 +29,11 @@ const TABS: { id: AgentDetailTab; label: string; to: string }[] = [
     id: "configuration",
     label: "Configuration",
     to: "/code/agents/applications/$idOrSlug/configuration",
+  },
+  {
+    id: "memory",
+    label: "Memory",
+    to: "/code/agents/applications/$idOrSlug/memory",
   },
   {
     id: "approvals",

@@ -55,6 +55,22 @@ export const agentApplicationsKeys = {
       idOrSlug,
       revisionId,
     ] as const,
+  memoryTree: (projectId: number | null, idOrSlug: string) =>
+    ["agent-applications", "memory-tree", projectId, idOrSlug] as const,
+  memoryFile: (projectId: number | null, idOrSlug: string, path: string) =>
+    ["agent-applications", "memory-file", projectId, idOrSlug, path] as const,
+  memorySearch: (projectId: number | null, idOrSlug: string, query: string) =>
+    [
+      "agent-applications",
+      "memory-search",
+      projectId,
+      idOrSlug,
+      query,
+    ] as const,
+  memoryTables: (projectId: number | null, idOrSlug: string) =>
+    ["agent-applications", "memory-tables", projectId, idOrSlug] as const,
+  memoryTable: (projectId: number | null, idOrSlug: string, name: string) =>
+    ["agent-applications", "memory-table", projectId, idOrSlug, name] as const,
   fleetStats: (projectId: number | null) =>
     ["agent-applications", "fleet", "stats", projectId] as const,
   fleetLiveSessions: (projectId: number | null) =>
