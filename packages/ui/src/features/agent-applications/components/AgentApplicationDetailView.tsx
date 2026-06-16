@@ -1,28 +1,48 @@
 import { Flex, Text } from "@radix-ui/themes";
+import { Link } from "@tanstack/react-router";
+import { useAgentAnalytics } from "../hooks/useAgentAnalytics";
+import { useAgentApplication } from "../hooks/useAgentApplication";
 import { useAgentApplicationSessions } from "../hooks/useAgentApplicationSessions";
-import { useAgentApplicationStats } from "../hooks/useAgentApplicationStats";
-import { formatSpendUsd } from "../utils/format";
+import { AgentAnalyticsKpiStrip } from "./AgentAnalyticsView";
 import { AgentDetailEmptyState, AgentDetailLayout } from "./AgentDetailLayout";
 import { AgentSessionRow } from "./AgentSessionRow";
 
 /**
- * Per-agent Overview pane: stat strip + recent sessions. Rendered inside the
+ * Per-agent Overview pane: the top-level observability KPIs (spend / sessions /
+ * failure rate / p95 over the last 7 days, with trends + WoW deltas — the same
+ * metrics as the Observability tab) plus recent sessions. Rendered inside the
  * shared {@link AgentDetailLayout} tab shell.
  */
 export function AgentApplicationDetailView({ idOrSlug }: { idOrSlug: string }) {
-  const { data: stats } = useAgentApplicationStats(idOrSlug);
+  const { data: application } = useAgentApplication(idOrSlug);
+  const { data: analytics, isLoading: analyticsLoading } = useAgentAnalytics(
+    application?.id,
+    "agent",
+  );
   const { data: sessions, isLoading: sessionsLoading } =
     useAgentApplicationSessions(idOrSlug, { limit: 25 });
 
   return (
     <AgentDetailLayout idOrSlug={idOrSlug} activeTab="overview">
       <Flex direction="column" gap="6">
-        <StatStrip
-          liveCount={stats?.liveCount ?? 0}
-          sessionsInWindowCount={stats?.sessionsInWindowCount ?? 0}
-          spendInWindowUsd={stats?.spendInWindowUsd ?? 0}
-          failedInWindowCount={stats?.failedInWindowCount ?? 0}
-        />
+        <section>
+          <Flex align="center" justify="between" className="mb-3">
+            <Text className="font-semibold text-[13px] text-gray-12">
+              Activity · last 7 days
+            </Text>
+            <Link
+              to="/code/agents/applications/$idOrSlug/observability"
+              params={{ idOrSlug }}
+              className="text-[12px] text-gray-11 no-underline hover:text-gray-12"
+            >
+              View observability →
+            </Link>
+          </Flex>
+          <AgentAnalyticsKpiStrip
+            data={analytics}
+            isLoading={analyticsLoading || !application}
+          />
+        </section>
 
         <section>
           <Text className="mb-3 block font-semibold text-[13px] text-gray-12">
@@ -56,56 +76,5 @@ export function AgentApplicationDetailView({ idOrSlug }: { idOrSlug: string }) {
         </section>
       </Flex>
     </AgentDetailLayout>
-  );
-}
-
-function StatStrip({
-  liveCount,
-  sessionsInWindowCount,
-  spendInWindowUsd,
-  failedInWindowCount,
-}: {
-  liveCount: number;
-  sessionsInWindowCount: number;
-  spendInWindowUsd: number;
-  failedInWindowCount: number;
-}) {
-  return (
-    <Flex
-      gap="0"
-      className="overflow-hidden rounded-(--radius-2) border border-border bg-(--color-panel-solid)"
-    >
-      <Stat label="Live" value={String(liveCount)} />
-      <Stat label="Sessions (24h)" value={String(sessionsInWindowCount)} />
-      <Stat label="Spend (24h)" value={formatSpendUsd(spendInWindowUsd)} />
-      <Stat label="Failed (24h)" value={String(failedInWindowCount)} last />
-    </Flex>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  last,
-}: {
-  label: string;
-  value: string;
-  last?: boolean;
-}) {
-  return (
-    <Flex
-      direction="column"
-      gap="1"
-      className={`min-w-0 flex-1 px-4 py-3 ${
-        last ? "" : "border-(--gray-5) border-r"
-      }`}
-    >
-      <Text className="truncate text-[11px] text-gray-10 uppercase tracking-wide">
-        {label}
-      </Text>
-      <Text className="font-semibold text-[18px] text-gray-12 leading-none">
-        {value}
-      </Text>
-    </Flex>
   );
 }

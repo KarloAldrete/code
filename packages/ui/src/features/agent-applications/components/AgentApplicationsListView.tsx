@@ -1,140 +1,122 @@
-import { CaretRightIcon, RobotIcon } from "@phosphor-icons/react";
-import type { AgentApplication } from "@posthog/shared/agent-platform-types";
+import {
+  ArrowSquareOutIcon,
+  CaretRightIcon,
+  RobotIcon,
+} from "@phosphor-icons/react";
+import type {
+  AgentAnalyticsAgentRow,
+  AgentApplication,
+} from "@posthog/shared/agent-platform-types";
 import { AgentsTabLayout } from "@posthog/ui/features/agents/components/AgentsTabLayout";
 import { Badge } from "@posthog/ui/primitives/Badge";
+import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { Flex, Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { type ReactNode, useMemo } from "react";
+import { useAuthStateValue } from "../../auth/store";
+import { useAgentAnalytics } from "../hooks/useAgentAnalytics";
 import { useAgentApplications } from "../hooks/useAgentApplications";
-import { useAgentFleetStats } from "../hooks/useAgentFleetStats";
 import { formatSpendUsd } from "../utils/format";
+import { aiObservabilityTracesUrl } from "../utils/observabilityLinks";
+import { AgentAnalyticsKpiStrip } from "./AgentAnalyticsView";
 
 /**
- * The Applications tab: a fleet stat strip plus the list of deployed agent
- * applications. Each row links to the per-agent detail view.
+ * The Applications tab: the fleet observability KPIs (spend / sessions /
+ * failure rate / p95 over the team's `$ai_*` events) blended on top of the list
+ * of deployed agents. The per-agent rollups from the same analytics query are
+ * merged into each list row as inline stats, so one fetch powers both the KPI
+ * strip and the rows. Each row links to the per-agent detail view.
  */
 export function AgentApplicationsListView() {
+  const region = useAuthStateValue((s) => s.cloudRegion);
+  const projectId = useAuthStateValue((s) => s.currentProjectId);
+
   const {
     data: applications,
     isLoading,
     isError,
     error,
   } = useAgentApplications();
-  const { data: fleetStats } = useAgentFleetStats();
+  const { data: analytics, isLoading: analyticsLoading } = useAgentAnalytics();
+  const aiObservabilityUrl = aiObservabilityTracesUrl(region, projectId);
+
+  // Index the per-agent rollups by application id so each row can show its own
+  // sessions / spend / failure rate without a second request.
+  const statsById = useMemo(() => {
+    const map = new Map<string, AgentAnalyticsAgentRow>();
+    for (const row of analytics?.byAgent ?? []) {
+      map.set(row.id, row);
+    }
+    return map;
+  }, [analytics]);
 
   return (
     <AgentsTabLayout activeTab="applications">
       <Flex direction="column" gap="5">
-        <FleetStatStrip
-          liveCount={fleetStats?.liveCount ?? 0}
-          sessionsInWindowCount={fleetStats?.sessionsInWindowCount ?? 0}
-          spendInWindowUsd={fleetStats?.spendInWindowUsd ?? 0}
-          failedInWindowCount={fleetStats?.failedInWindowCount ?? 0}
-          pendingApprovalsCount={fleetStats?.pendingApprovalsCount ?? 0}
-        />
-
-        {isLoading ? (
-          <ApplicationsSkeleton />
-        ) : isError ? (
-          <EmptyState
-            title="Couldn't load applications"
-            description={
-              error instanceof Error
-                ? error.message
-                : "The agent platform API returned an error."
-            }
-          />
-        ) : !applications || applications.length === 0 ? (
-          <EmptyState
-            title="No agents yet"
-            description="Deployed agents on the agent platform will show up here."
-          />
-        ) : (
-          <Flex direction="column" gap="2">
-            {applications.map((app) => (
-              <ApplicationRow key={app.id} application={app} />
-            ))}
+        <section>
+          <Flex align="center" justify="between" className="mb-3">
+            <Text className="font-semibold text-[13px] text-gray-12">
+              Activity · last 7 days
+            </Text>
+            {aiObservabilityUrl ? (
+              <button
+                type="button"
+                onClick={() => openExternalUrl(aiObservabilityUrl)}
+                className="inline-flex items-center gap-1 text-[12px] text-gray-11 no-underline hover:text-gray-12"
+              >
+                Open in AI observability
+                <ArrowSquareOutIcon size={12} />
+              </button>
+            ) : null}
           </Flex>
-        )}
+          <AgentAnalyticsKpiStrip
+            data={analytics}
+            isLoading={analyticsLoading}
+          />
+        </section>
+
+        <Flex direction="column" gap="2">
+          <Text className="text-[11px] text-gray-10 uppercase tracking-wide">
+            Agents
+          </Text>
+          {isLoading ? (
+            <ApplicationsSkeleton />
+          ) : isError ? (
+            <EmptyState
+              title="Couldn't load applications"
+              description={
+                error instanceof Error
+                  ? error.message
+                  : "The agent platform API returned an error."
+              }
+            />
+          ) : !applications || applications.length === 0 ? (
+            <EmptyState
+              title="No agents yet"
+              description="Deployed agents on the agent platform will show up here."
+            />
+          ) : (
+            applications.map((app) => (
+              <ApplicationRow
+                key={app.id}
+                application={app}
+                stats={statsById.get(app.id)}
+              />
+            ))
+          )}
+        </Flex>
       </Flex>
     </AgentsTabLayout>
   );
 }
 
-interface FleetStatStripProps {
-  liveCount: number;
-  sessionsInWindowCount: number;
-  spendInWindowUsd: number;
-  failedInWindowCount: number;
-  pendingApprovalsCount: number;
-}
-
-function FleetStatStrip({
-  liveCount,
-  sessionsInWindowCount,
-  spendInWindowUsd,
-  failedInWindowCount,
-  pendingApprovalsCount,
-}: FleetStatStripProps) {
-  return (
-    <Flex
-      gap="0"
-      className="overflow-hidden rounded-(--radius-2) border border-border bg-(--color-panel-solid)"
-    >
-      <Stat label="Live" value={String(liveCount)} />
-      <Stat label="Sessions (24h)" value={String(sessionsInWindowCount)} />
-      <Stat label="Spend (24h)" value={formatSpendUsd(spendInWindowUsd)} />
-      <Stat
-        label="Failed (24h)"
-        value={String(failedInWindowCount)}
-        emphasize={failedInWindowCount > 0 ? "red" : undefined}
-      />
-      <Stat
-        label="Approvals"
-        value={String(pendingApprovalsCount)}
-        emphasize={pendingApprovalsCount > 0 ? "amber" : undefined}
-        last
-      />
-    </Flex>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  emphasize,
-  last,
+function ApplicationRow({
+  application,
+  stats,
 }: {
-  label: string;
-  value: string;
-  emphasize?: "red" | "amber";
-  last?: boolean;
+  application: AgentApplication;
+  stats?: AgentAnalyticsAgentRow;
 }) {
-  const valueColor =
-    emphasize === "red"
-      ? "text-(--red-11)"
-      : emphasize === "amber"
-        ? "text-(--amber-11)"
-        : "text-gray-12";
-  return (
-    <Flex
-      direction="column"
-      gap="1"
-      className={`min-w-0 flex-1 px-4 py-3 ${
-        last ? "" : "border-(--gray-5) border-r"
-      }`}
-    >
-      <Text className="truncate text-[11px] text-gray-10 uppercase tracking-wide">
-        {label}
-      </Text>
-      <Text className={`font-semibold text-[18px] leading-none ${valueColor}`}>
-        {value}
-      </Text>
-    </Flex>
-  );
-}
-
-function ApplicationRow({ application }: { application: AgentApplication }) {
   const isLive = application.live_revision != null;
   return (
     <Link
@@ -160,8 +142,51 @@ function ApplicationRow({ application }: { application: AgentApplication }) {
           </Text>
         </Flex>
       </Flex>
-      <CaretRightIcon size={14} className="shrink-0 text-gray-10" />
+      <Flex align="center" gap="4" className="shrink-0">
+        {stats ? <RowStats stats={stats} /> : null}
+        <CaretRightIcon size={14} className="shrink-0 text-gray-10" />
+      </Flex>
     </Link>
+  );
+}
+
+/** Inline 7-day rollups shown on an agent row, joined from the fleet query. */
+function RowStats({ stats }: { stats: AgentAnalyticsAgentRow }) {
+  return (
+    <Flex align="center" gap="4" className="hidden sm:flex">
+      <RowStat label="Sessions" value={stats.sessions.toLocaleString()} />
+      <RowStat label="Spend" value={formatSpendUsd(stats.spendUsd)} />
+      <RowStat
+        label="Fail rate"
+        value={`${(stats.failureRate * 100).toFixed(1)}%`}
+        attention={stats.failureRate > 0}
+      />
+    </Flex>
+  );
+}
+
+function RowStat({
+  label,
+  value,
+  attention,
+}: {
+  label: string;
+  value: string;
+  attention?: boolean;
+}) {
+  return (
+    <Flex direction="column" align="end" gap="0.5" className="shrink-0">
+      <Text
+        className={`font-medium text-[12px] tabular-nums ${
+          attention ? "text-(--red-11)" : "text-gray-12"
+        }`}
+      >
+        {value}
+      </Text>
+      <Text className="text-[10px] text-gray-10 uppercase tracking-wide">
+        {label}
+      </Text>
+    </Flex>
   );
 }
 

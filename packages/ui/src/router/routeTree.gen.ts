@@ -50,6 +50,7 @@ import { Route as CodeAgentsScoutsSkillNameRouteImport } from './routes/code/age
 import { Route as CodeAgentsApplicationsIdOrSlugRouteImport } from './routes/code/agents/applications/$idOrSlug'
 import { Route as CodeAgentsScoutsSkillNameIndexRouteImport } from './routes/code/agents/scouts.$skillName.index'
 import { Route as CodeAgentsApplicationsIdOrSlugIndexRouteImport } from './routes/code/agents/applications/$idOrSlug/index'
+import { Route as CodeAgentsApplicationsIdOrSlugObservabilityRouteImport } from './routes/code/agents/applications/$idOrSlug/observability'
 import { Route as CodeAgentsApplicationsIdOrSlugConfigurationRouteImport } from './routes/code/agents/applications/$idOrSlug/configuration'
 import { Route as CodeAgentsApplicationsIdOrSlugApprovalsRouteImport } from './routes/code/agents/applications/$idOrSlug/approvals'
 import { Route as CodeAgentsApplicationsIdOrSlugSessionsIndexRouteImport } from './routes/code/agents/applications/$idOrSlug/sessions.index'
@@ -268,6 +269,12 @@ const CodeAgentsApplicationsIdOrSlugIndexRoute =
     path: '/',
     getParentRoute: () => CodeAgentsApplicationsIdOrSlugRoute,
   } as any)
+const CodeAgentsApplicationsIdOrSlugObservabilityRoute =
+  CodeAgentsApplicationsIdOrSlugObservabilityRouteImport.update({
+    id: '/observability',
+    path: '/observability',
+    getParentRoute: () => CodeAgentsApplicationsIdOrSlugRoute,
+  } as any)
 const CodeAgentsApplicationsIdOrSlugConfigurationRoute =
   CodeAgentsApplicationsIdOrSlugConfigurationRouteImport.update({
     id: '/configuration',
@@ -335,6 +342,7 @@ export interface FileRoutesByFullPath {
   '/code/inbox/runs/': typeof CodeInboxRunsIndexRoute
   '/code/agents/applications/$idOrSlug/approvals': typeof CodeAgentsApplicationsIdOrSlugApprovalsRoute
   '/code/agents/applications/$idOrSlug/configuration': typeof CodeAgentsApplicationsIdOrSlugConfigurationRoute
+  '/code/agents/applications/$idOrSlug/observability': typeof CodeAgentsApplicationsIdOrSlugObservabilityRoute
   '/code/agents/applications/$idOrSlug/': typeof CodeAgentsApplicationsIdOrSlugIndexRoute
   '/code/agents/scouts/$skillName/': typeof CodeAgentsScoutsSkillNameIndexRoute
   '/code/agents/applications/$idOrSlug/sessions/$sessionId': typeof CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute
@@ -372,6 +380,7 @@ export interface FileRoutesByTo {
   '/code/inbox/runs': typeof CodeInboxRunsIndexRoute
   '/code/agents/applications/$idOrSlug/approvals': typeof CodeAgentsApplicationsIdOrSlugApprovalsRoute
   '/code/agents/applications/$idOrSlug/configuration': typeof CodeAgentsApplicationsIdOrSlugConfigurationRoute
+  '/code/agents/applications/$idOrSlug/observability': typeof CodeAgentsApplicationsIdOrSlugObservabilityRoute
   '/code/agents/applications/$idOrSlug': typeof CodeAgentsApplicationsIdOrSlugIndexRoute
   '/code/agents/scouts/$skillName': typeof CodeAgentsScoutsSkillNameIndexRoute
   '/code/agents/applications/$idOrSlug/sessions/$sessionId': typeof CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute
@@ -420,6 +429,7 @@ export interface FileRoutesById {
   '/code/inbox/runs/': typeof CodeInboxRunsIndexRoute
   '/code/agents/applications/$idOrSlug/approvals': typeof CodeAgentsApplicationsIdOrSlugApprovalsRoute
   '/code/agents/applications/$idOrSlug/configuration': typeof CodeAgentsApplicationsIdOrSlugConfigurationRoute
+  '/code/agents/applications/$idOrSlug/observability': typeof CodeAgentsApplicationsIdOrSlugObservabilityRoute
   '/code/agents/applications/$idOrSlug/': typeof CodeAgentsApplicationsIdOrSlugIndexRoute
   '/code/agents/scouts/$skillName/': typeof CodeAgentsScoutsSkillNameIndexRoute
   '/code/agents/applications/$idOrSlug/sessions/$sessionId': typeof CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute
@@ -469,6 +479,7 @@ export interface FileRouteTypes {
     | '/code/inbox/runs/'
     | '/code/agents/applications/$idOrSlug/approvals'
     | '/code/agents/applications/$idOrSlug/configuration'
+    | '/code/agents/applications/$idOrSlug/observability'
     | '/code/agents/applications/$idOrSlug/'
     | '/code/agents/scouts/$skillName/'
     | '/code/agents/applications/$idOrSlug/sessions/$sessionId'
@@ -506,6 +517,7 @@ export interface FileRouteTypes {
     | '/code/inbox/runs'
     | '/code/agents/applications/$idOrSlug/approvals'
     | '/code/agents/applications/$idOrSlug/configuration'
+    | '/code/agents/applications/$idOrSlug/observability'
     | '/code/agents/applications/$idOrSlug'
     | '/code/agents/scouts/$skillName'
     | '/code/agents/applications/$idOrSlug/sessions/$sessionId'
@@ -553,6 +565,7 @@ export interface FileRouteTypes {
     | '/code/inbox/runs/'
     | '/code/agents/applications/$idOrSlug/approvals'
     | '/code/agents/applications/$idOrSlug/configuration'
+    | '/code/agents/applications/$idOrSlug/observability'
     | '/code/agents/applications/$idOrSlug/'
     | '/code/agents/scouts/$skillName/'
     | '/code/agents/applications/$idOrSlug/sessions/$sessionId'
@@ -866,6 +879,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeAgentsApplicationsIdOrSlugIndexRouteImport
       parentRoute: typeof CodeAgentsApplicationsIdOrSlugRoute
     }
+    '/code/agents/applications/$idOrSlug/observability': {
+      id: '/code/agents/applications/$idOrSlug/observability'
+      path: '/observability'
+      fullPath: '/code/agents/applications/$idOrSlug/observability'
+      preLoaderRoute: typeof CodeAgentsApplicationsIdOrSlugObservabilityRouteImport
+      parentRoute: typeof CodeAgentsApplicationsIdOrSlugRoute
+    }
     '/code/agents/applications/$idOrSlug/configuration': {
       id: '/code/agents/applications/$idOrSlug/configuration'
       path: '/configuration'
@@ -922,6 +942,7 @@ const WebsiteRouteWithChildren =
 interface CodeAgentsApplicationsIdOrSlugRouteChildren {
   CodeAgentsApplicationsIdOrSlugApprovalsRoute: typeof CodeAgentsApplicationsIdOrSlugApprovalsRoute
   CodeAgentsApplicationsIdOrSlugConfigurationRoute: typeof CodeAgentsApplicationsIdOrSlugConfigurationRoute
+  CodeAgentsApplicationsIdOrSlugObservabilityRoute: typeof CodeAgentsApplicationsIdOrSlugObservabilityRoute
   CodeAgentsApplicationsIdOrSlugIndexRoute: typeof CodeAgentsApplicationsIdOrSlugIndexRoute
   CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute: typeof CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute
   CodeAgentsApplicationsIdOrSlugSessionsIndexRoute: typeof CodeAgentsApplicationsIdOrSlugSessionsIndexRoute
@@ -933,6 +954,8 @@ const CodeAgentsApplicationsIdOrSlugRouteChildren: CodeAgentsApplicationsIdOrSlu
       CodeAgentsApplicationsIdOrSlugApprovalsRoute,
     CodeAgentsApplicationsIdOrSlugConfigurationRoute:
       CodeAgentsApplicationsIdOrSlugConfigurationRoute,
+    CodeAgentsApplicationsIdOrSlugObservabilityRoute:
+      CodeAgentsApplicationsIdOrSlugObservabilityRoute,
     CodeAgentsApplicationsIdOrSlugIndexRoute:
       CodeAgentsApplicationsIdOrSlugIndexRoute,
     CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute:
