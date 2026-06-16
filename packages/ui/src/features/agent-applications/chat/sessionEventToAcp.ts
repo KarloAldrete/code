@@ -27,6 +27,7 @@ import {
   toolResultUpdate,
   turnCompleteMessage,
 } from "./acpEnvelope";
+import { stripConsoleContext } from "./consoleContext";
 
 function toEpochMs(iso: string): number {
   const ms = Date.parse(iso);
@@ -94,13 +95,17 @@ export function createAgentChatMapper(): AgentChatMapper {
           if (!event.data.text) {
             return [];
           }
+          // The first message may carry a concierge context envelope — strip it
+          // so it never shows in the transcript (and so dedup matches the clean
+          // optimistic text the composer rendered).
+          const text = stripConsoleContext(event.data.text);
           // Already rendered optimistically on send — swallow the echo.
-          if (pendingOptimistic[0] === event.data.text) {
+          if (pendingOptimistic[0] === text) {
             pendingOptimistic.shift();
             return [];
           }
           promptId += 1;
-          return [promptRequestMessage(promptId, event.data.text, ts)];
+          return [promptRequestMessage(promptId, text, ts)];
         }
 
         case "assistant_text_delta":

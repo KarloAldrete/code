@@ -1,16 +1,12 @@
 import {
   ChatCircleIcon,
   InfoIcon,
-  PaperPlaneTiltIcon,
   PlusIcon,
-  StopIcon,
   TrashIcon,
 } from "@phosphor-icons/react";
 import type { CloudRegion } from "@posthog/shared";
-import { ConversationView } from "@posthog/ui/features/sessions/components/ConversationView";
 import { Button } from "@posthog/ui/primitives/Button";
-import { Flex, Text, TextArea } from "@radix-ui/themes";
-import { type KeyboardEvent, useState } from "react";
+import { Flex, Text } from "@radix-ui/themes";
 import { useAuthStateValue } from "../../auth/store";
 import {
   type PreviewChatEntry,
@@ -20,6 +16,7 @@ import { useAgentApplication } from "../hooks/useAgentApplication";
 import { useAgentChat } from "../hooks/useAgentChat";
 import { useAgentRevision } from "../hooks/useAgentRevision";
 import { resolveIngressBaseUrl } from "../utils/ingress";
+import { AgentChatSurface } from "./AgentChatSurface";
 import { AgentDetailEmptyState, AgentDetailLayout } from "./AgentDetailLayout";
 
 const EMPTY_CHATS: PreviewChatEntry[] = [];
@@ -63,7 +60,12 @@ export function AgentChatPane({ idOrSlug }: { idOrSlug: string }) {
   const hasChatTrigger = (revision?.spec?.triggers ?? []).some(
     (t) => rec(t).type === "chat",
   );
-  const chat = useAgentChat(idOrSlug, ingressBaseUrl);
+  const chat = useAgentChat({
+    chatId: `preview:${idOrSlug}`,
+    agentSlug: idOrSlug,
+    ingressBaseUrl,
+    recordHistory: true,
+  });
   const chats = useChatHistoryStore((s) => s.byAgent[idOrSlug]) ?? EMPTY_CHATS;
   const removeChat = useChatHistoryStore((s) => s.remove);
 
@@ -98,10 +100,11 @@ export function AgentChatPane({ idOrSlug }: { idOrSlug: string }) {
               model={revision?.spec?.model}
               region={cloudRegion}
             />
-            <ChatSurface
+            <AgentChatSurface
               messages={chat.messages}
               isStreaming={chat.isStreaming}
               error={chat.error}
+              emptyHint="Send a message to start a session and test this agent live."
               onSend={chat.send}
               onCancel={chat.cancel}
             />
@@ -227,99 +230,6 @@ function ChatHistoryRail({
           </Flex>
         )}
       </div>
-    </Flex>
-  );
-}
-
-function ChatSurface({
-  messages,
-  isStreaming,
-  error,
-  onSend,
-  onCancel,
-}: {
-  messages: ReturnType<typeof useAgentChat>["messages"];
-  isStreaming: boolean;
-  error: string | null;
-  onSend: (text: string) => void;
-  onCancel: () => void;
-}) {
-  return (
-    <Flex direction="column" className="min-h-0 flex-1">
-      <div className="flex min-h-0 flex-1 flex-col">
-        {messages.length === 0 ? (
-          <div className="flex h-full items-center justify-center px-6 text-center">
-            <Text className="max-w-sm text-[13px] text-gray-10 leading-snug">
-              Send a message to start a session and test this agent live.
-            </Text>
-          </div>
-        ) : (
-          <ConversationView
-            events={messages}
-            isPromptPending={isStreaming}
-            collapseMode="none"
-          />
-        )}
-      </div>
-      {error ? (
-        <Text className="shrink-0 px-4 pb-1 text-(--red-11) text-[12px]">
-          {error}
-        </Text>
-      ) : null}
-      <Composer isStreaming={isStreaming} onSend={onSend} onCancel={onCancel} />
-    </Flex>
-  );
-}
-
-function Composer({
-  isStreaming,
-  onSend,
-  onCancel,
-}: {
-  isStreaming: boolean;
-  onSend: (text: string) => void;
-  onCancel: () => void;
-}) {
-  const [text, setText] = useState("");
-
-  function submit() {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    onSend(trimmed);
-    setText("");
-  }
-  function onKeyDown(e: KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      submit();
-    }
-  }
-
-  return (
-    <Flex
-      align="end"
-      gap="2"
-      className="shrink-0 border-(--gray-5) border-t px-4 py-3"
-    >
-      <TextArea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={onKeyDown}
-        placeholder="Message this agent…"
-        rows={1}
-        className="flex-1 text-[13px]"
-      />
-      {isStreaming ? (
-        <Button variant="soft" color="gray" size="2" onClick={onCancel}>
-          <StopIcon size={14} />
-          Cancel
-        </Button>
-      ) : (
-        <Button size="2" onClick={submit} disabled={!text.trim()}>
-          <PaperPlaneTiltIcon size={14} />
-          Send
-        </Button>
-      )}
     </Flex>
   );
 }

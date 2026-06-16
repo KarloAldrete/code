@@ -2,12 +2,12 @@ import type { AcpMessage } from "@posthog/shared";
 import { createStore } from "zustand/vanilla";
 
 /**
- * Domain state for a deployed-agent live chat. One active chat at a time (the
- * preview/test surface, or the concierge dock). The UI hook owns the transport
- * (run/send/cancel + the SSE loop, via the api-client) and pumps mapped
- * `AcpMessage`s in here; components read the store and render through
- * `ConversationView`. Multi-chat (concierge + preview side by side) would key
- * this by a chat id — single active chat is enough for now.
+ * Domain state for deployed-agent live chats. Keyed by an opaque `chatId` so
+ * several chats can be live at once — e.g. the always-on concierge dock
+ * (`"concierge"`) and a per-agent preview (`"preview:<slug>"`) side by side.
+ * The UI hook (`useAgentChat`) owns the transport (run/send/cancel + the SSE
+ * loop, via the api-client) and pumps mapped `AcpMessage`s in here; components
+ * read one chat by id and render it through `ConversationView`.
  */
 
 export type AgentChatStatus =
@@ -19,7 +19,7 @@ export type AgentChatStatus =
   | "failed"
   | "cancelled";
 
-interface AgentChatState {
+export interface AgentChatState {
   /** Which agent this chat targets (slug), or null when idle. */
   agentKey: string | null;
   sessionId: string | null;
@@ -27,20 +27,9 @@ interface AgentChatState {
   /** Accumulated ACP messages (mapper output) for ConversationView. */
   messages: AcpMessage[];
   error: string | null;
-
-  /** Reset for a brand-new chat against `agentKey`. */
-  begin: (agentKey: string) => void;
-  setSessionId: (sessionId: string) => void;
-  setStatus: (status: AgentChatStatus) => void;
-  appendMessages: (messages: AcpMessage[]) => void;
-  setError: (error: string | null) => void;
-  reset: () => void;
 }
 
-const EMPTY: Pick<
-  AgentChatState,
-  "agentKey" | "sessionId" | "status" | "messages" | "error"
-> = {
+export const EMPTY_CHAT: AgentChatState = {
   agentKey: null,
   sessionId: null,
   status: "idle",
@@ -48,22 +37,52 @@ const EMPTY: Pick<
   error: null,
 };
 
-export const agentChatStore = createStore<AgentChatState>((set) => ({
-  ...EMPTY,
-  begin: (agentKey) =>
-    set({
-      agentKey,
-      sessionId: null,
-      status: "starting",
-      messages: [],
-      error: null,
-    }),
-  setSessionId: (sessionId) => set({ sessionId }),
-  setStatus: (status) => set({ status }),
-  appendMessages: (messages) =>
-    set((s) =>
-      messages.length === 0 ? s : { messages: [...s.messages, ...messages] },
-    ),
-  setError: (error) => set({ error }),
-  reset: () => set({ ...EMPTY }),
-}));
+interface AgentChatStore {
+  /** All live chats, keyed by `chatId`. */
+  chats: Record<string, AgentChatState>;
+
+  /** Reset `chatId` for a brand-new chat against `agentKey`. */
+  begin: (chatId: string, agentKey: string) => void;
+  setSessionId: (chatId: string, sessionId: string) => void;
+  setStatus: (chatId: string, status: AgentChatStatus) => void;
+  appendMessages: (chatId: string, messages: AcpMessage[]) => void;
+  setError: (chatId: string, error: string | null) => void;
+  reset: (chatId: string) => void;
+}
+
+export const agentChatStore = createStore<AgentChatStore>((set) => {
+  const patch = (
+    chatId: string,
+    next: Partial<AgentChatState>,
+  ): ((s: AgentChatStore) => AgentChatStore) => {
+    return (s) => ({
+      ...s,
+      chats: {
+        ...s.chats,
+        [chatId]: { ...(s.chats[chatId] ?? EMPTY_CHAT), ...next },
+      },
+    });
+  };
+
+  return {
+    chats: {},
+    begin: (chatId, agentKey) =>
+      set(patch(chatId, { ...EMPTY_CHAT, agentKey, status: "starting" })),
+    setSessionId: (chatId, sessionId) => set(patch(chatId, { sessionId })),
+    setStatus: (chatId, status) => set(patch(chatId, { status })),
+    appendMessages: (chatId, messages) =>
+      set((s) => {
+        if (messages.length === 0) return s;
+        const cur = s.chats[chatId] ?? EMPTY_CHAT;
+        return {
+          ...s,
+          chats: {
+            ...s.chats,
+            [chatId]: { ...cur, messages: [...cur.messages, ...messages] },
+          },
+        };
+      }),
+    setError: (chatId, error) => set(patch(chatId, { error })),
+    reset: (chatId) => set(patch(chatId, { ...EMPTY_CHAT })),
+  };
+});

@@ -1,5 +1,6 @@
 import { Flex, Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
+import { EditWithAIButton } from "../concierge/EditWithAIButton";
 import { useAgentAnalytics } from "../hooks/useAgentAnalytics";
 import { useAgentApplication } from "../hooks/useAgentApplication";
 import { useAgentApplicationSessions } from "../hooks/useAgentApplicationSessions";
@@ -25,6 +26,13 @@ export function AgentApplicationDetailView({ idOrSlug }: { idOrSlug: string }) {
   return (
     <AgentDetailLayout idOrSlug={idOrSlug} activeTab="overview">
       <Flex direction="column" gap="6">
+        <Flex justify="end">
+          <EditWithAIButton
+            agentSlug={idOrSlug}
+            prompt="Walk me through this agent — what it does, how it's configured, and anything worth improving."
+            label="Ask the concierge about this agent"
+          />
+        </Flex>
         <section>
           <Flex align="center" justify="between" className="mb-3">
             <Text className="font-semibold text-[13px] text-gray-12">

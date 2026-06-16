@@ -4,7 +4,32 @@ import { Badge } from "@posthog/ui/primitives/Badge";
 import { Flex, Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useMemo } from "react";
+import type { ConciergePageContext } from "../concierge/conciergeStore";
+import { useSetConciergePage } from "../concierge/useSetConciergePage";
 import { useAgentApplication } from "../hooks/useAgentApplication";
+
+/** Map a detail sub-tab to the concierge page context for this agent. */
+function tabToConciergePage(
+  tab: AgentDetailTab,
+  slug: string,
+): ConciergePageContext {
+  switch (tab) {
+    case "chat":
+      return { kind: "agent-chat", slug };
+    case "sessions":
+      return { kind: "agent-sessions", slug };
+    case "configuration":
+      return { kind: "agent-config", slug };
+    case "memory":
+      return { kind: "agent-memory", slug };
+    case "approvals":
+      return { kind: "agent-approvals", slug };
+    case "observability":
+      return { kind: "agent-observability", slug };
+    default:
+      return { kind: "agent", slug };
+  }
+}
 
 export type AgentDetailTab =
   | "overview"
@@ -100,6 +125,7 @@ export function AgentDetailLayout({
     [title],
   );
   useSetHeaderContent(headerContent);
+  useSetConciergePage(tabToConciergePage(activeTab, idOrSlug));
 
   return (
     <Flex direction="column" className="h-full min-h-0">

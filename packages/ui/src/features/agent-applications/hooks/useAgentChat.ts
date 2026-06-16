@@ -5,11 +5,28 @@ import { toast } from "@posthog/ui/primitives/toast";
 import { useCallback, useEffect, useRef } from "react";
 import { useStore } from "zustand";
 import { useChatHistoryStore } from "../chat/chatHistoryStore";
+import { buildConsoleContextEnvelope } from "../chat/consoleContext";
 import { conversationToAcpMessages } from "../chat/conversationToAcp";
 import {
   type AgentChatMapper,
   createAgentChatMapper,
 } from "../chat/sessionEventToAcp";
+
+type ClientToolCall = Extract<
+  AgentSessionEvent,
+  { kind: "client_tool_call" }
+>["data"];
+
+export type ClientToolOutcome = { result?: unknown; error?: string };
+
+/**
+ * Resolves a client-tool call, or returns null to defer to the built-in
+ * handlers (toast / get_context). Used by the concierge to drive the UI
+ * (focus_*) and the secret punch-out.
+ */
+export type ClientToolHandler = (
+  data: ClientToolCall,
+) => ClientToolOutcome | null | Promise<ClientToolOutcome | null>;
 
 /** Session states with no further activity to tail — render stored history only. */
 const TERMINAL_SESSION_STATES = new Set([
@@ -19,30 +36,59 @@ const TERMINAL_SESSION_STATES = new Set([
   "failed",
 ]);
 
+export interface UseAgentChatOptions {
+  /** Opaque key isolating this chat in the store (e.g. "concierge", "preview:<slug>"). */
+  chatId: string;
+  /** Agent slug the chat targets (drives client-tool context + history). */
+  agentSlug: string;
+  ingressBaseUrl: string | null;
+  /** Index started sessions in the local recent-chats rail (preview only). */
+  recordHistory?: boolean;
+  /**
+   * Supplies the "what am I looking at" object. When set, it's prepended as a
+   * delimited envelope to the first message and answers the `get_context`
+   * client tool. Concierge only.
+   */
+  contextProvider?: () => unknown;
+  /** Concierge UI-driving tools (focus_*, set_secret); null → built-in handling. */
+  clientTools?: ClientToolHandler;
+}
+
 /**
  * Drives a live chat against a deployed agent's ingress: starts/sends/cancels
  * via the api-client, streams SSE through the M3 `createAgentChatMapper`, and
- * pumps the resulting ACP messages into the core `agentChatStore` (which the
- * chat pane renders through `ConversationView`).
+ * pumps the resulting ACP messages into the core `agentChatStore` under `chatId`
+ * (so the concierge dock and a per-agent preview coexist). Components read the
+ * chat by id and render through `ConversationView`.
  *
  * Transport lives here (the api-client is renderer/hook-scoped); state lives in
  * core. Client tools are dispatched here — `toast`/`get_context` are handled;
  * `focus_*`/`set_secret` degrade to `unhandled_client_tool` until the concierge
  * milestone wires UI-driving + the inline secret form.
  */
-export function useAgentChat(idOrSlug: string, ingressBaseUrl: string | null) {
+export function useAgentChat({
+  chatId,
+  agentSlug,
+  ingressBaseUrl,
+  recordHistory = false,
+  contextProvider,
+  clientTools,
+}: UseAgentChatOptions) {
   const client = useAuthenticatedClient();
-  const state = useStore(agentChatStore);
+  const chat = useStore(agentChatStore, (s) => s.chats[chatId]);
   const recordChat = useChatHistoryStore((s) => s.record);
   const mapperRef = useRef<AgentChatMapper>(createAgentChatMapper());
   const abortRef = useRef<AbortController | null>(null);
   const streamingRef = useRef(false);
+  // Latest provider/handler without re-creating the stream callbacks each render.
+  const contextProviderRef = useRef(contextProvider);
+  contextProviderRef.current = contextProvider;
+  const clientToolsRef = useRef(clientTools);
+  clientToolsRef.current = clientTools;
   // Each stream attach bumps this; an aborted/superseded loop checks it before
   // touching the store so a stale loop's terminal/finally can't clobber the new
   // chat (matters when resuming or starting a new chat mid-stream).
   const epochRef = useRef(0);
-
-  const active = state.agentKey === idOrSlug ? state : null;
 
   const dispatchClientTool = useCallback(
     async (
@@ -50,7 +96,18 @@ export function useAgentChat(idOrSlug: string, ingressBaseUrl: string | null) {
       sessionId: string,
     ) => {
       if (!ingressBaseUrl) return;
-      const outcome = handleClientTool(data, idOrSlug);
+      // 1) concierge handler (focus_*, set_secret), 2) get_context from the
+      // context provider, 3) built-in toast / unhandled fallback.
+      let outcome = (await clientToolsRef.current?.(data)) ?? null;
+      if (outcome == null && data.tool_id === "get_context") {
+        outcome = {
+          result: contextProviderRef.current?.() ?? {
+            agent: agentSlug,
+            client: "posthog-code",
+          },
+        };
+      }
+      if (outcome == null) outcome = handleClientTool(data, agentSlug);
       try {
         await client.sendAgentClientToolResult(
           ingressBaseUrl,
@@ -62,7 +119,7 @@ export function useAgentChat(idOrSlug: string, ingressBaseUrl: string | null) {
         // Best-effort — the session will time the call out if this fails.
       }
     },
-    [client, ingressBaseUrl, idOrSlug],
+    [client, ingressBaseUrl, agentSlug],
   );
 
   const runStream = useCallback(
@@ -74,6 +131,7 @@ export function useAgentChat(idOrSlug: string, ingressBaseUrl: string | null) {
       const controller = new AbortController();
       abortRef.current = controller;
       streamingRef.current = true;
+      const store = agentChatStore.getState();
       try {
         for await (const event of client.streamAgentSession(
           ingressBaseUrl,
@@ -81,39 +139,40 @@ export function useAgentChat(idOrSlug: string, ingressBaseUrl: string | null) {
           controller.signal,
         )) {
           if (epochRef.current !== epoch) break;
-          agentChatStore
-            .getState()
-            .appendMessages(mapperRef.current.apply(event));
+          store.appendMessages(chatId, mapperRef.current.apply(event));
           if (event.kind === "client_tool_call") {
             void dispatchClientTool(event.data, sessionId);
           } else if (event.kind === "completed") {
-            agentChatStore.getState().setStatus("completed");
+            store.setStatus(chatId, "completed");
           } else if (event.kind === "waiting") {
-            agentChatStore.getState().setStatus("awaiting_input");
+            store.setStatus(chatId, "awaiting_input");
           } else if (event.kind === "failed") {
-            agentChatStore.getState().setStatus("failed");
-            agentChatStore
-              .getState()
-              .setError(event.data?.reason ?? "The agent run failed.");
+            store.setStatus(chatId, "failed");
+            store.setError(
+              chatId,
+              event.data?.reason ?? "The agent run failed.",
+            );
           }
         }
       } catch (err) {
         if (epochRef.current === epoch && !controller.signal.aborted) {
-          agentChatStore
-            .getState()
-            .setError(err instanceof Error ? err.message : "Stream dropped.");
+          store.setError(
+            chatId,
+            err instanceof Error ? err.message : "Stream dropped.",
+          );
         }
       } finally {
         if (epochRef.current === epoch) {
           streamingRef.current = false;
           // Stream ended without a terminal frame mid-conversation → treat as
           // awaiting input so the composer stays usable.
-          const s = agentChatStore.getState();
-          if (s.status === "streaming") s.setStatus("awaiting_input");
+          if (agentChatStore.getState().chats[chatId]?.status === "streaming") {
+            agentChatStore.getState().setStatus(chatId, "awaiting_input");
+          }
         }
       }
     },
-    [client, ingressBaseUrl, dispatchClientTool],
+    [client, ingressBaseUrl, chatId, dispatchClientTool],
   );
 
   const start = useCallback(
@@ -121,113 +180,140 @@ export function useAgentChat(idOrSlug: string, ingressBaseUrl: string | null) {
       if (!ingressBaseUrl) return;
       mapperRef.current = createAgentChatMapper();
       const s = agentChatStore.getState();
-      s.begin(idOrSlug);
-      // Render the user's message immediately; the stream's echo is deduped.
-      s.appendMessages(mapperRef.current.seedUserMessage(text));
+      s.begin(chatId, agentSlug);
+      // Render the user's clean message immediately; the stream's echo (which
+      // includes the context envelope) is stripped + deduped by the mapper.
+      s.appendMessages(chatId, mapperRef.current.seedUserMessage(text));
+      const envelope = contextProviderRef.current?.();
+      const wireText = envelope
+        ? `${buildConsoleContextEnvelope(envelope)}\n\n${text}`
+        : text;
       try {
         const { session_id } = await client.runAgentSession(
           ingressBaseUrl,
-          text,
+          wireText,
         );
-        agentChatStore.getState().setSessionId(session_id);
-        agentChatStore.getState().setStatus("streaming");
+        agentChatStore.getState().setSessionId(chatId, session_id);
+        agentChatStore.getState().setStatus(chatId, "streaming");
         // Index this chat locally so it shows in the rail — only sessions the
         // user started here, never the agent's full (customer) session list.
-        recordChat(idOrSlug, {
-          sessionId: session_id,
-          title: text.slice(0, 120),
-          startedAt: Date.now(),
-        });
+        if (recordHistory) {
+          recordChat(agentSlug, {
+            sessionId: session_id,
+            title: text.slice(0, 120),
+            startedAt: Date.now(),
+          });
+        }
         void runStream(session_id);
       } catch (err) {
-        agentChatStore.getState().setStatus("failed");
+        agentChatStore.getState().setStatus(chatId, "failed");
         agentChatStore
           .getState()
           .setError(
+            chatId,
             err instanceof Error ? err.message : "Couldn't start chat.",
           );
       }
     },
-    [client, ingressBaseUrl, idOrSlug, runStream, recordChat],
+    [
+      client,
+      ingressBaseUrl,
+      chatId,
+      agentSlug,
+      runStream,
+      recordHistory,
+      recordChat,
+    ],
   );
 
   const send = useCallback(
     async (text: string) => {
       const s = agentChatStore.getState();
-      if (!ingressBaseUrl || !s.sessionId) return start(text);
+      const sessionId = s.chats[chatId]?.sessionId;
+      if (!ingressBaseUrl || !sessionId) return start(text);
       // Render the user's message immediately; the stream's echo is deduped.
-      s.appendMessages(mapperRef.current.seedUserMessage(text));
-      s.setStatus("streaming");
+      s.appendMessages(chatId, mapperRef.current.seedUserMessage(text));
+      s.setStatus(chatId, "streaming");
       try {
-        await client.sendAgentMessage(ingressBaseUrl, s.sessionId, text);
-        if (!streamingRef.current) void runStream(s.sessionId);
+        await client.sendAgentMessage(ingressBaseUrl, sessionId, text);
+        if (!streamingRef.current) void runStream(sessionId);
       } catch (err) {
-        s.setStatus("failed");
-        s.setError(err instanceof Error ? err.message : "Couldn't send.");
+        s.setStatus(chatId, "failed");
+        s.setError(
+          chatId,
+          err instanceof Error ? err.message : "Couldn't send.",
+        );
       }
     },
-    [client, ingressBaseUrl, start, runStream],
+    [client, ingressBaseUrl, chatId, start, runStream],
   );
 
   const cancel = useCallback(async () => {
     const s = agentChatStore.getState();
+    const sessionId = s.chats[chatId]?.sessionId;
     abortRef.current?.abort();
-    s.setStatus("cancelled");
-    if (ingressBaseUrl && s.sessionId) {
+    s.setStatus(chatId, "cancelled");
+    if (ingressBaseUrl && sessionId) {
       try {
-        await client.cancelAgentSession(ingressBaseUrl, s.sessionId);
+        await client.cancelAgentSession(ingressBaseUrl, sessionId);
       } catch {
         // Best-effort.
       }
     }
-  }, [client, ingressBaseUrl]);
+  }, [client, ingressBaseUrl, chatId]);
 
   // Re-open a past preview chat. `/listen` only tails (it does not replay), so
   // history is rebuilt from the stored transcript; a still-active session then
   // attaches the live stream so the user can keep chatting where they left off.
   const resume = useCallback(
     async (sessionId: string) => {
-      if (!ingressBaseUrl || agentChatStore.getState().sessionId === sessionId)
+      if (
+        !ingressBaseUrl ||
+        agentChatStore.getState().chats[chatId]?.sessionId === sessionId
+      )
         return;
       abortRef.current?.abort();
       epochRef.current += 1;
       streamingRef.current = false;
       mapperRef.current = createAgentChatMapper();
       const s = agentChatStore.getState();
-      s.begin(idOrSlug);
-      s.setSessionId(sessionId);
-      s.setStatus("starting");
+      s.begin(chatId, agentSlug);
+      s.setSessionId(chatId, sessionId);
+      s.setStatus(chatId, "starting");
       try {
         const detail = await client.getAgentApplicationSession(
-          idOrSlug,
+          agentSlug,
           sessionId,
         );
         // A newer resume/new-chat won the race while we were fetching.
-        if (agentChatStore.getState().sessionId !== sessionId) return;
+        if (agentChatStore.getState().chats[chatId]?.sessionId !== sessionId)
+          return;
         const conversation = detail?.conversation ?? [];
         agentChatStore
           .getState()
-          .appendMessages(conversationToAcpMessages(conversation));
+          .appendMessages(chatId, conversationToAcpMessages(conversation));
         mapperRef.current.setPromptIdBase(
           conversation.filter((m) => m.role === "user").length,
         );
         if (!detail || TERMINAL_SESSION_STATES.has(detail.state)) {
-          agentChatStore.getState().setStatus("completed");
+          agentChatStore.getState().setStatus(chatId, "completed");
         } else {
-          agentChatStore.getState().setStatus("streaming");
+          agentChatStore.getState().setStatus(chatId, "streaming");
           void runStream(sessionId);
         }
       } catch (err) {
-        if (agentChatStore.getState().sessionId !== sessionId) return;
-        agentChatStore.getState().setStatus("failed");
+        if (agentChatStore.getState().chats[chatId]?.sessionId !== sessionId)
+          return;
+        agentChatStore.getState().setStatus(chatId, "failed");
         agentChatStore
           .getState()
           .setError(
+            chatId,
             err instanceof Error ? err.message : "Couldn't load this chat.",
           );
       }
     },
-    [client, ingressBaseUrl, idOrSlug, runStream],
+    [client, ingressBaseUrl, chatId, agentSlug, runStream],
   );
 
   // Clear the surface for a brand-new chat; the next send starts a new session.
@@ -236,20 +322,19 @@ export function useAgentChat(idOrSlug: string, ingressBaseUrl: string | null) {
     epochRef.current += 1;
     streamingRef.current = false;
     mapperRef.current = createAgentChatMapper();
-    agentChatStore.getState().reset();
-  }, []);
+    agentChatStore.getState().reset(chatId);
+  }, [chatId]);
 
   // Abort the stream when the consumer unmounts.
   useEffect(() => () => abortRef.current?.abort(), []);
 
   return {
-    messages: active?.messages ?? [],
-    status: active?.status ?? "idle",
-    error: active?.error ?? null,
-    isStreaming:
-      active?.status === "streaming" || active?.status === "starting",
-    hasSession: !!active?.sessionId,
-    sessionId: active?.sessionId ?? null,
+    messages: chat?.messages ?? [],
+    status: chat?.status ?? "idle",
+    error: chat?.error ?? null,
+    isStreaming: chat?.status === "streaming" || chat?.status === "starting",
+    hasSession: !!chat?.sessionId,
+    sessionId: chat?.sessionId ?? null,
     send,
     cancel,
     resume,
