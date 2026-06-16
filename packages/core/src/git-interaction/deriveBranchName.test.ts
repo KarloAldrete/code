@@ -49,19 +49,14 @@ describe("deriveBranchName", () => {
     );
   });
 
-  it("uses a custom prefix when provided", () => {
-    expect(deriveBranchName("Fix login bug", "abc123", "team/")).toBe(
-      "team/fix-login-bug",
-    );
-  });
-
-  it("supports an empty prefix", () => {
-    expect(deriveBranchName("Fix login bug", "abc123", "")).toBe(
-      "fix-login-bug",
-    );
-  });
-
-  it("applies a custom prefix to the task-ID fallback", () => {
-    expect(deriveBranchName("", "abc123", "team/")).toBe("team/task-abc123");
-  });
+  it.each([
+    { title: "Fix login bug", prefix: "team/", expected: "team/fix-login-bug" },
+    { title: "Fix login bug", prefix: "", expected: "fix-login-bug" },
+    { title: "", prefix: "team/", expected: "team/task-abc123" },
+  ])(
+    "applies a custom prefix ($title, $prefix -> $expected)",
+    ({ title, prefix, expected }) => {
+      expect(deriveBranchName(title, "abc123", prefix)).toBe(expected);
+    },
+  );
 });
