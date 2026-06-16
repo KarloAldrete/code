@@ -70,6 +70,8 @@ export type Session = BaseSession & {
   /** Persists across prompt() calls so SDK-reported values survive turn boundaries */
   lastContextWindowSize?: number;
   promptRunning: boolean;
+  cancelController?: AbortController;
+  forceCancelTimer?: ReturnType<typeof setTimeout>;
   pendingMessages: Map<string, PendingMessage>;
   nextPendingOrder: number;
   emitRawSDKMessages: boolean | SDKMessageFilter[];
@@ -155,6 +157,8 @@ export type NewSessionMeta = {
   allowedDomains?: string[];
   /** Model ID to use for this session (e.g. "claude-sonnet-4-6") */
   model?: string;
+  /** Base branch of the task's repo (e.g. "master"), for the signed-git tools. */
+  baseBranch?: string;
   jsonSchema?: Record<string, unknown> | null;
   mcpToolApprovals?: McpToolApprovals;
   claudeCode?: {

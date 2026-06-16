@@ -27,6 +27,7 @@ import {
 } from "../adapters/error-classification";
 import {
   SIGNED_COMMIT_QUALIFIED_TOOL_NAME,
+  SIGNED_MERGE_QUALIFIED_TOOL_NAME,
   SIGNED_REWRITE_QUALIFIED_TOOL_NAME,
 } from "../adapters/signed-commit-shared";
 import type { PermissionMode } from "../execution-mode";
@@ -55,8 +56,8 @@ import { resourceLink } from "../utils/acp-content";
 import { AsyncMutex } from "../utils/async-mutex";
 import {
   buildGatewayPropertyHeaders,
-  getLlmGatewayUrl,
   resolveGatewayProduct,
+  resolveLlmGatewayUrl,
 } from "../utils/gateway";
 import { Logger } from "../utils/logger";
 import { logAgentshRuntimeInfo } from "./agentsh-runtime";
@@ -198,6 +199,15 @@ function createTappedWritableStream(
   });
 }
 
+export function isTurnCompleteNotification(message: unknown): boolean {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    (message as { method?: unknown }).method ===
+      POSTHOG_NOTIFICATIONS.TURN_COMPLETE
+  );
+}
+
 interface SseController {
   send: (data: unknown) => void;
   close: () => void;
@@ -242,6 +252,7 @@ export class AgentServer {
   private otelLogWriter: OtelLogWriter | null = null;
   private eventStreamSender: TaskRunEventStreamSender | null = null;
   private questionRelayedToSlack = false;
+  private adapterEmittedTurnComplete = false;
   private detectedPrUrl: string | null = null;
   private lastReportedBranch: string | null = null;
   private resumeState: ResumeState | null = null;
@@ -1077,7 +1088,11 @@ export class AgentServer {
     });
 
     // Tap both streams to broadcast all ACP messages via SSE (mimics local transport)
+    this.adapterEmittedTurnComplete = false;
     const onAcpMessage = (message: unknown) => {
+      if (isTurnCompleteNotification(message)) {
+        this.adapterEmittedTurnComplete = true;
+      }
       this.broadcastEvent({
         type: "notification",
         timestamp: new Date().toISOString(),
@@ -1132,6 +1147,7 @@ export class AgentServer {
         allowedDomains: this.config.allowedDomains,
         jsonSchema: preTask?.json_schema ?? null,
         permissionMode: initialPermissionMode,
+        ...(this.config.baseBranch && { baseBranch: this.config.baseBranch }),
         ...(this.config.claudeCode?.plugins?.length && {
           claudeCode: {
             options: {
@@ -1340,6 +1356,11 @@ export class AgentServer {
       if (result.stopReason === "end_turn") {
         await this.relayAgentResponse(payload);
       }
+
+      // Mark the run terminal. No-op for interactive sessions (they stay open
+      // for follow-ups); for background cloud-task runs this flips the run from
+      // "in_progress" to "completed".
+      await this.signalTaskComplete(payload, result.stopReason);
     } catch (error) {
       this.logger.error("Failed to send initial task message", error);
       if (this.session) {
@@ -1463,6 +1484,11 @@ export class AgentServer {
       if (result.stopReason === "end_turn") {
         await this.relayAgentResponse(payload);
       }
+
+      // Mark the run terminal. No-op for interactive sessions (they stay open
+      // for follow-ups); for background cloud-task runs this flips the run from
+      // "in_progress" to "completed".
+      await this.signalTaskComplete(payload, result.stopReason);
     } catch (error) {
       this.logger.error("Failed to send resume message", error);
       if (this.session) {
@@ -1784,6 +1810,17 @@ export class AgentServer {
       ? `
 # Identity
 You are the PostHog Slack app, PostHog's agent for helping users with their product data and coding tasks from Slack. When introducing yourself or referring to yourself in messages to the user, identify as "PostHog Slack app". Do NOT refer to yourself as Claude, an Anthropic assistant, or any underlying model name.
+
+# Response Style
+You are replying in a Slack thread. Slack readers want short, skimmable answers — be concise by default.
+- Answer simple questions in a single sentence. Keep everything else brief — a few sentences at most.
+- Lead with the answer or the outcome. Skip preamble, restating the question, and sign-offs.
+- Prefer plain prose. Treat bullet lists as the exception, not the norm, and avoid headers and tables unless they genuinely make a complex answer clearer.
+- Do not narrate your thinking or list every step you took; report what matters and the result.
+- This is a default, not a hard rule. If the user (or their saved memory) asks for more depth or a specific format, follow that instead.
+
+# Mentioning users
+When you want to ping a Slack user in your reply, copy their \`<@U…|displayname>\` token verbatim from the message context — Slack renders that as a real mention. Writing \`@displayname\` as plain text does NOT ping them.
 `
       : "";
     const signedCommitInstructions = `
@@ -1795,12 +1832,36 @@ It creates a GitHub-signed ("Verified") commit on the branch and keeps your loca
 sync. To start a new branch, pass \`branch\` (prefixed with \`posthog-code/\`) — the tool creates
 it on the remote for you.
 
+## Updating from the base branch
+To bring the base branch into your PR branch, call the \`git_signed_merge\` tool (full name
+\`${SIGNED_MERGE_QUALIFIED_TOOL_NAME}\`) — it creates a Verified two-parent merge commit
+server-side (like GitHub's "Update branch" button). NEVER run \`git merge\` followed by
+\`git_signed_commit\`: a merge in progress is refused, because the commit API would linearize
+the merge and dump every base-branch change into your PR. If \`git_signed_merge\` reports a
+conflict, fix it with a rebase instead: \`git rebase origin/<base>\`, resolve, \`git rebase
+--continue\`, then call \`git_signed_rewrite\`.
+
 ## Rewriting / force-pushing (rebases, conflict fixes)
 \`git push --force\` is also blocked. To update a branch after a local rebase or conflict
-resolution, rebase/merge locally with normal \`git\` (resolve conflicts and finish with
+resolution, rebase locally with normal \`git\` (resolve conflicts and finish with
 \`git rebase --continue\`, NOT \`git commit\`), then call the \`git_signed_rewrite\` tool (full
 name \`${SIGNED_REWRITE_QUALIFIED_TOOL_NAME}\`). It republishes the branch's commits as Verified
 and atomically force-updates the remote branch. This is how you fix conflicts on an existing PR.
+Histories containing merge commits are refused — rebase (which flattens merges) first.
+If a signed-git tool refuses with a "merge in progress" or "leak" error, follow its recovery
+instructions instead of retrying the same call.
+
+## Re-committing to a branch with an open PR
+Before committing again to a branch that already has an open PR, fetch it first. The remote
+branch can advance between your commits — CI automation often auto-commits regenerated
+artifacts (codegen, lockfiles, formatting) onto open PR branches, and collaborators can push
+too. Committing from a stale local checkout silently reverts those commits, so
+\`git_signed_commit\` refuses when the remote branch is ahead of your checkout. If it does, or
+before your next commit, update your checkout — stash any uncommitted work across the update so
+you don't lose it: \`git stash --include-untracked\`, \`git fetch origin <branch>\`,
+\`git reset --hard origin/<branch>\`, \`git stash pop\` (resolve any conflicts), then re-stage
+and commit. A soft/mixed reset would keep your stale files and re-commit the revert, so the
+hard reset is the safe one here — your work is held in the stash.
 
 ## Attribution
 Do NOT add "Co-Authored-By" trailers or "Generated with [Claude Code]" lines to your
@@ -1838,7 +1899,7 @@ This task already has an open pull request: ${prUrl}
 After completing the requested changes:
 1. Check out the existing PR branch with \`gh pr checkout ${prUrl}\`
 2. Stage your changes with \`git add\`, then call the \`git_signed_commit\` tool with a clear \`message\` (do NOT use \`git commit\`/\`git push\` — they are blocked). This commits to the existing PR branch.
-   - If the branch has conflicts with its base, fetch and rebase locally (\`git fetch origin <base>\`, \`git rebase origin/<base>\`, resolve, \`git rebase --continue\`), then call the \`git_signed_rewrite\` tool to force-update this same PR branch.
+   - If the branch is behind its base, call the \`git_signed_merge\` tool first — it merges the base in server-side with a Verified merge commit. Only if it reports a conflict: fetch and rebase locally (\`git fetch origin <base>\`, \`git rebase origin/<base>\`, resolve, \`git rebase --continue\`), then call the \`git_signed_rewrite\` tool to force-update this same PR branch.
 3. For every PR review comment or review thread you addressed, treat the thread as done only after BOTH of these:
    - Reply on the thread with a short note describing what changed (reference the commit SHA when useful) using \`gh api -X POST /repos/{owner}/{repo}/pulls/{n}/comments/{id}/replies -f body='...'\`.
    - Resolve the thread via the \`resolveReviewThread\` GraphQL mutation: \`gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id="<thread-node-id>"\`.
@@ -1982,25 +2043,43 @@ ${signedCommitInstructions}
       }
     }
 
-    if (stopReason !== "error") {
+    const isError = stopReason === "error";
+
+    // Interactive sessions stay open after a normal turn so the user can send
+    // follow-up messages — only an error is terminal there. Background
+    // (headless cloud-task) runs have no follow-up sender, so a normal
+    // end-of-turn IS the run's terminal state and must be reported as
+    // completed; otherwise the run stays "in_progress" forever.
+    if (!isError && this.getEffectiveMode(payload) !== "background") {
       this.logger.debug("Skipping status update for non-error stop reason", {
         stopReason,
       });
       return;
     }
 
-    const status = "failed";
+    // Only a clean `end_turn` means the run actually finished its work. Any
+    // other stop reason (error, or an early stop like `max_tokens`/`refusal`)
+    // means the agent halted before completing the task, so report it as
+    // failed rather than completed.
+    const isCompleted = stopReason === "end_turn";
+    const status = isCompleted ? "completed" : "failed";
+    const failureMessage = isError
+      ? (errorMessage ?? "Agent error")
+      : `Agent stopped before completing the task (stop reason: ${stopReason})`;
 
-    this.enqueueTaskTerminalEvent(POSTHOG_NOTIFICATIONS.ERROR, {
-      source: "agent_server",
-      stopReason,
-      error: errorMessage ?? "Agent error",
-    });
+    this.enqueueTaskTerminalEvent(
+      isCompleted
+        ? POSTHOG_NOTIFICATIONS.TASK_COMPLETE
+        : POSTHOG_NOTIFICATIONS.ERROR,
+      isCompleted
+        ? { source: "agent_server", stopReason }
+        : { source: "agent_server", stopReason, error: failureMessage },
+    );
 
     try {
       await this.posthogAPI.updateTaskRun(payload.task_id, payload.run_id, {
         status,
-        error_message: errorMessage ?? "Agent error",
+        ...(isCompleted ? {} : { error_message: failureMessage }),
       });
       this.logger.debug("Task completion signaled", { status, stopReason });
     } catch (error) {
@@ -2046,8 +2125,11 @@ ${signedCommitInstructions}
   } = {}): void {
     const { apiKey, apiUrl, projectId } = this.config;
     const product = resolveGatewayProduct({ isInternal, originProduct });
-    const gatewayUrl =
-      process.env.LLM_GATEWAY_URL || getLlmGatewayUrl(apiUrl, product);
+    const gatewayUrl = resolveLlmGatewayUrl(
+      process.env.LLM_GATEWAY_URL,
+      apiUrl,
+      product,
+    );
     const openaiBaseUrl = gatewayUrl.endsWith("/v1")
       ? gatewayUrl
       : `${gatewayUrl}/v1`;
@@ -2558,6 +2640,10 @@ ${signedCommitInstructions}
 
   private broadcastTurnComplete(stopReason: string): void {
     if (!this.session) return;
+    if (this.adapterEmittedTurnComplete) {
+      this.adapterEmittedTurnComplete = false;
+      return;
+    }
     const notification = {
       jsonrpc: "2.0",
       method: POSTHOG_NOTIFICATIONS.TURN_COMPLETE,

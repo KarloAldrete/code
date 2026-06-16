@@ -13,7 +13,11 @@ import {
 import { createTestRepo, type TestRepo } from "../test/fixtures/api";
 import { createPostHogHandlers } from "../test/mocks/msw-handlers";
 import type { TaskRun } from "../types";
-import { AgentServer, SSE_KEEPALIVE_INTERVAL_MS } from "./agent-server";
+import {
+  AgentServer,
+  isTurnCompleteNotification,
+  SSE_KEEPALIVE_INTERVAL_MS,
+} from "./agent-server";
 import { type JwtPayload, SANDBOX_CONNECTION_AUDIENCE } from "./jwt";
 
 const mockedClaudeSdk = vi.hoisted(() => {
@@ -623,6 +627,104 @@ describe("AgentServer HTTP Mode", () => {
       expect(testServer.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
     });
 
+    it.each([
+      {
+        label: "completed on a clean end_turn",
+        stopReason: "end_turn",
+        expectedStatus: "completed",
+        expectedMethod: "_posthog/task_complete",
+        expectsErrorMessage: false,
+      },
+      {
+        label: "failed when the run stops early (max_tokens)",
+        stopReason: "max_tokens",
+        expectedStatus: "failed",
+        expectedMethod: "_posthog/error",
+        expectsErrorMessage: true,
+      },
+    ])(
+      "marks a background run $label",
+      async ({
+        stopReason,
+        expectedStatus,
+        expectedMethod,
+        expectsErrorMessage,
+      }) => {
+        const order: string[] = [];
+        const testServer = new AgentServer({
+          port,
+          jwtPublicKey: TEST_PUBLIC_KEY,
+          repositoryPath: repo.path,
+          apiUrl: "http://localhost:8000",
+          apiKey: "test-api-key",
+          projectId: 1,
+          mode: "background",
+          taskId: "test-task-id",
+          runId: "test-run-id",
+        }) as unknown as {
+          eventStreamSender: {
+            enqueue: (event: Record<string, unknown>) => void;
+            stop: () => Promise<void>;
+          };
+          posthogAPI: {
+            updateTaskRun: (
+              taskId: string,
+              runId: string,
+              payload: Record<string, unknown>,
+            ) => Promise<unknown>;
+          };
+          signalTaskComplete(
+            payload: JwtPayload,
+            stopReason: string,
+          ): Promise<void>;
+        };
+        testServer.eventStreamSender = {
+          enqueue: vi.fn(() => {
+            order.push("enqueue");
+          }),
+          stop: vi.fn(async () => {
+            order.push("stop");
+          }),
+        };
+        testServer.posthogAPI = {
+          updateTaskRun: vi.fn(async () => {
+            order.push("update");
+            return {};
+          }),
+        };
+
+        await testServer.signalTaskComplete(
+          {
+            run_id: "run-1",
+            task_id: "task-1",
+            team_id: 1,
+            user_id: 1,
+            distinct_id: "distinct-id",
+            mode: "background",
+          },
+          stopReason,
+        );
+
+        expect(order).toEqual(["enqueue", "update", "stop"]);
+        expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: "notification",
+            notification: expect.objectContaining({
+              method: expectedMethod,
+              params: expect.objectContaining({ stopReason }),
+            }),
+          }),
+        );
+        expect(testServer.posthogAPI.updateTaskRun).toHaveBeenCalledWith(
+          "task-1",
+          "run-1",
+          expectsErrorMessage
+            ? { status: expectedStatus, error_message: expect.any(String) }
+            : { status: expectedStatus },
+        );
+      },
+    );
+
     it("persists structured turn completion notifications", () => {
       const appendRawLine = vi.fn();
       const testServer = new AgentServer({
@@ -657,6 +759,56 @@ describe("AgentServer HTTP Mode", () => {
           stopReason: "end_turn",
         },
       });
+    });
+
+    it("skips one broadcast after the adapter emitted its own turn_complete", () => {
+      const appendRawLine = vi.fn();
+      const testServer = new AgentServer({
+        port,
+        jwtPublicKey: TEST_PUBLIC_KEY,
+        repositoryPath: repo.path,
+        apiUrl: "http://localhost:8000",
+        apiKey: "test-api-key",
+        projectId: 1,
+        mode: "interactive",
+        taskId: "test-task-id",
+        runId: "test-run-id",
+      }) as unknown as {
+        session: unknown;
+        adapterEmittedTurnComplete: boolean;
+        broadcastTurnComplete(stopReason: string): void;
+      };
+      testServer.session = {
+        acpSessionId: "session-1",
+        payload: { run_id: "run-1" },
+        logWriter: { appendRawLine },
+      };
+      testServer.adapterEmittedTurnComplete = true;
+
+      testServer.broadcastTurnComplete("end_turn");
+      expect(appendRawLine).not.toHaveBeenCalled();
+
+      testServer.broadcastTurnComplete("end_turn");
+      expect(appendRawLine).toHaveBeenCalledTimes(1);
+    });
+
+    it("recognizes adapter turn_complete notifications on the tapped stream", () => {
+      expect(
+        isTurnCompleteNotification({
+          jsonrpc: "2.0",
+          method: "_posthog/turn_complete",
+          params: { sessionId: "s", stopReason: "end_turn" },
+        }),
+      ).toBe(true);
+      expect(
+        isTurnCompleteNotification({
+          jsonrpc: "2.0",
+          method: "_posthog/usage_update",
+          params: {},
+        }),
+      ).toBe(false);
+      expect(isTurnCompleteNotification(null)).toBe(false);
+      expect(isTurnCompleteNotification("turn_complete")).toBe(false);
     });
   });
 
@@ -1432,6 +1584,50 @@ describe("AgentServer HTTP Mode", () => {
         },
       );
 
+      it.each([
+        {
+          label: "no repository, no PR",
+          config: { repositoryPath: undefined },
+        },
+        { label: "repository, no PR", config: {} },
+      ])(
+        "injects concise response-style guidance for Slack-origin runs ($label)",
+        ({ config }) => {
+          process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+          const s = createServer(config);
+          const prompt = (
+            s as unknown as TestableServer
+          ).buildCloudSystemPrompt();
+          expect(prompt).toContain("# Response Style");
+          expect(prompt).toContain("be concise by default");
+          expect(prompt).toContain(
+            "Answer simple questions in a single sentence",
+          );
+          delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+        },
+      );
+
+      it.each([
+        { label: "no origin set", origin: undefined },
+        { label: "signal_report origin", origin: "signal_report" },
+        { label: "posthog_code origin", origin: "posthog_code" },
+      ])(
+        "omits response-style guidance for non-Slack runs ($label)",
+        ({ origin }) => {
+          if (origin) {
+            process.env.POSTHOG_CODE_INTERACTION_ORIGIN = origin;
+          } else {
+            delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+          }
+          const s = createServer();
+          const prompt = (
+            s as unknown as TestableServer
+          ).buildCloudSystemPrompt();
+          expect(prompt).not.toContain("# Response Style");
+          delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+        },
+      );
+
       it("injects identity for Slack-origin runs with an existing PR", () => {
         process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
         const s = createServer();
@@ -1481,7 +1677,7 @@ describe("AgentServer HTTP Mode", () => {
           expect(prompt).toContain(
             "*Created with [PostHog Code](https://posthog.com/code?ref=pr)*",
           );
-          expect(prompt).not.toContain("Slack thread");
+          expect(prompt).not.toContain("from a [Slack thread]");
         } finally {
           delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
         }

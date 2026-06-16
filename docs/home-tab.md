@@ -338,24 +338,22 @@ runs **server-side in PostHog** (`products/tasks/`, a Temporal worker). The
 Electron app is a thin authenticated client. Full server design and wire shapes:
 [docs/workflow-architecture.md](./workflow-architecture.md).
 
-**Main (`apps/code/src/main/`)** — thin clients over the REST API, no local
-persistence and no `gh` polling:
+**Data layer (`packages/api-client` + `packages/ui` hooks)** — thin clients over
+the REST API, no local persistence and no `gh` polling:
 
-- `services/home/service.ts` (`HomeService`) — polls `GET /code_home/` and emits `home.onSnapshotUpdated` when the snapshot changes.
-- `services/workflow/service.ts` (`WorkflowService`) — reads/writes the workflow config via `/code_workflow/*` and emits `workflow.onChanged`; load failures propagate so the canvas shows an offline/error state rather than a fabricated config.
-- `services/auth/service.ts` (`authenticatedProjectFetch`) — the project-scoped authenticated fetch both services share.
-- tRPC routers (`trpc/routers/home.ts`, `trpc/routers/workflow.ts`) — one-liners over the two services: `home.getSnapshot` / `home.refresh` / `home.onSnapshotUpdated`, and `workflow.get` / `workflow.save` / `workflow.resetToDefault` / `workflow.onChanged`.
+- `posthog-client.ts` (`getHomeSnapshot`/`refreshHomeSnapshot`) — project-scoped authenticated fetch of `GET /code_home/`; the snapshot query polls it and validates with Zod.
+- `posthog-client.ts` (`getCodeWorkflow`/`saveCodeWorkflow`/`resetCodeWorkflow`) — reads/writes the workflow config via `/code_workflow/*`; load failures propagate so the canvas shows an offline/error state rather than a fabricated config. Save/reset mutations write the fresh config back into the query cache.
 
-Wire shapes (Zod, the shared source of truth for the renderer types):
-`shared/types/home-snapshot.ts`, `shared/types/workflow.ts`,
-`shared/types/pr-snapshot.ts`.
+Wire shapes (Zod, the shared source of truth for the UI types):
+`packages/core/src/home/schemas.ts`, `packages/core/src/workflow/schemas.ts`,
+`packages/core/src/home/prSnapshot.ts`.
 
-**Renderer (`apps/code/src/renderer/features/home/`)**
+**UI (`packages/ui/src/features/home/`)**
 
 - `components/` — `HomeView`, `HomeActiveAgentsStrip`, `HomeWorkstreamRow`, `HomeWorkstreamCard`, `HomeBoardView`, `HomeWorkstreamDetailPanel`, `HomeEmptyState`.
 - `config/` — the workflow editor (`ConfigMap` and friends).
 - `utils/boardColumns.ts` — pure projection of the snapshot into board columns. No I/O, no React.
-- `hooks/useHomeSnapshot.ts`, `hooks/useWorkflow.ts` — one `useQuery` each, kept fresh by `subscriptions.ts` (registered once at boot per R9).
+- `hooks/useHomeSnapshot.ts`, `hooks/useWorkflow.ts` — one `useQuery` each; the snapshot query polls on an interval and the workflow mutations write back through the same query key.
 - `stores/homeUiStore.ts` — UI state only (view mode, selection). `stores/workflowEditorStore.ts` — the uncommitted editor draft only.
 
 Situation classification is authoritative on the server, including the
@@ -418,7 +416,7 @@ Action descriptors are data, not hardcoded buttons. The registry maps `actionId 
 
 ## 13. The code-review skill (keystone, ships with M3)
 
-The existing `code-review` feature in `apps/code/src/renderer/features/code-review/` only handles *responding* to PR comments inside an active task. We need a new marketplace skill `code-review` that:
+The existing `code-review` feature in `packages/ui/src/features/code-review/` only handles *responding* to PR comments inside an active task. We need a new marketplace skill `code-review` that:
 
 - Takes a PR URL as input.
 - Checks out the PR into a fresh worktree.
