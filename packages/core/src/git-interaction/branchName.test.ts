@@ -114,37 +114,33 @@ describe("suggestBranchName", () => {
     ).toBe("posthog-code/fix-bug-4");
   });
 
-  it("supports a custom prefix", () => {
-    expect(suggestBranchName("Fix bug", "abc", [], "team/")).toBe(
-      "team/fix-bug",
-    );
-    expect(suggestBranchName("Fix bug", "abc", ["team/fix-bug"], "team/")).toBe(
-      "team/fix-bug-2",
-    );
-  });
+  it.each([
+    { existing: [] as string[], expected: "team/fix-bug" },
+    { existing: ["team/fix-bug"], expected: "team/fix-bug-2" },
+  ])(
+    "uses a custom prefix (existing $existing -> $expected)",
+    ({ existing, expected }) => {
+      expect(suggestBranchName("Fix bug", "abc", existing, "team/")).toBe(
+        expected,
+      );
+    },
+  );
 });
 
 describe("validateBranchPrefix", () => {
-  it("allows an empty prefix (no prefix)", () => {
-    expect(validateBranchPrefix("")).toBeNull();
+  it.each([
+    { prefix: "", expected: null },
+    { prefix: "team/", expected: null },
+    { prefix: "posthog-code/", expected: null },
+    { prefix: "-x/", expected: "Branch prefix cannot start with a dash." },
+  ])("returns $expected for prefix $prefix", ({ prefix, expected }) => {
+    expect(validateBranchPrefix(prefix)).toBe(expected);
   });
 
-  it("allows normal prefixes", () => {
-    expect(validateBranchPrefix("team/")).toBeNull();
-    expect(validateBranchPrefix("posthog-code/")).toBeNull();
-  });
-
-  it("rejects a leading dash (flag-like)", () => {
-    expect(validateBranchPrefix("-x/")).toBe(
-      "Branch prefix cannot start with a dash.",
-    );
-  });
-
-  it("rejects spaces", () => {
-    expect(validateBranchPrefix("my team/")).not.toBeNull();
-  });
-
-  it('rejects ".."', () => {
-    expect(validateBranchPrefix("../")).not.toBeNull();
-  });
+  it.each(["my team/", "../", "~/"])(
+    "rejects an invalid prefix (%j)",
+    (prefix) => {
+      expect(validateBranchPrefix(prefix)).not.toBeNull();
+    },
+  );
 });
