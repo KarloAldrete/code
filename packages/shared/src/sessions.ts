@@ -68,6 +68,13 @@ export interface AgentSession {
   pendingPermissions: Map<string, PermissionRequest>;
   pausedDurationMs: number;
   messageQueue: QueuedMessage[];
+  /**
+   * Set when the user cancels an in-flight prompt. Keeps queued messages in
+   * `messageQueue` but suppresses the auto-drain that a turn-end event would
+   * otherwise trigger, so a Stop doesn't immediately fire the next queued
+   * message. Cleared on the next user-initiated send (see `sendPrompt`).
+   */
+  queuePaused?: boolean;
   isCloud?: boolean;
   cloudStatus?: TaskRunStatus;
   cloudStage?: string | null;

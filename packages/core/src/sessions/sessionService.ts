@@ -1533,7 +1533,8 @@ export class SessionService {
     const hasQueuedMessages =
       freshSession &&
       freshSession.messageQueue.length > 0 &&
-      freshSession.status === "connected";
+      freshSession.status === "connected" &&
+      !freshSession.queuePaused;
 
     if (hasQueuedMessages) {
       setTimeout(() => {
@@ -1665,6 +1666,10 @@ export class SessionService {
       throw new Error(
         "Confirm the folder access dialog before sending your message.",
       );
+    }
+
+    if (session.queuePaused) {
+      this.d.store.updateSession(session.taskRunId, { queuePaused: false });
     }
 
     if (session.isCloud) {
@@ -1909,6 +1914,7 @@ export class SessionService {
     this.d.store.updateSession(session.taskRunId, {
       isPromptPending: false,
       promptStartedAt: null,
+      queuePaused: true,
     });
 
     if (session.isCloud) {
@@ -2162,7 +2168,7 @@ export class SessionService {
         isTerminal ||
         (session.cloudStatus === "in_progress" &&
           session.status === "connected");
-      if (!canSendNow || session.isPromptPending) return;
+      if (!canSendNow || session.isPromptPending || session.queuePaused) return;
 
       const drained = this.d.store.dequeueMessages(taskId);
       const combined = this.d.h.combineQueuedCloudPrompts(drained);

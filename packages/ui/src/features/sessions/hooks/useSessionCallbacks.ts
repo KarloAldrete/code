@@ -1,8 +1,4 @@
 import {
-  combineQueuedCloudPrompts,
-  promptToQueuedEditorContent,
-} from "@posthog/core/sessions/cloudPrompt";
-import {
   SESSION_SERVICE,
   type SessionService,
 } from "@posthog/core/sessions/sessionService";
@@ -10,10 +6,7 @@ import { useService } from "@posthog/di/react";
 import type { Task } from "@posthog/shared/domain-types";
 import { tryExecuteCodeCommand } from "@posthog/ui/features/message-editor/commands";
 import { useDraftStore } from "@posthog/ui/features/message-editor/draftStore";
-import {
-  type AgentSession,
-  sessionStoreSetters,
-} from "@posthog/ui/features/sessions/sessionStore";
+import type { AgentSession } from "@posthog/ui/features/sessions/sessionStore";
 import { useTaskViewed } from "@posthog/ui/features/sidebar/useTaskViewed";
 import {
   SHELL_CLIENT,
@@ -42,7 +35,7 @@ export function useSessionCallbacks({
   const sessionService = useService<SessionService>(SESSION_SERVICE);
   const shellClient = useService<ShellClient>(SHELL_CLIENT);
   const { markActivity, markAsViewed } = useTaskViewed();
-  const { requestFocus, setPendingContent } = useDraftStore((s) => s.actions);
+  const { requestFocus } = useDraftStore((s) => s.actions);
 
   const sessionRef = useRef(session);
   sessionRef.current = session;
@@ -94,30 +87,10 @@ export function useSessionCallbacks({
   );
 
   const handleCancelPrompt = useCallback(async () => {
-    const queuedMessages = sessionStoreSetters.dequeueMessages(taskId);
     const result = await sessionService.cancelPrompt(taskId);
     log.info("Prompt cancelled", { success: result });
-
-    const queuedPrompt = sessionRef.current?.isCloud
-      ? combineQueuedCloudPrompts(queuedMessages)
-      : queuedMessages.map((message) => message.content).join("\n\n");
-
-    if (queuedPrompt) {
-      const pendingContent = sessionRef.current?.isCloud
-        ? promptToQueuedEditorContent(queuedPrompt)
-        : {
-            segments: [
-              {
-                type: "text" as const,
-                text: typeof queuedPrompt === "string" ? queuedPrompt : "",
-              },
-            ],
-          };
-
-      setPendingContent(taskId, pendingContent);
-    }
     requestFocus(taskId);
-  }, [taskId, setPendingContent, requestFocus, sessionService]);
+  }, [taskId, requestFocus, sessionService]);
 
   const handleRetry = useCallback(async () => {
     try {
