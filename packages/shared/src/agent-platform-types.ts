@@ -162,13 +162,44 @@ export interface AgentApplicationSessionsListResponse {
 }
 
 // --- Conversation transcript (stored shape on a session) -------------------
-// The SSE→ACP adapter (chat milestone) consumes these; for the read surface
-// they back the session-detail transcript.
+// The runtime persists pi-ai's `conversation` array. The SSE→ACP adapter and
+// the session-detail transcript both narrow these `content` parts at runtime.
+// Part shapes mirror what the agent-console apiClient narrows (text/thinking/
+// toolCall for assistants; text/image for users; text for tool results).
+
+export interface AgentTextPart {
+  type: "text";
+  text: string;
+}
+
+export interface AgentThinkingPart {
+  type: "thinking";
+  thinking: string;
+}
+
+export interface AgentImagePart {
+  type: "image";
+  [key: string]: unknown;
+}
+
+export interface AgentToolCallPart {
+  type: "toolCall";
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+export type AgentAssistantContentPart =
+  | AgentTextPart
+  | AgentThinkingPart
+  | AgentToolCallPart;
+
+export type AgentUserContentPart = AgentTextPart | AgentImagePart;
 
 export interface AgentConversationUserMessage {
   role: "user";
-  /** String shorthand, or array of {type:'text'|'image', …} parts. */
-  content: unknown;
+  /** String shorthand, or an array of text/image parts. */
+  content: string | AgentUserContentPart[];
   /** Epoch milliseconds. */
   timestamp: number;
 }
@@ -176,7 +207,7 @@ export interface AgentConversationUserMessage {
 export interface AgentConversationAssistantMessage {
   role: "assistant";
   /** Array of text/thinking/toolCall parts. */
-  content: unknown[];
+  content: AgentAssistantContentPart[];
   timestamp: number;
   api?: string;
   provider?: string;
@@ -187,11 +218,12 @@ export interface AgentConversationAssistantMessage {
 }
 
 export interface AgentConversationToolResultMessage {
-  role: "tool";
+  /** Wire value is `toolResult` (NOT `tool`) — matches the runtime serializer. */
+  role: "toolResult";
   toolCallId: string;
   toolName: string;
-  /** Array of {type:'text'|'image', …} parts. */
-  content: unknown[];
+  /** Array of text parts (image parts are dropped on render). */
+  content: AgentTextPart[];
   isError: boolean;
   timestamp: number;
 }
@@ -295,3 +327,132 @@ export interface AgentApprovalsListParams {
   limit?: number;
   offset?: number;
 }
+
+// --- Live session events (agent-ingress SSE stream) ------------------------
+// The chat trigger's `/listen` endpoint streams these as `text/event-stream`
+// JSON frames. The SSE→ACP adapter folds them into ACP messages the native
+// ConversationView renders. The `kind` discriminator and `data` payloads come
+// from `agent-ingress/src/triggers/chat.ts` + `agent-runner/src/loop/bus.ts`.
+
+interface AgentSessionEventBase {
+  session_id: string;
+  /** ISO timestamp the runner stamped on the frame. */
+  ts: string;
+}
+
+/** Session accepted and the runner started — `{ team_id, agent, rev }`. */
+export type AgentSessionStartedEvent = AgentSessionEventBase & {
+  kind: "session_started";
+  data: { team_id?: number; agent?: string; rev?: string };
+};
+
+/** Server-confirmed user message, echoed when drained from `pending_inputs`. */
+export type AgentUserMessageEvent = AgentSessionEventBase & {
+  kind: "user_message";
+  data: { text: string; timestamp?: string };
+};
+
+/** A new assistant turn began — `{ turn }` is the turn index. */
+export type AgentTurnStartedEvent = AgentSessionEventBase & {
+  kind: "turn_started";
+  data: { turn?: number };
+};
+
+/** Streaming assistant text fragment. */
+export type AgentAssistantTextDeltaEvent = AgentSessionEventBase & {
+  kind: "assistant_text_delta";
+  data: { turn?: number; text: string };
+};
+
+/** Streaming assistant thinking fragment. */
+export type AgentAssistantThinkingDeltaEvent = AgentSessionEventBase & {
+  kind: "assistant_thinking_delta";
+  data: { turn?: number; thinking: string };
+};
+
+/** A tool call appeared (name known, args still streaming). */
+export type AgentToolCallStartEvent = AgentSessionEventBase & {
+  kind: "tool_call_start";
+  data: { turn?: number; id: string; name: string };
+};
+
+/** Incremental tool-call args — string fragment or partial object. */
+export type AgentToolCallArgsDeltaEvent = AgentSessionEventBase & {
+  kind: "tool_call_args_delta";
+  data: { turn?: number; id: string; argsDelta: unknown };
+};
+
+/** Turn-end snapshot of the full assistant text (deltas already filled it). */
+export type AgentAssistantTextEvent = AgentSessionEventBase & {
+  kind: "assistant_text";
+  data: { text: string };
+};
+
+/** Canonical tool call with finalized args. */
+export type AgentToolCallEvent = AgentSessionEventBase & {
+  kind: "tool_call";
+  data: { id: string; name: string; args?: Record<string, unknown> };
+};
+
+/** Tool result — `ok` plus `output` on success, `error` on failure. */
+export type AgentToolResultEvent = AgentSessionEventBase & {
+  kind: "tool_result";
+  data: { id: string; tool?: string; ok?: boolean; output?: unknown; error?: string };
+};
+
+/** Turn finished; session stays open for more input. */
+export type AgentCompletedEvent = AgentSessionEventBase & {
+  kind: "completed";
+  data: { turns?: number; summary?: unknown };
+};
+
+/** Session parked for a steering message (`@posthog/meta-ask-for-input`). */
+export type AgentWaitingEvent = AgentSessionEventBase & {
+  kind: "waiting";
+  data: { turns?: number; prompt?: string };
+};
+
+/** Terminal failure — `reason` is for owners/logs, not end users. */
+export type AgentFailedEvent = AgentSessionEventBase & {
+  kind: "failed";
+  data: { reason?: string; turns?: number };
+};
+
+/** Session sealed (terminal); no further `/send`s accepted. */
+export type AgentClosedEvent = AgentSessionEventBase & {
+  kind: "closed";
+  data: Record<string, unknown>;
+};
+
+/** Model invoked a client-fulfilled tool; the host runs it and posts back. */
+export type AgentClientToolCallEvent = AgentSessionEventBase & {
+  kind: "client_tool_call";
+  data: { call_id: string; tool_id: string; args?: Record<string, unknown> };
+};
+
+/** A client tool's outcome landed (sync POST or interactive `/send` wake). */
+export type AgentClientToolResultEvent = AgentSessionEventBase & {
+  kind: "client_tool_result";
+  data: { call_id: string; result?: unknown; error?: string };
+};
+
+export type AgentSessionEvent =
+  | AgentSessionStartedEvent
+  | AgentUserMessageEvent
+  | AgentTurnStartedEvent
+  | AgentAssistantTextDeltaEvent
+  | AgentAssistantThinkingDeltaEvent
+  | AgentToolCallStartEvent
+  | AgentToolCallArgsDeltaEvent
+  | AgentAssistantTextEvent
+  | AgentToolCallEvent
+  | AgentToolResultEvent
+  | AgentCompletedEvent
+  | AgentWaitingEvent
+  | AgentFailedEvent
+  | AgentClosedEvent
+  | AgentClientToolCallEvent
+  | AgentClientToolResultEvent;
+
+/** Discriminator values for {@link AgentSessionEvent}. */
+export type AgentSessionEventKind = AgentSessionEvent["kind"];
