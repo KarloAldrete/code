@@ -1374,6 +1374,12 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toContain(
         "Do NOT create a branch, commit, push, or open a pull request unless the user explicitly asks.",
       );
+      expect(prompt).toContain(
+        "If the user does ask you to open a draft PR, open it first and do not block on long local checks",
+      );
+      expect(prompt).toContain("Opening the PR — do not block on long checks");
+      expect(prompt).toContain("assume the repo has CI");
+      expect(prompt).toContain("run the relevant checks as a follow-up task");
       expect(prompt).toContain("Generated-By: PostHog Code");
       expect(prompt).toContain("Task-Id: test-task-id");
       expect(prompt).not.toContain("gh pr create --draft");
@@ -1401,6 +1407,7 @@ describe("AgentServer HTTP Mode", () => {
           ".github/pull_request_template.md",
           "gh issue list --search",
           "Closes #<n>",
+          "Opening the PR — do not block on long checks",
           "Generated-By: PostHog Code",
           "Task-Id: test-task-id",
         ],
@@ -1414,7 +1421,11 @@ describe("AgentServer HTTP Mode", () => {
           "You may clone a repository and make local edits in that clone",
           "Do NOT create branches, commits, push changes, or open pull requests in this run",
         ],
-        shouldNotContain: ["open a draft pull request", "gh pr create --draft"],
+        shouldNotContain: [
+          "open a draft pull request",
+          "gh pr create --draft",
+          "Opening the PR — do not block on long checks",
+        ],
       },
     ])(
       "returns no-repository prompt for $label",
@@ -1440,6 +1451,10 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toContain("posthog-code/");
       expect(prompt).toContain("Create a draft pull request");
       expect(prompt).toContain("gh pr create --draft");
+      expect(prompt).toContain(
+        "Open the draft PR without blocking on long local checks",
+      );
+      expect(prompt).toContain("Opening the PR — do not block on long checks");
       expect(prompt).toContain("Generated-By: PostHog Code");
       expect(prompt).toContain("Task-Id: test-task-id");
       expect(prompt).toContain("Created with [PostHog Code]");

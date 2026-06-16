@@ -1791,6 +1791,22 @@ we want:
   Generated-By: PostHog Code
   Task-Id: ${taskId}`;
 
+    const draftPrVerificationGuidance = `
+## Opening the PR — do not block on long checks
+When you open a draft pull request, open it FIRST, then handle verification.
+- Do NOT gate draft-PR creation on long-running local checks (full typecheck, full
+  test suite, or package builds). A draft is the safety net, and by the time a draft is
+  requested the work is usually already at a point the user considers complete (often
+  with some tests already run).
+- Committing is fast here: commits go through the \`git_signed_commit\` tool
+  (server-side), so there is no local pre-commit hook to wait on.
+- After the draft is open, handle verification without blocking its creation. Do NOT
+  assume the repo has CI: if it does, let CI run the checks on the PR; if it has no CI
+  (or you are unsure) and you judge verification is warranted, tell the user and offer
+  to run the relevant checks as a follow-up task. For a quick local sanity check, prefer
+  fast, scoped checks (lint, or a typecheck of just the package you touched). Reserve the
+  full suite for before marking the PR ready for review.`;
+
     const whyContextInstruction = `   - Add a brief **Why** to the body — one or two sentences capturing the reason the user asked for this change (the motivation, not a restatement of the diff). Keep it short.`;
     const prFooter = slackThreadUrl
       ? `*Created with [PostHog Code](https://posthog.com/code?ref=pr) from a [Slack thread](${slackThreadUrl})*`
@@ -1848,7 +1864,9 @@ When the user explicitly asks to clone or work in a GitHub repository:
 - Keep the PR description brief overall. Summarize only the most important changes — do NOT enumerate every change you made. A few sentences or bullets is plenty.
 ${whyContextInstruction.trimStart()}
 - End the PR description with a horizontal rule followed by this footer line: ${prFooter}
-- Do NOT create branches, commits, push changes, or open pull requests unless the user explicitly asks for that`;
+- Do NOT create branches, commits, push changes, or open pull requests unless the user explicitly asks for that
+- If the user does ask you to open a draft PR, open it first and do not block on long local checks (see below).
+${draftPrVerificationGuidance}`;
 
       return `${identityInstructions}
 # Cloud Task Execution — No Repository Mode
@@ -1879,6 +1897,8 @@ Do the requested work, but stop with local changes ready for review.
 
 Important:
 - Do NOT create a branch, commit, push, or open a pull request unless the user explicitly asks.
+- If the user does ask you to open a draft PR, open it first and do not block on long local checks (see below).
+${draftPrVerificationGuidance}
 ${signedCommitInstructions}
 `;
     }
@@ -1903,6 +1923,8 @@ ${prFooter}
 
 Important:
 - Always create the PR as a draft. Do not ask for confirmation.
+- Open the draft PR without blocking on long local checks (see below); handle verification after it is open.
+${draftPrVerificationGuidance}
 ${signedCommitInstructions}
 `;
   }
