@@ -6,7 +6,9 @@ import {
   extractAvailableCommandsFromEvents,
   extractUserPromptsFromEvents,
 } from "@posthog/core/sessions/sessionEvents";
+import { computeSidebarSessionSignature } from "@posthog/core/sidebar/buildSidebarData";
 import type { PermissionRequest } from "@posthog/ui/features/sessions/sessionLogTypes";
+import { useMemo } from "react";
 import { shallow } from "zustand/shallow";
 import {
   type Adapter,
@@ -18,6 +20,29 @@ import {
 } from "./sessionStore";
 
 export const useSessions = () => useSessionStore((s) => s.sessions);
+
+/**
+ * The sidebar's view of sessions, keyed by taskId. Subscribes only to a
+ * signature of the fields the sidebar reads (see computeSidebarSessionSignature),
+ * so streaming token appends — which only mutate `events` — don't re-render the
+ * sidebar (which is mounted at the root). The map is rebuilt from the live
+ * snapshot only when a sidebar-relevant field actually changes.
+ */
+export const useSidebarSessionMap = (): Map<string, AgentSession> => {
+  const signature = useSessionStore((s) =>
+    computeSidebarSessionSignature(s.sessions),
+  );
+  // `signature` is the trigger, not read inside: rebuild the map from the live
+  // snapshot only when a sidebar-relevant field changes (not on every token).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed by signature on purpose
+  return useMemo(() => {
+    const map = new Map<string, AgentSession>();
+    for (const session of Object.values(useSessionStore.getState().sessions)) {
+      if (session.taskId) map.set(session.taskId, session);
+    }
+    return map;
+  }, [signature]);
+};
 
 /** O(1) lookup using taskIdIndex */
 export const useSessionForTask = (

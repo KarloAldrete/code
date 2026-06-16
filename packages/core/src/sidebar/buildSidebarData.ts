@@ -1,3 +1,4 @@
+import type { AgentSession } from "@posthog/shared";
 import type { TaskRunStatus } from "@posthog/shared/domain-types";
 import { getRepositoryInfo } from "./groupTasks";
 import type { TaskData } from "./sidebarData.types";
@@ -210,4 +211,32 @@ export function sliceChronological(
     flatTasks: sortedUnpinnedTasks.slice(0, historyVisibleCount),
     hasMore: sortedUnpinnedTasks.length > historyVisibleCount,
   };
+}
+
+/** Only the session fields the sidebar actually reads (see deriveTaskData). */
+type SidebarSessionFields = Pick<
+  AgentSession,
+  "taskId" | "isPromptPending" | "pendingPermissions" | "cloudStatus"
+> & { cloudOutput?: { pr_url?: unknown } | null };
+
+/**
+ * A compact, primitive signature of just the session fields the sidebar reads.
+ * The sidebar subscribes to this string instead of the whole sessions record,
+ * so streaming token appends — which only mutate `session.events` — don't
+ * re-render the sidebar (and, since it's mounted at the root, the whole tree).
+ */
+export function computeSidebarSessionSignature(
+  sessions: Record<string, SidebarSessionFields>,
+): string {
+  const parts: string[] = [];
+  for (const s of Object.values(sessions)) {
+    if (!s.taskId) continue;
+    const prUrl =
+      typeof s.cloudOutput?.pr_url === "string" ? s.cloudOutput.pr_url : "";
+    parts.push(
+      `${s.taskId}\t${s.isPromptPending ? 1 : 0}\t${s.pendingPermissions.size}\t${s.cloudStatus ?? ""}\t${prUrl}`,
+    );
+  }
+  parts.sort();
+  return parts.join("\n");
 }
