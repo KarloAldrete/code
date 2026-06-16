@@ -38,6 +38,7 @@ import { AgentDetailEmptyState, AgentDetailLayout } from "./AgentDetailLayout";
 import { CopyButton } from "./CopyButton";
 import { CronFireButton } from "./CronFireButton";
 import { FileExplorer, type FileTreeNode } from "./FileExplorer";
+import { SecretEditor } from "./SecretEditor";
 import { SlackSetupCard } from "./SlackSetupCard";
 
 // --- value readers (spec items are loosely typed on the wire) ---------------
@@ -563,7 +564,13 @@ function DetailBody({
     case "secrets":
       return <SecretsOverview spec={spec} ctx={ctx} />;
     case "secret":
-      return <SecretBody keyName={id} setKeys={ctx.setKeys} />;
+      return (
+        <SecretBody
+          keyName={id}
+          setKeys={ctx.setKeys}
+          idOrSlug={ctx.idOrSlug}
+        />
+      );
     case "limits":
       return <LimitsBody spec={spec} />;
     default:
@@ -1183,9 +1190,11 @@ function SecretsOverview({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
 function SecretBody({
   keyName,
   setKeys,
+  idOrSlug,
 }: {
   keyName: string;
   setKeys: string[];
+  idOrSlug: string;
 }) {
   const isSet = setKeys.includes(keyName);
   return (
@@ -1196,10 +1205,7 @@ function SecretBody({
         value={isSet ? "set" : "not set"}
         valueColor={isSet ? "var(--green-11)" : "var(--amber-11)"}
       />
-      <Muted>
-        The value is never shown. Setting and rotating secrets is handled by the
-        concierge's interactive secret flow.
-      </Muted>
+      <SecretEditor idOrSlug={idOrSlug} keyName={keyName} isSet={isSet} />
     </Flex>
   );
 }

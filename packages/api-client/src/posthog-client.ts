@@ -4350,6 +4350,31 @@ export class PostHogAPIClient {
     return data.keys ?? data.results ?? [];
   }
 
+  /** Set or rotate one encrypted env key. The value is write-only. */
+  async setAgentEnvKey(
+    idOrSlug: string,
+    key: string,
+    value: string,
+  ): Promise<void> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/env_keys/${encodeURIComponent(key)}/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    await this.api.fetcher.fetch({
+      method: "put",
+      url,
+      path,
+      overrides: { body: JSON.stringify({ value }) },
+    });
+  }
+
+  /** Clear one encrypted env key. No-op server-side if it isn't set. */
+  async clearAgentEnvKey(idOrSlug: string, key: string): Promise<void> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/env_keys/${encodeURIComponent(key)}/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    await this.api.fetcher.fetch({ method: "delete", url, path });
+  }
+
   /** Team-wide fleet roll-up stats. `since` is an ISO timestamp window start. */
   async getAgentFleetStats(since?: string): Promise<AgentAggregateStats> {
     const teamId = await this.getTeamId();
