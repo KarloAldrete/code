@@ -1,3 +1,4 @@
+import { HashIcon } from "@phosphor-icons/react";
 import {
   Autocomplete,
   AutocompleteCollection,
@@ -15,6 +16,8 @@ import {
   type CommandMenuAction,
 } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
+import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useTaskChannelMap } from "@posthog/ui/features/canvas/hooks/useTaskChannelMap";
 import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
 import { CommandKeyHints } from "@posthog/ui/features/command/CommandKeyHints";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
@@ -26,6 +29,7 @@ import { TaskIcon } from "@posthog/ui/features/sidebar/components/items/TaskIcon
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
+import { navigateToChannel } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
@@ -49,6 +53,8 @@ interface CommandMenuProps {
 type Command = {
   id: string;
   label: string;
+  /** Muted trailing detail shown after a middot, e.g. a task's channel. */
+  detail?: string;
   keywords?: string;
   icon: React.ReactNode;
   action: CommandMenuAction;
@@ -89,6 +95,8 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   const openSettingsDialog = openSettings;
   const closeSettingsDialog = closeSettings;
   const { folders } = useFolders();
+  const { channels } = useChannels();
+  const taskChannelMap = useTaskChannelMap({ enabled: open });
   const { theme, setTheme } = useThemeStore();
   const toggleLeftSidebar = useSidebarStore((state) => state.toggle);
   const view = useAppView();
@@ -254,24 +262,50 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     return [
       {
         label: "Tasks",
-        items: tasks.map((task) => ({
-          id: `task-${task.id}`,
-          label: task.title,
-          icon: <TaskCommandIcon task={task} />,
-          action: "open-task" as CommandMenuAction,
+        items: tasks.map((task) => {
+          const channel = taskChannelMap.get(task.id);
+          return {
+            id: `task-${task.id}`,
+            label: task.title,
+            detail: channel?.name,
+            // Include the channel name so searching it surfaces filed tasks.
+            keywords: channel?.name,
+            icon: <TaskCommandIcon task={task} />,
+            action: "open-task" as CommandMenuAction,
+            onRun: () => {
+              closeSettingsDialog();
+              void openTask(task);
+            },
+          };
+        }),
+      },
+    ];
+  }, [tasks, taskChannelMap, closeSettingsDialog]);
+
+  const channelSections = useMemo<CommandSection[]>(() => {
+    if (channels.length === 0) return [];
+    return [
+      {
+        label: "Channels",
+        items: channels.map((channel) => ({
+          id: `channel-${channel.id}`,
+          label: channel.name,
+          keywords: "channel",
+          icon: <HashIcon size={12} className="text-gray-11" />,
+          action: "open-channel" as CommandMenuAction,
           onRun: () => {
             closeSettingsDialog();
-            void openTask(task);
+            navigateToChannel(channel.id);
           },
         })),
       },
     ];
-  }, [tasks, closeSettingsDialog]);
+  }, [channels, closeSettingsDialog]);
 
-  // Commands and tasks share a single filterable list.
+  // Commands, channels, and tasks share a single filterable list.
   const sections = useMemo(
-    () => [...commandSections, ...taskSections],
-    [commandSections, taskSections],
+    () => [...commandSections, ...channelSections, ...taskSections],
+    [commandSections, channelSections, taskSections],
   );
 
   const allCommands = useMemo(
@@ -314,7 +348,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
           }}
         >
           <AutocompleteInput
-            placeholder="Search commands and tasks…"
+            placeholder="Search commands, channels, and tasks…"
             autoFocus
             showClear
           />
@@ -343,6 +377,11 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
                       <span className="wrap-break-word min-w-0 whitespace-normal">
                         {cmd.label}
                       </span>
+                      {cmd.detail && (
+                        <span className="shrink-0 text-gray-9">
+                          · #{cmd.detail}
+                        </span>
+                      )}
                     </AutocompleteItem>
                   )}
                 </AutocompleteCollection>
