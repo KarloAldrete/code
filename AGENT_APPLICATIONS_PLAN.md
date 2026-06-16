@@ -114,31 +114,31 @@ transport, blocked on the M-Live open question).
 | 2 | Live-now panel | Cross-agent in-flight sessions, live state dots | `agent_fleet/live_sessions/` | 🟡 |
 | 3 | Agent list + filters | All agents, per-agent inline stats, All/Live/Drafts/Archived | `agent_applications/`, `/query/` | ✅ list + inline stats / 🟡 filters |
 | 4 | Per-agent overview | Status, triggers, live revision, recent activity | `agent_applications/{slug}/` | ✅ |
-| 5 | Session list + filters | History; filter by state / revision / date; pagination | `…/sessions/?state=&revision_id=&…` | 🟡 |
+| 5 | Session list + filters | History; filter by state / revision / date; pagination | `…/sessions/?state=&revision_id=&…` | ✅ (state filter + load-more; date/revision filters pending) |
 | 6 | Session transcript | Stored transcript via native `ConversationView` | (mapper) | ✅ |
-| 7 | Session KPI strip + "fired by" | Per-session state/tools/cost/duration/errors; cron badge | (in session detail) | ⬜ |
-| 8 | **Session logs pane** | Structured pino-style log viewer, level/service filters, expandable fields | `…/sessions/{id}/logs/` | ⬜ |
+| 7 | Session KPI strip + "fired by" | Per-session messages/tools/cost/duration/errors; cron badge | (in session detail) | ✅ |
+| 8 | **Session logs pane** | Structured log viewer, level filter + search | `…/sessions/{id}/logs/` | ✅ |
 | **Approvals** ||||
-| 9 | Per-agent approvals queue | List approval-gated tool calls, filter by state | `…/approvals/` | 🟡 |
-| 10 | Global approvals queue | Fleet-wide approval inbox | `agent_fleet/approvals/` | 🟡 |
-| 11 | Approval detail + decide | Reasoning snapshot, proposed args, approve/reject + edit args + reason | `…/approvals/{id}/decide/` | 🟡 (client) / ⬜ (UI) |
+| 9 | Per-agent approvals queue | List approval-gated tool calls, filter by state | `…/approvals/` | ✅ |
+| 10 | Global approvals queue | Fleet-wide approval inbox | `agent_fleet/approvals/` | 🟡 (client ready; UI pending) |
+| 11 | Approval detail + decide | Reasoning snapshot, proposed args, approve/reject + edit args + reason; embedded session | `…/approvals/{id}/decide/` | ✅ (master/detail) |
 | **Configuration & authoring** ||||
-| 12 | Spec explorer | Filesystem-style view of model/triggers/tools/skills/mcps/integrations/limits | revision `spec` JSONB | ⬜ |
-| 13 | Bundle file viewer | Manifest tree + read file, language-aware render | `…/revisions/{id}/manifest/`, `/file/` | ⬜ |
-| 14 | Revision list + lifecycle | draft → freeze(ready) → promote(live) → archive; rollback; clone / new_draft | `…/revisions/`, `/freeze/`, `/promote/`, `/archive/`, `/clone_from/`, `/new_draft/` | 🟡 (read) / ⬜ (lifecycle) |
-| 15 | Spec editing + validate | Edit spec on a draft, validate against schema, render system prompt | `…/revisions/{id}/` PATCH, `/validate/`, `/system_prompt/` | ⬜ |
-| 16 | Bundle file editing | Write/delete files, bulk bundle upload (draft only) | `…/revisions/{id}/file/` PUT/DELETE, `/bundle/` | ⬜ |
-| 17 | Trigger config | chat / webhook / mcp / slack / cron triggers + auth modes | revision `spec` | ⬜ |
-| 18 | Cron fire (run-now) | Manually fire a cron out-of-band to test | `…/revisions/{id}/cron_fire/` | ⬜ |
+| 12 | Spec explorer | Filesystem-style view of model/triggers/tools/skills/mcps/integrations/secrets/limits | revision `spec` JSONB | ✅ |
+| 13 | Bundle file viewer | Tree + read file (markdown/code/json), via reusable `FileExplorer` | `…/revisions/{id}/bundle/` | ✅ |
+| 14 | Revision list + lifecycle | picker (drives explorer) + freeze(ready) → promote(live) → archive | `…/revisions/`, `/freeze/`, `/promote/`, `/archive/` | ✅ |
+| 15 | Spec editing + validate | Edit spec on a draft, validate, render system prompt | `…/revisions/{id}/` PATCH | ~~retired~~ (concierge authors) |
+| 16 | Bundle file editing | Write/delete files, bulk bundle upload | `…/revisions/{id}/file/` PUT/DELETE | ~~retired~~ (concierge authors) |
+| 17 | Trigger config | chat / webhook / mcp / slack / cron + auth modes + endpoints/usage | revision `spec` | ✅ (view; editing retired) |
+| 18 | Cron fire (run-now) | Manually fire a cron out-of-band to test → jump to session | `…/revisions/{id}/cron/fire/` | ✅ |
 | **Secrets & env** ||||
-| 19 | Env / secrets management | List keys, set/rotate/clear per key, bulk set_env, discover required secrets from spec | `…/set_env/`, `…/env_keys/…` | ⬜ |
+| 19 | Env / secrets management | List keys, set/rotate/clear per key (guarded), discover required secrets from spec | `…/env_keys/…` | ✅ |
 | **Memory** ||||
-| 20 | Memory file store | List / tree / read / create / update / delete files | `…/memory/files/`, `/tree/`, `/by_path/` | ⬜ |
-| 21 | Memory search | BM25 full-text search | `…/memory/search/?q=` | ⬜ |
-| 22 | Memory tables | List tables + read rows | `…/memory/tables/…` | ⬜ |
+| 20 | Memory file store | Tree + read file (markdown); create/update/delete | `…/memory/files/`, `/tree/`, `/by_path/` | 🟡 (read in progress; edit deferred) |
+| 21 | Memory search | BM25 full-text search (FileExplorer search mode) | `…/memory/search/?q=` | 🟡 (in progress) |
+| 22 | Memory tables | List tables + read rows | `…/memory/tables/…` | 🟡 (in progress) |
 | **Connections** ||||
-| 23 | Slack setup | Generate Slack app manifest from trigger+tool config | `…/revisions/{id}/manifest/slack/` | ⬜ |
-| 24 | Integrations | PostHog integrations attached to an agent | (spec `integrations` + integ API) | ⬜ |
+| 23 | Slack setup | Derived Slack app manifest + request URLs (under the slack trigger) | `…/revisions/{id}/slack_manifest/` | ✅ |
+| 24 | Integrations | PostHog integrations attached to an agent | (spec `integrations` + integ API) | ⬜ (view stub) |
 | **Observability & analytics** ||||
 | 25 | Per-agent observability summary | Rollup: spend, sessions, failure rate, p95 (+ trends/deltas), cost-by-model, tool reliability for this agent | `/query/` HogQL `$ai_*` | ✅ (Observability tab + KPIs on the Overview tab) |
 | 26 | Fleet analytics dashboard | Cross-agent KPIs + WoW deltas, spend/cost, tool reliability | `/query/` HogQL `$ai_*` | ✅ (blended into the Applications overview: KPI strip + per-agent row stats; cost-by-model + tool reliability on the per-agent tab) |
@@ -188,6 +188,19 @@ transport, blocked on the M-Live open question).
   no separate fleet-analytics page — analytics is blended into the overview and
   the per-agent tabs. This replaced the old operational fleet/agent stat strips
   (live-now + pending-approvals counts) — those return with M6 / feature 10.
+- [x] **Configuration explorer** (features 12, 13, 14, 17, 18, 23 + M8/M9) —
+  full-bleed filesystem explorer on a reusable `FileExplorer` primitive: a tree
+  (instructions · model · triggers · secrets · skills · tools · mcps ·
+  integrations · limits) + per-node detail panes + bundle viewer
+  (markdown/code/json), selection in `?node=`. Stage A shell `1e5c1b91`; Stage B
+  trigger richness — auth modes/blurbs, public warning, **Slack setup card**,
+  trigger endpoints + curl/MCP usage, **cron "Run now"**, missing-secret
+  warnings, MCP tools grid — `aed89291`; **M9 revision bar** (picker drives the
+  explorer via `?revision=` + freeze/promote/archive behind confirms) `55dbb1b8`.
+- [x] **M10 — Secrets** (feature 19) — set/rotate/**guarded clear** inline in the
+  secret detail (`env_keys` PUT/DELETE), status flips across the tree on success;
+  a set secret hides its input behind Rotate and Clear is a two-step confirm.
+  Commit `32e8749d`.
 
 ### Remaining (parity work)
 
@@ -195,26 +208,15 @@ Reframed around the **render-first / concierge-authoring** principle above:
 config/revisions/secrets/memory are read surfaces with only operational
 controls. Ordered by core value.
 
-- [ ] **M8 — Configuration & spec explorer (read)** (features 12, 13) —
-  Configuration tab rendering the live (or selected) revision's spec: model,
-  triggers, tools, skills, mcps, integrations, limits, entrypoint, reasoning.
-  Pure read off the existing `getAgentRevision` (`spec` JSONB) — no new
-  endpoints. Bundle file viewer + manifest tree (feature 13) is a follow-on
-  (needs `…/revisions/{id}/manifest/` + `/file/`). **No spec editing.**
-- [ ] **M9 — Revisions & operational lifecycle** (feature 14, scoped) — revision
-  list with states/lineage + the **operational** actions only: promote (incl.
-  rollback to an older revision), freeze (draft→ready), archive. Plus **enable /
-  disable agent** (archive/unarchive the application). These mutations go behind
-  a core service (promote rewrites `live_revision`). Draft authoring
-  (clone/new_draft, spec edits) is **out** — the concierge does that.
-- [ ] **M10 — Secrets/env (read)** (feature 19, scoped) — show which env keys
-  are set (names only, never values) + which secrets the spec requires. Whether
-  setting/rotating a secret value belongs here or is also concierge-driven is an
-  open question (a real API key can't be handed to the concierge in chat) —
-  resolve before building any write path.
-- [ ] **M11 — Memory** (features 20, 21, 22) — file store + BM25 search + tables.
-  Render-first; if any write lands it's operational, not authoring.
-- [ ] **M13 — Connections** (features 23, 24) — Slack setup + integrations view.
+- [ ] **M11 — Memory** (features 20, 21, 22) — *in progress.* File store browser
+  on the reusable `FileExplorer` (tree + read file + BM25 search mode) + a tables
+  view. Render-first; create/update/delete deferred (and operational, not
+  authoring, if added).
+- [ ] **M13 — Connections** (feature 24) — integrations view (Slack setup,
+  feature 23, already shipped under the slack trigger). The integration detail is
+  a stub today; flesh out the team integration link.
+- [ ] **Enable / disable agent** — archive/unarchive the application (an
+  operational control deferred from M9; needs the destroy/restore endpoint).
 - [ ] **Global approvals queue** (feature 10) — fleet-wide approval inbox at the
   Applications level (the per-agent queue shipped in M5). Client method
   `listAgentFleetApprovals` already exists; needs UI. Natural next step — it
