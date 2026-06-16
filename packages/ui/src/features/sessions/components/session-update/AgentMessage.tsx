@@ -6,6 +6,7 @@ import { HighlightedCode } from "../../../../primitives/HighlightedCode";
 import { Tooltip } from "../../../../primitives/Tooltip";
 import { usePendingScrollStore } from "../../../code-editor/pendingScrollStore";
 import { MarkdownRenderer } from "../../../editor/components/MarkdownRenderer";
+import { StreamingMarkdown } from "../../../editor/components/StreamingMarkdown";
 import { usePanelLayoutStore } from "../../../panels/panelLayoutStore";
 import type { FileItem } from "../../../repo-files/useRepoFiles";
 import { useRepoFiles } from "../../../repo-files/useRepoFiles";
@@ -138,10 +139,15 @@ const agentComponents: Partial<Components> = {
 
 interface AgentMessageProps {
   content: string;
+  /** Active (still-streaming) message: block-split the markdown so each token
+   *  only re-parses the growing tail, not the whole message. Completed messages
+   *  parse once via MarkdownRenderer for a single, fully-correct render. */
+  isStreaming?: boolean;
 }
 
 export const AgentMessage = memo(function AgentMessage({
   content,
+  isStreaming = false,
 }: AgentMessageProps) {
   const [copied, setCopied] = useState(false);
 
@@ -153,10 +159,17 @@ export const AgentMessage = memo(function AgentMessage({
 
   return (
     <Box className="group/msg relative pl-3 text-[13px] [&>*:last-child]:mb-0 [&_p]:leading-[1.9]">
-      <MarkdownRenderer
-        content={content}
-        componentsOverride={agentComponents}
-      />
+      {isStreaming ? (
+        <StreamingMarkdown
+          content={content}
+          componentsOverride={agentComponents}
+        />
+      ) : (
+        <MarkdownRenderer
+          content={content}
+          componentsOverride={agentComponents}
+        />
+      )}
       <Box className="absolute top-1 left-full ml-2 opacity-0 transition-opacity group-hover/msg:opacity-100">
         <Tooltip content={copied ? "Copied!" : "Copy message"}>
           <IconButton
