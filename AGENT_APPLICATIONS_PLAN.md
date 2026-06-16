@@ -201,6 +201,10 @@ transport, blocked on the M-Live open question).
   secret detail (`env_keys` PUT/DELETE), status flips across the tree on success;
   a set secret hides its input behind Rotate and Clear is a two-step confirm.
   Commit `32e8749d`.
+- [x] **M11 — Memory** (features 20, 21, 22) — Memory tab on the reusable
+  `FileExplorer`: folder tree + read file (markdown, with description/tags), a
+  Files/Tables toggle, BM25 search mode, and a tables view (list + row grid).
+  Render-only; create/update/delete deferred. Commit `22caee62`.
 
 ### Remaining (parity work)
 
@@ -208,24 +212,21 @@ Reframed around the **render-first / concierge-authoring** principle above:
 config/revisions/secrets/memory are read surfaces with only operational
 controls. Ordered by core value.
 
-- [ ] **M11 — Memory** (features 20, 21, 22) — *in progress.* File store browser
-  on the reusable `FileExplorer` (tree + read file + BM25 search mode) + a tables
-  view. Render-first; create/update/delete deferred (and operational, not
-  authoring, if added).
 - [ ] **M13 — Connections** (feature 24) — integrations view (Slack setup,
   feature 23, already shipped under the slack trigger). The integration detail is
   a stub today; flesh out the team integration link.
 - [ ] **Enable / disable agent** — archive/unarchive the application (an
   operational control deferred from M9; needs the destroy/restore endpoint).
-- [ ] **Global approvals queue** (feature 10) — fleet-wide approval inbox at the
-  Applications level (the per-agent queue shipped in M5). Client method
-  `listAgentFleetApprovals` already exists; needs UI. Natural next step — it
-  also restores the "pending approvals" signal the M7 overview dropped.
 - [ ] ~~**M12 — Spec & bundle authoring**~~ — **retired.** Spec/bundle/trigger
   editing is the concierge's job; the render views live in M8, operational
   lifecycle in M9.
 
 ### Deferred
+
+- [ ] **Global approvals queue** (feature 10) — fleet-wide approval inbox at the
+  Applications level (the per-agent queue shipped in M5). Client method
+  `listAgentFleetApprovals` already exists; needs UI. Pairs with M6 (it also
+  restores the "pending approvals" signal the M7 overview dropped).
 
 - [ ] **M6 — Live-now & operational counts** (feature 2; remainder of 1) —
   partly **realized by M7**: the Applications landing is now the observability
