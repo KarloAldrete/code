@@ -49,6 +49,7 @@ import { Route as CodeAgentsScoutsSkillNameRouteImport } from './routes/code/age
 import { Route as CodeAgentsApplicationsIdOrSlugRouteImport } from './routes/code/agents/applications/$idOrSlug'
 import { Route as CodeAgentsScoutsSkillNameIndexRouteImport } from './routes/code/agents/scouts.$skillName.index'
 import { Route as CodeAgentsApplicationsIdOrSlugIndexRouteImport } from './routes/code/agents/applications/$idOrSlug/index'
+import { Route as CodeAgentsApplicationsIdOrSlugSessionsSessionIdRouteImport } from './routes/code/agents/applications/$idOrSlug/sessions.$sessionId'
 
 const WebsiteRoute = WebsiteRouteImport.update({
   id: '/website',
@@ -258,6 +259,12 @@ const CodeAgentsApplicationsIdOrSlugIndexRoute =
     path: '/',
     getParentRoute: () => CodeAgentsApplicationsIdOrSlugRoute,
   } as any)
+const CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute =
+  CodeAgentsApplicationsIdOrSlugSessionsSessionIdRouteImport.update({
+    id: '/sessions/$sessionId',
+    path: '/sessions/$sessionId',
+    getParentRoute: () => CodeAgentsApplicationsIdOrSlugRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -300,6 +307,7 @@ export interface FileRoutesByFullPath {
   '/code/inbox/runs/': typeof CodeInboxRunsIndexRoute
   '/code/agents/applications/$idOrSlug/': typeof CodeAgentsApplicationsIdOrSlugIndexRoute
   '/code/agents/scouts/$skillName/': typeof CodeAgentsScoutsSkillNameIndexRoute
+  '/code/agents/applications/$idOrSlug/sessions/$sessionId': typeof CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -333,6 +341,7 @@ export interface FileRoutesByTo {
   '/code/inbox/runs': typeof CodeInboxRunsIndexRoute
   '/code/agents/applications/$idOrSlug': typeof CodeAgentsApplicationsIdOrSlugIndexRoute
   '/code/agents/scouts/$skillName': typeof CodeAgentsScoutsSkillNameIndexRoute
+  '/code/agents/applications/$idOrSlug/sessions/$sessionId': typeof CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -376,6 +385,7 @@ export interface FileRoutesById {
   '/code/inbox/runs/': typeof CodeInboxRunsIndexRoute
   '/code/agents/applications/$idOrSlug/': typeof CodeAgentsApplicationsIdOrSlugIndexRoute
   '/code/agents/scouts/$skillName/': typeof CodeAgentsScoutsSkillNameIndexRoute
+  '/code/agents/applications/$idOrSlug/sessions/$sessionId': typeof CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -420,6 +430,7 @@ export interface FileRouteTypes {
     | '/code/inbox/runs/'
     | '/code/agents/applications/$idOrSlug/'
     | '/code/agents/scouts/$skillName/'
+    | '/code/agents/applications/$idOrSlug/sessions/$sessionId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -453,6 +464,7 @@ export interface FileRouteTypes {
     | '/code/inbox/runs'
     | '/code/agents/applications/$idOrSlug'
     | '/code/agents/scouts/$skillName'
+    | '/code/agents/applications/$idOrSlug/sessions/$sessionId'
   id:
     | '__root__'
     | '/'
@@ -495,6 +507,7 @@ export interface FileRouteTypes {
     | '/code/inbox/runs/'
     | '/code/agents/applications/$idOrSlug/'
     | '/code/agents/scouts/$skillName/'
+    | '/code/agents/applications/$idOrSlug/sessions/$sessionId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -797,6 +810,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeAgentsApplicationsIdOrSlugIndexRouteImport
       parentRoute: typeof CodeAgentsApplicationsIdOrSlugRoute
     }
+    '/code/agents/applications/$idOrSlug/sessions/$sessionId': {
+      id: '/code/agents/applications/$idOrSlug/sessions/$sessionId'
+      path: '/sessions/$sessionId'
+      fullPath: '/code/agents/applications/$idOrSlug/sessions/$sessionId'
+      preLoaderRoute: typeof CodeAgentsApplicationsIdOrSlugSessionsSessionIdRouteImport
+      parentRoute: typeof CodeAgentsApplicationsIdOrSlugRoute
+    }
   }
 }
 
@@ -824,12 +844,15 @@ const WebsiteRouteWithChildren =
 
 interface CodeAgentsApplicationsIdOrSlugRouteChildren {
   CodeAgentsApplicationsIdOrSlugIndexRoute: typeof CodeAgentsApplicationsIdOrSlugIndexRoute
+  CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute: typeof CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute
 }
 
 const CodeAgentsApplicationsIdOrSlugRouteChildren: CodeAgentsApplicationsIdOrSlugRouteChildren =
   {
     CodeAgentsApplicationsIdOrSlugIndexRoute:
       CodeAgentsApplicationsIdOrSlugIndexRoute,
+    CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute:
+      CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute,
   }
 
 const CodeAgentsApplicationsIdOrSlugRouteWithChildren =
