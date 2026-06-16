@@ -34,9 +34,11 @@ import { Route as CodeInboxReportsRouteImport } from './routes/code/inbox/report
 import { Route as CodeInboxPullsRouteImport } from './routes/code/inbox/pulls'
 import { Route as CodeInboxAgentsRouteImport } from './routes/code/inbox/agents'
 import { Route as CodeAgentsScoutsRouteImport } from './routes/code/agents/scouts'
+import { Route as CodeAgentsApplicationsRouteImport } from './routes/code/agents/applications'
 import { Route as CodeInboxRunsIndexRouteImport } from './routes/code/inbox/runs.index'
 import { Route as CodeInboxReportsIndexRouteImport } from './routes/code/inbox/reports.index'
 import { Route as CodeInboxPullsIndexRouteImport } from './routes/code/inbox/pulls.index'
+import { Route as CodeAgentsApplicationsIndexRouteImport } from './routes/code/agents/applications/index'
 import { Route as WebsiteChannelIdTasksTaskIdRouteImport } from './routes/website/$channelId/tasks/$taskId'
 import { Route as WebsiteChannelIdDashboardsDashboardIdRouteImport } from './routes/website/$channelId/dashboards/$dashboardId'
 import { Route as CodeTasksPendingKeyRouteImport } from './routes/code/tasks/pending.$key'
@@ -171,6 +173,11 @@ const CodeAgentsScoutsRoute = CodeAgentsScoutsRouteImport.update({
   path: '/scouts',
   getParentRoute: () => CodeAgentsRoute,
 } as any)
+const CodeAgentsApplicationsRoute = CodeAgentsApplicationsRouteImport.update({
+  id: '/applications',
+  path: '/applications',
+  getParentRoute: () => CodeAgentsRoute,
+} as any)
 const CodeInboxRunsIndexRoute = CodeInboxRunsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -186,6 +193,12 @@ const CodeInboxPullsIndexRoute = CodeInboxPullsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => CodeInboxPullsRoute,
 } as any)
+const CodeAgentsApplicationsIndexRoute =
+  CodeAgentsApplicationsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => CodeAgentsApplicationsRoute,
+  } as any)
 const WebsiteChannelIdTasksTaskIdRoute =
   WebsiteChannelIdTasksTaskIdRouteImport.update({
     id: '/$channelId/tasks/$taskId',
@@ -247,6 +260,7 @@ export interface FileRoutesByFullPath {
   '/code/': typeof CodeIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/website/': typeof WebsiteIndexRoute
+  '/code/agents/applications': typeof CodeAgentsApplicationsRouteWithChildren
   '/code/agents/scouts': typeof CodeAgentsScoutsRouteWithChildren
   '/code/inbox/agents': typeof CodeInboxAgentsRoute
   '/code/inbox/pulls': typeof CodeInboxPullsRouteWithChildren
@@ -265,6 +279,7 @@ export interface FileRoutesByFullPath {
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
   '/website/$channelId/dashboards/$dashboardId': typeof WebsiteChannelIdDashboardsDashboardIdRoute
   '/website/$channelId/tasks/$taskId': typeof WebsiteChannelIdTasksTaskIdRoute
+  '/code/agents/applications/': typeof CodeAgentsApplicationsIndexRoute
   '/code/inbox/pulls/': typeof CodeInboxPullsIndexRoute
   '/code/inbox/reports/': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs/': typeof CodeInboxRunsIndexRoute
@@ -296,6 +311,7 @@ export interface FileRoutesByTo {
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
   '/website/$channelId/dashboards/$dashboardId': typeof WebsiteChannelIdDashboardsDashboardIdRoute
   '/website/$channelId/tasks/$taskId': typeof WebsiteChannelIdTasksTaskIdRoute
+  '/code/agents/applications': typeof CodeAgentsApplicationsIndexRoute
   '/code/inbox/pulls': typeof CodeInboxPullsIndexRoute
   '/code/inbox/reports': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs': typeof CodeInboxRunsIndexRoute
@@ -317,6 +333,7 @@ export interface FileRoutesById {
   '/code/': typeof CodeIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/website/': typeof WebsiteIndexRoute
+  '/code/agents/applications': typeof CodeAgentsApplicationsRouteWithChildren
   '/code/agents/scouts': typeof CodeAgentsScoutsRouteWithChildren
   '/code/inbox/agents': typeof CodeInboxAgentsRoute
   '/code/inbox/pulls': typeof CodeInboxPullsRouteWithChildren
@@ -335,6 +352,7 @@ export interface FileRoutesById {
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
   '/website/$channelId/dashboards/$dashboardId': typeof WebsiteChannelIdDashboardsDashboardIdRoute
   '/website/$channelId/tasks/$taskId': typeof WebsiteChannelIdTasksTaskIdRoute
+  '/code/agents/applications/': typeof CodeAgentsApplicationsIndexRoute
   '/code/inbox/pulls/': typeof CodeInboxPullsIndexRoute
   '/code/inbox/reports/': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs/': typeof CodeInboxRunsIndexRoute
@@ -357,6 +375,7 @@ export interface FileRouteTypes {
     | '/code/'
     | '/settings/'
     | '/website/'
+    | '/code/agents/applications'
     | '/code/agents/scouts'
     | '/code/inbox/agents'
     | '/code/inbox/pulls'
@@ -375,6 +394,7 @@ export interface FileRouteTypes {
     | '/code/tasks/pending/$key'
     | '/website/$channelId/dashboards/$dashboardId'
     | '/website/$channelId/tasks/$taskId'
+    | '/code/agents/applications/'
     | '/code/inbox/pulls/'
     | '/code/inbox/reports/'
     | '/code/inbox/runs/'
@@ -406,6 +426,7 @@ export interface FileRouteTypes {
     | '/code/tasks/pending/$key'
     | '/website/$channelId/dashboards/$dashboardId'
     | '/website/$channelId/tasks/$taskId'
+    | '/code/agents/applications'
     | '/code/inbox/pulls'
     | '/code/inbox/reports'
     | '/code/inbox/runs'
@@ -426,6 +447,7 @@ export interface FileRouteTypes {
     | '/code/'
     | '/settings/'
     | '/website/'
+    | '/code/agents/applications'
     | '/code/agents/scouts'
     | '/code/inbox/agents'
     | '/code/inbox/pulls'
@@ -444,6 +466,7 @@ export interface FileRouteTypes {
     | '/code/tasks/pending/$key'
     | '/website/$channelId/dashboards/$dashboardId'
     | '/website/$channelId/tasks/$taskId'
+    | '/code/agents/applications/'
     | '/code/inbox/pulls/'
     | '/code/inbox/reports/'
     | '/code/inbox/runs/'
@@ -645,6 +668,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeAgentsScoutsRouteImport
       parentRoute: typeof CodeAgentsRoute
     }
+    '/code/agents/applications': {
+      id: '/code/agents/applications'
+      path: '/applications'
+      fullPath: '/code/agents/applications'
+      preLoaderRoute: typeof CodeAgentsApplicationsRouteImport
+      parentRoute: typeof CodeAgentsRoute
+    }
     '/code/inbox/runs/': {
       id: '/code/inbox/runs/'
       path: '/'
@@ -665,6 +695,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/code/inbox/pulls/'
       preLoaderRoute: typeof CodeInboxPullsIndexRouteImport
       parentRoute: typeof CodeInboxPullsRoute
+    }
+    '/code/agents/applications/': {
+      id: '/code/agents/applications/'
+      path: '/'
+      fullPath: '/code/agents/applications/'
+      preLoaderRoute: typeof CodeAgentsApplicationsIndexRouteImport
+      parentRoute: typeof CodeAgentsApplicationsRoute
     }
     '/website/$channelId/tasks/$taskId': {
       id: '/website/$channelId/tasks/$taskId'
@@ -747,6 +784,20 @@ const WebsiteRouteChildren: WebsiteRouteChildren = {
 const WebsiteRouteWithChildren =
   WebsiteRoute._addFileChildren(WebsiteRouteChildren)
 
+interface CodeAgentsApplicationsRouteChildren {
+  CodeAgentsApplicationsIndexRoute: typeof CodeAgentsApplicationsIndexRoute
+}
+
+const CodeAgentsApplicationsRouteChildren: CodeAgentsApplicationsRouteChildren =
+  {
+    CodeAgentsApplicationsIndexRoute: CodeAgentsApplicationsIndexRoute,
+  }
+
+const CodeAgentsApplicationsRouteWithChildren =
+  CodeAgentsApplicationsRoute._addFileChildren(
+    CodeAgentsApplicationsRouteChildren,
+  )
+
 interface CodeAgentsScoutsSkillNameRouteChildren {
   CodeAgentsScoutsSkillNameIndexRoute: typeof CodeAgentsScoutsSkillNameIndexRoute
 }
@@ -773,11 +824,13 @@ const CodeAgentsScoutsRouteWithChildren =
   CodeAgentsScoutsRoute._addFileChildren(CodeAgentsScoutsRouteChildren)
 
 interface CodeAgentsRouteChildren {
+  CodeAgentsApplicationsRoute: typeof CodeAgentsApplicationsRouteWithChildren
   CodeAgentsScoutsRoute: typeof CodeAgentsScoutsRouteWithChildren
   CodeAgentsIndexRoute: typeof CodeAgentsIndexRoute
 }
 
 const CodeAgentsRouteChildren: CodeAgentsRouteChildren = {
+  CodeAgentsApplicationsRoute: CodeAgentsApplicationsRouteWithChildren,
   CodeAgentsScoutsRoute: CodeAgentsScoutsRouteWithChildren,
   CodeAgentsIndexRoute: CodeAgentsIndexRoute,
 }
