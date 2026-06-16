@@ -31,6 +31,18 @@ export const agentApplicationsKeys = {
     ] as const,
   revisions: (projectId: number | null, idOrSlug: string) =>
     ["agent-applications", "revisions", projectId, idOrSlug] as const,
+  revision: (projectId: number | null, idOrSlug: string, revisionId: string) =>
+    [
+      "agent-applications",
+      "revision",
+      projectId,
+      idOrSlug,
+      revisionId,
+    ] as const,
+  bundle: (projectId: number | null, idOrSlug: string, revisionId: string) =>
+    ["agent-applications", "bundle", projectId, idOrSlug, revisionId] as const,
+  envKeys: (projectId: number | null, idOrSlug: string) =>
+    ["agent-applications", "env-keys", projectId, idOrSlug] as const,
   fleetStats: (projectId: number | null) =>
     ["agent-applications", "fleet", "stats", projectId] as const,
   fleetLiveSessions: (projectId: number | null) =>

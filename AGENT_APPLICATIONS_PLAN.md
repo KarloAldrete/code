@@ -64,6 +64,14 @@ under the Applications tab:
 
 ## Architecture decisions
 
+- **Authoring is the concierge's job; this surface renders.** Agents are
+  created and edited only through the agent concierge (a meta-agent you chat
+  with), never through hand-built config forms. So the Applications surface is
+  **render-first**: it shows how an agent is configured (spec, revisions,
+  secrets, memory, connections) and exposes only **operational** mutations —
+  enable/disable an agent, and promote / freeze / archive a revision. There is
+  **no** spec editor, bundle file editor, trigger-config form, or secret-value
+  editor. (This retires most of the old M12 "authoring" milestone.)
 - **Functional parity, not code reuse.** Re-implement each console feature to
   code's conventions (Inversify services, `useAuthenticatedQuery` hooks,
   Tailwind/Radix, `@posthog/quill`). The console's React is a behavioral spec,
@@ -158,41 +166,57 @@ transport, blocked on the M-Live open question).
   - [x] M3c — stored session transcripts render through `ConversationView`.
 - [x] **Tabs** — split Agents into Scouts + Applications tabs.
 
+### Done this session
+
+- [x] **M4 — Sessions & logs** (features 5, 7, 8) — filterable session list,
+  session-detail KPI strip + "fired by" cron badge, structured Logs pane.
+  Commit `0f15929f` (incl. the latent empty-conversation render fix).
+- [x] **M5 — Approvals** (features 9, 11) — per-agent approvals queue, decide
+  (approve/reject + edited args + reason). Commit `a2fa9115`, then reworked into
+  **master/detail with embedded session + refresh controls** (`a376b61b`).
+  Remaining: the fleet-wide global approvals queue (feature 10).
+
 ### Remaining (parity work)
 
-Ordered roughly by leverage: the browsing/monitoring + approvals tracks are
-mostly "wire up UI to existing client methods", so they land first and are
-demoable against an `ass` backend without the live-SSE transport. Authoring and
-live chat come after.
+Reframed around the **render-first / concierge-authoring** principle above:
+config/revisions/secrets/memory are read surfaces with only operational
+controls. Ordered by core value.
 
-- [ ] **M4 — Sessions & logs** (features 5, 7, 8) — filterable session list,
-  session-detail KPI strip + "fired by" cron badge, and the **structured Logs
-  pane** (the big missing read surface). Add `…/sessions/{id}/logs/` to the
-  client + a `LogEntry` type.
-- [ ] **M5 — Approvals** (features 9, 10, 11) — per-agent + global approvals
-  queue, detail with reasoning snapshot + proposed args, approve/reject with
-  optional edited args + reason. Client methods exist; `decide` is a mutation →
-  put it (and optimistic refresh) behind a core service method. Distinct from
-  in-chat ACP approvals (M-Live).
-- [ ] **M6 — Fleet overview & live-now** (features 1, 2) — stat strip + live-now
-  panel + recent activity on the Applications landing page; wire agent-list
-  filters + per-agent inline stats (feature 3).
-- [ ] **M7 — Observability** (features 25, 26) — per-agent observability
-  **summary page** and the fleet analytics dashboard, both via `/query/` HogQL
-  over the team's `$ai_*` events. Pure reads through `PostHogAPIClient`.
 - [ ] **M8 — Configuration & spec explorer (read)** (features 12, 13) —
-  read-only spec explorer + bundle file viewer + manifest tree. No writes yet.
-- [ ] **M9 — Revisions & lifecycle** (feature 14) — revision list +
-  freeze/promote/archive/rollback + clone/new_draft. Lifecycle is a core service
-  (promote rewrites `live_revision`).
-- [ ] **M10 — Secrets/env** (feature 19) — env-key management UI + required-
-  secret discovery from spec. Writes via core service (encrypted at rest).
-- [ ] **M11 — Memory** (features 20, 21, 22) — file store CRUD + BM25 search +
-  tables viewer. Greenfield: types + client + UI.
-- [ ] **M12 — Spec & bundle authoring** (features 15, 16, 17) — edit spec on a
-  draft, validate, render system prompt, write/delete bundle files, trigger
-  config editors.
-- [ ] **M13 — Connections** (features 23, 24) — Slack setup card + integrations.
+  Configuration tab rendering the live (or selected) revision's spec: model,
+  triggers, tools, skills, mcps, integrations, limits, entrypoint, reasoning.
+  Pure read off the existing `getAgentRevision` (`spec` JSONB) — no new
+  endpoints. Bundle file viewer + manifest tree (feature 13) is a follow-on
+  (needs `…/revisions/{id}/manifest/` + `/file/`). **No spec editing.**
+- [ ] **M9 — Revisions & operational lifecycle** (feature 14, scoped) — revision
+  list with states/lineage + the **operational** actions only: promote (incl.
+  rollback to an older revision), freeze (draft→ready), archive. Plus **enable /
+  disable agent** (archive/unarchive the application). These mutations go behind
+  a core service (promote rewrites `live_revision`). Draft authoring
+  (clone/new_draft, spec edits) is **out** — the concierge does that.
+- [ ] **M10 — Secrets/env (read)** (feature 19, scoped) — show which env keys
+  are set (names only, never values) + which secrets the spec requires. Whether
+  setting/rotating a secret value belongs here or is also concierge-driven is an
+  open question (a real API key can't be handed to the concierge in chat) —
+  resolve before building any write path.
+- [ ] **M11 — Memory** (features 20, 21, 22) — file store + BM25 search + tables.
+  Render-first; if any write lands it's operational, not authoring.
+- [ ] **M13 — Connections** (features 23, 24) — Slack setup + integrations view.
+- [ ] **M7 — Observability** (features 25, 26) — per-agent observability
+  **summary page** + fleet analytics, via `/query/` HogQL over the team's
+  `$ai_*` events. Likely becomes the **Applications landing entrypoint** (see
+  deferred M6). Pure reads through `PostHogAPIClient`.
+- [ ] **Global approvals queue** (feature 10) — fleet-wide approval inbox at the
+  Applications level (the per-agent queue shipped in M5).
+- [ ] ~~**M12 — Spec & bundle authoring**~~ — **retired.** Spec/bundle/trigger
+  editing is the concierge's job; the render views live in M8, operational
+  lifecycle in M9.
+
+### Deferred
+
+- [ ] **M6 — Fleet overview & live-now** (features 1, 2, 3) — **deferred.** The
+  Applications landing is likely to become an **observability entrypoint** (M7)
+  rather than a stat-strip + live-now dashboard. Revisit after M7.
 - [ ] **M-Live — Live chat & interactivity** (features 18, 27, 28, 29) — the
   SSE transport (EventSource against agent-ingress), send a message, client
   tools, cancel, in-chat approvals (ACP tool-call permissions), cron-fire, and

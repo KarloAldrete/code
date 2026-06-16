@@ -114,6 +114,19 @@ export interface AgentRevision {
   updated_at: string;
 }
 
+// --- Bundle files ----------------------------------------------------------
+// `…/revisions/{id}/bundle/` returns a typed bundle ({ agent_md, skills, tools });
+// the client flattens it into these per-file rows keyed by canonical path
+// (agent.md, skills/<id>/SKILL.md, tools/<id>/source.ts, tools/<id>/schema.json).
+
+export type BundleFileLanguage = "markdown" | "typescript" | "json" | "text";
+
+export interface BundleFile {
+  path: string;
+  content: string;
+  language: BundleFileLanguage;
+}
+
 // --- Sessions --------------------------------------------------------------
 
 export interface AgentSessionUsageTotal {

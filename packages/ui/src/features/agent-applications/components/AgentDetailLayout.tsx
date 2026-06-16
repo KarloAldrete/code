@@ -6,7 +6,11 @@ import { Link } from "@tanstack/react-router";
 import { type ReactNode, useMemo } from "react";
 import { useAgentApplication } from "../hooks/useAgentApplication";
 
-export type AgentDetailTab = "overview" | "sessions" | "approvals";
+export type AgentDetailTab =
+  | "overview"
+  | "sessions"
+  | "configuration"
+  | "approvals";
 
 const TABS: { id: AgentDetailTab; label: string; to: string }[] = [
   {
@@ -18,6 +22,11 @@ const TABS: { id: AgentDetailTab; label: string; to: string }[] = [
     id: "sessions",
     label: "Sessions",
     to: "/code/agents/applications/$idOrSlug/sessions",
+  },
+  {
+    id: "configuration",
+    label: "Configuration",
+    to: "/code/agents/applications/$idOrSlug/configuration",
   },
   {
     id: "approvals",

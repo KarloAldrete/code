@@ -24,6 +24,7 @@ import type {
   AgentSessionLogEntry,
   AgentSessionLogsParams,
   AgentSessionsListParams,
+  BundleFile,
   DecideApprovalRequest,
 } from "@posthog/shared/agent-platform-types";
 import type {
@@ -4226,6 +4227,81 @@ export class PostHogAPIClient {
       }
       throw error;
     }
+  }
+
+  /**
+   * A revision's bundle, flattened to per-file rows. The server returns a typed
+   * `{ bundle: { agent_md, skills[], tools[] } }`; we expand it to the canonical
+   * file paths the explorer renders (agent.md, skills/<id>/SKILL.md,
+   * tools/<id>/source.ts, tools/<id>/schema.json).
+   */
+  async getAgentRevisionBundle(
+    idOrSlug: string,
+    revisionId: string,
+  ): Promise<BundleFile[]> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/bundle/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    const data = (await response.json()) as {
+      bundle?: {
+        agent_md?: string;
+        skills?: { id: string; description?: string; body: string }[];
+        tools?: {
+          id: string;
+          description?: string;
+          args_schema?: Record<string, unknown>;
+          source: string;
+        }[];
+      };
+    };
+    const bundle = data.bundle ?? {};
+    const out: BundleFile[] = [];
+    if (bundle.agent_md !== undefined) {
+      out.push({
+        path: "agent.md",
+        content: bundle.agent_md,
+        language: "markdown",
+      });
+    }
+    for (const skill of bundle.skills ?? []) {
+      out.push({
+        path: `skills/${skill.id}/SKILL.md`,
+        content: skill.body,
+        language: "markdown",
+      });
+    }
+    for (const tool of bundle.tools ?? []) {
+      out.push({
+        path: `tools/${tool.id}/source.ts`,
+        content: tool.source,
+        language: "typescript",
+      });
+      out.push({
+        path: `tools/${tool.id}/schema.json`,
+        content: JSON.stringify(
+          { description: tool.description, args_schema: tool.args_schema },
+          null,
+          2,
+        ),
+        language: "json",
+      });
+    }
+    out.sort((a, b) => a.path.localeCompare(b.path));
+    return out;
+  }
+
+  /** The names of env keys currently set on an agent (values never returned). */
+  async listAgentEnvKeys(idOrSlug: string): Promise<string[]> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/env_keys/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    const data = (await response.json()) as {
+      keys?: string[];
+      results?: string[];
+    };
+    return data.keys ?? data.results ?? [];
   }
 
   /** Team-wide fleet roll-up stats. `since` is an ISO timestamp window start. */
