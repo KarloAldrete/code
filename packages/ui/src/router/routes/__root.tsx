@@ -1,4 +1,5 @@
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
+import { Separator } from "@posthog/quill";
 import {
   BILLING_FLAG,
   HOME_TAB_FLAG,
@@ -18,6 +19,7 @@ import { useIntegrations } from "@posthog/ui/features/integrations/useIntegratio
 import { useScoutDeepLink } from "@posthog/ui/features/scouts/hooks/useScoutDeepLink";
 import { useSetupDiscovery } from "@posthog/ui/features/setup/useSetupDiscovery";
 import { MainSidebar } from "@posthog/ui/features/sidebar/components/MainSidebar";
+import { SidebarNavSection } from "@posthog/ui/features/sidebar/components/SidebarNavSection";
 import { useSidebarData } from "@posthog/ui/features/sidebar/useSidebarData";
 import { useVisualTaskOrder } from "@posthog/ui/features/sidebar/useVisualTaskOrder";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
@@ -221,6 +223,8 @@ function RootLayout() {
                   Channels
                 </Text>
               </Flex>
+              <SidebarNavSection />
+              <Separator className="mx-2 my-2 shrink-0" />
               <Box className="min-h-0 flex-1 overflow-hidden">
                 <ChannelsList />
               </Box>
