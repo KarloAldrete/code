@@ -49,6 +49,10 @@ function deriveFromMatches(matches: Match[]): AppView {
     }
     case "/code/tasks/pending/$key":
       return { type: "task-pending", pendingTaskKey: last.params.key };
+    // Channels-space new-task screen — same task-input view (and prefill merge
+    // below) as the /code/ index, so the New task item highlights identically.
+    case "/website/new":
+      return { type: "task-input" };
     case "/folders/$folderId":
       return { type: "folder-settings", folderId: last.params.folderId };
     case "/code/home":

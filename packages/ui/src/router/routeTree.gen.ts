@@ -18,6 +18,7 @@ import { Route as WebsiteIndexRouteImport } from './routes/website/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as CodeIndexRouteImport } from './routes/code/index'
 import { Route as WebsiteSkillsRouteImport } from './routes/website/skills'
+import { Route as WebsiteNewRouteImport } from './routes/website/new'
 import { Route as WebsiteMcpServersRouteImport } from './routes/website/mcp-servers'
 import { Route as WebsiteHomeRouteImport } from './routes/website/home'
 import { Route as WebsiteCommandCenterRouteImport } from './routes/website/command-center'
@@ -93,6 +94,11 @@ const CodeIndexRoute = CodeIndexRouteImport.update({
 const WebsiteSkillsRoute = WebsiteSkillsRouteImport.update({
   id: '/skills',
   path: '/skills',
+  getParentRoute: () => WebsiteRoute,
+} as any)
+const WebsiteNewRoute = WebsiteNewRouteImport.update({
+  id: '/new',
+  path: '/new',
   getParentRoute: () => WebsiteRoute,
 } as any)
 const WebsiteMcpServersRoute = WebsiteMcpServersRouteImport.update({
@@ -271,6 +277,7 @@ export interface FileRoutesByFullPath {
   '/website/command-center': typeof WebsiteCommandCenterRoute
   '/website/home': typeof WebsiteHomeRoute
   '/website/mcp-servers': typeof WebsiteMcpServersRoute
+  '/website/new': typeof WebsiteNewRoute
   '/website/skills': typeof WebsiteSkillsRoute
   '/code/': typeof CodeIndexRoute
   '/settings/': typeof SettingsIndexRoute
@@ -310,6 +317,7 @@ export interface FileRoutesByTo {
   '/website/command-center': typeof WebsiteCommandCenterRoute
   '/website/home': typeof WebsiteHomeRoute
   '/website/mcp-servers': typeof WebsiteMcpServersRoute
+  '/website/new': typeof WebsiteNewRoute
   '/website/skills': typeof WebsiteSkillsRoute
   '/code': typeof CodeIndexRoute
   '/settings': typeof SettingsIndexRoute
@@ -349,6 +357,7 @@ export interface FileRoutesById {
   '/website/command-center': typeof WebsiteCommandCenterRoute
   '/website/home': typeof WebsiteHomeRoute
   '/website/mcp-servers': typeof WebsiteMcpServersRoute
+  '/website/new': typeof WebsiteNewRoute
   '/website/skills': typeof WebsiteSkillsRoute
   '/code/': typeof CodeIndexRoute
   '/settings/': typeof SettingsIndexRoute
@@ -393,6 +402,7 @@ export interface FileRouteTypes {
     | '/website/command-center'
     | '/website/home'
     | '/website/mcp-servers'
+    | '/website/new'
     | '/website/skills'
     | '/code/'
     | '/settings/'
@@ -432,6 +442,7 @@ export interface FileRouteTypes {
     | '/website/command-center'
     | '/website/home'
     | '/website/mcp-servers'
+    | '/website/new'
     | '/website/skills'
     | '/code'
     | '/settings'
@@ -470,6 +481,7 @@ export interface FileRouteTypes {
     | '/website/command-center'
     | '/website/home'
     | '/website/mcp-servers'
+    | '/website/new'
     | '/website/skills'
     | '/code/'
     | '/settings/'
@@ -579,6 +591,13 @@ declare module '@tanstack/react-router' {
       path: '/skills'
       fullPath: '/website/skills'
       preLoaderRoute: typeof WebsiteSkillsRouteImport
+      parentRoute: typeof WebsiteRoute
+    }
+    '/website/new': {
+      id: '/website/new'
+      path: '/new'
+      fullPath: '/website/new'
+      preLoaderRoute: typeof WebsiteNewRouteImport
       parentRoute: typeof WebsiteRoute
     }
     '/website/mcp-servers': {
@@ -805,6 +824,7 @@ interface WebsiteRouteChildren {
   WebsiteCommandCenterRoute: typeof WebsiteCommandCenterRoute
   WebsiteHomeRoute: typeof WebsiteHomeRoute
   WebsiteMcpServersRoute: typeof WebsiteMcpServersRoute
+  WebsiteNewRoute: typeof WebsiteNewRoute
   WebsiteSkillsRoute: typeof WebsiteSkillsRoute
   WebsiteIndexRoute: typeof WebsiteIndexRoute
   WebsiteChannelIdContextRoute: typeof WebsiteChannelIdContextRoute
@@ -818,6 +838,7 @@ const WebsiteRouteChildren: WebsiteRouteChildren = {
   WebsiteCommandCenterRoute: WebsiteCommandCenterRoute,
   WebsiteHomeRoute: WebsiteHomeRoute,
   WebsiteMcpServersRoute: WebsiteMcpServersRoute,
+  WebsiteNewRoute: WebsiteNewRoute,
   WebsiteSkillsRoute: WebsiteSkillsRoute,
   WebsiteIndexRoute: WebsiteIndexRoute,
   WebsiteChannelIdContextRoute: WebsiteChannelIdContextRoute,

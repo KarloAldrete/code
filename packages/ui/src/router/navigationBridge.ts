@@ -100,6 +100,10 @@ export function navigateToMcpServers(): void {
 // sidebar keeps the channels chrome instead of switching back to Code. The
 // SidebarNavSection picks the right variant based on the active space.
 
+export function navigateToWebsiteNew(): void {
+  void getRouterOrNull()?.navigate({ to: "/website/new" });
+}
+
 export function navigateToWebsiteHome(): void {
   void getRouterOrNull()?.navigate({ to: "/website/home" });
 }

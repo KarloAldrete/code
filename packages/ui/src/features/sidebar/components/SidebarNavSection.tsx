@@ -54,6 +54,8 @@ export function SidebarNavSection() {
   const inChannels = useRouterState({
     select: (s) => s.location.pathname.startsWith("/website"),
   });
+  const goNewTask = () =>
+    openTaskInput(inChannels ? { space: "website" } : undefined);
   const goHome = inChannels ? navigateToWebsiteHome : navigateToHome;
   const goSkills = inChannels ? navigateToWebsiteSkills : navigateToSkills;
   const goMcpServers = inChannels
@@ -100,7 +102,7 @@ export function SidebarNavSection() {
   return (
     <Flex direction="column" className="shrink-0 gap-px px-2 py-2">
       <Box mb="2">
-        <NewTaskItem isActive={isHomeActive} onClick={openTaskInput} />
+        <NewTaskItem isActive={isHomeActive} onClick={goNewTask} />
       </Box>
 
       {homeTabEnabled && (
