@@ -17,6 +17,7 @@ interface InboxTabBarProps {
 function activeTabFromPath(pathname: string): InboxTabKey {
   if (pathname.startsWith(INBOX_TAB_LIST_ROUTE.reports)) return "reports";
   if (pathname.startsWith(INBOX_TAB_LIST_ROUTE.runs)) return "runs";
+  if (pathname.startsWith(INBOX_TAB_LIST_ROUTE.dismissed)) return "dismissed";
   return "pulls";
 }
 
@@ -49,21 +50,26 @@ export function InboxTabBar({ counts }: InboxTabBarProps) {
                 <span className="font-medium text-[13px]">
                   {INBOX_TAB_LABEL[key]}
                 </span>
-                <span
-                  className={
-                    isActive
-                      ? "text-[12px] text-gray-11 tabular-nums"
-                      : "text-[12px] text-gray-10 tabular-nums"
-                  }
-                >
-                  {counts[key]}
-                </span>
+                {/* Dismissed is an open-ended archive; a running total adds no signal. */}
+                {key !== "dismissed" && (
+                  <span
+                    className={
+                      isActive
+                        ? "text-[12px] text-gray-11 tabular-nums"
+                        : "text-[12px] text-gray-10 tabular-nums"
+                    }
+                  >
+                    {counts[key]}
+                  </span>
+                )}
               </TabsTrigger>
             );
           })}
         </TabsList>
       </Tabs>
-      {activeKey !== "runs" && <InboxScopeSelect />}
+      {activeKey !== "runs" && activeKey !== "dismissed" && (
+        <InboxScopeSelect />
+      )}
     </Flex>
   );
 }
