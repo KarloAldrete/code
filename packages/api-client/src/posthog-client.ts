@@ -27,6 +27,7 @@ import type {
   AgentMemoryTableRows,
   AgentMemoryTreeNode,
   AgentRevision,
+  AgentSessionEvent,
   AgentSessionLogEntry,
   AgentSessionLogsParams,
   AgentSessionsListParams,
@@ -4469,6 +4470,136 @@ export class PostHogAPIClient {
     if (limit != null) url.searchParams.set("limit", String(limit));
     const response = await this.api.fetcher.fetch({ method: "get", url, path });
     return (await response.json()) as AgentMemoryTableRows;
+  }
+
+  // --- Live chat (agent-ingress) -------------------------------------------
+  // These hit the agent's ingress host (`ingress_base_url`, which already
+  // includes `/agents/<slug>`), not the PostHog API. The shared fetcher
+  // attaches the same bearer regardless of host, so no proxy is needed (unlike
+  // the console, which proxied only because browser EventSource can't set
+  // an Authorization header — `fetch` can).
+
+  /** Start a chat session; returns the new session id. */
+  async runAgentSession(
+    ingressBaseUrl: string,
+    message: string,
+  ): Promise<{ session_id: string; resumed?: boolean }> {
+    const url = new URL(`${ingressBaseUrl.replace(/\/$/, "")}/run`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: url.pathname,
+      overrides: { body: JSON.stringify({ message }) },
+    });
+    return (await response.json()) as { session_id: string; resumed?: boolean };
+  }
+
+  /** Send a follow-up user message to an open session. */
+  async sendAgentMessage(
+    ingressBaseUrl: string,
+    sessionId: string,
+    message: string,
+  ): Promise<void> {
+    const url = new URL(`${ingressBaseUrl.replace(/\/$/, "")}/send`);
+    await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: url.pathname,
+      overrides: { body: JSON.stringify({ session_id: sessionId, message }) },
+    });
+  }
+
+  /** Return a client-tool result to an open session. */
+  async sendAgentClientToolResult(
+    ingressBaseUrl: string,
+    sessionId: string,
+    callId: string,
+    outcome: { result?: unknown; error?: string },
+  ): Promise<void> {
+    const url = new URL(
+      `${ingressBaseUrl.replace(/\/$/, "")}/client_tool_result`,
+    );
+    await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: url.pathname,
+      overrides: {
+        body: JSON.stringify({
+          session_id: sessionId,
+          call_id: callId,
+          ...outcome,
+        }),
+      },
+    });
+  }
+
+  /** Cancel an open session (terminal). */
+  async cancelAgentSession(
+    ingressBaseUrl: string,
+    sessionId: string,
+  ): Promise<void> {
+    const url = new URL(`${ingressBaseUrl.replace(/\/$/, "")}/cancel`);
+    await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: url.pathname,
+      overrides: { body: JSON.stringify({ session_id: sessionId }) },
+    });
+  }
+
+  /**
+   * Stream a session's SSE events as an async iterator. Reads the raw response
+   * body and parses `text/event-stream` frames into `AgentSessionEvent`s.
+   */
+  async *streamAgentSession(
+    ingressBaseUrl: string,
+    sessionId: string,
+    signal?: AbortSignal,
+  ): AsyncGenerator<AgentSessionEvent> {
+    const url = new URL(`${ingressBaseUrl.replace(/\/$/, "")}/listen`);
+    url.searchParams.set("session_id", sessionId);
+    // NB: only `signal` in overrides. Passing `headers` here would replace the
+    // fetcher's Authorization header (it spreads overrides over the built
+    // headers), which 401s the stream. /listen streams SSE without an explicit
+    // Accept header.
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: url.pathname,
+      overrides: { signal },
+    });
+    if (!response.body) return;
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        // Frames are separated by a blank line.
+        let sep = buffer.indexOf("\n\n");
+        while (sep !== -1) {
+          const frame = buffer.slice(0, sep);
+          buffer = buffer.slice(sep + 2);
+          const data = frame
+            .split("\n")
+            .filter((line) => line.startsWith("data:"))
+            .map((line) => line.slice(5).trimStart())
+            .join("\n");
+          if (data) {
+            try {
+              yield JSON.parse(data) as AgentSessionEvent;
+            } catch {
+              // Skip unparseable frames (keep-alives, comments).
+            }
+          }
+          sep = buffer.indexOf("\n\n");
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
   }
 
   /** Team-wide fleet roll-up stats. `since` is an ISO timestamp window start. */

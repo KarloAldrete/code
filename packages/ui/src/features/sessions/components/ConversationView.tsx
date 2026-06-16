@@ -22,6 +22,7 @@ import {
   type ThreadGrouping,
   type ThreadRow,
 } from "@posthog/ui/features/sessions/components/new-thread/buildThreadGroups";
+import type { CollapseMode } from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
 import { ToolCallGroupChip } from "@posthog/ui/features/sessions/components/new-thread/ToolCallGroupChip";
 import { SessionFooter } from "@posthog/ui/features/sessions/components/SessionFooter";
 import { QueuedMessageView } from "@posthog/ui/features/sessions/components/session-update/QueuedMessageView";
@@ -73,6 +74,12 @@ interface ConversationViewProps {
   task?: Task;
   slackThreadUrl?: string;
   compact?: boolean;
+  /**
+   * Override the global collapse setting for this view. Used by surfaces like
+   * the live-agent chat preview, where folding the agent's prose into a tool
+   * chip hides the response — they pass `"none"` to render everything inline.
+   */
+  collapseMode?: CollapseMode;
 }
 
 export function ConversationView({
@@ -84,6 +91,7 @@ export function ConversationView({
   task,
   slackThreadUrl,
   compact = false,
+  collapseMode: collapseModeProp,
 }: ConversationViewProps) {
   const diffWorkerFactory = useService<DiffWorkerFactory>(DIFF_WORKER_FACTORY);
   const diffsPoolOptions = useMemo(
@@ -100,7 +108,10 @@ export function ConversationView({
   const debugLogsCloudRuns = useSettingsStore((s) => s.debugLogsCloudRuns);
   const showDebugLogs = debugLogsCloudRuns;
 
-  const collapseMode = useSettingsStore((s) => s.conversationCollapseMode);
+  const collapseModeSetting = useSettingsStore(
+    (s) => s.conversationCollapseMode,
+  );
+  const collapseMode = collapseModeProp ?? collapseModeSetting;
   const groupOverrides = useGroupOverrides();
   const sessionViewActions = useSessionViewActions();
 

@@ -8,6 +8,7 @@ import { useAgentApplication } from "../hooks/useAgentApplication";
 
 export type AgentDetailTab =
   | "overview"
+  | "chat"
   | "sessions"
   | "configuration"
   | "memory"
@@ -19,6 +20,11 @@ const TABS: { id: AgentDetailTab; label: string; to: string }[] = [
     id: "overview",
     label: "Overview",
     to: "/code/agents/applications/$idOrSlug",
+  },
+  {
+    id: "chat",
+    label: "Chat",
+    to: "/code/agents/applications/$idOrSlug/chat",
   },
   {
     id: "sessions",

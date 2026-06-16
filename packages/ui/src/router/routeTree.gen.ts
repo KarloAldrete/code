@@ -53,6 +53,7 @@ import { Route as CodeAgentsApplicationsIdOrSlugIndexRouteImport } from './route
 import { Route as CodeAgentsApplicationsIdOrSlugObservabilityRouteImport } from './routes/code/agents/applications/$idOrSlug/observability'
 import { Route as CodeAgentsApplicationsIdOrSlugMemoryRouteImport } from './routes/code/agents/applications/$idOrSlug/memory'
 import { Route as CodeAgentsApplicationsIdOrSlugConfigurationRouteImport } from './routes/code/agents/applications/$idOrSlug/configuration'
+import { Route as CodeAgentsApplicationsIdOrSlugChatRouteImport } from './routes/code/agents/applications/$idOrSlug/chat'
 import { Route as CodeAgentsApplicationsIdOrSlugApprovalsRouteImport } from './routes/code/agents/applications/$idOrSlug/approvals'
 import { Route as CodeAgentsApplicationsIdOrSlugSessionsIndexRouteImport } from './routes/code/agents/applications/$idOrSlug/sessions.index'
 import { Route as CodeAgentsApplicationsIdOrSlugSessionsSessionIdRouteImport } from './routes/code/agents/applications/$idOrSlug/sessions.$sessionId'
@@ -288,6 +289,12 @@ const CodeAgentsApplicationsIdOrSlugConfigurationRoute =
     path: '/configuration',
     getParentRoute: () => CodeAgentsApplicationsIdOrSlugRoute,
   } as any)
+const CodeAgentsApplicationsIdOrSlugChatRoute =
+  CodeAgentsApplicationsIdOrSlugChatRouteImport.update({
+    id: '/chat',
+    path: '/chat',
+    getParentRoute: () => CodeAgentsApplicationsIdOrSlugRoute,
+  } as any)
 const CodeAgentsApplicationsIdOrSlugApprovalsRoute =
   CodeAgentsApplicationsIdOrSlugApprovalsRouteImport.update({
     id: '/approvals',
@@ -348,6 +355,7 @@ export interface FileRoutesByFullPath {
   '/code/inbox/reports/': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs/': typeof CodeInboxRunsIndexRoute
   '/code/agents/applications/$idOrSlug/approvals': typeof CodeAgentsApplicationsIdOrSlugApprovalsRoute
+  '/code/agents/applications/$idOrSlug/chat': typeof CodeAgentsApplicationsIdOrSlugChatRoute
   '/code/agents/applications/$idOrSlug/configuration': typeof CodeAgentsApplicationsIdOrSlugConfigurationRoute
   '/code/agents/applications/$idOrSlug/memory': typeof CodeAgentsApplicationsIdOrSlugMemoryRoute
   '/code/agents/applications/$idOrSlug/observability': typeof CodeAgentsApplicationsIdOrSlugObservabilityRoute
@@ -387,6 +395,7 @@ export interface FileRoutesByTo {
   '/code/inbox/reports': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs': typeof CodeInboxRunsIndexRoute
   '/code/agents/applications/$idOrSlug/approvals': typeof CodeAgentsApplicationsIdOrSlugApprovalsRoute
+  '/code/agents/applications/$idOrSlug/chat': typeof CodeAgentsApplicationsIdOrSlugChatRoute
   '/code/agents/applications/$idOrSlug/configuration': typeof CodeAgentsApplicationsIdOrSlugConfigurationRoute
   '/code/agents/applications/$idOrSlug/memory': typeof CodeAgentsApplicationsIdOrSlugMemoryRoute
   '/code/agents/applications/$idOrSlug/observability': typeof CodeAgentsApplicationsIdOrSlugObservabilityRoute
@@ -437,6 +446,7 @@ export interface FileRoutesById {
   '/code/inbox/reports/': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs/': typeof CodeInboxRunsIndexRoute
   '/code/agents/applications/$idOrSlug/approvals': typeof CodeAgentsApplicationsIdOrSlugApprovalsRoute
+  '/code/agents/applications/$idOrSlug/chat': typeof CodeAgentsApplicationsIdOrSlugChatRoute
   '/code/agents/applications/$idOrSlug/configuration': typeof CodeAgentsApplicationsIdOrSlugConfigurationRoute
   '/code/agents/applications/$idOrSlug/memory': typeof CodeAgentsApplicationsIdOrSlugMemoryRoute
   '/code/agents/applications/$idOrSlug/observability': typeof CodeAgentsApplicationsIdOrSlugObservabilityRoute
@@ -488,6 +498,7 @@ export interface FileRouteTypes {
     | '/code/inbox/reports/'
     | '/code/inbox/runs/'
     | '/code/agents/applications/$idOrSlug/approvals'
+    | '/code/agents/applications/$idOrSlug/chat'
     | '/code/agents/applications/$idOrSlug/configuration'
     | '/code/agents/applications/$idOrSlug/memory'
     | '/code/agents/applications/$idOrSlug/observability'
@@ -527,6 +538,7 @@ export interface FileRouteTypes {
     | '/code/inbox/reports'
     | '/code/inbox/runs'
     | '/code/agents/applications/$idOrSlug/approvals'
+    | '/code/agents/applications/$idOrSlug/chat'
     | '/code/agents/applications/$idOrSlug/configuration'
     | '/code/agents/applications/$idOrSlug/memory'
     | '/code/agents/applications/$idOrSlug/observability'
@@ -576,6 +588,7 @@ export interface FileRouteTypes {
     | '/code/inbox/reports/'
     | '/code/inbox/runs/'
     | '/code/agents/applications/$idOrSlug/approvals'
+    | '/code/agents/applications/$idOrSlug/chat'
     | '/code/agents/applications/$idOrSlug/configuration'
     | '/code/agents/applications/$idOrSlug/memory'
     | '/code/agents/applications/$idOrSlug/observability'
@@ -913,6 +926,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeAgentsApplicationsIdOrSlugConfigurationRouteImport
       parentRoute: typeof CodeAgentsApplicationsIdOrSlugRoute
     }
+    '/code/agents/applications/$idOrSlug/chat': {
+      id: '/code/agents/applications/$idOrSlug/chat'
+      path: '/chat'
+      fullPath: '/code/agents/applications/$idOrSlug/chat'
+      preLoaderRoute: typeof CodeAgentsApplicationsIdOrSlugChatRouteImport
+      parentRoute: typeof CodeAgentsApplicationsIdOrSlugRoute
+    }
     '/code/agents/applications/$idOrSlug/approvals': {
       id: '/code/agents/applications/$idOrSlug/approvals'
       path: '/approvals'
@@ -961,6 +981,7 @@ const WebsiteRouteWithChildren =
 
 interface CodeAgentsApplicationsIdOrSlugRouteChildren {
   CodeAgentsApplicationsIdOrSlugApprovalsRoute: typeof CodeAgentsApplicationsIdOrSlugApprovalsRoute
+  CodeAgentsApplicationsIdOrSlugChatRoute: typeof CodeAgentsApplicationsIdOrSlugChatRoute
   CodeAgentsApplicationsIdOrSlugConfigurationRoute: typeof CodeAgentsApplicationsIdOrSlugConfigurationRoute
   CodeAgentsApplicationsIdOrSlugMemoryRoute: typeof CodeAgentsApplicationsIdOrSlugMemoryRoute
   CodeAgentsApplicationsIdOrSlugObservabilityRoute: typeof CodeAgentsApplicationsIdOrSlugObservabilityRoute
@@ -973,6 +994,8 @@ const CodeAgentsApplicationsIdOrSlugRouteChildren: CodeAgentsApplicationsIdOrSlu
   {
     CodeAgentsApplicationsIdOrSlugApprovalsRoute:
       CodeAgentsApplicationsIdOrSlugApprovalsRoute,
+    CodeAgentsApplicationsIdOrSlugChatRoute:
+      CodeAgentsApplicationsIdOrSlugChatRoute,
     CodeAgentsApplicationsIdOrSlugConfigurationRoute:
       CodeAgentsApplicationsIdOrSlugConfigurationRoute,
     CodeAgentsApplicationsIdOrSlugMemoryRoute:

@@ -49,6 +49,19 @@ function outputText(value: unknown): string {
 }
 
 export interface AgentChatMapper {
+  /**
+   * Optimistically emit the user's just-sent message so it renders the instant
+   * they hit send, before the network round-trip. The stream echoes the same
+   * message back a beat later as a `user_message` event — that echo is swallowed
+   * (matched by text, FIFO) so it isn't rendered twice.
+   */
+  seedUserMessage(text: string, ts?: number): AcpMessage[];
+  /**
+   * Continue prompt (request) id numbering past `count` restored turns, so a
+   * follow-up message on a resumed chat doesn't collide with a turn rebuilt
+   * from the stored transcript.
+   */
+  setPromptIdBase(count: number): void;
   /** Translate one SSE event into zero or more ACP messages. */
   apply(event: AgentSessionEvent): AcpMessage[];
 }
@@ -56,14 +69,34 @@ export interface AgentChatMapper {
 export function createAgentChatMapper(): AgentChatMapper {
   let promptId = 0;
   const seenToolCalls = new Set<string>();
+  // Texts shown optimistically and awaiting their echoed `user_message` frame.
+  const pendingOptimistic: string[] = [];
 
   return {
+    seedUserMessage(text: string, ts?: number): AcpMessage[] {
+      if (!text) {
+        return [];
+      }
+      promptId += 1;
+      pendingOptimistic.push(text);
+      return [promptRequestMessage(promptId, text, ts ?? Date.now())];
+    },
+
+    setPromptIdBase(count: number): void {
+      promptId = Math.max(promptId, count);
+    },
+
     apply(event: AgentSessionEvent): AcpMessage[] {
       const ts = toEpochMs(event.ts);
 
       switch (event.kind) {
         case "user_message": {
           if (!event.data.text) {
+            return [];
+          }
+          // Already rendered optimistically on send — swallow the echo.
+          if (pendingOptimistic[0] === event.data.text) {
+            pendingOptimistic.shift();
             return [];
           }
           promptId += 1;
