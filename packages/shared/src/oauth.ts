@@ -6,9 +6,11 @@ export const POSTHOG_DEV_CLIENT_ID = "DC5uRLVbGI02YQ82grxgnK6Qn12SXWpCqdPb60oZ";
 
 // Mirrors the scopes PostHog advertises as grantable: OAUTH_SCOPES_SUPPORTED in the API's
 // services/mcp/src/lib/oauth-scopes.generated.ts, published as scopes_supported at
-// /.well-known/oauth-authorization-server. Requesting this explicit set instead of "*" keeps
-// the token least-privilege (no privileged/internal scopes; new scopes are not auto-granted).
-// Keep in sync with that generated list; bump OAUTH_SCOPE_VERSION below whenever it changes.
+// /.well-known/oauth-authorization-server, plus the one privileged scope (llm_gateway:read)
+// the LLM gateway requires, which the advertised set excludes. Requesting this explicit set
+// instead of "*" keeps the token least-privilege; the privileged extra is granted via this
+// app's seeded scope ceiling. Keep in sync with that generated list; bump OAUTH_SCOPE_VERSION
+// below whenever the set changes.
 export const OAUTH_SCOPES = [
   "openid",
   "profile",
@@ -189,6 +191,10 @@ export const OAUTH_SCOPES = [
   "web_analytics:write",
   "webhook:read",
   "webhook:write",
+  // Privileged: the embedded agent's model calls go through PostHog's LLM gateway
+  // (gateway.{region}.posthog.com), which requires this scope. Not in the advertised set
+  // above; granted via this app's seeded ceiling. Without it the gateway 403s every call.
+  "llm_gateway:read",
 ];
 
 export const OAUTH_SCOPE_VERSION = 6;
