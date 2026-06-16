@@ -1,19 +1,19 @@
 import { SparkleIcon } from "@phosphor-icons/react";
 import { type ReactNode, useEffect } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
-import { ConciergeDock } from "./ConciergeDock";
-import { useConciergeStore } from "./conciergeStore";
+import { AgentBuilderDock } from "./AgentBuilderDock";
+import { useAgentBuilderStore } from "./agentBuilderStore";
 
 /**
  * Wraps the `/code/agents` content in a resizable split with the always-on
- * concierge dock pinned right. Hidden by default; toggled via the edge
+ * agent builder dock pinned right. Hidden by default; toggled via the edge
  * affordance, the dock's hide button, or Cmd/Ctrl+I. Panel sizes persist
  * (`autoSaveId`). When hidden, the content renders unchanged and a thin edge
  * affordance offers to open the dock.
  */
-export function ConciergeDockLayout({ children }: { children: ReactNode }) {
-  const visible = useConciergeStore((s) => s.visible);
-  const toggleVisible = useConciergeStore((s) => s.toggleVisible);
+export function AgentBuilderDockLayout({ children }: { children: ReactNode }) {
+  const visible = useAgentBuilderStore((s) => s.visible);
+  const toggleVisible = useAgentBuilderStore((s) => s.toggleVisible);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -38,7 +38,7 @@ export function ConciergeDockLayout({ children }: { children: ReactNode }) {
     return (
       <>
         {children}
-        <ConciergeShowAffordance />
+        <AgentBuilderShowAffordance />
       </>
     );
   }
@@ -46,7 +46,7 @@ export function ConciergeDockLayout({ children }: { children: ReactNode }) {
   return (
     <PanelGroup
       direction="horizontal"
-      autoSaveId="agents-concierge-dock"
+      autoSaveId="agents-agent builder-dock"
       className="h-full min-h-0"
     >
       <Panel
@@ -65,19 +65,19 @@ export function ConciergeDockLayout({ children }: { children: ReactNode }) {
         maxSize={48}
         className="flex min-h-0 flex-col"
       >
-        <ConciergeDock />
+        <AgentBuilderDock />
       </Panel>
     </PanelGroup>
   );
 }
 
-function ConciergeShowAffordance() {
-  const setVisible = useConciergeStore((s) => s.setVisible);
+function AgentBuilderShowAffordance() {
+  const setVisible = useAgentBuilderStore((s) => s.setVisible);
   return (
     <button
       type="button"
-      aria-label="Open concierge"
-      title="Open concierge (⌘I)"
+      aria-label="Open agent builder"
+      title="Open agent builder (⌘I)"
       onClick={() => setVisible(true)}
       className="-translate-y-1/2 fixed top-1/2 right-0 z-30 flex h-12 w-7 items-center justify-center rounded-l-(--radius-3) border border-(--gray-5) border-r-0 bg-background text-(--accent-9) shadow-sm transition-colors hover:bg-(--gray-3)"
     >

@@ -87,7 +87,7 @@ function dialogCopy(
  * The bar above the config explorer: a revision picker (state-filtered list)
  * plus the operational lifecycle actions for the selected revision
  * (freeze / promote / archive), each behind a confirm. Authoring a revision's
- * contents is the concierge's job — this only moves a revision through its
+ * contents is the agent builder's job — this only moves a revision through its
  * lifecycle.
  */
 export function AgentRevisionBar({

@@ -82,7 +82,7 @@ export function AgentChatPane({ idOrSlug }: { idOrSlug: string }) {
         <div className="p-6">
           <AgentDetailEmptyState
             title="No chat trigger"
-            description="This agent's live revision doesn't expose a chat trigger, so there's nothing to chat with. Add a chat trigger via the concierge to test it here."
+            description="This agent's live revision doesn't expose a chat trigger, so there's nothing to chat with. Add a chat trigger via the agent builder to test it here."
           />
         </div>
       ) : (

@@ -3,7 +3,7 @@ import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Flex, Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
 import { useMemo } from "react";
-import { useSetConciergePage } from "../concierge/useSetConciergePage";
+import { useSetAgentBuilderPage } from "../agent-builder/useSetAgentBuilderPage";
 import { AgentSessionDetailBody } from "./AgentSessionDetailBody";
 
 /**
@@ -27,7 +27,7 @@ export function AgentSessionTranscriptView({
     [],
   );
   useSetHeaderContent(headerContent);
-  useSetConciergePage({ kind: "agent-session", slug: idOrSlug, sessionId });
+  useSetAgentBuilderPage({ kind: "agent-session", slug: idOrSlug, sessionId });
 
   return (
     <Flex direction="column" className="h-full min-h-0">

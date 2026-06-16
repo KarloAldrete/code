@@ -95,7 +95,7 @@ export function createAgentChatMapper(): AgentChatMapper {
           if (!event.data.text) {
             return [];
           }
-          // The first message may carry a concierge context envelope — strip it
+          // The first message may carry a agent builder context envelope — strip it
           // so it never shows in the transcript (and so dedup matches the clean
           // optimistic text the composer rendered).
           const text = stripConsoleContext(event.data.text);

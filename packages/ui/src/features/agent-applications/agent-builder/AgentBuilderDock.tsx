@@ -14,19 +14,19 @@ import { AgentDetailEmptyState } from "../components/AgentDetailLayout";
 import { useAgentApplication } from "../hooks/useAgentApplication";
 import { useAgentChat } from "../hooks/useAgentChat";
 import { resolveIngressBaseUrl } from "../utils/ingress";
-import { ConciergeSecretForm } from "./ConciergeSecretForm";
+import { AgentBuilderSecretForm } from "./AgentBuilderSecretForm";
 import {
-  CONCIERGE_SLUG,
-  type ConciergePageContext,
-  useConciergeStore,
-} from "./conciergeStore";
-import { useConciergeClientTools } from "./useConciergeClientTools";
+  AGENT_BUILDER_SLUG,
+  type AgentBuilderPageContext,
+  useAgentBuilderStore,
+} from "./agentBuilderStore";
+import { useAgentBuilderClientTools } from "./useAgentBuilderClientTools";
 
-const CHAT_ID = "concierge";
+const CHAT_ID = "agent-builder";
 
-/** The "what am I looking at" object sent to the concierge (envelope + get_context). */
-function buildConciergeContext(
-  page: ConciergePageContext,
+/** The "what am I looking at" object sent to the agent builder (envelope + get_context). */
+function buildAgentBuilderContext(
+  page: AgentBuilderPageContext,
   followEnabled: boolean,
 ): Record<string, unknown> {
   const agent = "slug" in page ? page.slug : undefined;
@@ -41,13 +41,13 @@ function buildConciergeContext(
 }
 
 /**
- * The concierge chat — an always-on dock talking to the deployed
+ * The agent builder chat — an always-on dock talking to the deployed
  * `agent-concierge`. Streams through the shared `useAgentChat`/`AgentChatSurface`
  * stack, prepends the current `/code/agents` page context to the first message,
  * answers `get_context`, and lets the agent drive the UI via `focus_*`.
  */
-export function ConciergeDock() {
-  const { data: application } = useAgentApplication(CONCIERGE_SLUG);
+export function AgentBuilderDock() {
+  const { data: application } = useAgentApplication(AGENT_BUILDER_SLUG);
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const ingressBaseUrl = resolveIngressBaseUrl(
     application?.ingress_base_url,
@@ -55,22 +55,22 @@ export function ConciergeDock() {
   );
 
   const client = useAuthenticatedClient();
-  const page = useConciergeStore((s) => s.page);
-  const followMode = useConciergeStore((s) => s.followMode);
-  const setFollowMode = useConciergeStore((s) => s.setFollowMode);
-  const setVisible = useConciergeStore((s) => s.setVisible);
-  const seed = useConciergeStore((s) => s.seed);
-  const consumeSeed = useConciergeStore((s) => s.consumeSeed);
-  const pendingSecret = useConciergeStore((s) => s.pendingSecret);
-  const setPendingSecret = useConciergeStore((s) => s.setPendingSecret);
+  const page = useAgentBuilderStore((s) => s.page);
+  const followMode = useAgentBuilderStore((s) => s.followMode);
+  const setFollowMode = useAgentBuilderStore((s) => s.setFollowMode);
+  const setVisible = useAgentBuilderStore((s) => s.setVisible);
+  const seed = useAgentBuilderStore((s) => s.seed);
+  const consumeSeed = useAgentBuilderStore((s) => s.consumeSeed);
+  const pendingSecret = useAgentBuilderStore((s) => s.pendingSecret);
+  const setPendingSecret = useAgentBuilderStore((s) => s.setPendingSecret);
   const [secretBusy, setSecretBusy] = useState(false);
 
-  const clientTools = useConciergeClientTools();
+  const clientTools = useAgentBuilderClientTools();
   const chat = useAgentChat({
     chatId: CHAT_ID,
-    agentSlug: CONCIERGE_SLUG,
+    agentSlug: AGENT_BUILDER_SLUG,
     ingressBaseUrl,
-    contextProvider: () => buildConciergeContext(page, followMode),
+    contextProvider: () => buildAgentBuilderContext(page, followMode),
     clientTools,
   });
 
@@ -128,13 +128,15 @@ export function ConciergeDock() {
         className="shrink-0 border-(--gray-5) border-b px-3 py-2"
       >
         <SparkleIcon size={15} weight="fill" className="text-(--accent-9)" />
-        <Text className="font-medium text-[13px] text-gray-12">Concierge</Text>
+        <Text className="font-medium text-[13px] text-gray-12">
+          Agent Builder
+        </Text>
         <Flex align="center" gap="1" className="ml-auto">
           <Tooltip
             content={
               followMode
-                ? "Following — the concierge can navigate your screen"
-                : "Paused — the concierge won't navigate"
+                ? "Following — the agent builder can navigate your screen"
+                : "Paused — the agent builder won't navigate"
             }
           >
             <Button
@@ -162,7 +164,7 @@ export function ConciergeDock() {
               <PlusIcon size={14} />
             </Button>
           </Tooltip>
-          <Tooltip content="Hide concierge">
+          <Tooltip content="Hide agent builder">
             <Button
               variant="ghost"
               color="gray"
@@ -178,7 +180,7 @@ export function ConciergeDock() {
       {!ingressBaseUrl ? (
         <div className="p-4">
           <AgentDetailEmptyState
-            title="Concierge unavailable"
+            title="AgentBuilder unavailable"
             description="The agent-concierge deployment has no reachable ingress in this environment."
           />
         </div>
@@ -187,10 +189,10 @@ export function ConciergeDock() {
           messages={chat.messages}
           isStreaming={chat.isStreaming}
           error={chat.error}
-          emptyHint="Ask the concierge to inspect, debug, or edit your agents. It can see what you're looking at and walk you there."
+          emptyHint="Ask the agent builder to inspect, debug, or edit your agents. It can see what you're looking at and walk you there."
           aboveComposer={
             pendingSecret ? (
-              <ConciergeSecretForm
+              <AgentBuilderSecretForm
                 pending={pendingSecret}
                 busy={secretBusy}
                 onSubmit={submitSecret}

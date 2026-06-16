@@ -1,4 +1,4 @@
-import { ConciergeDockLayout } from "@posthog/ui/features/agent-applications/concierge/ConciergeDockLayout";
+import { AgentBuilderDockLayout } from "@posthog/ui/features/agent-applications/agent-builder/AgentBuilderDockLayout";
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/code/agents")({
@@ -7,8 +7,8 @@ export const Route = createFileRoute("/code/agents")({
 
 function AgentsLayout() {
   return (
-    <ConciergeDockLayout>
+    <AgentBuilderDockLayout>
       <Outlet />
-    </ConciergeDockLayout>
+    </AgentBuilderDockLayout>
   );
 }

@@ -1,5 +1,5 @@
 import { RobotIcon } from "@phosphor-icons/react";
-import { useSetConciergePage } from "@posthog/ui/features/agent-applications/concierge/useSetConciergePage";
+import { useSetAgentBuilderPage } from "@posthog/ui/features/agent-applications/agent-builder/useSetAgentBuilderPage";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Flex, Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
@@ -35,7 +35,7 @@ export function AgentsTabLayout({
     [],
   );
   useSetHeaderContent(headerContent);
-  useSetConciergePage(
+  useSetAgentBuilderPage(
     activeTab === "applications" ? { kind: "agent-list" } : { kind: "scouts" },
   );
 

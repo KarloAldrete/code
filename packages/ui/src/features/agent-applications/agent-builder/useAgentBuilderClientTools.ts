@@ -1,10 +1,10 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useRef } from "react";
 import type { ClientToolHandler } from "../hooks/useAgentChat";
-import { useConciergeStore } from "./conciergeStore";
+import { useAgentBuilderStore } from "./agentBuilderStore";
 
 /**
- * The concierge's UI-driving client tools. The agent calls these to steer the
+ * The agent builder's UI-driving client tools. The agent calls these to steer the
  * user's screen (`focus_*`, which navigate code's agent routes and report back
  * `{ focused }`) and to set secrets (`set_secret`, an interactive punch-out:
  * park the call and render a form — see the dock). Returning `null` defers to
@@ -13,10 +13,10 @@ import { useConciergeStore } from "./conciergeStore";
  * `focus_*` navigations are gated by follow-mode: when off, they report
  * `{ focused: false, reason: "user_paused_follow" }` instead of moving the UI.
  */
-export function useConciergeClientTools(): ClientToolHandler {
+export function useAgentBuilderClientTools(): ClientToolHandler {
   const navigate = useNavigate();
-  const followMode = useConciergeStore((s) => s.followMode);
-  const setPendingSecret = useConciergeStore((s) => s.setPendingSecret);
+  const followMode = useAgentBuilderStore((s) => s.followMode);
+  const setPendingSecret = useAgentBuilderStore((s) => s.setPendingSecret);
   const followRef = useRef(followMode);
   followRef.current = followMode;
 

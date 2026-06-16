@@ -2,15 +2,15 @@ import { KeyIcon } from "@phosphor-icons/react";
 import { Button } from "@posthog/ui/primitives/Button";
 import { Flex, Text, TextField } from "@radix-ui/themes";
 import { type KeyboardEvent, useState } from "react";
-import type { PendingSecret } from "./conciergeStore";
+import type { PendingSecret } from "./agentBuilderStore";
 
 /**
- * Inline punch-out for the concierge's `set_secret` tool. The agent never sees
+ * Inline punch-out for the agent builder's `set_secret` tool. The agent never sees
  * the raw value: the form PUTs it straight to the env-keys API and only the
  * `{ key, action }` outcome is posted back to wake the session. Shown above the
  * dock composer while a secret is pending.
  */
-export function ConciergeSecretForm({
+export function AgentBuilderSecretForm({
   pending,
   busy,
   onSubmit,
@@ -55,8 +55,8 @@ export function ConciergeSecretForm({
         </Text>
       ) : null}
       <Text className="text-[11px] text-gray-9 leading-snug">
-        The value is sent straight to your agent's secrets — the concierge never
-        sees it.
+        The value is sent straight to your agent's secrets — the agent builder
+        never sees it.
       </Text>
       <Flex align="center" gap="2">
         <TextField.Root

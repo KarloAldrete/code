@@ -1,5 +1,5 @@
 /**
- * The concierge's "what am I looking at" envelope. Mirrors the console: the
+ * The agent builder's "what am I looking at" envelope. Mirrors the console: the
  * current page context is prepended to the *first* user message of a session,
  * delimited so the agent can resolve deictic references ("this agent", "this
  * session") without asking — and so the client can strip it before display.

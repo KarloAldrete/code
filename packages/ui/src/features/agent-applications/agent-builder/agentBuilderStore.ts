@@ -2,16 +2,16 @@ import { electronStorage } from "@posthog/ui/shell/rendererStorage";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-/** The deployed meta-agent the concierge dock always talks to. */
-export const CONCIERGE_SLUG = "agent-concierge";
+/** The deployed meta-agent the agent builder dock always talks to. */
+export const AGENT_BUILDER_SLUG = "agent-concierge";
 
 /**
  * What the user is currently looking at in `/code/agents`. Mirrors the console's
- * `ConciergePageContext` so the concierge can resolve deictic references ("this
+ * `AgentBuilderPageContext` so the agent builder can resolve deictic references ("this
  * agent", "this session") and drive the right `focus_*` target. Each route
- * registers its context on mount via `useSetConciergePage`.
+ * registers its context on mount via `useSetAgentBuilderPage`.
  */
-export type ConciergePageContext =
+export type AgentBuilderPageContext =
   | { kind: "agent-list" }
   | { kind: "scouts" }
   | { kind: "agent"; slug: string }
@@ -25,7 +25,7 @@ export type ConciergePageContext =
   | { kind: "unknown" };
 
 /** A pending "Edit with AI" hand-off: open the dock and send `prompt`. */
-export interface ConciergeSeed {
+export interface AgentBuilderSeed {
   /** Monotonic id so a consumer can mark exactly one seed handled. */
   seq: number;
   prompt: string;
@@ -47,30 +47,30 @@ export interface PendingSecret {
   purpose?: string;
 }
 
-interface ConciergeStore {
+interface AgentBuilderStore {
   /** Dock open/closed (persisted). */
   visible: boolean;
   /** Whether the agent's `focus_*` tools may navigate the UI (persisted). */
   followMode: boolean;
   /** Current page context (ephemeral — re-registered per route). */
-  page: ConciergePageContext;
+  page: AgentBuilderPageContext;
   /** Pending edit-with-AI hand-off (ephemeral). */
-  seed: ConciergeSeed | null;
+  seed: AgentBuilderSeed | null;
   /** In-flight set_secret punch-out the dock renders a form for (ephemeral). */
   pendingSecret: PendingSecret | null;
 
   toggleVisible: () => void;
   setVisible: (visible: boolean) => void;
   setFollowMode: (followMode: boolean) => void;
-  setPage: (page: ConciergePageContext) => void;
+  setPage: (page: AgentBuilderPageContext) => void;
   /** Open the dock and queue a prompt to send. */
-  startConcierge: (prompt: string, agentSlug?: string | null) => void;
+  startAgentBuilder: (prompt: string, agentSlug?: string | null) => void;
   /** Mark a seed handled (no-op if a newer seed has since replaced it). */
   consumeSeed: (seq: number) => void;
   setPendingSecret: (pending: PendingSecret | null) => void;
 }
 
-export const useConciergeStore = create<ConciergeStore>()(
+export const useAgentBuilderStore = create<AgentBuilderStore>()(
   persist(
     (set) => ({
       visible: false,
@@ -83,7 +83,7 @@ export const useConciergeStore = create<ConciergeStore>()(
       setVisible: (visible) => set({ visible }),
       setFollowMode: (followMode) => set({ followMode }),
       setPage: (page) => set({ page }),
-      startConcierge: (prompt, agentSlug = null) =>
+      startAgentBuilder: (prompt, agentSlug = null) =>
         set((s) => ({
           visible: true,
           seed: { seq: (s.seed?.seq ?? 0) + 1, prompt, agentSlug },
@@ -93,7 +93,7 @@ export const useConciergeStore = create<ConciergeStore>()(
       setPendingSecret: (pendingSecret) => set({ pendingSecret }),
     }),
     {
-      name: "agent-concierge-dock",
+      name: "agent-builder-dock",
       storage: electronStorage,
       // Page + seed are ephemeral; only remember the user's layout prefs.
       partialize: (s) => ({ visible: s.visible, followMode: s.followMode }),

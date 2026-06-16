@@ -64,8 +64,8 @@ under the Applications tab:
 
 ## Architecture decisions
 
-- **Authoring is the concierge's job; this surface renders.** Agents are
-  created and edited only through the agent concierge (a meta-agent you chat
+- **Authoring is the Agent Builder's job; this surface renders.** Agents are
+  created and edited only through the Agent Builder (a meta-agent you chat
   with), never through hand-built config forms. So the Applications surface is
   **render-first**: it shows how an agent is configured (spec, revisions,
   secrets, memory, connections) and exposes only **operational** mutations —
@@ -126,8 +126,8 @@ transport, blocked on the M-Live open question).
 | 12 | Spec explorer | Filesystem-style view of model/triggers/tools/skills/mcps/integrations/secrets/limits | revision `spec` JSONB | ✅ |
 | 13 | Bundle file viewer | Tree + read file (markdown/code/json), via reusable `FileExplorer` | `…/revisions/{id}/bundle/` | ✅ |
 | 14 | Revision list + lifecycle | picker (drives explorer) + freeze(ready) → promote(live) → archive | `…/revisions/`, `/freeze/`, `/promote/`, `/archive/` | ✅ |
-| 15 | Spec editing + validate | Edit spec on a draft, validate, render system prompt | `…/revisions/{id}/` PATCH | ~~retired~~ (concierge authors) |
-| 16 | Bundle file editing | Write/delete files, bulk bundle upload | `…/revisions/{id}/file/` PUT/DELETE | ~~retired~~ (concierge authors) |
+| 15 | Spec editing + validate | Edit spec on a draft, validate, render system prompt | `…/revisions/{id}/` PATCH | ~~retired~~ (Agent Builder authors) |
+| 16 | Bundle file editing | Write/delete files, bulk bundle upload | `…/revisions/{id}/file/` PUT/DELETE | ~~retired~~ (Agent Builder authors) |
 | 17 | Trigger config | chat / webhook / mcp / slack / cron + auth modes + endpoints/usage | revision `spec` | ✅ (view; editing retired) |
 | 18 | Cron fire (run-now) | Manually fire a cron out-of-band to test → jump to session | `…/revisions/{id}/cron/fire/` | ✅ |
 | **Secrets & env** ||||
@@ -146,7 +146,7 @@ transport, blocked on the M-Live open question).
 | 27 | Live chat / streaming | SSE transport → ACP; send message; cancel; new/resume chats | ingress `/agents/{slug}/run\|send\|listen\|cancel` | ✅ (per-agent **Chat** preview tab — region-derived ingress, optimistic send, info banner, local recent-chats rail with transcript-rebuilding resume; commit `c0688cfa`) |
 | 28 | In-chat approvals | ACP tool-call permission prompts during a live turn | ingress + approvals | 🔴 |
 | 29 | Draft preview | Run a non-live draft revision live before promoting | `…/preview-proxy/…`, `/preview_token/` | 🔴 |
-| 30 | Concierge / "edit with AI" | Always-on dock chat with `agent-concierge` that drives UI (`focus_*`) + secrets (`set_secret`) + staged authoring; seed prompts from inline buttons | ingress + client tools | ✅ (global dock, page-context envelope + `get_context`, `focus_*` navigation, `set_secret` punch-out, edit-with-AI seeds; see M-Concierge) |
+| 30 | Agent Builder / "edit with AI" | Always-on dock chat with `agent-concierge` that drives UI (`focus_*`) + secrets (`set_secret`) + staged authoring; seed prompts from inline buttons | ingress + client tools | ✅ (global dock, page-context envelope + `get_context`, `focus_*` navigation, `set_secret` punch-out, edit-with-AI seeds; see M-Agent-Builder) |
 
 > **Out of scope (owned elsewhere):** billing (AI-gateway wallet + ledger) and
 > the registry (native tools / skill templates / custom tool templates).
@@ -221,19 +221,20 @@ transport, blocked on the M-Live open question).
   the server session list), with new-chat + resume that rebuilds the transcript
   from the stored session detail (`/listen` only tails, never replays) and
   re-attaches the live stream for active sessions. Client tools: `toast` /
-  `get_context` resolve inline; `focus_*` / `set_secret` degrade to
-  `unhandled_client_tool` (wired by M-Concierge). Commit `c0688cfa`.
+  `get_context` resolve inline; `focus_*` / `set_secret` are wired by the Agent
+  Builder dock (`useAgentChat` takes an optional `clientTools` handler). Commit
+  `c0688cfa`.
 
 ### Remaining (parity work)
 
-Reframed around the **render-first / concierge-authoring** principle above:
+Reframed around the **render-first / Agent-Builder-authoring** principle above:
 config/revisions/secrets/memory are read surfaces with only operational
 controls. Ordered by core value.
 
 - [ ] **Enable / disable agent** — archive/unarchive the application (an
   operational control deferred from M9; needs the destroy/restore endpoint).
 - [ ] ~~**M12 — Spec & bundle authoring**~~ — **retired.** Spec/bundle/trigger
-  editing is the concierge's job; the render views live in M8, operational
+  editing is the Agent Builder's job; the render views live in M8, operational
   lifecycle in M9.
 
 ### Deferred
@@ -264,51 +265,48 @@ controls. Ordered by core value.
   - [ ] **Draft preview** (feature 29) — run a non-live **draft** revision live
     before promoting, via the preview-proxy / short-lived `preview_token`
     (`AgentChat` in the console mints/refreshes it on `preview_token_required`).
-    Lets the concierge "test before promote".
-- [ ] **M-Concierge** (feature 30) — an always-on **right-hand dock** chat with
-  the deployed `agent-concierge` (LIVE) that drives the whole `/code/agents`
-  surface: inspect/debug agents, and author/edit them via consent-gated **staged
-  draft revisions** (the agent does the spec edits server-side through its
-  `@posthog/agent-applications-*` management tools; code renders the chat, drives
-  the UI, and handles secrets). **Decisions:** global dock across all of
-  `/code/agents` (not whole-app); fixed `agent-concierge` slug (confirmed
-  deployed); reuses the shipped live-chat stack (`useAgentChat` / `agentChatStore`
-  / mapper / `ConversationView` / region-derived ingress). Staged:
-  - [ ] **C1 — Dock shell.** Global resizable right rail in the `/code/agents`
-    layout (react-resizable-panels + `autoSaveId` like `FileExplorer`; toggle +
-    keyboard shortcut; open/width persisted in a UI view-state store) hosting a
-    concierge `ChatSurface` pointed at `agent-concierge`. **Generalize
-    `agentChatStore`** to hold two concurrent chats (concierge dock + per-agent
-    preview) — the store already notes it should key by a chat id; do that here.
-  - [ ] **C2 — Page-context registry.** A `useSetConciergePage(ctx)` hook each
-    agents route calls on mount to register what's shown (`agent-list` / `agent`
-    / `agent-config` {view,item} / `agent-sessions` / `agent-session` …), kept in
-    a context store. The transport prepends a `[console-context]{…}[/console-context]`
-    envelope to the **first** message and a `get_context` client tool returns it
-    live (extend the existing minimal `get_context`).
-  - [ ] **C3 — `focus_*` UI-driving tools.** Implement `focus_tab`, `focus_file`,
-    `focus_revision`, `focus_spec_section`, `focus_session` as TanStack-router
-    navigations (agent tab + `?node=` / `?revision=` / `?request=` / session) plus
-    a refetch, gated by a **follow-mode** toggle (returns `{focused:false,
-    reason:'user_paused_follow'}` when off). Finish wiring `toast` → Sonner.
-  - [x] **C4 — `set_secret` punch-out.** Interactive client tool: the agent's
-    server-side tool returns `{queued, interactive}` and parks; the handler defers
+    Lets the Agent Builder "test before promote".
+- [x] **M-Agent-Builder** (feature 30) — **shipped.** An always-on **right-hand
+  dock** ("Agent Builder") across all of `/code/agents` that chats with the
+  deployed `agent-concierge` (the meta-agent's slug is unchanged; only the
+  product/UI name is "Agent Builder"). It inspects/debugs agents and authors/edits
+  them via consent-gated **staged draft revisions** — the agent does the spec
+  edits server-side through its `@posthog/agent-applications-*` tools; code renders
+  the chat, drives the UI, and handles secrets. Reuses the live-chat stack
+  (`useAgentChat` / `agentChatStore` / mapper / `ConversationView` / region-derived
+  ingress). Lives in `features/agent-applications/agent-builder/`. All stages done:
+  - [x] **C1 — Dock shell.** Global resizable right rail in the `/code/agents`
+    layout (`AgentBuilderDockLayout`, react-resizable-panels + `autoSaveId`),
+    toggled via an edge affordance / hide button / **Cmd-Ctrl+I**; open + follow
+    mode persisted (`useAgentBuilderStore`). The core `agentChatStore` was
+    generalized to hold multiple chats keyed by `chatId` (dock `"agent-builder"` +
+    preview `"preview:<slug>"`); `useAgentChat` takes a `chatId`. Shared
+    `AgentChatSurface` extracted (now on the Quill `InputGroup` composer).
+  - [x] **C2 — Page-context registry.** `useSetAgentBuilderPage` wired in
+    `AgentDetailLayout`, `AgentsTabLayout`, and the session transcript; the context
+    is prepended as a stripped/deduped `[console-context]{…}` envelope on message
+    one and answers the `get_context` tool.
+  - [x] **C3 — `focus_*` UI-driving tools.** `useAgentBuilderClientTools` navigates
+    code's agent routes (`focus_tab/file/revision/spec_section/session`), gated by
+    the follow-mode toggle; `toast` wired.
+  - [x] **C4 — `set_secret` punch-out.** Interactive client tool: the server-side
+    tool returns `{queued, interactive}` and parks; the handler defers
     (`{defer:true}`) and stores a `pendingSecret`; the dock renders
-    `ConciergeSecretForm` above the composer; on submit it `PUT`s the env key
+    `AgentBuilderSecretForm` above the composer; on submit it `PUT`s the env key
     straight to the API (raw value never reaches the agent) and posts the outcome
     via `POST /send` (`sendAgentInteractiveToolResult` → `client_tool_result`
     marker) to wake the parked session. Verified live: env_keys PUT 200 + the
     session resumed confirming the set.
-  - [ ] **C5 — "Edit with AI" seeds.** Inline buttons across the render surfaces
-    (agent overview, a config node, a failing session) that open the dock and
-    seed a prompt + agent slug; if a chat is active, a "start fresh / continue"
-    confirm (the console's `ConciergeSeedDialog`).
+  - [x] **C5 — "Edit with AI" seeds.** `EditWithAIButton` seeds the dock with a
+    prompt; an "Ask the agent builder about this agent" entry point on the agent
+    overview. (A "start fresh / continue" confirm dialog when a chat is already
+    active is a possible refinement — currently it sends into the active chat.)
   - [ ] **Message-format deep dive (optional).** The acute issue — assistant prose
     hidden inside a collapsed tool-call chip — is fixed via the `collapseMode`
     override. A deeper side-by-side audit of our pi-ai conversation/part shape
     vs. what `buildConversationItems` expects (turn bracketing, content-block
     shapes) could still tighten `chat/conversationToAcp.ts` + `acpEnvelope.ts`
-    for pixel-faithful rendering; the concierge exercises the same path live.
+    for pixel-faithful rendering.
 
 ## What's demoable today (M1–M3 + tabs)
 
@@ -334,4 +332,4 @@ With a backend that has deployed agents + sessions:
 
 Not yet built: everything in the parity map still marked 🟡 / ⬜ / 🔴 — the
 global approvals queue, live-now panel, in-chat approvals, draft preview, and
-the **concierge dock** (M-Concierge). Authoring stays the concierge's job.
+the **Agent Builder dock** (M-Agent-Builder). Authoring stays the Agent Builder's job.

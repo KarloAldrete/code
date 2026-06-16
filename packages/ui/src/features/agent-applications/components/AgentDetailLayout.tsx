@@ -4,15 +4,16 @@ import { Badge } from "@posthog/ui/primitives/Badge";
 import { Flex, Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useMemo } from "react";
-import type { ConciergePageContext } from "../concierge/conciergeStore";
-import { useSetConciergePage } from "../concierge/useSetConciergePage";
+import type { AgentBuilderPageContext } from "../agent-builder/agentBuilderStore";
+import { EditWithAIButton } from "../agent-builder/EditWithAIButton";
+import { useSetAgentBuilderPage } from "../agent-builder/useSetAgentBuilderPage";
 import { useAgentApplication } from "../hooks/useAgentApplication";
 
-/** Map a detail sub-tab to the concierge page context for this agent. */
-function tabToConciergePage(
+/** Map a detail sub-tab to the agent builder page context for this agent. */
+function tabToAgentBuilderPage(
   tab: AgentDetailTab,
   slug: string,
-): ConciergePageContext {
+): AgentBuilderPageContext {
   switch (tab) {
     case "chat":
       return { kind: "agent-chat", slug };
@@ -28,6 +29,62 @@ function tabToConciergePage(
       return { kind: "agent-observability", slug };
     default:
       return { kind: "agent", slug };
+  }
+}
+
+/**
+ * Contextual agent builder hand-off for each detail tab: the button label plus the
+ * seed prompt that opens the dock. The agent builder already knows which page you're
+ * on via {@link tabToAgentBuilderPage}, so the prompt just points it at the right
+ * thing to talk about.
+ */
+function tabToAgentBuilderAsk(tab: AgentDetailTab): {
+  label: string;
+  prompt: string;
+} {
+  switch (tab) {
+    case "chat":
+      return {
+        label: "Ask about this chat",
+        prompt:
+          "Help me with this agent's chat trigger — how it behaves and how to improve it.",
+      };
+    case "sessions":
+      return {
+        label: "Ask about these sessions",
+        prompt:
+          "Walk me through this agent's recent sessions — what ran, what failed, and anything worth digging into.",
+      };
+    case "configuration":
+      return {
+        label: "Ask about the config",
+        prompt:
+          "Walk me through this agent's configuration and anything worth changing.",
+      };
+    case "memory":
+      return {
+        label: "Ask about memory",
+        prompt:
+          "Explain what this agent remembers and how its memory is being used.",
+      };
+    case "approvals":
+      return {
+        label: "Ask about approvals",
+        prompt:
+          "Walk me through this agent's pending approvals and what each one is asking for.",
+      };
+    case "observability":
+      return {
+        label: "Ask about observability",
+        prompt:
+          "Walk me through this agent's metrics — spend, sessions, failures, latency — and what stands out.",
+      };
+    default:
+      return {
+        label: "Ask about this agent",
+        prompt:
+          "Walk me through this agent — what it does, how it's configured, and anything worth improving.",
+      };
   }
 }
 
@@ -125,7 +182,8 @@ export function AgentDetailLayout({
     [title],
   );
   useSetHeaderContent(headerContent);
-  useSetConciergePage(tabToConciergePage(activeTab, idOrSlug));
+  useSetAgentBuilderPage(tabToAgentBuilderPage(activeTab, idOrSlug));
+  const ask = tabToAgentBuilderAsk(activeTab);
 
   return (
     <Flex direction="column" className="h-full min-h-0">
@@ -150,6 +208,13 @@ export function AgentDetailLayout({
               {application.live_revision ? "Live" : "Draft"}
             </Badge>
           ) : null}
+          <Flex align="center" className="ml-auto shrink-0">
+            <EditWithAIButton
+              agentSlug={idOrSlug}
+              prompt={ask.prompt}
+              label={ask.label}
+            />
+          </Flex>
         </Flex>
         {application?.description?.trim() ? (
           <Text className="max-w-3xl text-[12.5px] text-gray-11 leading-snug">

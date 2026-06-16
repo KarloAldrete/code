@@ -1,17 +1,17 @@
 import { SparkleIcon } from "@phosphor-icons/react";
 import { Button } from "@posthog/ui/primitives/Button";
-import { useConciergeStore } from "./conciergeStore";
+import { useAgentBuilderStore } from "./agentBuilderStore";
 
 /**
- * Opens the concierge dock and seeds it with a prompt — the render surfaces'
- * hand-off into authoring ("edit with AI"). The concierge does the actual edits
+ * Opens the agent builder dock and seeds it with a prompt — the render surfaces'
+ * hand-off into authoring ("edit with AI"). The agent builder does the actual edits
  * server-side via staged draft revisions; this just starts the conversation
  * with the right context.
  */
 export function EditWithAIButton({
   prompt,
   agentSlug,
-  label = "Ask the concierge",
+  label = "Ask the agent builder",
   variant = "soft",
   size = "1",
 }: {
@@ -21,12 +21,12 @@ export function EditWithAIButton({
   variant?: "soft" | "ghost" | "outline";
   size?: "1" | "2";
 }) {
-  const startConcierge = useConciergeStore((s) => s.startConcierge);
+  const startAgentBuilder = useAgentBuilderStore((s) => s.startAgentBuilder);
   return (
     <Button
       variant={variant}
       size={size}
-      onClick={() => startConcierge(prompt, agentSlug)}
+      onClick={() => startAgentBuilder(prompt, agentSlug)}
     >
       <SparkleIcon size={14} weight="fill" />
       {label}

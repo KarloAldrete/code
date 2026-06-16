@@ -30,7 +30,7 @@ export type ClientToolOutcome = {
 
 /**
  * Resolves a client-tool call, or returns null to defer to the built-in
- * handlers (toast / get_context). Used by the concierge to drive the UI
+ * handlers (toast / get_context). Used by the agent builder to drive the UI
  * (focus_*) and the secret punch-out.
  */
 export type ClientToolHandler = (
@@ -46,7 +46,7 @@ const TERMINAL_SESSION_STATES = new Set([
 ]);
 
 export interface UseAgentChatOptions {
-  /** Opaque key isolating this chat in the store (e.g. "concierge", "preview:<slug>"). */
+  /** Opaque key isolating this chat in the store (e.g. "agent-builder", "preview:<slug>"). */
   chatId: string;
   /** Agent slug the chat targets (drives client-tool context + history). */
   agentSlug: string;
@@ -56,10 +56,10 @@ export interface UseAgentChatOptions {
   /**
    * Supplies the "what am I looking at" object. When set, it's prepended as a
    * delimited envelope to the first message and answers the `get_context`
-   * client tool. Concierge only.
+   * client tool. AgentBuilder only.
    */
   contextProvider?: () => unknown;
-  /** Concierge UI-driving tools (focus_*, set_secret); null → built-in handling. */
+  /** AgentBuilder UI-driving tools (focus_*, set_secret); null → built-in handling. */
   clientTools?: ClientToolHandler;
 }
 
@@ -67,12 +67,12 @@ export interface UseAgentChatOptions {
  * Drives a live chat against a deployed agent's ingress: starts/sends/cancels
  * via the api-client, streams SSE through the M3 `createAgentChatMapper`, and
  * pumps the resulting ACP messages into the core `agentChatStore` under `chatId`
- * (so the concierge dock and a per-agent preview coexist). Components read the
+ * (so the agent builder dock and a per-agent preview coexist). Components read the
  * chat by id and render through `ConversationView`.
  *
  * Transport lives here (the api-client is renderer/hook-scoped); state lives in
  * core. Client tools are dispatched here — `toast`/`get_context` are handled;
- * `focus_*`/`set_secret` degrade to `unhandled_client_tool` until the concierge
+ * `focus_*`/`set_secret` degrade to `unhandled_client_tool` until the agent builder
  * milestone wires UI-driving + the inline secret form.
  */
 export function useAgentChat({
@@ -105,7 +105,7 @@ export function useAgentChat({
       sessionId: string,
     ) => {
       if (!ingressBaseUrl) return;
-      // 1) concierge handler (focus_*, set_secret), 2) get_context from the
+      // 1) agent builder handler (focus_*, set_secret), 2) get_context from the
       // context provider, 3) built-in toast / unhandled fallback.
       let outcome = (await clientToolsRef.current?.(data)) ?? null;
       if (outcome == null && data.tool_id === "get_context") {
@@ -405,7 +405,7 @@ function handleClientTool(
     case "get_context":
       return { result: { agent: agentSlug, client: "posthog-code" } };
     default:
-      // focus_*, set_secret, … land with the concierge milestone.
+      // focus_*, set_secret, … land with the agent builder milestone.
       return { error: `unhandled_client_tool: ${data.tool_id}` };
   }
 }
