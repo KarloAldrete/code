@@ -87,5 +87,6 @@ export {
   useQueuedMessagesForTask,
   useSessionForTask,
   useSessions,
+  useSidebarSessionMap,
   useThoughtLevelConfigOptionForTask,
 } from "./useSession";
