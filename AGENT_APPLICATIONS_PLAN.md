@@ -143,10 +143,10 @@ transport, blocked on the M-Live open question).
 | 25 | Per-agent observability summary | Rollup: spend, sessions, failure rate, p95 (+ trends/deltas), cost-by-model, tool reliability for this agent | `/query/` HogQL `$ai_*` | ✅ (Observability tab + KPIs on the Overview tab) |
 | 26 | Fleet analytics dashboard | Cross-agent KPIs + WoW deltas, spend/cost, tool reliability | `/query/` HogQL `$ai_*` | ✅ (blended into the Applications overview: KPI strip + per-agent row stats; cost-by-model + tool reliability on the per-agent tab) |
 | **Live & interactive** ||||
-| 27 | Live chat / streaming | SSE transport → ACP; send message; client tools; cancel | ingress `/agents/{slug}/run\|send\|listen\|cancel` | 🔴 |
+| 27 | Live chat / streaming | SSE transport → ACP; send message; cancel; new/resume chats | ingress `/agents/{slug}/run\|send\|listen\|cancel` | ✅ (per-agent **Chat** preview tab — region-derived ingress, optimistic send, info banner, local recent-chats rail with transcript-rebuilding resume; commit `c0688cfa`) |
 | 28 | In-chat approvals | ACP tool-call permission prompts during a live turn | ingress + approvals | 🔴 |
 | 29 | Draft preview | Run a non-live draft revision live before promoting | `…/preview-proxy/…`, `/preview_token/` | 🔴 |
-| 30 | Concierge / "edit with AI" | An agent that drives config/UI edits; seed prompts from inline buttons | ingress + MCP | 🔴 |
+| 30 | Concierge / "edit with AI" | Always-on dock chat with `agent-concierge` that drives UI (`focus_*`) + secrets (`set_secret`) + staged authoring; seed prompts from inline buttons | ingress + client tools | 🔴 (transport ready; see M-Concierge) |
 
 > **Out of scope (owned elsewhere):** billing (AI-gateway wallet + ledger) and
 > the registry (native tools / skill templates / custom tool templates).
@@ -205,6 +205,24 @@ transport, blocked on the M-Live open question).
   `FileExplorer`: folder tree + read file (markdown, with description/tags), a
   Files/Tables toggle, BM25 search mode, and a tables view (list + row grid).
   Render-only; create/update/delete deferred. Commit `22caee62`.
+- [x] **M-Live (chat preview)** (feature 27) — per-agent **Chat** tab that runs a
+  live session against the agent's ingress and renders it through the native
+  `ConversationView`. **This resolved the M-Live "where does cloud-SSE transport
+  live" open question:** transport is a renderer-scoped UI hook (`useAgentChat`)
+  driving `run/send/cancel` + the `/listen` SSE loop via the api-client, mapped
+  to `AcpMessage[]` (`createAgentChatMapper`) into a new core `agentChatStore`;
+  no main-process/tRPC seam needed. Ingress is **region-derived**
+  (`resolveIngressBaseUrl`: dev → `localhost:3030` because the dev trycloudflare
+  tunnel buffers SSE; us/eu use `ingress_base_url`). QoL: `ConversationView` got
+  an optional `collapseMode` override (preview passes `"none"` so prose isn't
+  folded into a tool-call chip); the user message renders optimistically on send
+  (echo deduped); an info banner names the deployed revision; a local
+  recent-chats rail lists only chats started **here** (persisted per agent — not
+  the server session list), with new-chat + resume that rebuilds the transcript
+  from the stored session detail (`/listen` only tails, never replays) and
+  re-attaches the live stream for active sessions. Client tools: `toast` /
+  `get_context` resolve inline; `focus_*` / `set_secret` degrade to
+  `unhandled_client_tool` (wired by M-Concierge). Commit `c0688cfa`.
 
 ### Remaining (parity work)
 
@@ -237,28 +255,57 @@ controls. Ordered by core value.
   client method exists) and re-surfacing the **operational counts** (live now +
   pending approvals) that the analytics KPIs displaced. Pairs well with the
   global approvals queue (feature 10).
-- [ ] **M-Live — Live chat & interactivity** (features 18, 27, 28, 29) — the
-  SSE transport (EventSource against agent-ingress), send a message, client
-  tools, cancel, in-chat approvals (ACP tool-call permissions), cron-fire, and
-  draft preview. `createAgentChatMapper()` is built + tested; this wires it to
-  the live stream. **Open question (unchanged):** where the cloud-SSE transport
-  lives in code's layered model — no existing precedent. The console used a
-  browser `EventSource` against a Next.js proxy that injected the OAuth bearer;
-  code has no such proxy seam yet. This is the gating design decision for the
-  entire live track.
-- [ ] **M-Concierge** (feature 30) — the concierge ("edit with AI") that drives
-  config edits, plus the inline seed buttons. Builds on M-Live + the authoring
-  mutations (M9–M12). Optional standalone deployed-agent chat package.
-  - [ ] **Message-format deep dive.** The stored transcript renders through
-    code's native `ConversationView` (via the SSE→ACP mapper), but it currently
-    reads *a little weird* in places — our agent_platform conversation/part
-    shape (pi-ai `text`/`thinking`/`toolCall` + `toolResult` messages) doesn't
-    map 1:1 onto what `ConversationView` / `buildConversationItems` expects (ACP
-    `agent_message_chunk` / `tool_call` / `tool_call_update`, turn bracketing,
-    content-block shapes). Audit the two formats side by side and tighten the
-    mapper (`chat/conversationToAcp.ts` + `acpEnvelope.ts`) so deployed-agent
-    chat renders pixel-faithfully to a local session. Fits naturally with the
-    concierge work, which exercises the same rendering path live.
+- [ ] **M-Live (remainder)** (features 28, 29) — the live transport itself shipped
+  (see "Done this session"); the **open transport question is resolved**
+  (renderer-hook + region-derived ingress). What's left on the live track:
+  - [ ] **In-chat approvals** (feature 28) — when a live turn proposes an
+    approval-gated tool call, surface the decision inline in the chat (reuse the
+    M5 decide path) instead of only in the Approvals tab.
+  - [ ] **Draft preview** (feature 29) — run a non-live **draft** revision live
+    before promoting, via the preview-proxy / short-lived `preview_token`
+    (`AgentChat` in the console mints/refreshes it on `preview_token_required`).
+    Lets the concierge "test before promote".
+- [ ] **M-Concierge** (feature 30) — an always-on **right-hand dock** chat with
+  the deployed `agent-concierge` (LIVE) that drives the whole `/code/agents`
+  surface: inspect/debug agents, and author/edit them via consent-gated **staged
+  draft revisions** (the agent does the spec edits server-side through its
+  `@posthog/agent-applications-*` management tools; code renders the chat, drives
+  the UI, and handles secrets). **Decisions:** global dock across all of
+  `/code/agents` (not whole-app); fixed `agent-concierge` slug (confirmed
+  deployed); reuses the shipped live-chat stack (`useAgentChat` / `agentChatStore`
+  / mapper / `ConversationView` / region-derived ingress). Staged:
+  - [ ] **C1 — Dock shell.** Global resizable right rail in the `/code/agents`
+    layout (react-resizable-panels + `autoSaveId` like `FileExplorer`; toggle +
+    keyboard shortcut; open/width persisted in a UI view-state store) hosting a
+    concierge `ChatSurface` pointed at `agent-concierge`. **Generalize
+    `agentChatStore`** to hold two concurrent chats (concierge dock + per-agent
+    preview) — the store already notes it should key by a chat id; do that here.
+  - [ ] **C2 — Page-context registry.** A `useSetConciergePage(ctx)` hook each
+    agents route calls on mount to register what's shown (`agent-list` / `agent`
+    / `agent-config` {view,item} / `agent-sessions` / `agent-session` …), kept in
+    a context store. The transport prepends a `[console-context]{…}[/console-context]`
+    envelope to the **first** message and a `get_context` client tool returns it
+    live (extend the existing minimal `get_context`).
+  - [ ] **C3 — `focus_*` UI-driving tools.** Implement `focus_tab`, `focus_file`,
+    `focus_revision`, `focus_spec_section`, `focus_session` as TanStack-router
+    navigations (agent tab + `?node=` / `?revision=` / `?request=` / session) plus
+    a refetch, gated by a **follow-mode** toggle (returns `{focused:false,
+    reason:'user_paused_follow'}` when off). Finish wiring `toast` → Sonner.
+  - [ ] **C4 — `set_secret` punch-out.** The interactive client tool: render an
+    inline secret form (reuse `SecretEditor`) next to the tool call; on submit
+    `PUT env_keys` and post the outcome via `sendAgentClientToolResult`; the
+    session parks and resumes on a fresh turn. Raw value never reaches the agent.
+    (Replaces the current `unhandled_client_tool` degradation.)
+  - [ ] **C5 — "Edit with AI" seeds.** Inline buttons across the render surfaces
+    (agent overview, a config node, a failing session) that open the dock and
+    seed a prompt + agent slug; if a chat is active, a "start fresh / continue"
+    confirm (the console's `ConciergeSeedDialog`).
+  - [ ] **Message-format deep dive (optional).** The acute issue — assistant prose
+    hidden inside a collapsed tool-call chip — is fixed via the `collapseMode`
+    override. A deeper side-by-side audit of our pi-ai conversation/part shape
+    vs. what `buildConversationItems` expects (turn bracketing, content-block
+    shapes) could still tighten `chat/conversationToAcp.ts` + `acpEnvelope.ts`
+    for pixel-faithful rendering; the concierge exercises the same path live.
 
 ## What's demoable today (M1–M3 + tabs)
 
@@ -278,8 +325,10 @@ With a backend that has deployed agents + sessions:
   an "Open in AI observability" deep link.
 - **Session transcript**: a stored session rendered read-only through code's
   native chat UI (streaming text, thinking, tool calls + results).
+- **Chat preview** (chat-trigger agents): the per-agent **Chat** tab runs a live
+  session against the agent's ingress — send/cancel, optimistic echo, a
+  recent-chats rail with resume. (Try it against `agent-approval-demo`.)
 
 Not yet built: everything in the parity map still marked 🟡 / ⬜ / 🔴 — the
-global approvals queue, live-now panel, revisions lifecycle, secrets, memory,
-the rest of connections, and the entire live/interactive track. The transcript
-view is read-only playback.
+global approvals queue, live-now panel, in-chat approvals, draft preview, and
+the **concierge dock** (M-Concierge). Authoring stays the concierge's job.
