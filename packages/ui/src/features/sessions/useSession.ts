@@ -19,6 +19,40 @@ import {
 
 export const useSessions = () => useSessionStore((s) => s.sessions);
 
+/** The live session-derived status a single sidebar row displays. */
+export interface SidebarTaskStatus {
+  isGenerating: boolean;
+  needsPermission: boolean;
+  taskRunStatus: AgentSession["cloudStatus"];
+  cloudPrUrl: string | null;
+}
+
+/**
+ * The live status for one task's row, subscribed per-row. Returns only the
+ * primitive fields a row renders, compared with `shallow` — so a streaming
+ * token (which only mutates `session.events`) produces an equal object and
+ * doesn't re-render the row, and nothing above it. The list itself is built
+ * from tasks alone (see useSidebarData), so it never touches this store.
+ */
+export const useSidebarStatusForTask = (
+  taskId: string,
+): SidebarTaskStatus | null =>
+  useSessionStore((s) => {
+    const taskRunId = s.taskIdIndex[taskId];
+    if (!taskRunId) return null;
+    const session = s.sessions[taskRunId];
+    if (!session) return null;
+    return {
+      isGenerating: session.isPromptPending,
+      needsPermission: session.pendingPermissions.size > 0,
+      taskRunStatus: session.cloudStatus,
+      cloudPrUrl:
+        typeof session.cloudOutput?.pr_url === "string"
+          ? session.cloudOutput.pr_url
+          : null,
+    };
+  }, shallow);
+
 /** O(1) lookup using taskIdIndex */
 export const useSessionForTask = (
   taskId: string | undefined,

@@ -8,13 +8,11 @@ import {
 } from "@posthog/ui/features/archive/useArchiveTask";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useArchivingTasksStore } from "@posthog/ui/features/sidebar/archivingTasksStore";
+import { isTaskActivelyRunning } from "@posthog/ui/features/sidebar/isTaskActivelyRunning";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTaskSelectionStore } from "@posthog/ui/features/sidebar/taskSelectionStore";
 import { usePinnedTasks } from "@posthog/ui/features/sidebar/usePinnedTasks";
-import {
-  type TaskData,
-  useSidebarData,
-} from "@posthog/ui/features/sidebar/useSidebarData";
+import { useSidebarData } from "@posthog/ui/features/sidebar/useSidebarData";
 import { useTaskViewed } from "@posthog/ui/features/sidebar/useTaskViewed";
 import { useTaskContextMenu } from "@posthog/ui/features/tasks/useTaskContextMenu";
 import { useRenameTask } from "@posthog/ui/features/tasks/useTaskMutations";
@@ -39,10 +37,6 @@ import { TaskListView } from "./TaskListView";
 import { TasksHeader } from "./TasksHeader";
 
 const log = logger.scope("sidebar-menu");
-
-function isTaskActivelyRunning(task: TaskData): boolean {
-  return task.taskRunStatus === "in_progress" || task.isGenerating;
-}
 
 function SidebarMenuComponent() {
   const hostClient = useHostTRPCClient();

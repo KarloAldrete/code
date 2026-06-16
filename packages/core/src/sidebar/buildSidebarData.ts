@@ -1,3 +1,4 @@
+import type { WorkspaceMode } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { getRepositoryInfo } from "./groupTasks";
 import type { TaskData } from "./sidebarData.types";
@@ -93,6 +94,8 @@ export interface TaskWorkspace {
   folderPath?: string | null;
   branchName?: string | null;
   linkedBranch?: string | null;
+  mode?: WorkspaceMode | null;
+  worktreePath?: string | null;
 }
 
 export interface TaskTimestamp {
@@ -101,7 +104,13 @@ export interface TaskTimestamp {
 }
 
 export interface DeriveTaskDataContext {
-  session: TaskSession | undefined;
+  /**
+   * Optional live session state. The sidebar omits this (it builds the list
+   * from tasks alone and layers live status in per-row via
+   * useSidebarStatusForTask); other callers — e.g. the canvas hooks — still
+   * pass it to fold live status straight into the derived data.
+   */
+  session?: TaskSession;
   workspace: TaskWorkspace | undefined;
   timestamp: TaskTimestamp | undefined;
   pinnedIds: ReadonlySet<string>;
@@ -142,6 +151,9 @@ export function deriveTaskData(
     title: task.title,
     createdAt,
     lastActivityAt,
+    // Live session fields default to off when no session is passed (the
+    // sidebar layers them in per-row via useSidebarStatusForTask). Callers
+    // that pass a session — e.g. the canvas hooks — get them folded in here.
     isGenerating: session?.isPromptPending ?? false,
     isUnread,
     isPinned: ctx.pinnedIds.has(task.id),
@@ -157,6 +169,12 @@ export function deriveTaskData(
     cloudPrUrl,
     branchName: workspace?.branchName ?? null,
     linkedBranch: workspace?.linkedBranch ?? null,
+    // Workspace mode/worktree are derived here (the list already has the
+    // workspace) so rows don't each re-subscribe to the workspaces query.
+    workspaceMode:
+      workspace?.mode ??
+      (task.latest_run?.environment === "cloud" ? "cloud" : undefined),
+    worktreePath: workspace?.worktreePath ?? undefined,
   };
 }
 

@@ -1,3 +1,4 @@
+import type { WorkspaceMode } from "@posthog/shared";
 import type { TaskRunStatus } from "@posthog/shared/domain-types";
 import type {
   TaskGroup as GenericTaskGroup,
@@ -24,6 +25,8 @@ export interface TaskData {
   cloudPrUrl: string | null;
   branchName: string | null;
   linkedBranch: string | null;
+  workspaceMode?: WorkspaceMode;
+  worktreePath?: string;
 }
 
 export type TaskGroup = GenericTaskGroup<TaskData>;

@@ -12,13 +12,13 @@ import { MenuLabel } from "@posthog/quill";
 import { normalizeRepoKey } from "@posthog/shared";
 import { builderHog } from "@posthog/ui/assets/hedgehogs";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
+import { useSidebarStatusForTask } from "@posthog/ui/features/sessions/sessionStore";
 import { useArchivingTasksStore } from "@posthog/ui/features/sidebar/archivingTasksStore";
 import { DraggableFolder } from "@posthog/ui/features/sidebar/components/DraggableFolder";
 import { TaskItem } from "@posthog/ui/features/sidebar/components/items/TaskItem";
 import { SidebarSection } from "@posthog/ui/features/sidebar/components/SidebarSection";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
-import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { Flex, Text } from "@radix-ui/themes";
@@ -85,11 +85,20 @@ function TaskRow({
   timestamp: number;
   depth?: number;
 }) {
-  const workspace = useWorkspace(task.id);
-  const effectiveMode =
-    workspace?.mode ??
-    (task.taskRunEnvironment === "cloud" ? "cloud" : undefined);
-  const { prState, hasDiff } = useTaskPrStatus(task);
+  // Workspace mode/worktree come from TaskData (derived once in the list) so
+  // the row doesn't re-subscribe to the whole workspaces query per row.
+  const effectiveMode = task.workspaceMode;
+  // Live session state for just this row. Built from tasks alone, the list
+  // never touches the session store; the per-row subscription re-renders only
+  // this row when its status changes (and not on every streamed token).
+  const liveStatus = useSidebarStatusForTask(task.id);
+  const isGenerating = liveStatus?.isGenerating ?? task.isGenerating;
+  const needsPermission = liveStatus?.needsPermission ?? task.needsPermission;
+  const taskRunStatus = liveStatus?.taskRunStatus ?? task.taskRunStatus;
+  const cloudPrUrl = task.cloudPrUrl ?? liveStatus?.cloudPrUrl ?? null;
+  const { prState, hasDiff } = useTaskPrStatus(
+    cloudPrUrl === task.cloudPrUrl ? task : { ...task, cloudPrUrl },
+  );
   const isArchiving = useArchivingTasksStore((s) =>
     s.archivingTaskIds.has(task.id),
   );
@@ -105,18 +114,18 @@ function TaskRow({
       hideHoverActions={hideHoverActions}
       isEditing={isEditing}
       workspaceMode={effectiveMode}
-      worktreePath={workspace?.worktreePath ?? undefined}
+      worktreePath={task.worktreePath}
       isSuspended={task.isSuspended}
-      isGenerating={task.isGenerating}
+      isGenerating={isGenerating}
       isUnread={task.isUnread}
       isPinned={task.isPinned}
-      needsPermission={task.needsPermission}
-      taskRunStatus={task.taskRunStatus}
+      needsPermission={needsPermission}
+      taskRunStatus={taskRunStatus}
       originProduct={task.originProduct}
       slackThreadUrl={task.slackThreadUrl}
       prState={prState}
       hasDiff={hasDiff}
-      prUrl={task.cloudPrUrl}
+      prUrl={cloudPrUrl}
       timestamp={timestamp}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
