@@ -3,6 +3,7 @@ import {
   sanitizeBranchName,
   suggestBranchName,
   validateBranchName,
+  validateBranchPrefix,
 } from "./branchName";
 
 describe("sanitizeBranchName", () => {
@@ -111,5 +112,39 @@ describe("suggestBranchName", () => {
         "posthog-code/fix-bug-3",
       ]),
     ).toBe("posthog-code/fix-bug-4");
+  });
+
+  it("supports a custom prefix", () => {
+    expect(suggestBranchName("Fix bug", "abc", [], "team/")).toBe(
+      "team/fix-bug",
+    );
+    expect(suggestBranchName("Fix bug", "abc", ["team/fix-bug"], "team/")).toBe(
+      "team/fix-bug-2",
+    );
+  });
+});
+
+describe("validateBranchPrefix", () => {
+  it("allows an empty prefix (no prefix)", () => {
+    expect(validateBranchPrefix("")).toBeNull();
+  });
+
+  it("allows normal prefixes", () => {
+    expect(validateBranchPrefix("team/")).toBeNull();
+    expect(validateBranchPrefix("posthog-code/")).toBeNull();
+  });
+
+  it("rejects a leading dash (flag-like)", () => {
+    expect(validateBranchPrefix("-x/")).toBe(
+      "Branch prefix cannot start with a dash.",
+    );
+  });
+
+  it("rejects spaces", () => {
+    expect(validateBranchPrefix("my team/")).not.toBeNull();
+  });
+
+  it('rejects ".."', () => {
+    expect(validateBranchPrefix("../")).not.toBeNull();
   });
 });
