@@ -110,9 +110,9 @@ transport, blocked on the M-Live open question).
 | # | Feature | What it does | Backend | Status |
 |---|---------|--------------|---------|--------|
 | **Browsing & monitoring** ||||
-| 1 | Fleet overview / stat strip | Aggregate KPIs across all agents | `agent_fleet/stats/` | 🟡 |
+| 1 | Fleet overview / stat strip | Aggregate KPIs across all agents | `/query/` HogQL `$ai_*` | ✅ (analytics KPIs: spend/sessions/failure/p95 + trends + WoW deltas on the Applications overview; operational live-now/approvals counts dropped — see M6) |
 | 2 | Live-now panel | Cross-agent in-flight sessions, live state dots | `agent_fleet/live_sessions/` | 🟡 |
-| 3 | Agent list + filters | All agents, per-agent inline stats, All/Live/Drafts/Archived | `agent_applications/`, `…/stats/` | ✅ list / 🟡 filters+stats |
+| 3 | Agent list + filters | All agents, per-agent inline stats, All/Live/Drafts/Archived | `agent_applications/`, `/query/` | ✅ list + inline stats / 🟡 filters |
 | 4 | Per-agent overview | Status, triggers, live revision, recent activity | `agent_applications/{slug}/` | ✅ |
 | 5 | Session list + filters | History; filter by state / revision / date; pagination | `…/sessions/?state=&revision_id=&…` | 🟡 |
 | 6 | Session transcript | Stored transcript via native `ConversationView` | (mapper) | ✅ |
@@ -140,8 +140,8 @@ transport, blocked on the M-Live open question).
 | 23 | Slack setup | Generate Slack app manifest from trigger+tool config | `…/revisions/{id}/manifest/slack/` | ⬜ |
 | 24 | Integrations | PostHog integrations attached to an agent | (spec `integrations` + integ API) | ⬜ |
 | **Observability & analytics** ||||
-| 25 | Per-agent observability summary | Rollup page: spend, sessions, failure rate, p95, tokens for this agent | `/query/` HogQL `$ai_*` | ⬜ |
-| 26 | Fleet analytics dashboard | Cross-agent KPIs + WoW deltas, spend-by-agent, cost-by-model, tool reliability | `/query/` HogQL `$ai_*` | ⬜ |
+| 25 | Per-agent observability summary | Rollup: spend, sessions, failure rate, p95 (+ trends/deltas), cost-by-model, tool reliability for this agent | `/query/` HogQL `$ai_*` | ✅ (Observability tab + KPIs on the Overview tab) |
+| 26 | Fleet analytics dashboard | Cross-agent KPIs + WoW deltas, spend/cost, tool reliability | `/query/` HogQL `$ai_*` | ✅ (blended into the Applications overview: KPI strip + per-agent row stats; cost-by-model + tool reliability on the per-agent tab) |
 | **Live & interactive** ||||
 | 27 | Live chat / streaming | SSE transport → ACP; send message; client tools; cancel | ingress `/agents/{slug}/run\|send\|listen\|cancel` | 🔴 |
 | 28 | In-chat approvals | ACP tool-call permission prompts during a live turn | ingress + approvals | 🔴 |
@@ -175,6 +175,19 @@ transport, blocked on the M-Live open question).
   (approve/reject + edited args + reason). Commit `a2fa9115`, then reworked into
   **master/detail with embedded session + refresh controls** (`a376b61b`).
   Remaining: the fleet-wide global approvals queue (feature 10).
+- [x] **M7 — Observability** (features 25, 26; also 1, 3) — agent observability
+  over the team's own `$ai_*` events via a `getAgentAnalytics()` HogQL rollup on
+  `PostHogAPIClient` (5 parallel `/query/` panels, pure unit-tested shaping in
+  `agent-analytics.ts`). Surfaced as: the **Applications overview** (KPI strip —
+  spend/sessions/failure/p95 with 14-day sparkline trends + WoW deltas — blended
+  on top of the agent list, with per-agent rollups merged into each row); the
+  per-agent **Overview** tab (same KPI strip + link to the Observability tab);
+  and a new per-agent **Observability** tab (KPIs + cost-by-model + tool
+  reliability). Each surface has a small "Open in AI observability" deep link.
+  Data layer committed in `aed89291`; UI in `0856ea5f`. **Design note:** there is
+  no separate fleet-analytics page — analytics is blended into the overview and
+  the per-agent tabs. This replaced the old operational fleet/agent stat strips
+  (live-now + pending-approvals counts) — those return with M6 / feature 10.
 
 ### Remaining (parity work)
 
@@ -202,21 +215,24 @@ controls. Ordered by core value.
 - [ ] **M11 — Memory** (features 20, 21, 22) — file store + BM25 search + tables.
   Render-first; if any write lands it's operational, not authoring.
 - [ ] **M13 — Connections** (features 23, 24) — Slack setup + integrations view.
-- [ ] **M7 — Observability** (features 25, 26) — per-agent observability
-  **summary page** + fleet analytics, via `/query/` HogQL over the team's
-  `$ai_*` events. Likely becomes the **Applications landing entrypoint** (see
-  deferred M6). Pure reads through `PostHogAPIClient`.
 - [ ] **Global approvals queue** (feature 10) — fleet-wide approval inbox at the
-  Applications level (the per-agent queue shipped in M5).
+  Applications level (the per-agent queue shipped in M5). Client method
+  `listAgentFleetApprovals` already exists; needs UI. Natural next step — it
+  also restores the "pending approvals" signal the M7 overview dropped.
 - [ ] ~~**M12 — Spec & bundle authoring**~~ — **retired.** Spec/bundle/trigger
   editing is the concierge's job; the render views live in M8, operational
   lifecycle in M9.
 
 ### Deferred
 
-- [ ] **M6 — Fleet overview & live-now** (features 1, 2, 3) — **deferred.** The
-  Applications landing is likely to become an **observability entrypoint** (M7)
-  rather than a stat-strip + live-now dashboard. Revisit after M7.
+- [ ] **M6 — Live-now & operational counts** (feature 2; remainder of 1) —
+  partly **realized by M7**: the Applications landing is now the observability
+  entrypoint (analytics KPIs blended with the agent list), so the stat-strip
+  ask is met by analytics. What's left is the **live-now panel** (cross-agent
+  in-flight sessions, `agent_fleet/live_sessions/` — `listAgentFleetLiveSessions`
+  client method exists) and re-surfacing the **operational counts** (live now +
+  pending approvals) that the analytics KPIs displaced. Pairs well with the
+  global approvals queue (feature 10).
 - [ ] **M-Live — Live chat & interactivity** (features 18, 27, 28, 29) — the
   SSE transport (EventSource against agent-ingress), send a message, client
   tools, cancel, in-chat approvals (ACP tool-call permissions), cron-fire, and
@@ -250,12 +266,16 @@ shell, tabs, and navigation still work.
 With a backend that has deployed agents + sessions:
 
 - `/code/agents` → **Scouts / Applications tabs**.
-- **Applications tab**: fleet stat strip + the list of deployed agents.
-- **Per-agent detail**: overview stat strip + recent sessions list.
+- **Applications tab**: observability KPIs (spend / sessions / failure rate /
+  p95 with 14-day sparkline trends + WoW deltas) blended on top of the agent
+  list, with per-agent rollups on each row.
+- **Per-agent detail**: **Overview** (observability KPIs + recent sessions) and
+  an **Observability** tab (KPIs + cost-by-model + tool reliability), each with
+  an "Open in AI observability" deep link.
 - **Session transcript**: a stored session rendered read-only through code's
   native chat UI (streaming text, thinking, tool calls + results).
 
-Not yet built: everything in the parity map marked 🟡 / ⬜ / 🔴 — session logs,
-approvals UI, live-now, observability, configuration/spec, revisions, secrets,
-memory, connections, and the entire live/interactive track. The transcript view
-is read-only playback.
+Not yet built: everything in the parity map still marked 🟡 / ⬜ / 🔴 — the
+global approvals queue, live-now panel, revisions lifecycle, secrets, memory,
+the rest of connections, and the entire live/interactive track. The transcript
+view is read-only playback.
