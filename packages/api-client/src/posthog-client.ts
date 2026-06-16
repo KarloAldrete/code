@@ -4533,6 +4533,36 @@ export class PostHogAPIClient {
     });
   }
 
+  /**
+   * Return an *interactive* client-tool outcome (e.g. `set_secret`). Unlike the
+   * sync `/client_tool_result` path, the server-side tool returned `queued` and
+   * parked the session; posting the outcome via `/send` (as a `client_tool_result`
+   * marker) wakes it on a fresh turn. Exactly one of `result` / `error` is set.
+   */
+  async sendAgentInteractiveToolResult(
+    ingressBaseUrl: string,
+    sessionId: string,
+    callId: string,
+    outcome: { result: Record<string, unknown> } | { error: string },
+  ): Promise<void> {
+    const url = new URL(`${ingressBaseUrl.replace(/\/$/, "")}/send`);
+    const clientToolResult =
+      "error" in outcome
+        ? { call_id: callId, error: outcome.error }
+        : { call_id: callId, result: outcome.result };
+    await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: url.pathname,
+      overrides: {
+        body: JSON.stringify({
+          session_id: sessionId,
+          client_tool_result: clientToolResult,
+        }),
+      },
+    });
+  }
+
   /** Cancel an open session (terminal). */
   async cancelAgentSession(
     ingressBaseUrl: string,

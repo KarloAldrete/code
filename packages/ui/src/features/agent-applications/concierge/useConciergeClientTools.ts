@@ -5,10 +5,10 @@ import { useConciergeStore } from "./conciergeStore";
 
 /**
  * The concierge's UI-driving client tools. The agent calls these to steer the
- * user's screen (`focus_*`); they navigate code's agent routes and report back
- * `{ focused }`. `set_secret` is not handled yet (lands with C4) — it falls
- * through to the hook's `unhandled_client_tool`, and the agent degrades to its
- * deep-link fallback. Returning `null` defers to the built-in toast/get_context.
+ * user's screen (`focus_*`, which navigate code's agent routes and report back
+ * `{ focused }`) and to set secrets (`set_secret`, an interactive punch-out:
+ * park the call and render a form — see the dock). Returning `null` defers to
+ * the built-in toast/get_context handlers.
  *
  * `focus_*` navigations are gated by follow-mode: when off, they report
  * `{ focused: false, reason: "user_paused_follow" }` instead of moving the UI.
@@ -16,14 +16,35 @@ import { useConciergeStore } from "./conciergeStore";
 export function useConciergeClientTools(): ClientToolHandler {
   const navigate = useNavigate();
   const followMode = useConciergeStore((s) => s.followMode);
+  const setPendingSecret = useConciergeStore((s) => s.setPendingSecret);
   const followRef = useRef(followMode);
   followRef.current = followMode;
 
   return useCallback(
     (data) => {
-      if (!data.tool_id.startsWith("focus_")) return null;
       const args = (data.args ?? {}) as Record<string, unknown>;
-      const slug = typeof args.slug === "string" ? args.slug : undefined;
+      const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+
+      // set_secret — interactive punch-out. Park the call (defer) and render a
+      // form; the dock PUTs the key and wakes the session on submit.
+      if (data.tool_id === "set_secret") {
+        const agentSlug = str(args.agent_slug);
+        const secret = str(args.secret);
+        if (!agentSlug) return { error: "missing_arg: agent_slug" };
+        if (!secret) return { error: "missing_arg: secret" };
+        const mode = args.mode === "rotate" ? "rotate" : "set";
+        setPendingSecret({
+          callId: data.call_id,
+          agentSlug,
+          secret,
+          mode,
+          purpose: str(args.purpose),
+        });
+        return { defer: true };
+      }
+
+      if (!data.tool_id.startsWith("focus_")) return null;
+      const slug = str(args.slug);
       if (!followRef.current) {
         return { result: { focused: false, reason: "user_paused_follow" } };
       }
@@ -31,7 +52,6 @@ export function useConciergeClientTools(): ClientToolHandler {
         return { result: { focused: false, reason: "missing_slug" } };
       }
       const params = { idOrSlug: slug };
-      const str = (v: unknown) => (typeof v === "string" ? v : undefined);
 
       switch (data.tool_id) {
         case "focus_tab": {
@@ -117,6 +137,6 @@ export function useConciergeClientTools(): ClientToolHandler {
           return { result: { focused: false, reason: "unknown_focus_target" } };
       }
     },
-    [navigate],
+    [navigate, setPendingSecret],
   );
 }

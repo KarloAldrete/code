@@ -17,7 +17,16 @@ type ClientToolCall = Extract<
   { kind: "client_tool_call" }
 >["data"];
 
-export type ClientToolOutcome = { result?: unknown; error?: string };
+/**
+ * A client-tool result. `defer: true` means the call is interactive (e.g.
+ * `set_secret`): the handler opened a UI and will post the outcome itself via
+ * `resolveInteractiveTool`, so the dispatcher must NOT post a result now.
+ */
+export type ClientToolOutcome = {
+  result?: unknown;
+  error?: string;
+  defer?: boolean;
+};
 
 /**
  * Resolves a client-tool call, or returns null to defer to the built-in
@@ -108,6 +117,9 @@ export function useAgentChat({
         };
       }
       if (outcome == null) outcome = handleClientTool(data, agentSlug);
+      // Interactive tools (set_secret) post their own outcome later via
+      // resolveInteractiveTool once the user submits the form.
+      if (outcome.defer) return;
       try {
         await client.sendAgentClientToolResult(
           ingressBaseUrl,
@@ -262,6 +274,39 @@ export function useAgentChat({
     }
   }, [client, ingressBaseUrl, chatId]);
 
+  // Resolve an interactive client tool (set_secret) once the user submits its
+  // form: post the outcome via `/send` (which wakes the parked session) and
+  // make sure the stream is attached to receive the resulting turn.
+  const resolveInteractiveTool = useCallback(
+    async (
+      callId: string,
+      outcome: { result: Record<string, unknown> } | { error: string },
+    ) => {
+      if (!ingressBaseUrl) return;
+      const sessionId = agentChatStore.getState().chats[chatId]?.sessionId;
+      if (!sessionId) return;
+      agentChatStore.getState().setStatus(chatId, "streaming");
+      try {
+        await client.sendAgentInteractiveToolResult(
+          ingressBaseUrl,
+          sessionId,
+          callId,
+          outcome,
+        );
+        if (!streamingRef.current) void runStream(sessionId);
+      } catch (err) {
+        agentChatStore.getState().setStatus(chatId, "awaiting_input");
+        agentChatStore
+          .getState()
+          .setError(
+            chatId,
+            err instanceof Error ? err.message : "Couldn't submit the secret.",
+          );
+      }
+    },
+    [client, ingressBaseUrl, chatId, runStream],
+  );
+
   // Re-open a past preview chat. `/listen` only tails (it does not replay), so
   // history is rebuilt from the stored transcript; a still-active session then
   // attaches the live stream so the user can keep chatting where they left off.
@@ -339,6 +384,7 @@ export function useAgentChat({
     cancel,
     resume,
     newChat,
+    resolveInteractiveTool,
   };
 }
 

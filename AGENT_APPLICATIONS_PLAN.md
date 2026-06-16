@@ -146,7 +146,7 @@ transport, blocked on the M-Live open question).
 | 27 | Live chat / streaming | SSE transport → ACP; send message; cancel; new/resume chats | ingress `/agents/{slug}/run\|send\|listen\|cancel` | ✅ (per-agent **Chat** preview tab — region-derived ingress, optimistic send, info banner, local recent-chats rail with transcript-rebuilding resume; commit `c0688cfa`) |
 | 28 | In-chat approvals | ACP tool-call permission prompts during a live turn | ingress + approvals | 🔴 |
 | 29 | Draft preview | Run a non-live draft revision live before promoting | `…/preview-proxy/…`, `/preview_token/` | 🔴 |
-| 30 | Concierge / "edit with AI" | Always-on dock chat with `agent-concierge` that drives UI (`focus_*`) + secrets (`set_secret`) + staged authoring; seed prompts from inline buttons | ingress + client tools | 🔴 (transport ready; see M-Concierge) |
+| 30 | Concierge / "edit with AI" | Always-on dock chat with `agent-concierge` that drives UI (`focus_*`) + secrets (`set_secret`) + staged authoring; seed prompts from inline buttons | ingress + client tools | ✅ (global dock, page-context envelope + `get_context`, `focus_*` navigation, `set_secret` punch-out, edit-with-AI seeds; see M-Concierge) |
 
 > **Out of scope (owned elsewhere):** billing (AI-gateway wallet + ledger) and
 > the registry (native tools / skill templates / custom tool templates).
@@ -291,11 +291,14 @@ controls. Ordered by core value.
     navigations (agent tab + `?node=` / `?revision=` / `?request=` / session) plus
     a refetch, gated by a **follow-mode** toggle (returns `{focused:false,
     reason:'user_paused_follow'}` when off). Finish wiring `toast` → Sonner.
-  - [ ] **C4 — `set_secret` punch-out.** The interactive client tool: render an
-    inline secret form (reuse `SecretEditor`) next to the tool call; on submit
-    `PUT env_keys` and post the outcome via `sendAgentClientToolResult`; the
-    session parks and resumes on a fresh turn. Raw value never reaches the agent.
-    (Replaces the current `unhandled_client_tool` degradation.)
+  - [x] **C4 — `set_secret` punch-out.** Interactive client tool: the agent's
+    server-side tool returns `{queued, interactive}` and parks; the handler defers
+    (`{defer:true}`) and stores a `pendingSecret`; the dock renders
+    `ConciergeSecretForm` above the composer; on submit it `PUT`s the env key
+    straight to the API (raw value never reaches the agent) and posts the outcome
+    via `POST /send` (`sendAgentInteractiveToolResult` → `client_tool_result`
+    marker) to wake the parked session. Verified live: env_keys PUT 200 + the
+    session resumed confirming the set.
   - [ ] **C5 — "Edit with AI" seeds.** Inline buttons across the render surfaces
     (agent overview, a config node, a failing session) that open the dock and
     seed a prompt + agent slug; if a chat is active, a "start fresh / continue"

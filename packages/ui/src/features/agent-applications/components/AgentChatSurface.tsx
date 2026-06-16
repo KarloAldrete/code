@@ -1,21 +1,28 @@
-import { PaperPlaneTiltIcon, StopIcon } from "@phosphor-icons/react";
+import { ArrowUp, Stop } from "@phosphor-icons/react";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupTextarea,
+} from "@posthog/quill";
 import type { AcpMessage } from "@posthog/shared";
 import { ConversationView } from "@posthog/ui/features/sessions/components/ConversationView";
-import { Button } from "@posthog/ui/primitives/Button";
-import { Flex, Text, TextArea } from "@radix-ui/themes";
-import { type KeyboardEvent, useState } from "react";
+import { Flex, Text, Tooltip } from "@radix-ui/themes";
+import { type KeyboardEvent, type ReactNode, useState } from "react";
 
 /**
  * The conversation + composer half of a deployed-agent chat, shared by the
  * per-agent preview pane and the concierge dock. Renders the live ACP messages
  * through the native `ConversationView` (collapse disabled so the agent's prose
- * shows inline) and a single-line composer with Enter-to-send / Cancel.
+ * shows inline) and an auto-growing composer with Enter-to-send / Cancel that
+ * mirrors the main task chat's input shell.
  */
 export function AgentChatSurface({
   messages,
   isStreaming,
   error,
   emptyHint,
+  aboveComposer,
   onSend,
   onCancel,
 }: {
@@ -23,6 +30,8 @@ export function AgentChatSurface({
   isStreaming: boolean;
   error: string | null;
   emptyHint: string;
+  /** Optional content rendered between the transcript and the composer. */
+  aboveComposer?: ReactNode;
   onSend: (text: string) => void;
   onCancel: () => void;
 }) {
@@ -48,6 +57,7 @@ export function AgentChatSurface({
           {error}
         </Text>
       ) : null}
+      {aboveComposer}
       <Composer isStreaming={isStreaming} onSend={onSend} onCancel={onCancel} />
     </Flex>
   );
@@ -77,31 +87,50 @@ function Composer({
     }
   }
 
+  const submitBlocked = !text.trim();
+
   return (
-    <Flex
-      align="end"
-      gap="2"
-      className="shrink-0 border-(--gray-5) border-t px-4 py-3"
-    >
-      <TextArea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={onKeyDown}
-        placeholder="Message this agent…"
-        rows={1}
-        className="flex-1 text-[13px]"
-      />
-      {isStreaming ? (
-        <Button variant="soft" color="gray" size="2" onClick={onCancel}>
-          <StopIcon size={14} />
-          Cancel
-        </Button>
-      ) : (
-        <Button size="2" onClick={submit} disabled={!text.trim()}>
-          <PaperPlaneTiltIcon size={14} />
-          Send
-        </Button>
-      )}
-    </Flex>
+    <div className="shrink-0 px-3 pt-2 pb-3">
+      <InputGroup className="h-auto cursor-text bg-card focus-within:ring-1 focus-within:ring-purple-9">
+        <InputGroupTextarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder="Message this agent…"
+          rows={1}
+          className="max-h-[160px] min-h-[40px] resize-none text-[14px] [field-sizing:content]"
+        />
+        <InputGroupAddon align="block-end" className="p-1">
+          <span className="ml-auto flex items-center gap-1">
+            {isStreaming ? (
+              <Tooltip content="Stop">
+                <InputGroupButton
+                  variant="destructive"
+                  size="icon-sm"
+                  onClick={onCancel}
+                  aria-label="Stop"
+                >
+                  <Stop size={14} weight="fill" />
+                </InputGroupButton>
+              </Tooltip>
+            ) : (
+              <Tooltip
+                content={submitBlocked ? "Enter a message" : "Send message"}
+              >
+                <InputGroupButton
+                  variant="primary"
+                  size="icon-sm"
+                  onClick={submit}
+                  disabled={submitBlocked}
+                  aria-label="Send message"
+                >
+                  <ArrowUp size={14} weight="bold" />
+                </InputGroupButton>
+              </Tooltip>
+            )}
+          </span>
+        </InputGroupAddon>
+      </InputGroup>
+    </div>
   );
 }

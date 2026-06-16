@@ -33,6 +33,20 @@ export interface ConciergeSeed {
   agentSlug: string | null;
 }
 
+/**
+ * An in-flight `set_secret` punch-out. The agent parked its turn; the dock
+ * renders a form for these, and on submit PUTs the key + wakes the session.
+ */
+export interface PendingSecret {
+  /** The parked tool call to resolve via `/send`. */
+  callId: string;
+  agentSlug: string;
+  /** Env key name, e.g. "ANTHROPIC_KEY". The value is never seen by the agent. */
+  secret: string;
+  mode?: "set" | "rotate";
+  purpose?: string;
+}
+
 interface ConciergeStore {
   /** Dock open/closed (persisted). */
   visible: boolean;
@@ -42,6 +56,8 @@ interface ConciergeStore {
   page: ConciergePageContext;
   /** Pending edit-with-AI hand-off (ephemeral). */
   seed: ConciergeSeed | null;
+  /** In-flight set_secret punch-out the dock renders a form for (ephemeral). */
+  pendingSecret: PendingSecret | null;
 
   toggleVisible: () => void;
   setVisible: (visible: boolean) => void;
@@ -51,6 +67,7 @@ interface ConciergeStore {
   startConcierge: (prompt: string, agentSlug?: string | null) => void;
   /** Mark a seed handled (no-op if a newer seed has since replaced it). */
   consumeSeed: (seq: number) => void;
+  setPendingSecret: (pending: PendingSecret | null) => void;
 }
 
 export const useConciergeStore = create<ConciergeStore>()(
@@ -60,6 +77,7 @@ export const useConciergeStore = create<ConciergeStore>()(
       followMode: true,
       page: { kind: "unknown" },
       seed: null,
+      pendingSecret: null,
 
       toggleVisible: () => set((s) => ({ visible: !s.visible })),
       setVisible: (visible) => set({ visible }),
@@ -72,6 +90,7 @@ export const useConciergeStore = create<ConciergeStore>()(
         })),
       consumeSeed: (seq) =>
         set((s) => (s.seed?.seq === seq ? { seed: null } : s)),
+      setPendingSecret: (pendingSecret) => set({ pendingSecret }),
     }),
     {
       name: "agent-concierge-dock",

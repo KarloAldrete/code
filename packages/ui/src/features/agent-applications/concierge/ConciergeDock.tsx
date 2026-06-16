@@ -4,15 +4,17 @@ import {
   SidebarSimpleIcon,
   SparkleIcon,
 } from "@phosphor-icons/react";
+import { useAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { Button } from "@posthog/ui/primitives/Button";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuthStateValue } from "../../auth/store";
 import { AgentChatSurface } from "../components/AgentChatSurface";
 import { AgentDetailEmptyState } from "../components/AgentDetailLayout";
 import { useAgentApplication } from "../hooks/useAgentApplication";
 import { useAgentChat } from "../hooks/useAgentChat";
 import { resolveIngressBaseUrl } from "../utils/ingress";
+import { ConciergeSecretForm } from "./ConciergeSecretForm";
 import {
   CONCIERGE_SLUG,
   type ConciergePageContext,
@@ -52,12 +54,16 @@ export function ConciergeDock() {
     cloudRegion,
   );
 
+  const client = useAuthenticatedClient();
   const page = useConciergeStore((s) => s.page);
   const followMode = useConciergeStore((s) => s.followMode);
   const setFollowMode = useConciergeStore((s) => s.setFollowMode);
   const setVisible = useConciergeStore((s) => s.setVisible);
   const seed = useConciergeStore((s) => s.seed);
   const consumeSeed = useConciergeStore((s) => s.consumeSeed);
+  const pendingSecret = useConciergeStore((s) => s.pendingSecret);
+  const setPendingSecret = useConciergeStore((s) => s.setPendingSecret);
+  const [secretBusy, setSecretBusy] = useState(false);
 
   const clientTools = useConciergeClientTools();
   const chat = useAgentChat({
@@ -67,6 +73,42 @@ export function ConciergeDock() {
     contextProvider: () => buildConciergeContext(page, followMode),
     clientTools,
   });
+
+  // Resolve a pending set_secret: PUT the value straight to the env-keys API
+  // (never through the agent), then wake the parked session with the outcome.
+  async function submitSecret(value: string) {
+    if (!pendingSecret) return;
+    setSecretBusy(true);
+    try {
+      await client.setAgentEnvKey(
+        pendingSecret.agentSlug,
+        pendingSecret.secret,
+        value,
+      );
+      await chat.resolveInteractiveTool(pendingSecret.callId, {
+        result: {
+          key: pendingSecret.secret,
+          action: pendingSecret.mode ?? "set",
+        },
+      });
+      setPendingSecret(null);
+    } catch (err) {
+      await chat.resolveInteractiveTool(pendingSecret.callId, {
+        error: err instanceof Error ? err.message : "set_secret_failed",
+      });
+      setPendingSecret(null);
+    } finally {
+      setSecretBusy(false);
+    }
+  }
+
+  function cancelSecret() {
+    if (!pendingSecret) return;
+    void chat.resolveInteractiveTool(pendingSecret.callId, {
+      error: "user_cancelled",
+    });
+    setPendingSecret(null);
+  }
 
   // Edit-with-AI hand-offs: send the seeded prompt once when a new seed lands.
   const lastSeedRef = useRef(0);
@@ -112,7 +154,10 @@ export function ConciergeDock() {
               variant="ghost"
               color="gray"
               size="1"
-              onClick={chat.newChat}
+              onClick={() => {
+                setPendingSecret(null);
+                chat.newChat();
+              }}
             >
               <PlusIcon size={14} />
             </Button>
@@ -143,6 +188,16 @@ export function ConciergeDock() {
           isStreaming={chat.isStreaming}
           error={chat.error}
           emptyHint="Ask the concierge to inspect, debug, or edit your agents. It can see what you're looking at and walk you there."
+          aboveComposer={
+            pendingSecret ? (
+              <ConciergeSecretForm
+                pending={pendingSecret}
+                busy={secretBusy}
+                onSubmit={submitSecret}
+                onCancel={cancelSecret}
+              />
+            ) : null
+          }
           onSend={chat.send}
           onCancel={chat.cancel}
         />
