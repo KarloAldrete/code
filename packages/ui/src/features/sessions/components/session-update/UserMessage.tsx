@@ -14,6 +14,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Tooltip } from "../../../../primitives/Tooltip";
 import { MarkdownRenderer } from "../../../editor/components/MarkdownRenderer";
 import { useFeatureFlag } from "../../../feature-flags/useFeatureFlag";
+import { InboxReportCard } from "../../../inbox/components/InboxReportCard";
 import { usePanelLayoutStore } from "../../../panels/panelLayoutStore";
 import type { UserMessageAttachment } from "../../userMessageTypes";
 import { extractChannelContext } from "./channelContext";
@@ -29,6 +30,9 @@ interface UserMessageProps {
   content: string;
   timestamp?: number;
   sourceUrl?: string;
+  /** Inbox report this message's task is associated with — rendered as an
+   * expandable card under the message (first user message only). */
+  signalReportId?: string;
   attachments?: UserMessageAttachment[];
   animate?: boolean;
   /** Task the message belongs to — needed to open the context file tab. */
@@ -55,6 +59,7 @@ export const UserMessage = memo(function UserMessage({
   content,
   timestamp,
   sourceUrl,
+  signalReportId,
   attachments = [],
   animate = true,
   taskId,
@@ -208,6 +213,7 @@ export const UserMessage = memo(function UserMessage({
             <span>View Slack thread</span>
           </a>
         )}
+        {signalReportId && <InboxReportCard reportId={signalReportId} />}
         <Box className="absolute top-1 right-1 flex select-none items-center gap-1.5 rounded-md bg-gray-2 py-0.5 pr-1 pl-2 opacity-0 shadow-sm transition-opacity group-hover/msg:opacity-100">
           {timestamp != null && (
             <span aria-hidden className="text-[11px] text-gray-10">
