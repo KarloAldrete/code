@@ -1,69 +1,97 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useSmoothedText } from "./useSmoothedText";
+import { nextRevealLength, useSmoothedText } from "./useSmoothedText";
 
-// Manual rAF queue so we can step frames deterministically and honor cancels.
-let frames = new Map<number, FrameRequestCallback>();
-let nextId = 1;
-
-beforeEach(() => {
-  frames = new Map();
-  nextId = 1;
-  vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
-    const id = nextId++;
-    frames.set(id, cb);
-    return id;
-  });
-  vi.stubGlobal("cancelAnimationFrame", (id: number) => {
-    frames.delete(id);
+describe("nextRevealLength", () => {
+  it.each<[string, number, number, number, number, number]>([
+    // label                                  current target elapsed rate expected
+    ["caught up -> target", 10, 10, 16, 120, 10],
+    ["past target -> clamps to target", 12, 10, 16, 120, 10],
+    ["120 chars/sec over 100ms -> +12", 0, 100, 100, 120, 12],
+    ["never overshoots the target", 95, 100, 1000, 120, 100],
+    ["always advances at least one when behind", 0, 100, 0, 120, 1],
+    ["snaps when lag exceeds the cap", 0, 5000, 16, 120, 5000],
+  ])("%s", (_label, current, target, elapsedMs, rate, expected) => {
+    expect(nextRevealLength(current, target, elapsedMs, rate)).toBe(expected);
   });
 });
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
-
-function stepFrames(n: number) {
-  for (let i = 0; i < n; i++) {
-    const pending = [...frames.values()];
-    frames.clear();
-    act(() => {
-      for (const cb of pending) cb(0);
-    });
-  }
-}
 
 describe("useSmoothedText", () => {
-  it("shows the initial text immediately (no replay on mount)", () => {
-    const { result } = renderHook(({ t }) => useSmoothedText(t), {
-      initialProps: { t: "hello" },
-    });
-    expect(result.current).toBe("hello");
+  let now: number;
+  let rafCallbacks: Array<(t: number) => void>;
+
+  beforeEach(() => {
+    now = 0;
+    rafCallbacks = [];
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      (cb: (t: number) => void): number => {
+        rafCallbacks.push(cb);
+        return rafCallbacks.length;
+      },
+    );
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+    vi.stubGlobal("matchMedia", () => ({ matches: false }));
   });
 
-  it("reveals appended text gradually, then converges to the target", () => {
-    const target = "hello world this is a longer streamed message indeed";
-    const { result, rerender } = renderHook(({ t }) => useSmoothedText(t), {
-      initialProps: { t: "hello" },
-    });
-    rerender({ t: target });
-
-    stepFrames(1);
-    expect(result.current.length).toBeGreaterThanOrEqual("hello".length);
-    expect(result.current.length).toBeLessThan(target.length);
-
-    stepFrames(40);
-    expect(result.current).toBe(target);
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
-  it("always shows a prefix of the target and never overshoots", () => {
-    const target = "abcdefghijklmnopqrstuvwxyz";
-    const { result, rerender } = renderHook(({ t }) => useSmoothedText(t), {
-      initialProps: { t: "" },
+  const flushFrame = (deltaMs: number) => {
+    now += deltaMs;
+    const callbacks = rafCallbacks;
+    rafCallbacks = [];
+    act(() => {
+      for (const cb of callbacks) cb(now);
     });
-    rerender({ t: target });
-    stepFrames(3);
-    expect(target.startsWith(result.current)).toBe(true);
-    expect(result.current.length).toBeLessThanOrEqual(target.length);
+  };
+
+  it("shows existing text immediately on mount (no replay)", () => {
+    const { result } = renderHook(() => useSmoothedText("already here"));
+    expect(result.current).toBe("already here");
+  });
+
+  it("reveals appended text gradually at a steady rate, then catches up", () => {
+    const { result, rerender } = renderHook(
+      ({ t }) => useSmoothedText(t, 100),
+      { initialProps: { t: "" } },
+    );
+    rerender({ t: "x".repeat(50) });
+
+    flushFrame(0); // establish the clock; minimal forward progress
+    expect(result.current.length).toBe(1);
+
+    flushFrame(100); // 100ms at 100 chars/sec -> ~10 more chars
+    expect(result.current.length).toBe(11);
+    expect(result.current.length).toBeLessThan(50);
+
+    flushFrame(1000); // plenty of time -> caught up
+    expect(result.current).toBe("x".repeat(50));
+  });
+
+  it("snaps when the target is replaced with a shorter value", () => {
+    const { result, rerender } = renderHook(
+      ({ t }) => useSmoothedText(t, 100),
+      {
+        initialProps: { t: "hello world, a longer streamed message" },
+      },
+    );
+    rerender({ t: "new" });
+    expect(result.current).toBe("new");
+  });
+
+  it("snaps immediately when reduced motion is preferred", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query.includes("reduce"),
+    }));
+    const { result, rerender } = renderHook(
+      ({ t }) => useSmoothedText(t, 100),
+      {
+        initialProps: { t: "" },
+      },
+    );
+    rerender({ t: "x".repeat(50) });
+    expect(result.current).toBe("x".repeat(50));
   });
 });

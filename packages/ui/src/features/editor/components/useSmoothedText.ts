@@ -1,72 +1,103 @@
 import { useEffect, useRef, useState } from "react";
 
-// Reveal the backlog over ~this many frames. The step scales with the backlog,
-// so it converges in roughly this many frames regardless of how big a burst
-// arrives — small bursts trickle, big bursts catch up fast.
-const SMOOTHING_FRAMES = 6;
-const MIN_REVEAL = 2;
+// Reveal at a steady character rate (~120 chars/sec) rather than an adaptive
+// one, so the cadence reads as even typing instead of speeding up to clear a
+// backlog. Matches the feel of #2685. See https://upstash.com/blog/smooth-streaming.
+const DEFAULT_CHARS_PER_SECOND = 120;
+// Past this backlog we stop easing and snap, so a large buffered chunk (e.g. a
+// reconnect replaying a long message) never crawls.
+const MAX_LAG_CHARS = 600;
 
 /**
- * Smoothly reveals `target` a slice per animation frame instead of jumping to
- * whatever arrived. Streamed tokens land in irregular bursts (1–4 words, then a
- * pause); painting them verbatim looks choppy. This decouples arrival from
- * paint so the text flows at a steady ~60fps "typewriter" cadence while never
- * lagging far behind — the reveal step is proportional to the remaining
- * backlog, so it catches up within ~SMOOTHING_FRAMES frames.
- *
- * Append-only by design: a shorter `target` (a brand-new message reusing this
- * hook instance) snaps instantly and we never hide already-revealed text.
+ * Pure easing: the next reveal length given how much time elapsed since the last
+ * frame. Timer-free so it's unit-testable. Never exceeds `target`, never goes
+ * backwards, and snaps when too far behind to ease smoothly.
  */
-export function useSmoothedText(target: string): string {
+export function nextRevealLength(
+  current: number,
+  target: number,
+  elapsedMs: number,
+  charsPerSecond: number,
+): number {
+  if (current >= target) return target;
+  if (target - current > MAX_LAG_CHARS) return target;
+  const step = Math.ceil((charsPerSecond * elapsedMs) / 1000);
+  return Math.min(target, current + Math.max(step, 1));
+}
+
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
+/**
+ * Smoothly reveals `target` a few characters per frame at a steady rate instead
+ * of jumping whenever streamed tokens arrive in bursts, so the text reads as
+ * even typing. Text already present on mount shows immediately (no replay); the
+ * reveal snaps when the source is replaced with a shorter value (a new message)
+ * or the user prefers reduced motion.
+ */
+export function useSmoothedText(
+  target: string,
+  charsPerSecond = DEFAULT_CHARS_PER_SECOND,
+): string {
   const [, forceRender] = useState(0);
   const shownLenRef = useRef(target.length);
   const targetRef = useRef(target);
   targetRef.current = target;
+  const lastTsRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
 
-  // Snap when the text shrinks (new/replaced message) — never un-reveal text.
+  // New/replaced (shorter) message: snap, and never hide already-shown text.
   if (target.length < shownLenRef.current) {
     shownLenRef.current = target.length;
   }
 
   useEffect(() => {
-    const tick = () => {
-      const tgtLen = targetRef.current.length;
-      const remaining = tgtLen - shownLenRef.current;
-      if (remaining <= 0) {
-        rafRef.current = null;
-        return;
+    if (prefersReducedMotion()) {
+      if (shownLenRef.current !== targetRef.current.length) {
+        shownLenRef.current = targetRef.current.length;
+        forceRender((n) => (n + 1) % 1_000_000);
       }
-      const step = Math.max(
-        MIN_REVEAL,
-        Math.ceil(remaining / SMOOTHING_FRAMES),
-      );
-      const shown = shownLenRef.current;
-      let next = Math.min(tgtLen, shown + step);
-      if (next < tgtLen) {
-        // Stop at a whitespace boundary when possible so words (and inline
-        // markdown tokens like **bold**) reveal whole instead of mid-token.
-        const text = targetRef.current;
-        const boundary = Math.max(
-          text.lastIndexOf(" ", next),
-          text.lastIndexOf("\n", next),
-        );
-        if (boundary > shown) next = boundary + 1;
-      }
-      shownLenRef.current = next;
-      forceRender((n) => (n + 1) % 1_000_000);
-      rafRef.current = requestAnimationFrame(tick);
-    };
+      return;
+    }
+    // Kick the reveal loop only if it's idle. While running it reads the latest
+    // target each frame (via ref), so it keeps a steady wall-clock rate across
+    // token appends instead of restarting — and resetting its clock — per token.
     if (rafRef.current === null && shownLenRef.current < target.length) {
+      lastTsRef.current = null;
+      const tick = (ts: number) => {
+        const last = lastTsRef.current ?? ts;
+        lastTsRef.current = ts;
+        shownLenRef.current = nextRevealLength(
+          shownLenRef.current,
+          targetRef.current.length,
+          ts - last,
+          charsPerSecond,
+        );
+        forceRender((n) => (n + 1) % 1_000_000);
+        if (shownLenRef.current < targetRef.current.length) {
+          rafRef.current = requestAnimationFrame(tick);
+        } else {
+          rafRef.current = null;
+          lastTsRef.current = null;
+        }
+      };
       rafRef.current = requestAnimationFrame(tick);
     }
-    return () => {
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-    };
-  }, [target]);
+  }, [target, charsPerSecond]);
+
+  // Cancel any in-flight frame on unmount (kept separate so token appends don't
+  // tear down the running loop).
+  useEffect(
+    () => () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    },
+    [],
+  );
 
   return shownLenRef.current >= targetRef.current.length
     ? targetRef.current
