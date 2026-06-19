@@ -4228,6 +4228,125 @@ describe("SessionService", () => {
     });
   });
 
+  describe("steerQueuedMessage", () => {
+    const queuedMessage = {
+      id: "q-1",
+      content: "do the thing",
+      queuedAt: 1700000000,
+    };
+
+    it("removes the message and resends it as a native steer", async () => {
+      const service = getSessionService();
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({
+          adapter: "claude",
+          isPromptPending: true,
+          messageQueue: [
+            queuedMessage,
+            { id: "q-2", content: "keep me", queuedAt: 1700000001 },
+          ],
+        }),
+      );
+      mockTrpcAgent.prompt.mutate.mockResolvedValue({ stopReason: "end_turn" });
+
+      await service.steerQueuedMessage("task-123", "q-1");
+
+      expect(mockSessionStoreSetters.removeQueuedMessage).toHaveBeenCalledWith(
+        "task-123",
+        "q-1",
+      );
+      expect(mockTrpcAgent.prompt.mutate).toHaveBeenCalledWith({
+        sessionId: "run-123",
+        prompt: [{ type: "text", text: "do the thing" }],
+        steer: true,
+      });
+      expect(
+        mockSessionStoreSetters.prependQueuedMessages,
+      ).not.toHaveBeenCalled();
+    });
+
+    it("is a no-op when the message id is not queued", async () => {
+      const service = getSessionService();
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({
+          adapter: "claude",
+          isPromptPending: true,
+          messageQueue: [queuedMessage],
+        }),
+      );
+
+      await service.steerQueuedMessage("task-123", "missing");
+
+      expect(
+        mockSessionStoreSetters.removeQueuedMessage,
+      ).not.toHaveBeenCalled();
+      expect(mockTrpcAgent.prompt.mutate).not.toHaveBeenCalled();
+    });
+
+    it("rolls the message back onto the queue when the steer fails", async () => {
+      const service = getSessionService();
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({
+          adapter: "claude",
+          isPromptPending: true,
+          messageQueue: [queuedMessage],
+        }),
+      );
+      mockTrpcAgent.prompt.mutate.mockRejectedValue(new Error("steer failed"));
+
+      await expect(
+        service.steerQueuedMessage("task-123", "q-1"),
+      ).rejects.toThrow("steer failed");
+
+      expect(
+        mockSessionStoreSetters.prependQueuedMessages,
+      ).toHaveBeenCalledWith("task-123", [queuedMessage]);
+    });
+
+    it("is a no-op while compacting and keeps the queued message intact", async () => {
+      const service = getSessionService();
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({
+          adapter: "claude",
+          isPromptPending: true,
+          isCompacting: true,
+          messageQueue: [queuedMessage],
+        }),
+      );
+
+      await service.steerQueuedMessage("task-123", "q-1");
+
+      expect(
+        mockSessionStoreSetters.removeQueuedMessage,
+      ).not.toHaveBeenCalled();
+      expect(mockSessionStoreSetters.enqueueMessage).not.toHaveBeenCalled();
+      expect(mockTrpcAgent.prompt.mutate).not.toHaveBeenCalled();
+    });
+
+    it("resends the original rawPrompt blocks, not the plain-text content", async () => {
+      const service = getSessionService();
+      const rawPrompt: ContentBlock[] = [{ type: "text", text: "rich blocks" }];
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({
+          adapter: "claude",
+          isPromptPending: true,
+          messageQueue: [
+            { id: "q-rich", content: "plain text", rawPrompt, queuedAt: 1 },
+          ],
+        }),
+      );
+      mockTrpcAgent.prompt.mutate.mockResolvedValue({ stopReason: "end_turn" });
+
+      await service.steerQueuedMessage("task-123", "q-rich");
+
+      expect(mockTrpcAgent.prompt.mutate).toHaveBeenCalledWith({
+        sessionId: "run-123",
+        prompt: [{ type: "text", text: "rich blocks" }],
+        steer: true,
+      });
+    });
+  });
+
   describe("cancelPrompt", () => {
     it("returns false if no session exists", async () => {
       const service = getSessionService();
