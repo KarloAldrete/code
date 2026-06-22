@@ -1,12 +1,21 @@
 import {
   ArrowUUpLeftIcon,
   ArrowUUpRightIcon,
+  ShapesIcon,
   SpinnerGapIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
 import type { CanvasAnalyticsConfig } from "@posthog/core/canvas/freeformSchemas";
 import { useHostTRPC } from "@posthog/host-router/react";
-import { Button } from "@posthog/quill";
+import {
+  Button,
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@posthog/quill";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
@@ -243,23 +252,19 @@ export function FreeformCanvasView({
             ) : showGeneratingState ? (
               <GeneratingState channelId={channelId} taskId={genTaskId ?? ""} />
             ) : (
-              <Flex
-                direction="column"
-                align="center"
-                justify="center"
-                height="100%"
-                gap="1"
-                className="px-6 text-center"
-              >
-                <Text size="3" weight="bold" className="text-gray-12">
-                  Freeform canvas
-                </Text>
-                <Text size="2" className="text-gray-10">
-                  {interactive
-                    ? "Describe the canvas below to build it with an agent."
-                    : "This canvas is empty. Hit Edit to build it with an agent."}
-                </Text>
-              </Flex>
+              <Empty className="h-full">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <ShapesIcon size={24} />
+                  </EmptyMedia>
+                  <EmptyTitle>Freeform canvas</EmptyTitle>
+                  <EmptyDescription>
+                    {interactive
+                      ? "Describe the canvas below to build it with an agent."
+                      : "This canvas is empty. Hit Edit to build it with an agent."}
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
             )}
           </ScrollArea>
         </Box>
@@ -293,33 +298,30 @@ function GeneratingState({
   taskId: string;
 }) {
   return (
-    <Flex
-      direction="column"
-      align="center"
-      justify="center"
-      height="100%"
-      gap="4"
-      className="mx-auto max-w-[440px] px-6 text-center"
-    >
-      <Box className="rounded-lg border border-gray-6 border-dashed p-3">
-        <SpinnerGapIcon size={18} className="animate-spin text-accent-9" />
-      </Box>
-      <Flex direction="column" gap="1" align="center">
-        <Text className="font-medium text-[14px] text-gray-12">Generating</Text>
-        <Text className="text-[13px] text-gray-10">
-          An agent is building this canvas.
-        </Text>
-      </Flex>
+    <Empty className="h-full">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <SpinnerGapIcon size={18} className="animate-spin text-accent-9" />
+        </EmptyMedia>
+        <EmptyTitle>Generating</EmptyTitle>
+        <EmptyDescription>An agent is building this canvas.</EmptyDescription>
+      </EmptyHeader>
       {taskId && (
-        <RadixButton size="2" variant="soft" asChild>
-          <Link
-            to="/website/$channelId/tasks/$taskId"
-            params={{ channelId, taskId }}
+        <EmptyContent>
+          <Button
+            variant="primary"
+            size="default"
+            render={
+              <Link
+                to="/website/$channelId/tasks/$taskId"
+                params={{ channelId, taskId }}
+              />
+            }
           >
             View task
-          </Link>
-        </RadixButton>
+          </Button>
+        </EmptyContent>
       )}
-    </Flex>
+    </Empty>
   );
 }

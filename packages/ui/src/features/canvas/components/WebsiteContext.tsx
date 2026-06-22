@@ -1,13 +1,22 @@
 import {
   FileTextIcon,
-  HashIcon,
   SparkleIcon,
   SpinnerGapIcon,
 } from "@phosphor-icons/react";
 import { FolderInstructionsConflictError } from "@posthog/api-client/posthog-client";
 import { buildContextSaveProps } from "@posthog/core/canvas/canvasAnalytics";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  Button as QuillButton,
+} from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
+import { ChannelBreadcrumb } from "@posthog/ui/features/canvas/components/ChannelBreadcrumb";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
   useFolderGenerationTask,
@@ -157,20 +166,11 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
   const channelName = channel?.name ?? "Channel";
   const headerContent = useMemo(
     () => (
-      <Flex align="center" gap="2" className="w-full min-w-0">
-        <HashIcon size={12} className="shrink-0 text-gray-10" />
-        <Text
-          className="truncate whitespace-nowrap font-medium text-[13px]"
-          title={channelName}
-        >
-          {channelName}
-        </Text>
-        <Text className="shrink-0 text-[13px] text-gray-9">/</Text>
-        <FileTextIcon size={12} className="shrink-0 text-gray-10" />
-        <Text className="shrink-0 whitespace-nowrap text-[13px] text-gray-11">
-          CONTEXT.md
-        </Text>
-      </Flex>
+      <ChannelBreadcrumb
+        channelName={channelName}
+        leafIcon={<FileTextIcon size={12} />}
+        leafLabel="CONTEXT.md"
+      />
     ),
     [channelName],
   );
@@ -417,53 +417,47 @@ function EmptyState({
   onCreate: () => void;
 }) {
   return (
-    <Flex
-      direction="column"
-      align="center"
-      gap="4"
-      className="mx-auto max-w-[440px] py-16 text-center"
-    >
-      <Box className="rounded-lg border border-gray-6 border-dashed p-4">
-        <FileTextIcon size={28} className="text-gray-8" />
-      </Box>
-      <Flex direction="column" gap="2" align="center">
-        <Text className="font-medium text-[14px] text-gray-12">
-          No CONTEXT.md yet
-        </Text>
-        <Text className="text-[13px] text-gray-10 leading-relaxed">
+    <Empty>
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <FileTextIcon size={28} />
+        </EmptyMedia>
+        <EmptyTitle>No CONTEXT.md yet</EmptyTitle>
+        <EmptyDescription>
           CONTEXT.md tells agents the specific details they need to know when
           working in <strong>{channelName}</strong> — conventions, gotchas, key
           files, and anything else that isn't obvious from the code.
-        </Text>
-      </Flex>
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        {stoppedTaskId ? (
+          <Callout.Root color="amber" size="1" className="w-full text-left">
+            <Callout.Text>
+              The previous generation in task{" "}
+              <Link
+                to="/website/$channelId/tasks/$taskId"
+                params={{ channelId, taskId: stoppedTaskId }}
+                className="font-medium text-amber-11 underline"
+              >
+                {shortTaskId(stoppedTaskId)}
+              </Link>{" "}
+              stopped before writing a CONTEXT.md. You can generate again.
+            </Callout.Text>
+          </Callout.Root>
+        ) : null}
 
-      {stoppedTaskId ? (
-        <Callout.Root color="amber" size="1" className="w-full text-left">
-          <Callout.Text>
-            The previous generation in task{" "}
-            <Link
-              to="/website/$channelId/tasks/$taskId"
-              params={{ channelId, taskId: stoppedTaskId }}
-              className="font-medium text-amber-11 underline"
-            >
-              {shortTaskId(stoppedTaskId)}
-            </Link>{" "}
-            stopped before writing a CONTEXT.md. You can generate again.
-          </Callout.Text>
-        </Callout.Root>
-      ) : null}
-
-      <Flex align="center" gap="3">
-        <Button size="2" variant="solid" onClick={onCreate}>
-          Create CONTEXT.md
-        </Button>
-        <GenerateWithAgent
-          channelId={channelId}
-          channelName={channelName}
-          regenerate={!!stoppedTaskId}
-        />
-      </Flex>
-    </Flex>
+        <Flex align="center" gap="3">
+          <QuillButton variant="primary" size="default" onClick={onCreate}>
+            Create
+          </QuillButton>
+          <GenerateWithAgent
+            channelId={channelId}
+            channelName={channelName}
+            regenerate={!!stoppedTaskId}
+          />
+        </Flex>
+      </EmptyContent>
+    </Empty>
   );
 }
 
@@ -502,10 +496,14 @@ function GenerateWithAgent({
 
   if (!picking) {
     return (
-      <Button size="2" variant="soft" onClick={() => setPicking(true)}>
+      <QuillButton
+        variant="outline"
+        size="default"
+        onClick={() => setPicking(true)}
+      >
         <SparkleIcon size={14} />
         {regenerate ? "Generate again" : "Generate with agent"}
-      </Button>
+      </QuillButton>
     );
   }
 
@@ -616,30 +614,31 @@ function GeneratingState({
   taskId: string;
 }) {
   return (
-    <Flex
-      direction="column"
-      align="center"
-      gap="4"
-      className="mx-auto max-w-[440px] py-16 text-center"
-    >
-      <Box className="rounded-lg border border-gray-6 border-dashed p-3">
-        <SpinnerGapIcon size={18} className="animate-spin text-accent-9" />
-      </Box>
-      <Flex direction="column" gap="1" align="center">
-        <Text className="font-medium text-[14px] text-gray-12">Generating</Text>
-        <Text className="text-[13px] text-gray-10">
+    <Empty>
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <SpinnerGapIcon size={18} className="animate-spin text-accent-9" />
+        </EmptyMedia>
+        <EmptyTitle>Generating</EmptyTitle>
+        <EmptyDescription>
           An agent is writing this CONTEXT.md.
-        </Text>
-      </Flex>
-      <Button size="2" variant="soft" asChild>
-        <Link
-          to="/website/$channelId/tasks/$taskId"
-          params={{ channelId, taskId }}
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        <QuillButton
+          variant="primary"
+          size="default"
+          render={
+            <Link
+              to="/website/$channelId/tasks/$taskId"
+              params={{ channelId, taskId }}
+            />
+          }
         >
           View task
-        </Link>
-      </Button>
-    </Flex>
+        </QuillButton>
+      </EmptyContent>
+    </Empty>
   );
 }
 
