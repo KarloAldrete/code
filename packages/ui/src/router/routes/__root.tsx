@@ -8,6 +8,7 @@ import {
   SYNC_CLOUD_TASKS_FLAG,
 } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import { useApprovalDeepLink } from "@posthog/ui/features/agent-applications/hooks/useApprovalDeepLink";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
 import { ChannelsSidebar } from "@posthog/ui/features/canvas/components/ChannelsSidebar";
@@ -163,6 +164,7 @@ function RootLayout() {
   useTaskDeepLink();
   useInboxDeepLink();
   useScoutDeepLink();
+  useApprovalDeepLink();
   useSetupDiscovery();
   useNewTaskDeepLink();
 

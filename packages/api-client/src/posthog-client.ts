@@ -13,6 +13,29 @@ import {
   SEAT_PRODUCT_KEY,
 } from "@posthog/shared";
 import type {
+  AgentAnalyticsData,
+  AgentApplication,
+  AgentApplicationSessionDetail,
+  AgentApplicationSessionsListResponse,
+  AgentApprovalRequest,
+  AgentApprovalsListParams,
+  AgentFleetLiveSessionsResponse,
+  AgentMemoryFile,
+  AgentMemorySearchResult,
+  AgentMemoryTableHeader,
+  AgentMemoryTableRows,
+  AgentMemoryTreeNode,
+  AgentPreviewToken,
+  AgentRevision,
+  AgentSessionEvent,
+  AgentSessionLogEntry,
+  AgentSessionLogsParams,
+  AgentSessionsListParams,
+  AgentSlackManifest,
+  BundleFile,
+  DecideApprovalRequest,
+} from "@posthog/shared/agent-platform-types";
+import type {
   ActionabilityJudgmentArtefact,
   AvailableSuggestedReviewer,
   AvailableSuggestedReviewersResponse,
@@ -42,6 +65,11 @@ import type {
   Task,
   TaskRun,
 } from "@posthog/shared/domain-types";
+import {
+  buildAgentAnalyticsQueries,
+  type HogQLGrid,
+  shapeAgentAnalytics,
+} from "./agent-analytics";
 import { buildApiFetcher } from "./fetcher";
 import { createApiClient, type Schemas } from "./generated";
 import type { SpendAnalysisResponse } from "./spend-analysis";
@@ -844,6 +872,18 @@ function parseAvailableSuggestedReviewersPayload(
     results,
     count: results.length,
   };
+}
+
+/**
+ * Wraps the ingress preview token in the `parameters.header` shape the fetcher
+ * merges into request headers without clobbering the auth bearer. Returns
+ * `undefined` when there is no token so unmodified ingress calls stay byte-for-
+ * byte identical to today.
+ */
+function previewTokenHeader(
+  token: string | null | undefined,
+): { header: { "X-Agent-Preview-Token": string } } | undefined {
+  return token ? { header: { "X-Agent-Preview-Token": token } } : undefined;
 }
 
 export class PostHogAPIClient {
@@ -4009,5 +4049,816 @@ export class PostHogAPIClient {
       );
     }
     return (await response.json()) as LlmSkillFile;
+  }
+
+  // --- Agent platform ------------------------------------------------------
+  // Deployed agents (`agent_platform` Django app). These routes aren't in the
+  // generated OpenAPI client, so they use the raw fetcher. Applications are
+  // addressable by UUID or slug in the `{idOrSlug}` segment.
+
+  private agentApplicationsPath(teamId: number): string {
+    return `/api/projects/${teamId}/agent_applications/`;
+  }
+
+  /** Lists non-archived agent applications for the current team. */
+  async listAgentApplications(): Promise<AgentApplication[]> {
+    const MAX_PAGES = 50;
+    const teamId = await this.getTeamId();
+    const all: AgentApplication[] = [];
+    let urlPath = `${this.agentApplicationsPath(teamId)}?limit=100`;
+    for (let i = 0; i < MAX_PAGES; i++) {
+      const url = new URL(`${this.api.baseUrl}${urlPath}`);
+      const response = await this.api.fetcher.fetch({
+        method: "get",
+        url,
+        path: urlPath,
+      });
+      const page = (await response.json()) as {
+        results?: AgentApplication[];
+        next?: string | null;
+      };
+      all.push(...(page.results ?? []));
+      if (!page.next) return all;
+      const nextUrl = new URL(page.next);
+      urlPath = `${nextUrl.pathname}${nextUrl.search}`;
+    }
+    return all;
+  }
+
+  /** Fetches a single agent application by UUID or slug; null if not found. */
+  async getAgentApplication(
+    idOrSlug: string,
+  ): Promise<AgentApplication | null> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    try {
+      const response = await this.api.fetcher.fetch({
+        method: "get",
+        url,
+        path,
+      });
+      return (await response.json()) as AgentApplication;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes("[404]") || msg.includes("[403]")) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /** Lists sessions for an application (paginated, filterable by state). */
+  async listAgentApplicationSessions(
+    idOrSlug: string,
+    params?: AgentSessionsListParams,
+  ): Promise<AgentApplicationSessionsListResponse> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/sessions/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    if (params?.limit != null) {
+      url.searchParams.set("limit", String(params.limit));
+    }
+    if (params?.offset != null) {
+      url.searchParams.set("offset", String(params.offset));
+    }
+    if (params?.state?.length) {
+      url.searchParams.set("state", params.state.join(","));
+    }
+    if (params?.revision_id) {
+      url.searchParams.set("revision_id", params.revision_id);
+    }
+    if (params?.created_after) {
+      url.searchParams.set("created_after", params.created_after);
+    }
+    if (params?.created_before) {
+      url.searchParams.set("created_before", params.created_before);
+    }
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    const data = (await response.json()) as {
+      results?: AgentApplicationSessionsListResponse["results"];
+      count?: number;
+    };
+    return {
+      results: data.results ?? [],
+      count: data.count ?? data.results?.length ?? 0,
+    };
+  }
+
+  /** Full session detail incl. transcript; `lastN` trims to trailing messages. */
+  async getAgentApplicationSession(
+    idOrSlug: string,
+    sessionId: string,
+    lastN?: number,
+  ): Promise<AgentApplicationSessionDetail | null> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/sessions/${encodeURIComponent(sessionId)}/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    if (lastN != null) {
+      url.searchParams.set("last_n", String(lastN));
+    }
+    try {
+      const response = await this.api.fetcher.fetch({
+        method: "get",
+        url,
+        path,
+      });
+      return (await response.json()) as AgentApplicationSessionDetail;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes("[404]") || msg.includes("[403]")) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /** Structured runtime logs for one session (ClickHouse log_entries). */
+  async getAgentApplicationSessionLogs(
+    idOrSlug: string,
+    sessionId: string,
+    params?: AgentSessionLogsParams,
+  ): Promise<AgentSessionLogEntry[]> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/sessions/${encodeURIComponent(sessionId)}/logs/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    if (params?.limit != null) {
+      url.searchParams.set("limit", String(params.limit));
+    }
+    if (params?.level?.length) {
+      url.searchParams.set("level", params.level.join(","));
+    }
+    if (params?.search) {
+      url.searchParams.set("search", params.search);
+    }
+    if (params?.after) {
+      url.searchParams.set("after", params.after);
+    }
+    if (params?.before) {
+      url.searchParams.set("before", params.before);
+    }
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    const data = (await response.json()) as {
+      results?: AgentSessionLogEntry[];
+    };
+    return data.results ?? [];
+  }
+
+  /** Lists tool-approval requests for an application (team-admin only). */
+  async listAgentApplicationApprovals(
+    idOrSlug: string,
+    params?: AgentApprovalsListParams,
+  ): Promise<AgentApprovalRequest[]> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/approvals/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    if (params?.state) {
+      url.searchParams.set("state", params.state);
+    }
+    if (params?.limit != null) {
+      url.searchParams.set("limit", String(params.limit));
+    }
+    if (params?.offset != null) {
+      url.searchParams.set("offset", String(params.offset));
+    }
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    const data = (await response.json()) as {
+      results?: AgentApprovalRequest[];
+    };
+    return data.results ?? [];
+  }
+
+  /** Approve or reject a queued tool-approval request. */
+  async decideAgentApproval(
+    idOrSlug: string,
+    approvalId: string,
+    body: DecideApprovalRequest,
+  ): Promise<AgentApprovalRequest> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/approvals/${encodeURIComponent(approvalId)}/decide/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path,
+      overrides: { body: JSON.stringify(body) },
+    });
+    return (await response.json()) as AgentApprovalRequest;
+  }
+
+  /** Lists revisions for an application (newest first, paginated). */
+  async listAgentRevisions(idOrSlug: string): Promise<AgentRevision[]> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/`;
+    const url = new URL(`${this.api.baseUrl}${path}?limit=100`);
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    const data = (await response.json()) as { results?: AgentRevision[] };
+    return data.results ?? [];
+  }
+
+  /** Fetches a single revision by id; null if not found. */
+  async getAgentRevision(
+    idOrSlug: string,
+    revisionId: string,
+  ): Promise<AgentRevision | null> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    try {
+      const response = await this.api.fetcher.fetch({
+        method: "get",
+        url,
+        path,
+      });
+      return (await response.json()) as AgentRevision;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes("[404]") || msg.includes("[403]")) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Mint a short-lived preview token (HS256 JWT) for a non-live revision. The
+   * token is sent to the ingress on /run /send /listen /cancel via
+   * `X-Agent-Preview-Token` (alongside the usual bearer) and authorizes those
+   * calls to route against this specific revision instead of `live_revision`.
+   * The response also self-describes the per-trigger ingress URLs the caller
+   * should hit (`endpoints`) so the client never has to construct preview URLs
+   * by string-mangling `ingress_base_url`.
+   *
+   * Note the Django route: app-level path with the revision as a query param,
+   * NOT nested under /revisions/{id}/.
+   */
+  async mintAgentPreviewToken(
+    idOrSlug: string,
+    revisionId: string,
+  ): Promise<AgentPreviewToken> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/preview-token/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    url.searchParams.set("revision_id", revisionId);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path,
+    });
+    return (await response.json()) as AgentPreviewToken;
+  }
+
+  /**
+   * Atomically create a fresh draft revision under this app, seeded with the
+   * full bundle of `sourceRevisionId`. The standard "edit an immutable
+   * revision" exit: ready/live/archived bundles are stamped and locked, so
+   * iterating on them requires forking to a new draft first. Both ids are
+   * UUIDs; the app's `slug` is not accepted here (the body needs the UUID).
+   */
+  async createAgentDraftRevisionFrom(
+    applicationId: string,
+    sourceRevisionId: string,
+  ): Promise<AgentRevision> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(applicationId)}/revisions/new_draft/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path,
+      overrides: {
+        body: JSON.stringify({
+          application_id: applicationId,
+          source_revision_id: sourceRevisionId,
+        }),
+      },
+    });
+    return (await response.json()) as AgentRevision;
+  }
+
+  /** Run a revision lifecycle transition: freeze (draft→ready), promote
+   * (ready→live, demoting the old live), or archive. Returns the updated revision. */
+  async transitionAgentRevision(
+    idOrSlug: string,
+    revisionId: string,
+    action: "freeze" | "promote" | "archive",
+  ): Promise<AgentRevision> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/${action}/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path,
+    });
+    return (await response.json()) as AgentRevision;
+  }
+
+  /**
+   * A revision's bundle, flattened to per-file rows. The server returns a typed
+   * `{ bundle: { agent_md, skills[], tools[] } }`; we expand it to the canonical
+   * file paths the explorer renders (agent.md, skills/<id>/SKILL.md,
+   * tools/<id>/source.ts, tools/<id>/schema.json).
+   */
+  async getAgentRevisionBundle(
+    idOrSlug: string,
+    revisionId: string,
+  ): Promise<BundleFile[]> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/bundle/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    const data = (await response.json()) as {
+      bundle?: {
+        agent_md?: string;
+        skills?: { id: string; description?: string; body: string }[];
+        tools?: {
+          id: string;
+          description?: string;
+          args_schema?: Record<string, unknown>;
+          source: string;
+        }[];
+      };
+    };
+    const bundle = data.bundle ?? {};
+    const out: BundleFile[] = [];
+    if (bundle.agent_md !== undefined) {
+      out.push({
+        path: "agent.md",
+        content: bundle.agent_md,
+        language: "markdown",
+      });
+    }
+    for (const skill of bundle.skills ?? []) {
+      out.push({
+        path: `skills/${skill.id}/SKILL.md`,
+        content: skill.body,
+        language: "markdown",
+      });
+    }
+    for (const tool of bundle.tools ?? []) {
+      out.push({
+        path: `tools/${tool.id}/source.ts`,
+        content: tool.source,
+        language: "typescript",
+      });
+      out.push({
+        path: `tools/${tool.id}/schema.json`,
+        content: JSON.stringify(
+          { description: tool.description, args_schema: tool.args_schema },
+          null,
+          2,
+        ),
+        language: "json",
+      });
+    }
+    out.sort((a, b) => a.path.localeCompare(b.path));
+    return out;
+  }
+
+  /**
+   * The Slack app manifest derived from a revision's slack trigger + tools,
+   * plus the live Event/Interactivity request URLs and setup notes.
+   */
+  async getAgentSlackManifest(
+    idOrSlug: string,
+    revisionId: string,
+  ): Promise<AgentSlackManifest> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/slack_manifest/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    return (await response.json()) as AgentSlackManifest;
+  }
+
+  /** Fire a cron trigger out-of-band; returns the created session id. */
+  async fireAgentCron(
+    idOrSlug: string,
+    revisionId: string,
+    cronName: string,
+    requestId?: string,
+  ): Promise<{ session_id: string }> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/cron/fire/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path,
+      overrides: {
+        body: JSON.stringify({
+          cron_name: cronName,
+          ...(requestId ? { request_id: requestId } : {}),
+        }),
+      },
+    });
+    return (await response.json()) as { session_id: string };
+  }
+
+  /**
+   * The names of env keys currently set on a revision (values never returned).
+   * Env keys are scoped to a revision, so each revision carries its own secret
+   * set.
+   */
+  async listAgentEnvKeys(
+    idOrSlug: string,
+    revisionId: string,
+  ): Promise<string[]> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/env_keys/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    const data = (await response.json()) as {
+      keys?: string[];
+      results?: string[];
+    };
+    return data.keys ?? data.results ?? [];
+  }
+
+  /** Set or rotate one encrypted env key on a revision. The value is write-only. */
+  async setAgentEnvKey(
+    idOrSlug: string,
+    revisionId: string,
+    key: string,
+    value: string,
+  ): Promise<void> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/env_keys/${encodeURIComponent(key)}/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    await this.api.fetcher.fetch({
+      method: "put",
+      url,
+      path,
+      overrides: { body: JSON.stringify({ value }) },
+    });
+  }
+
+  /** Clear one encrypted env key on a revision. No-op server-side if it isn't set. */
+  async clearAgentEnvKey(
+    idOrSlug: string,
+    revisionId: string,
+    key: string,
+  ): Promise<void> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/env_keys/${encodeURIComponent(key)}/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    await this.api.fetcher.fetch({ method: "delete", url, path });
+  }
+
+  private agentMemoryPath(teamId: number, idOrSlug: string): string {
+    return `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/memory`;
+  }
+
+  /** Pre-aggregated folder tree of the agent's memory store. */
+  async getAgentMemoryTree(idOrSlug: string): Promise<AgentMemoryTreeNode> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentMemoryPath(teamId, idOrSlug)}/tree/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    const data = (await response.json()) as { root?: AgentMemoryTreeNode };
+    return data.root ?? { name: "root", type: "folder", children: [] };
+  }
+
+  /** Read one memory file (header + content). */
+  async readAgentMemoryFile(
+    idOrSlug: string,
+    filePath: string,
+  ): Promise<AgentMemoryFile> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentMemoryPath(teamId, idOrSlug)}/files/by_path/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    url.searchParams.set("path", filePath);
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    return (await response.json()) as AgentMemoryFile;
+  }
+
+  /** BM25 full-text search across the agent's memory. */
+  async searchAgentMemory(
+    idOrSlug: string,
+    query: string,
+    limit?: number,
+  ): Promise<AgentMemorySearchResult[]> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentMemoryPath(teamId, idOrSlug)}/search/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    url.searchParams.set("q", query);
+    if (limit != null) url.searchParams.set("limit", String(limit));
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    const data = (await response.json()) as {
+      results?: AgentMemorySearchResult[];
+    };
+    return data.results ?? [];
+  }
+
+  /** List the agent's JSONL reference tables. */
+  async listAgentMemoryTables(
+    idOrSlug: string,
+  ): Promise<AgentMemoryTableHeader[]> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentMemoryPath(teamId, idOrSlug)}/tables/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    const data = (await response.json()) as {
+      tables?: AgentMemoryTableHeader[];
+    };
+    return data.tables ?? [];
+  }
+
+  /** Read rows from one memory table. */
+  async readAgentMemoryTable(
+    idOrSlug: string,
+    name: string,
+    limit?: number,
+  ): Promise<AgentMemoryTableRows> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentMemoryPath(teamId, idOrSlug)}/tables/${encodeURIComponent(name)}/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    if (limit != null) url.searchParams.set("limit", String(limit));
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    return (await response.json()) as AgentMemoryTableRows;
+  }
+
+  // --- Live chat (agent-ingress) -------------------------------------------
+  // These hit the agent's ingress host (`ingress_base_url`, which already
+  // includes `/agents/<slug>`), not the PostHog API. The shared fetcher
+  // attaches the same bearer regardless of host, so no proxy is needed (unlike
+  // the console, which proxied only because browser EventSource can't set
+  // an Authorization header — `fetch` can).
+  //
+  // `previewToken`, when present, scopes the call to a non-live revision via
+  // `X-Agent-Preview-Token`. The fetcher merges `parameters.header` into the
+  // built headers (so the bearer survives) — never put preview-token into
+  // `overrides.headers`, which replaces the whole headers object.
+
+  /** Start a chat session; returns the new session id. */
+  async runAgentSession(
+    ingressBaseUrl: string,
+    message: string,
+    previewToken?: string | null,
+  ): Promise<{ session_id: string; resumed?: boolean }> {
+    const url = new URL(`${ingressBaseUrl.replace(/\/$/, "")}/run`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: url.pathname,
+      parameters: previewTokenHeader(previewToken),
+      overrides: { body: JSON.stringify({ message }) },
+    });
+    return (await response.json()) as { session_id: string; resumed?: boolean };
+  }
+
+  /** Send a follow-up user message to an open session. */
+  async sendAgentMessage(
+    ingressBaseUrl: string,
+    sessionId: string,
+    message: string,
+    previewToken?: string | null,
+  ): Promise<void> {
+    const url = new URL(`${ingressBaseUrl.replace(/\/$/, "")}/send`);
+    await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: url.pathname,
+      parameters: previewTokenHeader(previewToken),
+      overrides: { body: JSON.stringify({ session_id: sessionId, message }) },
+    });
+  }
+
+  /** Return a client-tool result to an open session. */
+  async sendAgentClientToolResult(
+    ingressBaseUrl: string,
+    sessionId: string,
+    callId: string,
+    outcome: { result?: unknown; error?: string },
+    previewToken?: string | null,
+  ): Promise<void> {
+    const url = new URL(
+      `${ingressBaseUrl.replace(/\/$/, "")}/client_tool_result`,
+    );
+    await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: url.pathname,
+      parameters: previewTokenHeader(previewToken),
+      overrides: {
+        body: JSON.stringify({
+          session_id: sessionId,
+          call_id: callId,
+          ...outcome,
+        }),
+      },
+    });
+  }
+
+  /**
+   * Return an *interactive* client-tool outcome (e.g. `set_secret`). Unlike the
+   * sync `/client_tool_result` path, the server-side tool returned `queued` and
+   * parked the session; posting the outcome via `/send` (as a `client_tool_result`
+   * marker) wakes it on a fresh turn. Exactly one of `result` / `error` is set.
+   */
+  async sendAgentInteractiveToolResult(
+    ingressBaseUrl: string,
+    sessionId: string,
+    callId: string,
+    outcome: { result: Record<string, unknown> } | { error: string },
+    previewToken?: string | null,
+  ): Promise<void> {
+    const url = new URL(`${ingressBaseUrl.replace(/\/$/, "")}/send`);
+    const clientToolResult =
+      "error" in outcome
+        ? { call_id: callId, error: outcome.error }
+        : { call_id: callId, result: outcome.result };
+    await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: url.pathname,
+      parameters: previewTokenHeader(previewToken),
+      overrides: {
+        body: JSON.stringify({
+          session_id: sessionId,
+          client_tool_result: clientToolResult,
+        }),
+      },
+    });
+  }
+
+  /** Cancel an open session (terminal). */
+  async cancelAgentSession(
+    ingressBaseUrl: string,
+    sessionId: string,
+    previewToken?: string | null,
+  ): Promise<void> {
+    const url = new URL(`${ingressBaseUrl.replace(/\/$/, "")}/cancel`);
+    await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: url.pathname,
+      parameters: previewTokenHeader(previewToken),
+      overrides: { body: JSON.stringify({ session_id: sessionId }) },
+    });
+  }
+
+  /**
+   * Stream a session's SSE events as an async iterator. Reads the raw response
+   * body and parses `text/event-stream` frames into `AgentSessionEvent`s.
+   */
+  async *streamAgentSession(
+    ingressBaseUrl: string,
+    sessionId: string,
+    signal?: AbortSignal,
+    previewToken?: string | null,
+  ): AsyncGenerator<AgentSessionEvent> {
+    const url = new URL(`${ingressBaseUrl.replace(/\/$/, "")}/listen`);
+    url.searchParams.set("session_id", sessionId);
+    // NB: only `signal` in overrides. Passing `headers` here would replace the
+    // fetcher's Authorization header (it spreads overrides over the built
+    // headers), which 401s the stream. The preview token rides on
+    // `parameters.header` — merged in, not replacing. /listen streams SSE
+    // without an explicit Accept header.
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: url.pathname,
+      parameters: previewTokenHeader(previewToken),
+      overrides: { signal },
+    });
+    if (!response.body) return;
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        // Frames are separated by a blank line.
+        let sep = buffer.indexOf("\n\n");
+        while (sep !== -1) {
+          const frame = buffer.slice(0, sep);
+          buffer = buffer.slice(sep + 2);
+          const data = frame
+            .split("\n")
+            .filter((line) => line.startsWith("data:"))
+            .map((line) => line.slice(5).trimStart())
+            .join("\n");
+          if (data) {
+            try {
+              yield JSON.parse(data) as AgentSessionEvent;
+            } catch {
+              // Skip unparseable frames (keep-alives, comments).
+            }
+          }
+          sep = buffer.indexOf("\n\n");
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  /** Live (non-terminal) sessions across every agent on the team. */
+  async listAgentFleetLiveSessions(
+    limit?: number,
+  ): Promise<AgentFleetLiveSessionsResponse> {
+    const teamId = await this.getTeamId();
+    const path = `/api/projects/${teamId}/agent_fleet/live_sessions/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    if (limit != null) {
+      url.searchParams.set("limit", String(limit));
+    }
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    const data = (await response.json()) as {
+      results?: AgentFleetLiveSessionsResponse["results"];
+    };
+    return { results: data.results ?? [] };
+  }
+
+  /** All tool-approval requests across the team (team-admin only). */
+  async listAgentFleetApprovals(
+    params?: AgentApprovalsListParams,
+  ): Promise<AgentApprovalRequest[]> {
+    const teamId = await this.getTeamId();
+    const path = `/api/projects/${teamId}/agent_fleet/approvals/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    if (params?.state) {
+      url.searchParams.set("state", params.state);
+    }
+    if (params?.agent_id) {
+      url.searchParams.set("agent_id", params.agent_id);
+    }
+    if (params?.limit != null) {
+      url.searchParams.set("limit", String(params.limit));
+    }
+    if (params?.offset != null) {
+      url.searchParams.set("offset", String(params.offset));
+    }
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    const data = (await response.json()) as {
+      results?: AgentApprovalRequest[];
+    };
+    return data.results ?? [];
+  }
+
+  /**
+   * Runs a read-only HogQL query against the team's project and returns the raw
+   * result grid. Backs the agent observability rollups (`$ai_*` events the
+   * runner captures into this team's own project). The endpoint can answer 200
+   * with an `error` field; that's surfaced as a throw.
+   */
+  async runHogQLQuery(query: string): Promise<HogQLGrid> {
+    const teamId = await this.getTeamId();
+    const path = `/api/projects/${teamId}/query/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path,
+      overrides: {
+        body: JSON.stringify({ query: { kind: "HogQLQuery", query } }),
+      },
+    });
+    const data = (await response.json()) as {
+      results?: unknown[][];
+      columns?: string[];
+      error?: string | null;
+    };
+    if (data.error) {
+      throw new Error(data.error);
+    }
+    return { results: data.results ?? [], columns: data.columns ?? [] };
+  }
+
+  /**
+   * Agent observability rollup over the agents' `$ai_*` events — KPIs (spend,
+   * sessions, failure rate, p95), a 14-day daily trend + WoW deltas, and
+   * spend-by-agent / cost-by-model / tool-reliability breakdowns. Pass an
+   * `applicationId` (the agent's UUID) to scope it to a single agent; omit it
+   * for the fleet-wide board.
+   *
+   * The five panels are independent HogQL round-trips fired in parallel. The
+   * KPI query is the gate — a systemic failure (auth, bad query) rejects the
+   * whole call so the UI shows an error rather than a silently-empty board; the
+   * secondary panels degrade to empty individually. The fleet board also reads
+   * the agent list to label per-agent rows by name.
+   */
+  async getAgentAnalytics(applicationId?: string): Promise<AgentAnalyticsData> {
+    const queries = buildAgentAnalyticsQueries(applicationId);
+    const empty: HogQLGrid = { results: [], columns: [] };
+    const [agents, kpi, daily, perAgent, byModel, toolErrors] =
+      await Promise.all([
+        applicationId
+          ? Promise.resolve<AgentApplication[]>([])
+          : this.listAgentApplications().catch(() => [] as AgentApplication[]),
+        this.runHogQLQuery(queries.kpi),
+        this.runHogQLQuery(queries.daily).catch(() => empty),
+        this.runHogQLQuery(queries.perAgent).catch(() => empty),
+        this.runHogQLQuery(queries.byModel).catch(() => empty),
+        this.runHogQLQuery(queries.toolErrors).catch(() => empty),
+      ]);
+    const nameById = new Map(agents.map((a) => [a.id, a.name]));
+    return shapeAgentAnalytics(
+      { kpi, daily, perAgent, byModel, toolErrors },
+      nameById,
+    );
   }
 }
