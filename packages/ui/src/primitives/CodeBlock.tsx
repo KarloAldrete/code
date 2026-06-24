@@ -8,6 +8,7 @@ type CodeBlockSize = "1" | "1.5" | "2" | "3";
 interface CodeBlockProps {
   children: ReactNode;
   size?: CodeBlockSize;
+  showCopy?: boolean;
 }
 
 const SIZE_TO_CLASS: Record<CodeBlockSize, string> = {
@@ -30,7 +31,11 @@ function extractText(children: ReactNode): string {
   return "";
 }
 
-export function CodeBlock({ children, size = "1" }: CodeBlockProps) {
+export function CodeBlock({
+  children,
+  size = "1",
+  showCopy = true,
+}: CodeBlockProps) {
   const sizeClass = SIZE_TO_CLASS[size];
   const [copied, setCopied] = useState(false);
 
@@ -48,16 +53,18 @@ export function CodeBlock({ children, size = "1" }: CodeBlockProps) {
       >
         {children}
       </pre>
-      <IconButton
-        size="1"
-        variant="ghost"
-        color="gray"
-        onClick={handleCopy}
-        className="absolute top-1 right-1 cursor-pointer"
-        aria-label="Copy code"
-      >
-        {copied ? <Check size={14} /> : <Copy size={14} />}
-      </IconButton>
+      {showCopy ? (
+        <IconButton
+          size="1"
+          variant="ghost"
+          color="gray"
+          onClick={handleCopy}
+          className="absolute top-1 right-1 cursor-pointer"
+          aria-label="Copy code"
+        >
+          {copied ? <Check size={14} /> : <Copy size={14} />}
+        </IconButton>
+      ) : null}
     </div>
   );
 }

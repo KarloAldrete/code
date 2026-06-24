@@ -19,10 +19,12 @@ describe("nextRevealLength", () => {
 describe("useSmoothedText", () => {
   let now: number;
   let rafCallbacks: Array<(t: number) => void>;
+  let cancelSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     now = 0;
     rafCallbacks = [];
+    cancelSpy = vi.fn();
     vi.stubGlobal(
       "requestAnimationFrame",
       (cb: (t: number) => void): number => {
@@ -30,7 +32,7 @@ describe("useSmoothedText", () => {
         return rafCallbacks.length;
       },
     );
-    vi.stubGlobal("cancelAnimationFrame", () => {});
+    vi.stubGlobal("cancelAnimationFrame", cancelSpy);
     vi.stubGlobal("matchMedia", () => ({ matches: false }));
   });
 
@@ -93,5 +95,35 @@ describe("useSmoothedText", () => {
     );
     rerender({ t: "x".repeat(50) });
     expect(result.current).toBe("x".repeat(50));
+  });
+
+  it("does not restart the clock when tokens append while the loop runs", () => {
+    const { result, rerender } = renderHook(
+      ({ t }) => useSmoothedText(t, 100),
+      { initialProps: { t: "" } },
+    );
+    rerender({ t: "x".repeat(20) });
+
+    flushFrame(0); // establish the clock at now=0, reveal the first char
+    expect(result.current.length).toBe(1);
+
+    rerender({ t: "x".repeat(60) }); // more tokens arrive mid-reveal
+
+    flushFrame(100); // a single 100ms delta measured from the original clock
+    // 100ms at 100 chars/sec adds ~10 chars onto the 1 already shown. A reset
+    // clock would measure 0ms elapsed here and advance by just the minimum 1.
+    expect(result.current.length).toBe(11);
+  });
+
+  it("cancels the pending frame on unmount", () => {
+    const { rerender, unmount } = renderHook(
+      ({ t }) => useSmoothedText(t, 100),
+      { initialProps: { t: "" } },
+    );
+    rerender({ t: "x".repeat(50) });
+    flushFrame(0); // schedules the next frame, leaving one in flight
+
+    unmount();
+    expect(cancelSpy).toHaveBeenCalledTimes(1);
   });
 });

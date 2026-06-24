@@ -48,25 +48,29 @@ export function useSmoothedText(
   const shownLenRef = useRef(target.length);
   const targetRef = useRef(target);
   targetRef.current = target;
+  const charsPerSecondRef = useRef(charsPerSecond);
+  charsPerSecondRef.current = charsPerSecond;
   const lastTsRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
 
-  // New/replaced (shorter) message: snap, and never hide already-shown text.
-  if (target.length < shownLenRef.current) {
-    shownLenRef.current = target.length;
-  }
-
   useEffect(() => {
+    // New/replaced (shorter) message: snap the counter back so the next reveal
+    // starts from the new text instead of fast-forwarding through a stale length.
+    // Done in the effect, not during render, so a discarded concurrent render
+    // can't leave the ref pointing at props that never committed.
+    if (target.length < shownLenRef.current) {
+      shownLenRef.current = target.length;
+    }
     if (prefersReducedMotion()) {
-      if (shownLenRef.current !== targetRef.current.length) {
-        shownLenRef.current = targetRef.current.length;
-        forceRender((n) => (n + 1) % 1_000_000);
+      if (shownLenRef.current !== target.length) {
+        shownLenRef.current = target.length;
+        forceRender((n) => n + 1);
       }
       return;
     }
     // Kick the reveal loop only if it's idle. While running it reads the latest
     // target each frame (via ref), so it keeps a steady wall-clock rate across
-    // token appends instead of restarting — and resetting its clock — per token.
+    // token appends instead of restarting, and resetting its clock, per token.
     if (rafRef.current === null && shownLenRef.current < target.length) {
       lastTsRef.current = null;
       const tick = (ts: number) => {
@@ -76,9 +80,9 @@ export function useSmoothedText(
           shownLenRef.current,
           targetRef.current.length,
           ts - last,
-          charsPerSecond,
+          charsPerSecondRef.current,
         );
-        forceRender((n) => (n + 1) % 1_000_000);
+        forceRender((n) => n + 1);
         if (shownLenRef.current < targetRef.current.length) {
           rafRef.current = requestAnimationFrame(tick);
         } else {
@@ -88,7 +92,7 @@ export function useSmoothedText(
       };
       rafRef.current = requestAnimationFrame(tick);
     }
-  }, [target, charsPerSecond]);
+  }, [target]);
 
   // Cancel any in-flight frame on unmount (kept separate so token appends don't
   // tear down the running loop).
