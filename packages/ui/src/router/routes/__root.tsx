@@ -8,6 +8,7 @@ import {
   SYNC_CLOUD_TASKS_FLAG,
 } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import { DeepLinkApprovalModal } from "@posthog/ui/features/agent-applications/components/DeepLinkApprovalModal";
 import { useApprovalDeepLink } from "@posthog/ui/features/agent-applications/hooks/useApprovalDeepLink";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
@@ -165,7 +166,7 @@ function RootLayout() {
   useTaskDeepLink();
   useInboxDeepLink();
   useScoutDeepLink();
-  useApprovalDeepLink();
+  const approvalDeepLink = useApprovalDeepLink();
   useSetupDiscovery();
   useNewTaskDeepLink();
 
@@ -394,6 +395,12 @@ function RootLayout() {
         <TourOverlay />
         {billingEnabled && <UsageLimitModal />}
         <RemoteBranchCheckoutDialog />
+        {approvalDeepLink.pending ? (
+          <DeepLinkApprovalModal
+            pending={approvalDeepLink.pending}
+            onClose={approvalDeepLink.clear}
+          />
+        ) : null}
         <ExistingWorktreeDialog />
         <HedgehogMode />
         {import.meta.env.DEV && (
