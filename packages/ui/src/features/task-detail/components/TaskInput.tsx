@@ -1051,8 +1051,10 @@ export function TaskInput({
                                 ],
                               });
                             // Bug/feature suggestions start in plan mode; the
-                            // analysis ones start in auto mode.
+                            // analysis ones start in auto mode. Suggestions
+                            // without a mode leave the composer's mode as-is.
                             if (
+                              suggestion.mode &&
                               isValidConfigValue(modeOption, suggestion.mode)
                             ) {
                               setConfigOption(modeOption.id, suggestion.mode);
