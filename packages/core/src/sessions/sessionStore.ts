@@ -72,6 +72,24 @@ export const sessionStoreSetters = {
     });
   },
 
+  /**
+   * Drop the in-memory transcript of an inactive session to reclaim RAM.
+   * `events` is an append-only mirror of the on-disk ndjson log, so emptying
+   * it here is non-destructive — `SessionService.ensureEventsLoaded` rehydrates
+   * it from disk when the session is focused again. `processedLineCount` is
+   * reset so the cloud append/dedup path re-syncs from a clean baseline.
+   * Never call this on a streaming session (isPromptPending / isCompacting).
+   */
+  evictEvents: (taskRunId: string) => {
+    sessionStore.setState((state) => {
+      const session = state.sessions[taskRunId];
+      if (session) {
+        session.events = [];
+        session.processedLineCount = undefined;
+      }
+    });
+  },
+
   updateCloudStatus: (
     taskRunId: string,
     fields: {
