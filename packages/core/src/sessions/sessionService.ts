@@ -78,9 +78,13 @@ import { createBaseSession } from "./sessionFactory";
 import {
   type ParsedSessionLogs,
   parseSessionLogContent,
-  parseSessionLogContentChunked,
   planSkippedPromptFilter,
 } from "./sessionLogs";
+import {
+  clearTranscriptWindow,
+  openTranscriptWindow,
+  takeOlderEntries,
+} from "./transcriptWindows";
 
 const LOCAL_SESSION_RECONNECT_ATTEMPTS = 3;
 const LOCAL_SESSION_RECONNECT_BACKOFF = {
@@ -162,6 +166,7 @@ export interface ISessionStore {
     events: AcpMessage[],
     newLineCount?: number,
   ): void;
+  prependEvents(taskRunId: string, olderEvents: AcpMessage[]): void;
   updateCloudStatus(
     taskRunId: string,
     fields: {
@@ -825,9 +830,9 @@ export class SessionService {
 
   /**
    * Resolve the events to seed a reconnecting session. When given raw `content`,
-   * renders the tail first (instant) and returns `deferredContent` so the caller
-   * can parse the full history in the background; `sessionId`/`adapter` come from
-   * the head (the sdk_session notification sits at the very start of the log).
+   * opens a tail window (only the latest events render; the rest stay loadable
+   * via scrollback) and reports `hasOlder`. `sessionId`/`adapter` come from the
+   * head (the sdk_session notification sits at the very start of the log).
    */
   private async resolveReconnectEvents(
     logUrl: string | undefined,
@@ -842,31 +847,17 @@ export class SessionService {
     events: AcpMessage[];
     sessionId?: string;
     adapter?: Adapter;
-    deferredContent: string | null;
+    hasOlder: boolean;
   }> {
-    const TAIL_BYTES = 256 * 1024;
     const content = prefetched?.content;
     if (content?.trim()) {
       const head = parseSessionLogContent(content.slice(0, 128 * 1024));
-      if (content.length > TAIL_BYTES) {
-        let tail = content.slice(content.length - TAIL_BYTES);
-        const nl = tail.indexOf("\n");
-        if (nl >= 0) tail = tail.slice(nl + 1); // drop the partial leading line
-        return {
-          events: convertStoredEntriesToEvents(
-            parseSessionLogContent(tail).rawEntries,
-          ),
-          sessionId: head.sessionId,
-          adapter: head.adapter,
-          deferredContent: content,
-        };
-      }
-      const full = parseSessionLogContent(content);
+      const { tail, hasOlder } = openTranscriptWindow(taskRunId, content);
       return {
-        events: convertStoredEntriesToEvents(full.rawEntries),
-        sessionId: full.sessionId,
-        adapter: full.adapter,
-        deferredContent: null,
+        events: convertStoredEntriesToEvents(tail),
+        sessionId: head.sessionId,
+        adapter: head.adapter,
+        hasOlder,
       };
     }
     if (prefetched?.rawEntries) {
@@ -874,7 +865,7 @@ export class SessionService {
         events: convertStoredEntriesToEvents(prefetched.rawEntries),
         sessionId: prefetched.sessionId,
         adapter: prefetched.adapter,
-        deferredContent: null,
+        hasOlder: false,
       };
     }
     const parsed = await this.fetchSessionLogs(logUrl, taskRunId);
@@ -882,7 +873,7 @@ export class SessionService {
       events: convertStoredEntriesToEvents(parsed.rawEntries),
       sessionId: parsed.sessionId,
       adapter: parsed.adapter,
-      deferredContent: null,
+      hasOlder: false,
     };
   }
 
@@ -900,7 +891,7 @@ export class SessionService {
       adapter?: Adapter;
     },
   ): Promise<boolean> {
-    const { events, sessionId, adapter, deferredContent } =
+    const { events, sessionId, adapter, hasOlder } =
       await this.resolveReconnectEvents(logUrl, taskRunId, prefetched);
 
     const storedAdapter = this.d.adapterStore.getAdapter(taskRunId);
@@ -911,6 +902,7 @@ export class SessionService {
 
     const session = createBaseSession(taskRunId, taskId, taskTitle);
     session.events = events;
+    session.hasOlderEvents = hasOlder;
     if (logUrl) {
       session.logUrl = logUrl;
     }
@@ -932,26 +924,6 @@ export class SessionService {
 
     this.d.store.setSession(session);
     this.subscribeToChannel(taskRunId);
-
-    // We seeded the transcript from the tail for an instant render — now parse
-    // the full history in yielding chunks (no freeze) and swap it in.
-    if (deferredContent) {
-      void parseSessionLogContentChunked(deferredContent, { chunkSize: 2000 })
-        .then((parsed) => {
-          this.commitLoadedEvents(
-            taskId,
-            taskRunId,
-            convertStoredEntriesToEvents(parsed.rawEntries),
-            parsed.totalLineCount,
-          );
-        })
-        .catch((err) => {
-          this.d.log.warn("reconnect: deferred full log parse failed", {
-            taskId,
-            error: err,
-          });
-        });
-    }
 
     try {
       const modeOpt = getConfigOptionByCategory(persistedConfigOptions, "mode");
@@ -1079,6 +1051,7 @@ export class SessionService {
 
   private async teardownSession(taskRunId: string): Promise<void> {
     const session = this.getSessionByRunId(taskRunId);
+    clearTranscriptWindow(taskRunId);
 
     try {
       await this.d.trpc.agent.cancel.mutate({ sessionId: taskRunId });
@@ -1444,69 +1417,79 @@ export class SessionService {
         return;
       }
       if (parsed.rawEntries.length === 0) return;
-      this.commitLoadedEvents(
+      this.commitWindowedEvents(
         taskId,
         taskRunId,
         convertStoredEntriesToEvents(parsed.rawEntries),
+        false,
         parsed.totalLineCount,
       );
       return;
     }
 
-    // PHASE 1 — tail-first: parse only the last slice so the latest messages
-    // (the part actually on screen) render in ~1-2ms.
-    this.renderTailFirst(taskId, taskRunId, content);
+    // Cloud runs track `processedLineCount` for their append/dedup loop, so they
+    // load the full transcript (windowing only fits local ndjson logs).
+    if (session.isCloud) {
+      const parsed = parseSessionLogContent(content);
+      this.commitWindowedEvents(
+        taskId,
+        taskRunId,
+        convertStoredEntriesToEvents(parsed.rawEntries),
+        false,
+        parsed.totalLineCount,
+      );
+      return;
+    }
 
-    // PHASE 2 — parse the full history in yielding chunks (no main-thread
-    // freeze), then swap in the complete transcript for scrollback.
-    const parsed = await parseSessionLogContentChunked(content, {
-      chunkSize: 2000,
-    });
-    this.commitLoadedEvents(
+    // Open a tail window: render only the latest ~1000 events (instant) and keep
+    // the rest of the log as raw text for on-demand scrollback. This is what
+    // keeps opening a 100k-event session O(visible) instead of O(history).
+    const { tail, hasOlder } = openTranscriptWindow(taskRunId, content);
+    this.commitWindowedEvents(
       taskId,
       taskRunId,
-      convertStoredEntriesToEvents(parsed.rawEntries),
-      parsed.totalLineCount,
+      convertStoredEntriesToEvents(tail),
+      hasOlder,
     );
   }
 
-  /** Tail of the on-disk log, parsed synchronously for an instant first paint. */
-  private renderTailFirst(
-    taskId: string,
-    taskRunId: string,
-    content: string,
-  ): void {
-    const TAIL_BYTES = 256 * 1024;
-    if (content.length <= TAIL_BYTES) return; // small log — phase 2 is instant
-    let tail = content.slice(content.length - TAIL_BYTES);
-    const nl = tail.indexOf("\n");
-    if (nl >= 0) tail = tail.slice(nl + 1); // drop the partial leading line
-    const parsed = parseSessionLogContent(tail);
-    if (parsed.rawEntries.length === 0) return;
-    const current = this.d.store.getSessionByTaskId(taskId);
-    // Only seed the placeholder if nothing has populated events meanwhile.
-    if (current?.taskRunId !== taskRunId || current.events.length > 0) return;
-    this.d.store.updateSession(taskRunId, {
-      events: convertStoredEntriesToEvents(parsed.rawEntries),
-    });
-  }
-
-  /** Swap in the fully-parsed transcript, unless a live stream now owns it. */
-  private commitLoadedEvents(
+  /** Seed the transcript window, unless a live stream now owns the events. */
+  private commitWindowedEvents(
     taskId: string,
     taskRunId: string,
     events: AcpMessage[],
-    totalLineCount: number,
+    hasOlder: boolean,
+    totalLineCount?: number,
   ): void {
     const current = this.d.store.getSessionByTaskId(taskId);
     if (!current || current.taskRunId !== taskRunId) return;
-    // If a turn started while we were parsing, the live events are authoritative
-    // — don't clobber them with the historical load; a later idle load fills in.
-    if (current.isPromptPending) return;
+    // A turn started or events arrived while we were reading — don't clobber.
+    if (current.isPromptPending || current.events.length > 0) return;
     this.d.store.updateSession(taskRunId, {
       events,
+      hasOlderEvents: hasOlder,
       processedLineCount: current.isCloud ? totalLineCount : undefined,
     });
+  }
+
+  /**
+   * Scrollback: parse and prepend the next older chunk of the transcript. Called
+   * by the UI when the user scrolls toward the top of a windowed transcript.
+   */
+  async loadOlderEvents(taskId: string): Promise<void> {
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session?.hasOlderEvents) return;
+    const { taskRunId } = session;
+    const result = takeOlderEntries(taskRunId);
+    if (!result) {
+      this.d.store.updateSession(taskRunId, { hasOlderEvents: false });
+      return;
+    }
+    this.d.store.prependEvents(
+      taskRunId,
+      convertStoredEntriesToEvents(result.older),
+    );
+    this.d.store.updateSession(taskRunId, { hasOlderEvents: result.hasOlder });
   }
 
   // --- Subscription Management ---

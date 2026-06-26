@@ -1,5 +1,9 @@
 import { ArrowDown, XCircle } from "@phosphor-icons/react";
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
+import {
+  SESSION_SERVICE,
+  type SessionService,
+} from "@posthog/core/sessions/sessionService";
 import { useService } from "@posthog/di/react";
 import {
   Button,
@@ -162,6 +166,13 @@ export function ConversationView({
   const pausedDurationMs = session?.pausedDurationMs ?? 0;
 
   const isCloud = session?.isCloud ?? false;
+
+  // Scrollback: the transcript opens as a tail window; pull the next older chunk
+  // when the user scrolls toward the top.
+  const sessionService = useService<SessionService>(SESSION_SERVICE);
+  const handleReachTop = useCallback(() => {
+    if (taskId) void sessionService.loadOlderEvents(taskId);
+  }, [sessionService, taskId]);
 
   const items = useMemo<ConversationItem[]>(
     () =>
@@ -383,6 +394,8 @@ export function ConversationView({
             getItemKey={getRowKey}
             renderItem={renderRow}
             onScrollStateChange={handleScrollStateChange}
+            onReachTop={handleReachTop}
+            hasMoreAbove={session?.hasOlderEvents ?? false}
             keepMounted={rowKeepMounted}
             className="absolute inset-0 bg-background"
             itemClassName="mx-auto px-2 py-1.5"

@@ -9,6 +9,7 @@ import type {
 } from "@posthog/shared";
 import { immer } from "zustand/middleware/immer";
 import { createStore } from "zustand/vanilla";
+import { clearTranscriptWindow } from "./transcriptWindows";
 
 export interface SessionState {
   /** Sessions indexed by taskRunId */
@@ -73,6 +74,27 @@ export const sessionStoreSetters = {
   },
 
   /**
+   * Prepend older events to the front of the transcript — the scrollback path.
+   * The window opens with only the tail (instant render); this loads the chunk
+   * before the current window when the user scrolls toward the top. The result
+   * array is frozen so immer skips its O(n) finalize walk on commit.
+   */
+  prependEvents: (taskRunId: string, olderEvents: AcpMessage[]) => {
+    if (olderEvents.length === 0) return;
+    // Read current events from the committed (frozen) state BEFORE entering the
+    // immer draft. Spreading `state.sessions[].events` inside the producer would
+    // capture draft proxies that immer revokes on exit — accessing them later
+    // (during render) throws "proxy has been revoked".
+    const current = sessionStore.getState().sessions[taskRunId]?.events;
+    if (!current) return;
+    const next = Object.freeze([...olderEvents, ...current]) as AcpMessage[];
+    sessionStore.setState((state) => {
+      const session = state.sessions[taskRunId];
+      if (session) session.events = next;
+    });
+  },
+
+  /**
    * Drop the in-memory transcript of an inactive session to reclaim RAM.
    * `events` is an append-only mirror of the on-disk ndjson log, so emptying
    * it here is non-destructive — `SessionService.ensureEventsLoaded` rehydrates
@@ -81,11 +103,13 @@ export const sessionStoreSetters = {
    * Never call this on a streaming session (isPromptPending / isCompacting).
    */
   evictEvents: (taskRunId: string) => {
+    clearTranscriptWindow(taskRunId);
     sessionStore.setState((state) => {
       const session = state.sessions[taskRunId];
       if (session) {
         session.events = [];
         session.processedLineCount = undefined;
+        session.hasOlderEvents = undefined;
       }
     });
   },

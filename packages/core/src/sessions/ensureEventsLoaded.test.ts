@@ -47,6 +47,10 @@ function createHarness(
       sessions[s.taskRunId] = s;
     },
     updateSession,
+    prependEvents: (taskRunId: string, older: AgentSession["events"]) => {
+      const session = sessions[taskRunId];
+      if (session) session.events = [...older, ...session.events];
+    },
   };
 
   const deps = {
@@ -130,21 +134,32 @@ describe("SessionService.ensureEventsLoaded", () => {
     expect(h.updateSession).not.toHaveBeenCalled();
   });
 
-  it("renders the tail first, then swaps in the full transcript", async () => {
-    // A log larger than the 256KB tail window → phase 1 seeds a tail placeholder,
-    // phase 2 replaces it with the complete set.
+  it("opens a tail window for a large local log, flagging older events", async () => {
+    // 4000 lines > the 1000-line tail window → only the tail renders, the rest
+    // stays loadable via scrollback.
     const bigLog = ndjson(...Array.from({ length: 4000 }, (_, i) => `m${i}`));
     const h = createHarness({}, bigLog);
 
     await h.service.ensureEventsLoaded(TASK_ID);
 
-    // Final state is the full transcript (4000 events).
-    expect(h.sessions[RUN_ID].events.length).toBe(4000);
-    // updateSession was called at least twice: tail seed + full swap.
-    expect(h.updateSession.mock.calls.length).toBeGreaterThanOrEqual(2);
-    const firstLen = (h.updateSession.mock.calls[0][1].events as unknown[])
-      .length;
-    expect(firstLen).toBeGreaterThan(0);
-    expect(firstLen).toBeLessThan(4000); // the tail, not everything
+    expect(h.sessions[RUN_ID].events.length).toBe(1000); // tail window only
+    expect(h.sessions[RUN_ID].hasOlderEvents).toBe(true);
+  });
+
+  it("loadOlderEvents prepends the next older chunk", async () => {
+    const bigLog = ndjson(...Array.from({ length: 4000 }, (_, i) => `m${i}`));
+    const h = createHarness({}, bigLog);
+    await h.service.ensureEventsLoaded(TASK_ID);
+    expect(h.sessions[RUN_ID].events.length).toBe(1000);
+
+    await h.service.loadOlderEvents(TASK_ID);
+
+    expect(h.sessions[RUN_ID].events.length).toBe(2000); // +1000 older, prepended
+    expect(h.sessions[RUN_ID].hasOlderEvents).toBe(true);
+    // The newly prepended chunk sits before the tail (older first).
+    await h.service.loadOlderEvents(TASK_ID);
+    await h.service.loadOlderEvents(TASK_ID);
+    expect(h.sessions[RUN_ID].events.length).toBe(4000); // all loaded
+    expect(h.sessions[RUN_ID].hasOlderEvents).toBe(false);
   });
 });

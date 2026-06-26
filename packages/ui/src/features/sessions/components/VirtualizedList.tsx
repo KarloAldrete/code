@@ -22,6 +22,13 @@ interface VirtualizedListProps<T> {
   itemStyle?: CSSProperties;
   footer?: ReactNode;
   onScrollStateChange?: (isAtBottom: boolean) => void;
+  /**
+   * Called when the user scrolls near the top and `hasMoreAbove` is set, so the
+   * caller can load older items (scrollback). New items prepended after this
+   * fires are anchored: the viewport keeps the same content, no jump.
+   */
+  onReachTop?: () => void;
+  hasMoreAbove?: boolean;
   keepMounted?: readonly number[];
   /**
    * Allow horizontal scrolling of the list viewport. Defaults to true. Narrow
@@ -43,6 +50,9 @@ const OVERSCAN = 6;
 // A real upward drift, not a 1-frame measure transient: the DOM bottom sits
 // this far below the viewport. Well above any single append's measure gap.
 const FAR_DRIFT_THRESHOLD = 400;
+// Start loading older items this far before the very top, so scrollback feels
+// seamless rather than snagging at the edge.
+const LOAD_OLDER_THRESHOLD = 600;
 
 function VirtualizedListInner<T>(
   {
@@ -54,6 +64,8 @@ function VirtualizedListInner<T>(
     itemStyle,
     footer,
     onScrollStateChange,
+    onReachTop,
+    hasMoreAbove,
     keepMounted,
     scrollX = true,
   }: VirtualizedListProps<T>,
@@ -68,6 +80,15 @@ function VirtualizedListInner<T>(
   const settleRafRef = useRef<number | null>(null);
   const onScrollStateChangeRef = useRef(onScrollStateChange);
   onScrollStateChangeRef.current = onScrollStateChange;
+  // Scrollback: keep the latest callback/flag in refs so handleScroll stays
+  // stable. `loadingOlder` gates re-entrancy; `scrollHeightBeforeLoad` anchors
+  // the viewport when the prepended items land.
+  const onReachTopRef = useRef(onReachTop);
+  onReachTopRef.current = onReachTop;
+  const hasMoreAboveRef = useRef(hasMoreAbove);
+  hasMoreAboveRef.current = hasMoreAbove;
+  const loadingOlderRef = useRef(false);
+  const scrollHeightBeforeLoadRef = useRef(0);
 
   const hasFooter = footer != null;
 
@@ -196,12 +217,46 @@ function VirtualizedListInner<T>(
     virtualizer.scrollToEnd();
   }, [totalSize, virtualizer]);
 
+  // Scrollback anchor: when a load prepends older items, the virtual height
+  // grows above the viewport. Shift scrollTop by that growth so the content the
+  // user was reading stays exactly where it was — no jump. Synchronous,
+  // pre-paint. Gated on loadingOlderRef so streaming appends never trip it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: items.length is the trigger
+  useLayoutEffect(() => {
+    if (!loadingOlderRef.current) return;
+    const el = parentRef.current;
+    if (!el) return;
+    const delta = el.scrollHeight - scrollHeightBeforeLoadRef.current;
+    if (delta > 0) {
+      el.scrollTop += delta;
+      isAtBottomRef.current = false;
+      loadingOlderRef.current = false;
+    }
+  }, [items.length]);
+
   const handleScroll = useCallback(() => {
     const el = parentRef.current;
     const scrollTop = el?.scrollTop ?? 0;
     // Tolerate sub-pixel jitter; only a real upward move counts as leaving end.
     const scrolledUp = scrollTop < lastScrollTopRef.current - 1;
     lastScrollTopRef.current = scrollTop;
+
+    // Scrollback: as the user nears the top, ask the caller for older items.
+    // Record the pre-load scroll height so the anchor effect can keep the
+    // viewport on the same content once they prepend. Gate on `initialized` so
+    // the initial scroll-to-end settle (which can leave scrollTop near 0 for a
+    // short tail) doesn't spuriously pull the whole history in.
+    if (
+      el &&
+      initializedRef.current &&
+      hasMoreAboveRef.current &&
+      !loadingOlderRef.current &&
+      scrollTop < LOAD_OLDER_THRESHOLD
+    ) {
+      loadingOlderRef.current = true;
+      scrollHeightBeforeLoadRef.current = el.scrollHeight;
+      onReachTopRef.current?.();
+    }
 
     const atEnd = virtualizer.isAtEnd(AT_BOTTOM_THRESHOLD);
     // Genuine far drift (not a 1-frame measure transient): the DOM bottom sits

@@ -51,6 +51,12 @@ export interface AgentSession {
   taskTitle: string;
   channel: string;
   events: AcpMessage[];
+  /**
+   * True when the transcript is a tail window and older events remain on disk,
+   * loadable via `SessionService.loadOlderEvents` (scrollback). Undefined for a
+   * fully-loaded transcript.
+   */
+  hasOlderEvents?: boolean;
   startedAt: number;
   status: SessionStatus;
   errorTitle?: string;
