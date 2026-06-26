@@ -670,9 +670,9 @@ export class SessionService {
           return;
         }
 
-        const [workspaceResult, logResult] = await Promise.all([
+        const [workspaceResult, content] = await Promise.all([
           this.d.trpc.workspace.verify.query({ taskId }),
-          this.fetchSessionLogs(logUrl, existingRunId),
+          this.fetchSessionLogContent(logUrl, existingRunId),
         ]);
 
         if (!workspaceResult.exists) {
@@ -680,7 +680,9 @@ export class SessionService {
             taskId,
             missingPath: workspaceResult.missingPath,
           });
-          const events = convertStoredEntriesToEvents(logResult.rawEntries);
+          const events = convertStoredEntriesToEvents(
+            content ? parseSessionLogContent(content).rawEntries : [],
+          );
           const session = createBaseSession(existingRunId, taskId, taskTitle);
           session.events = events;
           session.logUrl = logUrl;
@@ -699,7 +701,7 @@ export class SessionService {
           logUrl,
           repoPath,
           auth,
-          logResult,
+          { content: content ?? undefined },
         );
       } else {
         if (!this.d.getIsOnline()) {
@@ -821,6 +823,69 @@ export class SessionService {
     }
   }
 
+  /**
+   * Resolve the events to seed a reconnecting session. When given raw `content`,
+   * renders the tail first (instant) and returns `deferredContent` so the caller
+   * can parse the full history in the background; `sessionId`/`adapter` come from
+   * the head (the sdk_session notification sits at the very start of the log).
+   */
+  private async resolveReconnectEvents(
+    logUrl: string | undefined,
+    taskRunId: string,
+    prefetched?: {
+      content?: string;
+      rawEntries?: StoredLogEntry[];
+      sessionId?: string;
+      adapter?: Adapter;
+    },
+  ): Promise<{
+    events: AcpMessage[];
+    sessionId?: string;
+    adapter?: Adapter;
+    deferredContent: string | null;
+  }> {
+    const TAIL_BYTES = 256 * 1024;
+    const content = prefetched?.content;
+    if (content?.trim()) {
+      const head = parseSessionLogContent(content.slice(0, 128 * 1024));
+      if (content.length > TAIL_BYTES) {
+        let tail = content.slice(content.length - TAIL_BYTES);
+        const nl = tail.indexOf("\n");
+        if (nl >= 0) tail = tail.slice(nl + 1); // drop the partial leading line
+        return {
+          events: convertStoredEntriesToEvents(
+            parseSessionLogContent(tail).rawEntries,
+          ),
+          sessionId: head.sessionId,
+          adapter: head.adapter,
+          deferredContent: content,
+        };
+      }
+      const full = parseSessionLogContent(content);
+      return {
+        events: convertStoredEntriesToEvents(full.rawEntries),
+        sessionId: full.sessionId,
+        adapter: full.adapter,
+        deferredContent: null,
+      };
+    }
+    if (prefetched?.rawEntries) {
+      return {
+        events: convertStoredEntriesToEvents(prefetched.rawEntries),
+        sessionId: prefetched.sessionId,
+        adapter: prefetched.adapter,
+        deferredContent: null,
+      };
+    }
+    const parsed = await this.fetchSessionLogs(logUrl, taskRunId);
+    return {
+      events: convertStoredEntriesToEvents(parsed.rawEntries),
+      sessionId: parsed.sessionId,
+      adapter: parsed.adapter,
+      deferredContent: null,
+    };
+  }
+
   private async reconnectToLocalSession(
     taskId: string,
     taskRunId: string,
@@ -828,15 +893,15 @@ export class SessionService {
     logUrl: string | undefined,
     repoPath: string,
     auth: AuthCredentials,
-    prefetchedLogs?: {
-      rawEntries: StoredLogEntry[];
+    prefetched?: {
+      content?: string;
+      rawEntries?: StoredLogEntry[];
       sessionId?: string;
       adapter?: Adapter;
     },
   ): Promise<boolean> {
-    const { rawEntries, sessionId, adapter } =
-      prefetchedLogs ?? (await this.fetchSessionLogs(logUrl, taskRunId));
-    const events = convertStoredEntriesToEvents(rawEntries);
+    const { events, sessionId, adapter, deferredContent } =
+      await this.resolveReconnectEvents(logUrl, taskRunId, prefetched);
 
     const storedAdapter = this.d.adapterStore.getAdapter(taskRunId);
     const resolvedAdapter = adapter ?? storedAdapter;
@@ -867,6 +932,26 @@ export class SessionService {
 
     this.d.store.setSession(session);
     this.subscribeToChannel(taskRunId);
+
+    // We seeded the transcript from the tail for an instant render — now parse
+    // the full history in yielding chunks (no freeze) and swap it in.
+    if (deferredContent) {
+      void parseSessionLogContentChunked(deferredContent, { chunkSize: 2000 })
+        .then((parsed) => {
+          this.commitLoadedEvents(
+            taskId,
+            taskRunId,
+            convertStoredEntriesToEvents(parsed.rawEntries),
+            parsed.totalLineCount,
+          );
+        })
+        .catch((err) => {
+          this.d.log.warn("reconnect: deferred full log parse failed", {
+            taskId,
+            error: err,
+          });
+        });
+    }
 
     try {
       const modeOpt = getConfigOptionByCategory(persistedConfigOptions, "mode");
@@ -4635,6 +4720,40 @@ export class SessionService {
       return result;
     } catch {
       return localResult ?? empty;
+    }
+  }
+
+  /**
+   * Raw log content (local cache first, then S3), WITHOUT parsing — lets the
+   * caller parse the tail synchronously for an instant render and defer the
+   * full parse. Returns null when nothing is available.
+   */
+  private async fetchSessionLogContent(
+    logUrl: string | undefined,
+    taskRunId?: string,
+  ): Promise<string | null> {
+    if (taskRunId) {
+      try {
+        const local = await this.d.trpc.logs.readLocalLogs.query({ taskRunId });
+        if (local?.trim()) return local;
+      } catch {
+        this.d.log.warn("Failed to read local logs, falling back to S3", {
+          taskRunId,
+        });
+      }
+    }
+    if (!logUrl) return null;
+    try {
+      const content = await this.d.trpc.logs.fetchS3Logs.query({ logUrl });
+      if (!content?.trim()) return null;
+      if (taskRunId) {
+        this.d.trpc.logs.writeLocalLogs
+          .mutate({ taskRunId, content })
+          .catch(() => {});
+      }
+      return content;
+    } catch {
+      return null;
     }
   }
 
