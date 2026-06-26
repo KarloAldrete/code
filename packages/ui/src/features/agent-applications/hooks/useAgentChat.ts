@@ -51,6 +51,8 @@ export interface UseAgentChatOptions {
   contextProvider?: () => unknown;
   /** AgentBuilder UI-driving tools (focus_*, set_secret); null → built-in handling. */
   clientTools?: ClientToolHandler;
+  /** `kind:'client'` tool ids this client can fulfil; sent to the runner at /run. */
+  supportedClientTools?: readonly string[];
 }
 
 /**
@@ -69,6 +71,7 @@ export function useAgentChat({
   recordHistory = false,
   contextProvider,
   clientTools,
+  supportedClientTools,
 }: UseAgentChatOptions) {
   const client = useAuthenticatedClient();
   const service = useService<AgentChatService>(AGENT_CHAT_SERVICE);
@@ -89,6 +92,7 @@ export function useAgentChat({
       agentSlug,
       ingressBaseUrl: ingressBaseUrl ?? "",
       revisionId,
+      supportedClientTools,
       createMapper: createAgentChatMapper,
       resolveClientTool: (data) =>
         resolveClientTool(
@@ -114,7 +118,15 @@ export function useAgentChat({
             })
         : undefined,
     }),
-    [chatId, agentSlug, ingressBaseUrl, revisionId, recordHistory, recordChat],
+    [
+      chatId,
+      agentSlug,
+      ingressBaseUrl,
+      revisionId,
+      supportedClientTools,
+      recordHistory,
+      recordChat,
+    ],
   );
 
   const send = useCallback(
