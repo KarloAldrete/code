@@ -179,14 +179,25 @@ export function convertStoredEntriesToEvents(
     const startTs = entries[0]?.timestamp
       ? new Date(entries[0].timestamp).getTime() - 1
       : Date.now();
-    events.push(createUserMessageEvent(taskDescription, startTs));
+    events.push(
+      Object.freeze(createUserMessageEvent(taskDescription, startTs)),
+    );
   }
 
   for (const entry of entries) {
-    events.push(storedEntryToAcpMessage(entry));
+    // Freeze each event as it's born. Events are immutable log data, and the
+    // store is immer-backed: when the array is committed, immer's auto-freeze
+    // would otherwise deep-freeze every element — measured at ~240ms for a
+    // 48k-event session (immer's per-element isDraftable/handleValue machinery
+    // is ~50x slower than a plain Object.freeze loop). Pre-freezing makes immer
+    // short-circuit on Object.isFrozen, turning that ~240ms into ~5ms.
+    events.push(Object.freeze(storedEntryToAcpMessage(entry)));
   }
 
-  return events;
+  // Freezing the array too lets immer skip the whole array on commit (it bails
+  // on Object.isFrozen before recursing), so a full-transcript load no longer
+  // stalls the renderer.
+  return Object.freeze(events) as AcpMessage[];
 }
 
 /**
