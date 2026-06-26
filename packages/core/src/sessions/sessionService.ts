@@ -78,6 +78,7 @@ import { createBaseSession } from "./sessionFactory";
 import {
   type ParsedSessionLogs,
   parseSessionLogContent,
+  parseSessionLogContentChunked,
   planSkippedPromptFilter,
 } from "./sessionLogs";
 
@@ -1335,28 +1336,91 @@ export class SessionService {
     if (session.events.length > 0) return; // already resident
     const { taskRunId, logUrl } = session;
 
-    let parsed: ParsedSessionLogs;
+    // Prefer the raw local cache so we can render the tail instantly and parse
+    // the rest in the background. Re-reading a 178MB ndjson and JSON.parsing
+    // ~100k lines synchronously is the ~500ms+ freeze we're avoiding here.
+    let content: string | null = null;
     try {
-      parsed = await this.fetchSessionLogs(logUrl, taskRunId);
-    } catch (err) {
-      this.d.log.warn("ensureEventsLoaded: failed to fetch logs", {
+      content = await this.d.trpc.logs.readLocalLogs.query({ taskRunId });
+    } catch {
+      content = null;
+    }
+
+    if (!content || !content.trim()) {
+      // No local cache (e.g. cloud-only run): fall back to the one-shot fetch.
+      let parsed: ParsedSessionLogs;
+      try {
+        parsed = await this.fetchSessionLogs(logUrl, taskRunId);
+      } catch (err) {
+        this.d.log.warn("ensureEventsLoaded: failed to fetch logs", {
+          taskId,
+          error: err,
+        });
+        return;
+      }
+      if (parsed.rawEntries.length === 0) return;
+      this.commitLoadedEvents(
         taskId,
-        error: err,
-      });
+        taskRunId,
+        convertStoredEntriesToEvents(parsed.rawEntries),
+        parsed.totalLineCount,
+      );
       return;
     }
-    if (parsed.rawEntries.length === 0) return; // nothing on disk to restore
 
-    // Re-check: the session may have been torn down or a live stream may have
-    // appended events while we awaited the fetch. Don't overwrite either.
+    // PHASE 1 — tail-first: parse only the last slice so the latest messages
+    // (the part actually on screen) render in ~1-2ms.
+    this.renderTailFirst(taskId, taskRunId, content);
+
+    // PHASE 2 — parse the full history in yielding chunks (no main-thread
+    // freeze), then swap in the complete transcript for scrollback.
+    const parsed = await parseSessionLogContentChunked(content, {
+      chunkSize: 2000,
+    });
+    this.commitLoadedEvents(
+      taskId,
+      taskRunId,
+      convertStoredEntriesToEvents(parsed.rawEntries),
+      parsed.totalLineCount,
+    );
+  }
+
+  /** Tail of the on-disk log, parsed synchronously for an instant first paint. */
+  private renderTailFirst(
+    taskId: string,
+    taskRunId: string,
+    content: string,
+  ): void {
+    const TAIL_BYTES = 256 * 1024;
+    if (content.length <= TAIL_BYTES) return; // small log — phase 2 is instant
+    let tail = content.slice(content.length - TAIL_BYTES);
+    const nl = tail.indexOf("\n");
+    if (nl >= 0) tail = tail.slice(nl + 1); // drop the partial leading line
+    const parsed = parseSessionLogContent(tail);
+    if (parsed.rawEntries.length === 0) return;
+    const current = this.d.store.getSessionByTaskId(taskId);
+    // Only seed the placeholder if nothing has populated events meanwhile.
+    if (current?.taskRunId !== taskRunId || current.events.length > 0) return;
+    this.d.store.updateSession(taskRunId, {
+      events: convertStoredEntriesToEvents(parsed.rawEntries),
+    });
+  }
+
+  /** Swap in the fully-parsed transcript, unless a live stream now owns it. */
+  private commitLoadedEvents(
+    taskId: string,
+    taskRunId: string,
+    events: AcpMessage[],
+    totalLineCount: number,
+  ): void {
     const current = this.d.store.getSessionByTaskId(taskId);
     if (!current || current.taskRunId !== taskRunId) return;
-    if (current.events.length > 0) return;
-
-    const events = convertStoredEntriesToEvents(parsed.rawEntries);
+    // If a turn started while we were parsing, the live events are authoritative
+    // — don't clobber them with the historical load; a later idle load fills in.
+    if (current.isPromptPending) return;
     this.d.store.updateSession(taskRunId, {
       events,
-      processedLineCount: current.isCloud ? parsed.totalLineCount : undefined,
+      processedLineCount: current.isCloud ? totalLineCount : undefined,
     });
   }
 
