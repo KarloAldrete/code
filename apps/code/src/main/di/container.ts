@@ -53,11 +53,13 @@ import {
   CANVAS_LINK_SERVICE,
   INBOX_LINK_SERVICE,
   NEW_TASK_LINK_SERVICE,
+  OPEN_TARGET_LINK_SERVICE,
   SCOUT_LINK_SERVICE,
   TASK_LINK_SERVICE,
 } from "@posthog/core/links/identifiers";
 import { InboxLinkService } from "@posthog/core/links/inbox-link";
 import { NewTaskLinkService } from "@posthog/core/links/new-task-link";
+import { OpenTargetLinkService } from "@posthog/core/links/open-target-link";
 import { ScoutLinkService } from "@posthog/core/links/scout-link";
 import { TaskLinkService } from "@posthog/core/links/task-link";
 import {
@@ -270,6 +272,7 @@ import {
   LLM_GATEWAY_SERVICE as MAIN_LLM_GATEWAY_SERVICE,
   MCP_APPS_SERVICE as MAIN_MCP_APPS_SERVICE,
   NEW_TASK_LINK_SERVICE as MAIN_NEW_TASK_LINK_SERVICE,
+  OPEN_TARGET_LINK_SERVICE as MAIN_OPEN_TARGET_LINK_SERVICE,
   POSTHOG_PLUGIN_SERVICE as MAIN_POSTHOG_PLUGIN_SERVICE,
   PROCESS_TRACKING_SERVICE as MAIN_PROCESS_TRACKING_SERVICE,
   PROVISIONING_SERVICE as MAIN_PROVISIONING_SERVICE,
@@ -626,6 +629,10 @@ container.bind(MAIN_NEW_TASK_LINK_SERVICE).to(NewTaskLinkService);
 container.bind(NEW_TASK_LINK_SERVICE).toService(MAIN_NEW_TASK_LINK_SERVICE);
 container.bind(MAIN_APPROVAL_LINK_SERVICE).to(ApprovalLinkService);
 container.bind(APPROVAL_LINK_SERVICE).toService(MAIN_APPROVAL_LINK_SERVICE);
+container.bind(MAIN_OPEN_TARGET_LINK_SERVICE).to(OpenTargetLinkService);
+container
+  .bind(OPEN_TARGET_LINK_SERVICE)
+  .toService(MAIN_OPEN_TARGET_LINK_SERVICE);
 container.bind(MAIN_CANVAS_LINK_SERVICE).to(CanvasLinkService);
 container.bind(CANVAS_LINK_SERVICE).toService(MAIN_CANVAS_LINK_SERVICE);
 container.load(watcherRegistryModule);
