@@ -11,6 +11,7 @@ import { useProvisioningStore } from "../../provisioning/store";
 import { SessionView } from "../../sessions/components/SessionView";
 import { useSessionCallbacks } from "../../sessions/hooks/useSessionCallbacks";
 import { useSessionConnection } from "../../sessions/hooks/useSessionConnection";
+import { useSessionEventsResidency } from "../../sessions/hooks/useSessionEventsResidency";
 import { useSessionViewState } from "../../sessions/hooks/useSessionViewState";
 import { useRestoreTask } from "../../suspension/useRestoreTask";
 import { useSuspendedTaskIds } from "../../suspension/useSuspendedTaskIds";
@@ -69,6 +70,10 @@ export function TaskLogsPanel({ taskId, task, hideInput }: TaskLogsPanelProps) {
     isCloud,
     isSuspended,
   });
+
+  // Evict this transcript's events while it is unfocused (rehydrated on focus)
+  // to bound renderer RAM across many open tasks.
+  useSessionEventsResidency(taskId);
 
   const {
     handleSendPrompt,

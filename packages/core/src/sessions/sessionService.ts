@@ -1321,6 +1321,48 @@ export class SessionService {
     await this.teardownSession(session.taskRunId);
   }
 
+  /**
+   * Rehydrate the transcript of a session whose `events` were evicted (see
+   * `sessionStoreSetters.evictEvents`) while it stayed warm/connected.
+   *
+   * Unlike `loadLogsOnly`, this does NOT recreate the session — it re-reads the
+   * ndjson from disk (S3 fallback) and patches `events` back in via
+   * `updateSession`, leaving the live subscription, status and config intact.
+   * Safe to call unconditionally on focus: it no-ops when events are already
+   * resident, and bails if a live stream re-populates events during the fetch
+   * so it never clobbers fresher data.
+   */
+  async ensureEventsLoaded(taskId: string): Promise<void> {
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session) return; // not connected — the normal connect path hydrates
+    if (session.events.length > 0) return; // already resident
+    const { taskRunId, logUrl } = session;
+
+    let parsed: ParsedSessionLogs;
+    try {
+      parsed = await this.fetchSessionLogs(logUrl, taskRunId);
+    } catch (err) {
+      this.d.log.warn("ensureEventsLoaded: failed to fetch logs", {
+        taskId,
+        error: err,
+      });
+      return;
+    }
+    if (parsed.rawEntries.length === 0) return; // nothing on disk to restore
+
+    // Re-check: the session may have been torn down or a live stream may have
+    // appended events while we awaited the fetch. Don't overwrite either.
+    const current = this.d.store.getSessionByTaskId(taskId);
+    if (!current || current.taskRunId !== taskRunId) return;
+    if (current.events.length > 0) return;
+
+    const events = convertStoredEntriesToEvents(parsed.rawEntries);
+    this.d.store.updateSession(taskRunId, {
+      events,
+      processedLineCount: current.isCloud ? parsed.totalLineCount : undefined,
+    });
+  }
+
   // --- Subscription Management ---
 
   private subscribeToChannel(taskRunId: string): void {
