@@ -28,6 +28,31 @@ export function deriveStatus(
   return "idle";
 }
 
+export type CommandCenterSessionFields = SessionStatusInput & {
+  taskId?: string;
+};
+
+/**
+ * Stable string signature of the only session fields the command-center grid
+ * reads (the inputs to `deriveStatus`). Lets the grid subscribe to status
+ * changes instead of re-rendering on every streamed token — cell transcripts
+ * update independently through each EmbeddedSessionView's own subscription, so
+ * the grid data never needs to churn on token-level `events` mutations.
+ */
+export function computeCommandCenterSessionSignature(
+  sessions: Record<string, CommandCenterSessionFields>,
+): string {
+  const parts: string[] = [];
+  for (const s of Object.values(sessions)) {
+    if (!s.taskId) continue;
+    parts.push(
+      `${s.taskId}\t${s.status}\t${s.cloudStatus ?? ""}\t${s.pendingPermissions.size}\t${s.isPromptPending ? 1 : 0}`,
+    );
+  }
+  parts.sort();
+  return parts.join("\n");
+}
+
 export function getRepoName(task: Task): string | null {
   const repository = getTaskRepository(task);
   if (!repository) return null;

@@ -2,6 +2,7 @@ import type {
   AvailableCommand,
   SessionConfigOption,
 } from "@agentclientprotocol/sdk";
+import { computeCommandCenterSessionSignature } from "@posthog/core/command-center/status";
 import {
   extractAvailableCommandsFromEvents,
   extractUserPromptsFromEvents,
@@ -34,6 +35,27 @@ export const useSidebarSessionMap = (): Map<string, AgentSession> => {
   );
   // `signature` is the trigger, not read inside: rebuild the map from the live
   // snapshot only when a sidebar-relevant field changes (not on every token).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed by signature on purpose
+  return useMemo(() => {
+    const map = new Map<string, AgentSession>();
+    for (const session of Object.values(useSessionStore.getState().sessions)) {
+      if (session.taskId) map.set(session.taskId, session);
+    }
+    return map;
+  }, [signature]);
+};
+
+/**
+ * The command-center grid's view of sessions, keyed by taskId. Same trick as
+ * useSidebarSessionMap: subscribe only to a signature of the fields the grid's
+ * `deriveStatus` reads, so streaming token appends don't re-render the grid.
+ * Cell transcripts update independently via each EmbeddedSessionView's own
+ * subscription, so the grid map never needs to churn on `events` mutations.
+ */
+export const useCommandCenterSessionMap = (): Map<string, AgentSession> => {
+  const signature = useSessionStore((s) =>
+    computeCommandCenterSessionSignature(s.sessions),
+  );
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed by signature on purpose
   return useMemo(() => {
     const map = new Map<string, AgentSession>();
