@@ -111,10 +111,12 @@ describe("SessionService.ensureEventsLoaded", () => {
     expect(local.sessions[RUN_ID].processedLineCount).toBeUndefined();
   });
 
-  it("does not clobber events that a live stream appended during the fetch", async () => {
+  it("does not clobber events when a turn starts streaming during the load", async () => {
     const h = createHarness();
-    // Simulate a stream landing while the disk read is in flight.
+    // Simulate a turn starting (isPromptPending) + a streamed event landing
+    // while the disk read is in flight — the live transcript is authoritative.
     h.readLocalLogs.mockImplementationOnce(async () => {
+      h.sessions[RUN_ID].isPromptPending = true;
       h.sessions[RUN_ID].events = [
         { message: {} },
       ] as unknown as AgentSession["events"];
@@ -123,8 +125,26 @@ describe("SessionService.ensureEventsLoaded", () => {
 
     await h.service.ensureEventsLoaded(TASK_ID);
 
-    // The single streamed event survives; the stale disk read is discarded.
+    // The streamed event survives; the historical load is discarded.
     expect(h.sessions[RUN_ID].events).toHaveLength(1);
     expect(h.updateSession).not.toHaveBeenCalled();
+  });
+
+  it("renders the tail first, then swaps in the full transcript", async () => {
+    // A log larger than the 256KB tail window → phase 1 seeds a tail placeholder,
+    // phase 2 replaces it with the complete set.
+    const bigLog = ndjson(...Array.from({ length: 4000 }, (_, i) => `m${i}`));
+    const h = createHarness({}, bigLog);
+
+    await h.service.ensureEventsLoaded(TASK_ID);
+
+    // Final state is the full transcript (4000 events).
+    expect(h.sessions[RUN_ID].events.length).toBe(4000);
+    // updateSession was called at least twice: tail seed + full swap.
+    expect(h.updateSession.mock.calls.length).toBeGreaterThanOrEqual(2);
+    const firstLen = (h.updateSession.mock.calls[0][1].events as unknown[])
+      .length;
+    expect(firstLen).toBeGreaterThan(0);
+    expect(firstLen).toBeLessThan(4000); // the tail, not everything
   });
 });
