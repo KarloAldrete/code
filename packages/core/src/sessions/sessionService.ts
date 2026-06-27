@@ -1480,7 +1480,21 @@ export class SessionService {
     const session = this.d.store.getSessionByTaskId(taskId);
     if (!session?.hasOlderEvents) return;
     const { taskRunId } = session;
-    const result = takeOlderEntries(taskRunId);
+    // Re-read the ndjson from disk (OS page cache → ~ms) instead of holding the
+    // whole log in memory for the open transcript's lifetime. See the note in
+    // `transcriptWindows.ts`: scroll-up is rare and user-initiated, so paying a
+    // little latency here buys a large, always-on renderer-memory win.
+    let content: string | null = null;
+    try {
+      content = await this.d.trpc.logs.readLocalLogs.query({ taskRunId });
+    } catch {
+      content = null;
+    }
+    if (!content || !content.trim()) {
+      this.d.store.updateSession(taskRunId, { hasOlderEvents: false });
+      return;
+    }
+    const result = takeOlderEntries(taskRunId, content);
     if (!result) {
       this.d.store.updateSession(taskRunId, { hasOlderEvents: false });
       return;
