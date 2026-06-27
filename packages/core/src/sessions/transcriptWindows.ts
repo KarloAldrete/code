@@ -62,10 +62,19 @@ export function takeOlderEntries(
   const window = windows.get(taskRunId);
   if (!window || window.windowStart === 0) return null;
   const lines = content.trim().split("\n");
-  const newStart = Math.max(0, window.windowStart - count);
-  const older = parseSessionLogContent(
-    lines.slice(newStart, window.windowStart).join("\n"),
-  ).rawEntries;
+  // Pull older chunks until we have at least one renderable entry or reach the
+  // top. A chunk can parse to zero entries (e.g. a run of non-event lines); if
+  // we returned an empty slice while still reporting `hasOlder`, the caller
+  // would prepend nothing and the UI's scrollback gate could never advance.
+  let newStart = window.windowStart;
+  let older: StoredLogEntry[] = [];
+  while (newStart > 0 && older.length === 0) {
+    const from = Math.max(0, newStart - count);
+    older = parseSessionLogContent(
+      lines.slice(from, newStart).join("\n"),
+    ).rawEntries;
+    newStart = from;
+  }
   window.windowStart = newStart;
   return { older, hasOlder: newStart > 0 };
 }

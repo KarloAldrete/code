@@ -230,8 +230,12 @@ function VirtualizedListInner<T>(
     if (delta > 0) {
       el.scrollTop += delta;
       isAtBottomRef.current = false;
-      loadingOlderRef.current = false;
     }
+    // Release the gate whenever this fires after a load — not only when the
+    // height grew. Gating the release on `delta > 0` could leave it stuck (and
+    // permanently block further scrollback) if the virtualizer hadn't measured
+    // the new height yet this pass; the next scroll-up simply retries.
+    loadingOlderRef.current = false;
   }, [items.length]);
 
   const handleScroll = useCallback(() => {
