@@ -30,24 +30,20 @@ describe("computeCommandCenterSessionSignature", () => {
     expect(sig(a)).toBe(sig(b));
   });
 
-  it("changes when isPromptPending flips (idle ↔ running)", () => {
-    expect(sig({ r1: session("t1", { isPromptPending: false }) })).not.toBe(
-      sig({ r1: session("t1", { isPromptPending: true }) }),
-    );
-  });
-
-  it("changes when a pending permission appears (running → waiting)", () => {
+  it.each<{ name: string; over: Partial<CommandCenterSessionFields> }>([
+    {
+      name: "isPromptPending flips (idle ↔ running)",
+      over: { isPromptPending: true },
+    },
+    {
+      name: "a pending permission appears (running → waiting)",
+      over: { pendingPermissions: { size: 1 } },
+    },
+    { name: "connection status changes", over: { status: "error" } },
+    { name: "cloud status changes", over: { cloudStatus: "completed" } },
+  ])("changes when $name", ({ over }) => {
     expect(sig({ r1: session("t1") })).not.toBe(
-      sig({ r1: session("t1", { pendingPermissions: { size: 1 } }) }),
-    );
-  });
-
-  it("changes when connection status or cloud status changes", () => {
-    expect(sig({ r1: session("t1") })).not.toBe(
-      sig({ r1: session("t1", { status: "error" }) }),
-    );
-    expect(sig({ r1: session("t1") })).not.toBe(
-      sig({ r1: session("t1", { cloudStatus: "completed" }) }),
+      sig({ r1: session("t1", over) }),
     );
   });
 
