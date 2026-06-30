@@ -272,6 +272,8 @@ function getTaskRunStateString(
 export class AgentServer {
   private config: AgentServerConfig;
   private sessionReadyBootMs?: number;
+  private sessionInitMs?: number;
+  private barrierReleasedAtMs?: number;
   private logger: Logger;
   private server: ServerType | null = null;
   private session: ActiveSession | null = null;
@@ -394,6 +396,7 @@ export class AgentServer {
         status: "ok",
         hasSession: !!this.session,
         bootMs: this.sessionReadyBootMs,
+        sessionInitMs: this.sessionInitMs,
       });
     });
 
@@ -1297,8 +1300,10 @@ export class AgentServer {
     });
 
     this.sessionReadyBootMs = Math.round(process.uptime() * 1000);
+    this.sessionInitMs = Math.max(0, Date.now() - this.barrierReleasedAtMs!);
     this.logger.debug("Session initialized successfully", {
       bootMs: this.sessionReadyBootMs,
+      sessionInitMs: this.sessionInitMs,
     });
     this.logger.debug(
       `Agent version: ${this.config.version ?? packageJson.version}`,
@@ -2222,7 +2227,10 @@ export class AgentServer {
 
   private async waitForRepoReady(): Promise<void> {
     const readyFile = this.config.repoReadyFile;
-    if (!readyFile) return;
+    if (!readyFile) {
+      this.barrierReleasedAtMs = Date.now();
+      return;
+    }
 
     const REPO_READY_TIMEOUT_MS = 5 * 60_000;
     const POLL_MS = 100;
@@ -2232,6 +2240,7 @@ export class AgentServer {
     for (;;) {
       try {
         await access(readyFile);
+        this.barrierReleasedAtMs = Date.now();
         this.logger.debug("Repo-ready barrier released", {
           readyFile,
           waitedMs: Date.now() - startedAt,
@@ -2249,6 +2258,7 @@ export class AgentServer {
         }
       }
       if (Date.now() - startedAt > REPO_READY_TIMEOUT_MS) {
+        this.barrierReleasedAtMs = Date.now();
         this.logger.warn("Repo-ready barrier timed out; proceeding", {
           readyFile,
           waitedMs: Date.now() - startedAt,
@@ -2480,7 +2490,7 @@ we want:
   Task-Id: ${taskId}`;
 
     const whyContextInstruction = `   - Add a brief **Why** to the body — one or two sentences capturing the reason the user asked for this change (the motivation, not a restatement of the diff). Keep it short.`;
-    const publicRepoSafetyInstruction = `   - **Public-repo safety.** Treat the target repository as public-readable unless you have verified otherwise. The PR title, description, and commit messages must not contain private operational scale (exact event counts, internal row volumes, customer-usage percentages), customer names / emails / companies, references to internal tickets / Slack threads / incidents, or unreleased roadmap details. Describe findings qualitatively ("present on nearly all X events, absent from Y") rather than with quantitative figures pulled from analytics queries — the reasoning that uses those numbers can stay in the thread; the PR copy cannot.`;
+    const publicRepoSafetyInstruction = `   - **Public-repo safety.** Treat the target repository as public-readable unless you have verified otherwise. The PR title, description, and commit messages must not contain private operational scale (exact event counts, internal row volumes, customer-usage percentages), customer names / emails / companies, references to internal tickets or incidents, the contents of Slack threads (do not quote or paraphrase what was said), or unreleased roadmap details. Linking to the originating Slack thread is fine and encouraged — Slack links are auth-gated and useful as context — as are channel references like "raised in #team-foo". Describe findings qualitatively ("present on nearly all X events, absent from Y") rather than with quantitative figures pulled from analytics queries — the reasoning that uses those numbers can stay in the thread; the PR copy cannot.`;
     // Slack- and inbox-originated PRs are attributed to PostHog, not the
     // PostHog Code desktop app — they come from the Slack app / Self-driving
     // inbox, which users know as "PostHog".
