@@ -256,7 +256,10 @@ export interface SessionServiceDeps {
     setAdapter(taskRunId: string, adapter: Adapter): void;
     removeAdapter(taskRunId: string): void;
   };
-  readonly settings: { customInstructions?: string | null };
+  readonly settings: {
+    customInstructions?: string | null;
+    branchPrefix?: string | null;
+  };
   usageLimit: { show: (...args: any[]) => any };
   readonly addDirectoryDialog: { open: boolean };
   taskViewedApi: { markActivity(taskId: string): void };
@@ -904,7 +907,7 @@ export class SessionService {
           this.d.log.warn("Failed to verify workspace", { taskId, err });
         });
 
-      const { customInstructions } = this.d.settings;
+      const { customInstructions, branchPrefix } = this.d.settings;
       const result = await this.d.trpc.agent.reconnect.mutate({
         taskId,
         taskRunId,
@@ -917,6 +920,7 @@ export class SessionService {
         permissionMode: persistedMode,
         model: persistedModel,
         customInstructions: customInstructions || undefined,
+        branchPrefix: branchPrefix ?? undefined,
       });
 
       if (result) {
@@ -1217,7 +1221,10 @@ export class SessionService {
       throw new Error("Failed to create task run. Please try again.");
     }
 
-    const { customInstructions: startCustomInstructions } = this.d.settings;
+    const {
+      customInstructions: startCustomInstructions,
+      branchPrefix: startBranchPrefix,
+    } = this.d.settings;
     const preferredModel = model ?? this.d.DEFAULT_GATEWAY_MODEL;
     const result = await this.d.trpc.agent.start.mutate({
       taskId,
@@ -1228,6 +1235,7 @@ export class SessionService {
       permissionMode: executionMode,
       adapter,
       customInstructions: startCustomInstructions || undefined,
+      branchPrefix: startBranchPrefix ?? undefined,
       effort: effortLevelSchema.safeParse(reasoningLevel).success
         ? (reasoningLevel as EffortLevel)
         : undefined,

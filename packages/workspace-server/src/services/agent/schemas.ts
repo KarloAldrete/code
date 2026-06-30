@@ -55,6 +55,11 @@ export const startSessionInput = z.object({
   additionalDirectories: z.array(z.string()).optional(),
   customInstructions: z.string().max(2000).optional(),
   /**
+   * Prefix for branches the agent creates, surfaced in the system prompt's
+   * branch-naming instruction. Defaults to `BRANCH_PREFIX` when omitted.
+   */
+  branchPrefix: z.string().max(100).optional(),
+  /**
    * Replaces the PostHog system prompt entirely for this session. Used by
    * constrained, single-purpose surfaces (e.g. the canvas generator) that drive
    * the agent with their own prompt rather than the default coding prompt.
@@ -199,6 +204,7 @@ export const reconnectSessionInput = z.object({
   permissionMode: z.string().optional(),
   model: z.string().optional(),
   customInstructions: z.string().max(2000).optional(),
+  branchPrefix: z.string().max(100).optional(),
   effort: effortLevelSchema.optional(),
   jsonSchema: z.record(z.string(), z.unknown()).nullish(),
 });

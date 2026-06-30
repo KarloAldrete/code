@@ -1,10 +1,17 @@
-const BRANCH_NAMING = `
+import { BRANCH_PREFIX } from "@posthog/shared";
+
+function buildBranchNaming(branchPrefix: string = BRANCH_PREFIX): string {
+  const namingLine = branchPrefix
+    ? `When creating a new branch, prefix it with \`${branchPrefix}\` (e.g. \`${branchPrefix}fix-login-redirect\`).`
+    : "When creating a new branch, use a short, descriptive name.";
+  return `
 # Branch Naming
 
 When working in a detached HEAD state, create a descriptive branch name based on the work being done before committing. Do this automatically without asking the user.
 
-When creating a new branch, prefix it with \`posthog-code/\` (e.g. \`posthog-code/fix-login-redirect\`).
+${namingLine}
 `;
+}
 
 const PLAN_MODE = `
 # Plan Mode
@@ -26,4 +33,6 @@ If an MCP tool call is explicitly denied with a message, relay that denial messa
 If an MCP tool call returns an error, treat it as a normal tool error — troubleshoot, retry, or inform the user about the specific error. Do NOT assume it is a permissions issue and do NOT direct the user to any settings page.
 `;
 
-export const APPENDED_INSTRUCTIONS = BRANCH_NAMING + PLAN_MODE + MCP_TOOLS;
+export function buildAppendedInstructions(branchPrefix?: string): string {
+  return buildBranchNaming(branchPrefix) + PLAN_MODE + MCP_TOOLS;
+}

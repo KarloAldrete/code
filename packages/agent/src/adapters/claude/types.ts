@@ -169,6 +169,8 @@ export type NewSessionMeta = {
   model?: string;
   /** Base branch of the task's repo (e.g. "master"), for the signed-git tools. */
   baseBranch?: string;
+  /** Prefix for branches the agent creates (system-prompt branch naming). */
+  branchPrefix?: string;
   /**
    * Repo-less channel "generic chat box" session: enables the lazy-repo tools
    * (list_repos / clone_repo) and channel guidance. The agent decides at

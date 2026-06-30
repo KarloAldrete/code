@@ -61,6 +61,7 @@ import {
 } from "@posthog/platform/workspace-settings";
 import {
   type AcpMessage,
+  BRANCH_PREFIX,
   isAuthError,
   serializeError,
   TypedEventEmitter,
@@ -266,6 +267,8 @@ interface SessionConfig {
   permissionMode?: string;
   /** Custom instructions injected into the system prompt */
   customInstructions?: string;
+  /** Prefix for branches the agent creates (system-prompt branch naming). */
+  branchPrefix?: string;
   /** Replaces the PostHog system prompt entirely (constrained surfaces). */
   systemPromptOverride?: string;
   /** Tool names denied for this session (passed to the Claude SDK). */
@@ -549,6 +552,7 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     systemPromptOverride?: string,
     channelMode?: boolean,
     knownLocalFolders?: RegisteredFolder[],
+    branchPrefix?: string,
   ): {
     append: string;
   } {
@@ -557,6 +561,11 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     if (systemPromptOverride) {
       return { append: systemPromptOverride };
     }
+
+    const prefix = branchPrefix ?? BRANCH_PREFIX;
+    const branchNamingLine = prefix
+      ? `When creating new branches, prefix them with \`${prefix}\` (e.g. \`${prefix}fix-login-redirect\`).`
+      : "Use short, descriptive branch names for new branches.";
 
     let prompt = `PostHog context: use project ${credentials.projectId} on ${credentials.apiHost}. When using PostHog MCP tools, operate only on this project.`;
 
@@ -580,7 +589,7 @@ EOF
 )"
 \`\`\`
 
-When creating new branches, prefix them with \`posthog-code/\` (e.g. \`posthog-code/fix-login-redirect\`).
+${branchNamingLine}
 
 When creating pull requests, add the following footer at the end of the PR description:
 \`\`\`
@@ -677,6 +686,7 @@ If a repository IS genuinely required, attach one in this priority order:
       adapter,
       permissionMode,
       customInstructions,
+      branchPrefix,
       systemPromptOverride,
       disallowedTools,
       effort,
@@ -760,6 +770,7 @@ If a repository IS genuinely required, attach one in this priority order:
         systemPromptOverride,
         channelMode,
         knownLocalFolders,
+        branchPrefix,
       );
 
       const bundledSkillsDir = join(
@@ -928,6 +939,7 @@ If a repository IS genuinely required, attach one in this priority order:
               environment: "local",
               sessionId: importedSessionId,
               systemPrompt,
+              ...(branchPrefix !== undefined && { branchPrefix }),
               ...(channelMode && { channelMode }),
               mcpToolApprovals: toolApprovals,
               ...(permissionMode && { permissionMode }),
@@ -1000,6 +1012,7 @@ If a repository IS genuinely required, attach one in this priority order:
             environment: "local",
             sessionId: existingSessionId,
             systemPrompt,
+            ...(branchPrefix !== undefined && { branchPrefix }),
             ...(channelMode && { channelMode }),
             mcpToolApprovals: toolApprovals,
             ...(permissionMode && { permissionMode }),
@@ -1026,6 +1039,7 @@ If a repository IS genuinely required, attach one in this priority order:
             taskRunId,
             environment: "local",
             systemPrompt,
+            ...(branchPrefix !== undefined && { branchPrefix }),
             ...(channelMode && { channelMode }),
             mcpToolApprovals: toolApprovals,
             ...(permissionMode && { permissionMode }),
@@ -1905,6 +1919,7 @@ For git operations while detached:
         "permissionMode" in params ? params.permissionMode : undefined,
       customInstructions:
         "customInstructions" in params ? params.customInstructions : undefined,
+      branchPrefix: "branchPrefix" in params ? params.branchPrefix : undefined,
       systemPromptOverride:
         "systemPromptOverride" in params
           ? params.systemPromptOverride
