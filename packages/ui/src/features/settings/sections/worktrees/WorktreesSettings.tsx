@@ -1,4 +1,3 @@
-import { validateBranchPrefix } from "@posthog/core/git-interaction/branchName";
 import {
   buildTaskMap,
   groupWorktrees,
@@ -8,8 +7,7 @@ import { deleteWorktree as runDeleteWorktree } from "@posthog/core/settings/work
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { Flex, Switch, Text, TextField } from "@radix-ui/themes";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useDebounce } from "../../../../primitives/hooks/useDebounce";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "../../../../primitives/toast";
 import { logger } from "../../../../shell/logger";
 import { useFolders } from "../../../folders/useFolders";
@@ -18,7 +16,6 @@ import { useDeleteTask } from "../../../tasks/useTaskCrudMutations";
 import { useTasks } from "../../../tasks/useTasks";
 import { WORKSPACE_QUERY_KEY } from "../../../workspace/identifiers";
 import { SettingRow } from "../../SettingRow";
-import { useSettingsStore } from "../../settingsStore";
 import { WorktreeGroupSection } from "./WorktreeGroupSection";
 
 const log = logger.scope("worktrees-settings");
@@ -35,21 +32,6 @@ export function WorktreesSettings() {
 
   const { folders } = useFolders();
   const { data: tasks } = useTasks();
-
-  const branchPrefix = useSettingsStore((s) => s.branchPrefix);
-  const setBranchPrefix = useSettingsStore((s) => s.setBranchPrefix);
-  const [draftBranchPrefix, setDraftBranchPrefix] = useState(branchPrefix);
-  const debouncedBranchPrefix = useDebounce(draftBranchPrefix, 500);
-  const branchPrefixError = validateBranchPrefix(draftBranchPrefix);
-  useEffect(() => {
-    setDraftBranchPrefix(branchPrefix);
-  }, [branchPrefix]);
-  useEffect(() => {
-    if (debouncedBranchPrefix === branchPrefix) return;
-    // Don't persist an invalid prefix; the inline error prompts a fix.
-    if (validateBranchPrefix(debouncedBranchPrefix) !== null) return;
-    setBranchPrefix(debouncedBranchPrefix);
-  }, [debouncedBranchPrefix, branchPrefix, setBranchPrefix]);
 
   const worktreeQueries = useQueries({
     queries: folders.map((folder) => ({
@@ -151,30 +133,6 @@ export function WorktreesSettings() {
   return (
     <Flex direction="column" gap="5">
       <Flex direction="column">
-        <SettingRow
-          label="Branch name prefix"
-          description="Prefix for branches PostHog Code creates for new tasks. Leave empty for no prefix."
-        >
-          <Flex direction="column" align="end" gap="1">
-            <TextField.Root
-              value={draftBranchPrefix}
-              onChange={(e) => setDraftBranchPrefix(e.target.value)}
-              placeholder="posthog-code/"
-              size="1"
-              className="min-w-[200px]"
-              color={branchPrefixError ? "red" : undefined}
-            />
-            {branchPrefixError ? (
-              <Text color="red" className="text-[12px]">
-                {branchPrefixError}
-              </Text>
-            ) : (
-              <Text color="gray" className="text-[12px]">
-                Example: posthog-code/
-              </Text>
-            )}
-          </Flex>
-        </SettingRow>
         <SettingRow
           label="Automatically suspend stale worktrees"
           description="Suspend stale worktrees to save disk space. Suspended worktrees can be restored at any time. Only disable if you prefer to manage worktrees manually."

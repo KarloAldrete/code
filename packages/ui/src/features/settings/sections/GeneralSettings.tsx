@@ -1,4 +1,5 @@
 import { ArrowSquareOut } from "@phosphor-icons/react";
+import { validateBranchPrefix } from "@posthog/core/git-interaction/branchName";
 import { buildPostHogUrl } from "@posthog/core/settings/posthogUrl";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
@@ -17,12 +18,21 @@ import {
   type SendMessagesWith,
   useSettingsStore,
 } from "@posthog/ui/features/settings/settingsStore";
+import { useDebounce } from "@posthog/ui/primitives/hooks/useDebounce";
 import { track } from "@posthog/ui/shell/analytics";
 import type { ThemePreference } from "@posthog/ui/shell/themeStore";
 import { useThemeStore } from "@posthog/ui/shell/themeStore";
-import { Button, Flex, Link, Select, Switch, Text } from "@radix-ui/themes";
+import {
+  Button,
+  Flex,
+  Link,
+  Select,
+  Switch,
+  Text,
+  TextField,
+} from "@radix-ui/themes";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export function GeneralSettings() {
   const hostTRPC = useHostTRPC();
@@ -207,6 +217,22 @@ export function GeneralSettings() {
     [slotMachineMode, setSlotMachineMode],
   );
 
+  // Git / branch prefix state
+  const branchPrefix = useSettingsStore((s) => s.branchPrefix);
+  const setBranchPrefix = useSettingsStore((s) => s.setBranchPrefix);
+  const [draftBranchPrefix, setDraftBranchPrefix] = useState(branchPrefix);
+  const debouncedBranchPrefix = useDebounce(draftBranchPrefix, 500);
+  const branchPrefixError = validateBranchPrefix(draftBranchPrefix);
+  useEffect(() => {
+    setDraftBranchPrefix(branchPrefix);
+  }, [branchPrefix]);
+  useEffect(() => {
+    if (debouncedBranchPrefix === branchPrefix) return;
+    // Don't persist an invalid prefix; the inline error prompts a fix.
+    if (validateBranchPrefix(debouncedBranchPrefix) !== null) return;
+    setBranchPrefix(debouncedBranchPrefix);
+  }, [debouncedBranchPrefix, branchPrefix, setBranchPrefix]);
+
   const accountUrl = buildPostHogUrl("/settings/user", cloudRegion);
 
   return (
@@ -383,6 +409,37 @@ export function GeneralSettings() {
             <Select.Item value="last-active-pane">Last active pane</Select.Item>
           </Select.Content>
         </Select.Root>
+      </SettingRow>
+
+      {/* Git */}
+      <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">
+        Git
+      </Text>
+
+      <SettingRow
+        label="Branch name prefix"
+        description="Prefix for branches PostHog Code creates for new tasks. Leave empty for no prefix."
+        noBorder
+      >
+        <Flex direction="column" align="end" gap="1">
+          <TextField.Root
+            value={draftBranchPrefix}
+            onChange={(e) => setDraftBranchPrefix(e.target.value)}
+            placeholder="posthog-code/"
+            size="1"
+            className="min-w-[200px]"
+            color={branchPrefixError ? "red" : undefined}
+          />
+          {branchPrefixError ? (
+            <Text color="red" className="text-[12px]">
+              {branchPrefixError}
+            </Text>
+          ) : (
+            <Text color="gray" className="text-[12px]">
+              Example: posthog-code/
+            </Text>
+          )}
+        </Flex>
       </SettingRow>
 
       {/* Conversation */}
