@@ -19,6 +19,7 @@ import {
   isJsonRpcNotification,
   isJsonRpcRequest,
 } from "@posthog/shared";
+import { skillTagsToSlashCommands } from "../message-editor/skillTags";
 import { isNotification, POSTHOG_NOTIFICATIONS } from "./acpNotifications";
 import { extractPromptDisplayContent } from "./promptContent";
 
@@ -257,8 +258,8 @@ export function extractUserPromptsFromEvents(events: AcpMessage[]): string[] {
 }
 
 export function extractPromptText(prompt: string | ContentBlock[]): string {
-  if (typeof prompt === "string") return prompt;
-  return extractPromptDisplayContent(prompt).text;
+  if (typeof prompt === "string") return skillTagsToSlashCommands(prompt);
+  return skillTagsToSlashCommands(extractPromptDisplayContent(prompt).text);
 }
 
 /**
@@ -267,7 +268,15 @@ export function extractPromptText(prompt: string | ContentBlock[]): string {
 export function normalizePromptToBlocks(
   prompt: string | ContentBlock[],
 ): ContentBlock[] {
-  return typeof prompt === "string" ? [{ type: "text", text: prompt }] : prompt;
+  if (typeof prompt === "string") {
+    return [{ type: "text", text: skillTagsToSlashCommands(prompt) }];
+  }
+
+  return prompt.map((block) =>
+    block.type === "text"
+      ? { ...block, text: skillTagsToSlashCommands(block.text) }
+      : block,
+  );
 }
 
 export { isFatalSessionError, isRateLimitError } from "@posthog/shared";
