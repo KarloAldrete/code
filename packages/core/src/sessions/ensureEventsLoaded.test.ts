@@ -2,6 +2,10 @@ import type { AgentSession } from "@posthog/shared";
 import { describe, expect, it, vi } from "vitest";
 import { createBaseSession } from "./sessionFactory";
 import { SessionService, type SessionServiceDeps } from "./sessionService";
+import {
+  clearTranscriptWindow,
+  hasTranscriptWindow,
+} from "./transcriptWindows";
 
 const TASK_ID = "task-1";
 const RUN_ID = "run-1";
@@ -115,10 +119,10 @@ describe("SessionService.ensureEventsLoaded", () => {
     expect(local.sessions[RUN_ID].processedLineCount).toBeUndefined();
   });
 
-  it("does not clobber events when a turn starts streaming during the load", async () => {
+  it("does not clobber events when a turn streams in during the load", async () => {
     const h = createHarness();
-    // Simulate a turn starting (isPromptPending) + a streamed event landing
-    // while the disk read is in flight — the live transcript is authoritative.
+    // A streamed event lands (replacing the events array) while the disk read is
+    // in flight. The live transcript is authoritative — the stale snapshot drops.
     h.readLocalLogs.mockImplementationOnce(async () => {
       h.sessions[RUN_ID].isPromptPending = true;
       h.sessions[RUN_ID].events = [
@@ -129,9 +133,65 @@ describe("SessionService.ensureEventsLoaded", () => {
 
     await h.service.ensureEventsLoaded(TASK_ID);
 
-    // The streamed event survives; the historical load is discarded.
     expect(h.sessions[RUN_ID].events).toHaveLength(1);
     expect(h.updateSession).not.toHaveBeenCalled();
+  });
+
+  it("discards the snapshot when a completed turn appended events mid-read", async () => {
+    // The race greptile flagged: a turn submitted right after refocus *completes*
+    // before the read resolves, so `isPromptPending` is already false again by
+    // commit time. The old `isPromptPending` guard missed this; the array-identity
+    // check catches it — the turn's events replaced the array we sampled.
+    const h = createHarness();
+    h.readLocalLogs.mockImplementationOnce(async () => {
+      h.sessions[RUN_ID].isPromptPending = false; // turn already finished
+      h.sessions[RUN_ID].events = [
+        { message: { role: "user" } },
+        { message: { role: "assistant" } },
+      ] as unknown as AgentSession["events"];
+      return ndjson("old", "history");
+    });
+
+    await h.service.ensureEventsLoaded(TASK_ID);
+
+    expect(h.sessions[RUN_ID].events).toHaveLength(2); // the live turn, intact
+    expect(h.updateSession).not.toHaveBeenCalled();
+  });
+
+  it("still seeds history when a prompt is pending but no events landed yet", async () => {
+    // A pending prompt whose optimistic bubble lives outside `events` must NOT
+    // block rehydration — otherwise refocusing an evicted chat and immediately
+    // typing leaves you staring at an empty transcript. The events array is
+    // untouched, so seeding the tail is safe and correct.
+    const h = createHarness();
+    h.readLocalLogs.mockImplementationOnce(async () => {
+      h.sessions[RUN_ID].isPromptPending = true; // pending, but events still []
+      return ndjson("hello", "world");
+    });
+
+    await h.service.ensureEventsLoaded(TASK_ID);
+
+    expect(h.sessions[RUN_ID].events.length).toBeGreaterThan(0);
+  });
+
+  it("leaves no scrollback cursor when the seed is discarded", async () => {
+    // Cursor + events must move together: if the seed is dropped, the window
+    // cursor must not survive, or a later scroll-up would slice older lines
+    // against events that were never rendered.
+    clearTranscriptWindow(RUN_ID);
+    const bigLog = ndjson(...Array.from({ length: 4000 }, (_, i) => `m${i}`));
+    const h = createHarness({}, bigLog);
+    h.readLocalLogs.mockImplementationOnce(async () => {
+      h.sessions[RUN_ID].events = [
+        { message: {} },
+      ] as unknown as AgentSession["events"];
+      return bigLog;
+    });
+
+    await h.service.ensureEventsLoaded(TASK_ID);
+
+    expect(h.updateSession).not.toHaveBeenCalled();
+    expect(hasTranscriptWindow(RUN_ID)).toBe(false);
   });
 
   it("opens a tail window for a large local log, flagging older events", async () => {

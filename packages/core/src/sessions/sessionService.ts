@@ -82,7 +82,8 @@ import {
 } from "./sessionLogs";
 import {
   clearTranscriptWindow,
-  openTranscriptWindow,
+  computeTailWindow,
+  setTranscriptWindow,
   takeOlderEntries,
 } from "./transcriptWindows";
 
@@ -852,7 +853,8 @@ export class SessionService {
     const content = prefetched?.content;
     if (content?.trim()) {
       const head = parseSessionLogContent(content.slice(0, 128 * 1024));
-      const { tail, hasOlder } = openTranscriptWindow(taskRunId, content);
+      const { tail, hasOlder, windowStart } = computeTailWindow(content);
+      setTranscriptWindow(taskRunId, windowStart);
       return {
         events: convertStoredEntriesToEvents(tail),
         sessionId: head.sessionId,
@@ -1394,6 +1396,15 @@ export class SessionService {
     if (session.events.length > 0) return; // already resident
     const { taskRunId, logUrl } = session;
 
+    // Capture the exact (empty) array we're rehydrating against. Reading the log
+    // is async, and the session stays live while we read: a streamed turn can
+    // append, an idle-blur can evict, a second focus can rehydrate — any of these
+    // replaces `events` with a new array (immer never mutates in place). We pass
+    // this reference to the commit and bail if it no longer matches, so fresher
+    // state is never clobbered by our now-stale disk snapshot. This is an
+    // optimistic-concurrency version check, with the array identity as the token.
+    const baseline = session.events;
+
     // Prefer the raw local cache so we can render the tail instantly and parse
     // the rest in the background. Re-reading a 178MB ndjson and JSON.parsing
     // ~100k lines synchronously is the ~500ms+ freeze we're avoiding here.
@@ -1417,13 +1428,11 @@ export class SessionService {
         return;
       }
       if (parsed.rawEntries.length === 0) return;
-      this.commitWindowedEvents(
-        taskId,
-        taskRunId,
-        convertStoredEntriesToEvents(parsed.rawEntries),
-        false,
-        parsed.totalLineCount,
-      );
+      this.commitWindowedEvents(taskId, taskRunId, baseline, {
+        events: convertStoredEntriesToEvents(parsed.rawEntries),
+        hasOlder: false,
+        totalLineCount: parsed.totalLineCount,
+      });
       return;
     }
 
@@ -1431,44 +1440,60 @@ export class SessionService {
     // load the full transcript (windowing only fits local ndjson logs).
     if (session.isCloud) {
       const parsed = parseSessionLogContent(content);
-      this.commitWindowedEvents(
-        taskId,
-        taskRunId,
-        convertStoredEntriesToEvents(parsed.rawEntries),
-        false,
-        parsed.totalLineCount,
-      );
+      this.commitWindowedEvents(taskId, taskRunId, baseline, {
+        events: convertStoredEntriesToEvents(parsed.rawEntries),
+        hasOlder: false,
+        totalLineCount: parsed.totalLineCount,
+      });
       return;
     }
 
     // Open a tail window: render only the latest ~1000 events (instant) and keep
     // the rest of the log as raw text for on-demand scrollback. This is what
     // keeps opening a 100k-event session O(visible) instead of O(history).
-    const { tail, hasOlder } = openTranscriptWindow(taskRunId, content);
-    this.commitWindowedEvents(
-      taskId,
-      taskRunId,
-      convertStoredEntriesToEvents(tail),
+    // `computeTailWindow` is pure — the cursor is registered inside the commit,
+    // so it can't outlive a seed the concurrency check discards.
+    const { tail, hasOlder, windowStart } = computeTailWindow(content);
+    this.commitWindowedEvents(taskId, taskRunId, baseline, {
+      events: convertStoredEntriesToEvents(tail),
       hasOlder,
-    );
+      windowStart,
+    });
   }
 
-  /** Seed the transcript window, unless a live stream now owns the events. */
+  /**
+   * Seed a rehydrated transcript into `session.events`, but only if nothing
+   * replaced the array we sampled in `ensureEventsLoaded` while the disk read was
+   * in flight. `baseline` is that exact reference; a streamed append, an evict,
+   * or a concurrent rehydrate all swap in a new array, so an identity mismatch
+   * means fresher state arrived and our snapshot is stale — drop it.
+   *
+   * The window cursor (when present) is registered here, atomically with the
+   * events write: if we bail, no cursor is left pointing at a window we never
+   * rendered. The whole method is synchronous, so the check and the write can't
+   * be interleaved by another append.
+   */
   private commitWindowedEvents(
     taskId: string,
     taskRunId: string,
-    events: AcpMessage[],
-    hasOlder: boolean,
-    totalLineCount?: number,
+    baseline: AcpMessage[],
+    next: {
+      events: AcpMessage[];
+      hasOlder: boolean;
+      windowStart?: number;
+      totalLineCount?: number;
+    },
   ): void {
     const current = this.d.store.getSessionByTaskId(taskId);
     if (!current || current.taskRunId !== taskRunId) return;
-    // A turn started or events arrived while we were reading — don't clobber.
-    if (current.isPromptPending || current.events.length > 0) return;
+    if (current.events !== baseline) return; // fresher state arrived — don't clobber
+    if (next.windowStart !== undefined) {
+      setTranscriptWindow(taskRunId, next.windowStart);
+    }
     this.d.store.updateSession(taskRunId, {
-      events,
-      hasOlderEvents: hasOlder,
-      processedLineCount: current.isCloud ? totalLineCount : undefined,
+      events: next.events,
+      hasOlderEvents: next.hasOlder,
+      processedLineCount: current.isCloud ? next.totalLineCount : undefined,
     });
   }
 

@@ -31,21 +31,36 @@ export const TAIL_WINDOW_LINES = 1000;
 export const OLDER_CHUNK_LINES = 1000;
 
 /**
- * Open a window over `content`, returning the tail's raw entries plus whether
- * older lines remain. Stores only the window cursor — `content` is not retained;
+ * Compute the tail window over `content`: the tail's raw entries, whether older
+ * lines remain, and the cursor (`windowStart`) the caller commits via
+ * `setTranscriptWindow`. Pure — records nothing; `content` is not retained, so
  * older chunks are sliced from a fresh re-read via `takeOlderEntries`.
  */
-export function openTranscriptWindow(
-  taskRunId: string,
-  content: string,
-): { tail: StoredLogEntry[]; hasOlder: boolean } {
+export function computeTailWindow(content: string): {
+  tail: StoredLogEntry[];
+  hasOlder: boolean;
+  windowStart: number;
+} {
   const lines = content.trim().split("\n");
   const windowStart = Math.max(0, lines.length - TAIL_WINDOW_LINES);
-  windows.set(taskRunId, { windowStart });
   const tail = parseSessionLogContent(
     lines.slice(windowStart).join("\n"),
   ).rawEntries;
-  return { tail, hasOlder: windowStart > 0 };
+  return { tail, hasOlder: windowStart > 0, windowStart };
+}
+
+/**
+ * Record the scrollback cursor for a freshly opened window. Kept separate from
+ * `computeTailWindow` (which is pure) so the caller can register the cursor in
+ * the SAME synchronous tick it commits the tail into `session.events` — a cursor
+ * must never outlive a seed that a concurrency check ended up discarding, or a
+ * later scroll-up would slice older lines against events it never rendered.
+ */
+export function setTranscriptWindow(
+  taskRunId: string,
+  windowStart: number,
+): void {
+  windows.set(taskRunId, { windowStart });
 }
 
 /**
